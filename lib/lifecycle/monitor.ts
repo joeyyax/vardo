@@ -2,7 +2,7 @@
 
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { uptime } from "os";
+import { hostname, uptime } from "os";
 import { eq } from "drizzle-orm";
 import pkg from "@/package.json";
 import { db } from "@/lib/db";
@@ -11,17 +11,21 @@ import type { BusEvent } from "@/lib/bus/events";
 import { emit } from "@/lib/notifications/dispatch";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
-import { VARDO_HOME_DIR } from "@/lib/paths";
+import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
 import { getBuildSha } from "@/lib/version";
 import { formatDuration } from "@/lib/email/format";
 import {
   classifyBoot,
+  isConsoleHandover,
+  isOtherConsole,
   markSeen,
   missingContainers,
   parseBtime,
   parseUpdateMarker,
+  ranSelfDeploy,
   seconds,
+  stoppingForSelfDeploy,
   updateAnnouncement,
   updateInFlight,
   type BootClassification,
@@ -37,7 +41,7 @@ const log = logger.child("lifecycle");
 export const HEARTBEAT_KEY = "lifecycle_heartbeat";
 export const SHUTDOWN_KEY = "lifecycle_shutdown";
 export const UPDATE_SEEN_KEY = "lifecycle_update_seen";
-export const UPDATE_MARKER_FILE = join(VARDO_HOME_DIR, "lifecycle", "update.json");
+export const UPDATE_MARKER_FILE = join(LIFECYCLE_DIR, "update.json");
 
 const HEARTBEAT_MS = 30_000;
 const MISSING_CHECK_DELAY_MS = 3 * 60_000;
@@ -87,6 +91,11 @@ export async function hostBootTime(): Promise<number | null> {
   return up > 0 ? Date.now() - up * 1000 : null;
 }
 
+/** This console's hostname: its container id unless set otherwise. */
+export function selfHost(): string {
+  return process.env.CONTAINER_ID ?? hostname();
+}
+
 async function readUpdateMarker(): Promise<UpdateMarker | null> {
   try {
     return parseUpdateMarker(await readFile(UPDATE_MARKER_FILE, "utf-8"));
@@ -114,7 +123,7 @@ async function runningManagedContainers(): Promise<SnapshotContainer[]> {
 
 async function beat(): Promise<void> {
   const containers = await runningManagedContainers().catch(() => undefined);
-  const heartbeat: Heartbeat = { at: Date.now(), hostBootAt: await hostBootTime(), version: versionLabel(), containers };
+  const heartbeat: Heartbeat = { at: Date.now(), hostBootAt: await hostBootTime(), version: versionLabel(), containers, host: selfHost() };
   await writeJson(HEARTBEAT_KEY, heartbeat);
 }
 
@@ -190,6 +199,8 @@ export function checkUpdateMarker(): Promise<UpdateMarker["state"] | null> {
     if (!state) return null;
     // The console an update started is the new one; its "updated" message covers the start.
     if (state === "started" && marker.startedAt < processStartedAt) return null;
+    // A self-deploy's new console reports the result; the old one is about to stop.
+    if (state === "updated" && ranSelfDeploy(marker, selfHost())) return null;
     await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, state));
     await emitToAdmins(updateEvent(marker, state, bootDownSeconds));
     log.info(`Announced update ${marker.id}: ${state}`);
@@ -292,6 +303,11 @@ async function checkMissingContainers(before: SnapshotContainer[]): Promise<void
 
 async function onShutdown(): Promise<void> {
   const marker = await readUpdateMarker().catch(() => null);
+  // The new console is already up; a shutdown marker or email from this one would be noise.
+  if (stoppingForSelfDeploy(marker, selfHost(), Date.now())) {
+    log.info(`Stopping at the end of self-deploy ${marker?.id}`);
+    return;
+  }
   const updating = updateInFlight(marker, Date.now());
   const reason = updating ? "vardo update" : describeSignal(shutdownSignal());
   const shutdown: ShutdownMarker = { at: Date.now(), reason, version: versionLabel() };
@@ -313,6 +329,17 @@ async function onShutdown(): Promise<void> {
 }
 
 const globalForLifecycle = globalThis as unknown as { __vardo_lifecycle?: boolean };
+
+/** Whether another console container is running now. */
+async function otherConsoleRunning(): Promise<boolean> {
+  try {
+    const { listContainers } = await import("@/lib/docker/client");
+    const host = selfHost();
+    return (await listContainers()).some((c) => isOtherConsole(c, host));
+  } catch {
+    return false;
+  }
+}
 
 /** Classifies this boot, announces it once and starts the heartbeat. */
 export async function startLifecycleMonitor(): Promise<void> {
@@ -350,7 +377,12 @@ export async function startLifecycleMonitor(): Promise<void> {
     void awaitUpdateOutcome(marker).catch((err) => log.error("Update wait failed:", err));
   } else {
     const announced = await checkUpdateMarker().catch(() => null);
-    if (!announced) {
+    const handover =
+      !announced &&
+      boot.kind === "unclean" &&
+      isConsoleHandover({ heartbeat, startedAt, selfHost: selfHost(), otherConsoleRunning: await otherConsoleRunning() });
+    if (handover) log.info("Boot: took over from a console still running, no restart to report");
+    if (!announced && !handover) {
       const event = bootEvent(boot);
       if (event) await emitToAdmins(event);
     }

@@ -10,6 +10,8 @@ export type Heartbeat = {
   hostBootAt: number | null;
   version: string;
   containers?: SnapshotContainer[];
+  /** The writing console's hostname, its container id. */
+  host?: string;
 };
 
 /** Written on SIGTERM. Its absence on boot means the last stop was unclean. */
@@ -58,17 +60,49 @@ export function classifyBoot(input: {
   };
 }
 
+/** A heartbeat younger than this means its console was still up when this one started. */
+export const HANDOVER_HEARTBEAT_MS = 75_000;
+
+/**
+ * True when this console started while another was still running: a self-deploy handing over, not a crash.
+ * `otherConsoleRunning` is Docker's answer, for heartbeats written before they carried a host.
+ */
+export function isConsoleHandover(input: {
+  heartbeat: Heartbeat | null;
+  startedAt: number;
+  selfHost: string;
+  otherConsoleRunning: boolean;
+}): boolean {
+  const { heartbeat, startedAt, selfHost, otherConsoleRunning } = input;
+  if (!heartbeat || startedAt - heartbeat.at > HANDOVER_HEARTBEAT_MS) return false;
+  if (heartbeat.host && heartbeat.host !== selfHost) return true;
+  return otherConsoleRunning;
+}
+
+const CONSOLE_PROJECT = /^vardo(-production-(blue|green))?$/;
+
+/** True for a running console container other than `selfHost`'s. */
+export function isOtherConsole(container: { id: string; labels: Record<string, string> }, selfHost: string): boolean {
+  if (container.labels["com.docker.compose.service"] !== "frontend") return false;
+  if (!CONSOLE_PROJECT.test(container.labels["com.docker.compose.project"] ?? "")) return false;
+  return selfHost.length > 0 && !container.id.startsWith(selfHost);
+}
+
 /** Host boot time from /proc/stat. */
 export function parseBtime(procStat: string): number | null {
   const match = procStat.match(/^btime\s+(\d+)$/m);
   return match ? Number(match[1]) * 1000 : null;
 }
 
-// `vardo update` writes $VARDO_HOME_DIR/lifecycle/update.json as it goes.
+// `vardo update` (install.sh) and a deploy of the `vardo` app write $VARDO_HOME_DIR/lifecycle/update.json as they go.
 
 export type UpdateMarker = {
   id: string;
   state: "started" | "updated" | "failed";
+  /** Who wrote it. Absent means install.sh. */
+  kind?: "install" | "self-deploy";
+  /** The console running a self-deploy, by hostname. */
+  fromHost?: string;
   startedAt: number;
   finishedAt?: number;
   fromVersion: string;
@@ -109,6 +143,8 @@ export function parseUpdateMarker(text: string): UpdateMarker | null {
     return {
       id,
       state: state as UpdateMarker["state"],
+      kind: raw.kind === "self-deploy" ? "self-deploy" : "install",
+      fromHost: str(raw.fromHost),
       startedAt,
       finishedAt: ms(raw.finishedAt),
       fromVersion: str(raw.fromVersion) ?? "unknown",
@@ -133,6 +169,21 @@ export const UPDATE_IN_FLIGHT_MS = 30 * 60_000;
 
 export function updateInFlight(marker: UpdateMarker | null, now: number): marker is UpdateMarker {
   return marker?.state === "started" && now - marker.startedAt < UPDATE_IN_FLIGHT_MS;
+}
+
+/** How long after a self-deploy finishes its old console's stop still belongs to it. */
+export const SELF_DEPLOY_STOP_WINDOW_MS = 15 * 60_000;
+
+/** True when `host` ran this self-deploy. Its old console never announces the outcome; the new one does on boot. */
+export function ranSelfDeploy(marker: UpdateMarker | null, host: string): marker is UpdateMarker {
+  return marker?.kind === "self-deploy" && marker.fromHost === host;
+}
+
+/** True when this console's stop is the end of a self-deploy it ran, not a shutdown to report. */
+export function stoppingForSelfDeploy(marker: UpdateMarker | null, host: string, now: number): boolean {
+  if (!ranSelfDeploy(marker, host)) return false;
+  if (marker.state === "started") return now - marker.startedAt < UPDATE_IN_FLIGHT_MS;
+  return marker.state === "updated" && now - (marker.finishedAt ?? marker.startedAt) < SELF_DEPLOY_STOP_WINDOW_MS;
 }
 
 /** States of one update run already announced. */

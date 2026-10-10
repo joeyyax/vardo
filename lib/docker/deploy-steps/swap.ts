@@ -674,6 +674,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
     // No second backend to pin to when stopping first.
     pinCutover = false;
+    ctx.oldStoppedAt = Date.now();
     noteStopFailure(await stopOldSlot());
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
@@ -944,6 +945,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   }
   ctx.stage("healthcheck", "success");
   ctx.stage("routing", "running");
+  ctx.healthyAt = Date.now();
   log(`[deploy] ${newSlot} healthy`);
 
   // Invariant: an old slot still serving is stopped only after the deploy commits.
