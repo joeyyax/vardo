@@ -14,10 +14,10 @@ vi.mock("@/lib/config/features", () => ({ isFeatureEnabled: () => features.enabl
 vi.mock("@/lib/worker/instance", () => ({ instanceId: () => holderRef.current }));
 vi.mock("@/lib/worker/jobs", () => ({
   recordTick: vi.fn(async (name: string) => void jobs.ticks.push(name)),
-  recordOk: vi.fn(async (name: string) => void jobs.oks.push(name)),
 }));
 vi.mock("@/lib/worker/tick-failure", () => ({
   logTickFailure: vi.fn(),
+  recordTickOk: vi.fn(async (_log: unknown, name: string) => void jobs.oks.push(name)),
   recordTickFailure: vi.fn(async (_log: unknown, name: string) => void jobs.failures.push(name)),
 }));
 vi.mock("@/lib/worker/lease", async (importOriginal) => {

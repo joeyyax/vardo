@@ -37,6 +37,7 @@ describe("system incidents", () => {
   it("keys services and certificates by name", () => {
     expect(incidentKey("system.service-down", "redis")).toBe("service:redis:system.service-down");
     expect(incidentKey("system.cert-expiring", "shop.example.com")).toBe("domain:shop.example.com:system.cert-expiring");
+    expect(incidentKey("system.loop-failing", "loop:git-poll")).toBe("service:loop:git-poll:system.loop-failing");
   });
 
   it("opens one incident per org and carries it on each org's notice", async () => {

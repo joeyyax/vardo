@@ -50,15 +50,19 @@ export async function recordTick(name: string, role: string, holder: string, int
   }
 }
 
-/** A pass finished cleanly. Never throws. */
-export async function recordOk(name: string): Promise<void> {
+/** A pass finished cleanly. Returns the failure streak it ended, 0 when it couldn't be recorded. Never throws. */
+export async function recordOk(name: string): Promise<number> {
   try {
-    await db
-      .update(jobHeartbeats)
-      .set({ lastTickAt: sql`now()`, lastOkAt: sql`now()`, lastError: null, consecutiveFailures: 0 })
-      .where(eq(jobHeartbeats.name, name));
+    const rows = await db.execute<{ ended: number }>(sql`
+      UPDATE job_heartbeat h
+      SET last_tick_at = now(), last_ok_at = now(), last_error = NULL, consecutive_failures = 0
+      FROM (SELECT consecutive_failures FROM job_heartbeat WHERE name = ${name} FOR UPDATE) prev
+      WHERE h.name = ${name}
+      RETURNING prev.consecutive_failures AS ended`);
+    return Number(rows[0]?.ended ?? 0);
   } catch (err) {
     log.warn(`Recording a run of ${name} failed: ${message(err)}`);
+    return 0;
   }
 }
 

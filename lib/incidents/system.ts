@@ -5,7 +5,12 @@ import { emit } from "@/lib/notifications/dispatch";
 import { openIncident, resolveIncidents, safely } from "./store";
 import type { IncidentSeverity } from "./types";
 
-export type SystemProblem = { kind: "system.service-down" | "system.cert-expiring"; about: string; title: string; severity: IncidentSeverity };
+export type SystemProblem = {
+  kind: "system.service-down" | "system.cert-expiring" | "system.loop-failing";
+  about: string;
+  title: string;
+  severity: IncidentSeverity;
+};
 
 /** Emits the notice to each org with the incident it opens or updates there. */
 export async function emitSystemIncident(orgIds: string[], event: BusEvent, problem: SystemProblem, now = new Date()): Promise<void> {

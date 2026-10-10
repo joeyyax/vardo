@@ -1,38 +1,57 @@
 import type { BusEvent } from "@/lib/bus";
 import type { Logger } from "@/lib/logger";
-import { redactSecrets } from "@/lib/redact";
-import { recordFailure } from "./jobs";
+import { recordFailure, recordOk } from "./jobs";
 
-/** Consecutive failed passes before a loop raises a system alert. */
+/** Consecutive failed passes before a loop opens an incident. */
 export const FAILURE_ALERT_THRESHOLD = 5;
+
+const KIND = "system.loop-failing";
+const about = (name: string) => `loop:${name}`;
 
 export function logTickFailure(log: Logger, name: string, err: unknown): void {
   log.error(`Loop ${name} failed:`, err);
 }
 
-/** Records a failed pass. The fifth failure in a row raises one alert. */
+/** Records a failed pass. The fifth failure in a row opens a system.loop-failing incident. */
 export async function recordTickFailure(log: Logger, name: string, err: unknown): Promise<void> {
   const streak = await recordFailure(name, err);
-  if (streak === FAILURE_ALERT_THRESHOLD) await raiseLoopAlert(log, name, err);
+  if (streak === FAILURE_ALERT_THRESHOLD) await openLoopIncident(log, name);
 }
 
-async function raiseLoopAlert(log: Logger, name: string, err: unknown): Promise<void> {
-  // TODO(incident-identity): open a loop.failing incident keyed on `loop:${name}` here instead of a bare event.
-  const reason = redactSecrets(err instanceof Error ? err.message : String(err));
+/** Records a clean pass. One that ends a streak long enough to have opened an incident resolves it. */
+export async function recordTickOk(log: Logger, name: string): Promise<void> {
+  const ended = await recordOk(name);
+  if (ended >= FAILURE_ALERT_THRESHOLD) await resolveLoopIncident(log, name);
+}
+
+async function openLoopIncident(log: Logger, name: string): Promise<void> {
+  const title = `Background job failing: ${name}`;
   const event: BusEvent = {
     type: "system.service-down",
-    title: `Background job failing: ${name}`,
-    message: `${name} has failed ${FAILURE_ALERT_THRESHOLD} times in a row. Last error: ${reason}`,
-    service: `loop:${name}`,
+    title,
+    message: `${name} has failed ${FAILURE_ALERT_THRESHOLD} times in a row. The system health screen shows its last error.`,
+    service: about(name),
     description: `Background job ${name}`,
   };
   try {
-    const [{ emit }, { adminOrgIds }] = await Promise.all([
-      import("@/lib/bus"),
+    const [{ emitSystemIncident }, { adminOrgIds }] = await Promise.all([
+      import("@/lib/incidents/system"),
       import("@/lib/notifications/admin-orgs"),
     ]);
-    for (const orgId of await adminOrgIds()) emit(orgId, event);
-  } catch (alertErr) {
-    log.error(`Couldn't raise the alert for ${name}:`, alertErr);
+    await emitSystemIncident(await adminOrgIds(), event, { kind: KIND, about: about(name), title, severity: "warning" });
+  } catch (err) {
+    log.error(`Couldn't open the incident for ${name}:`, err);
+  }
+}
+
+async function resolveLoopIncident(log: Logger, name: string): Promise<void> {
+  try {
+    const [{ resolveSystemIncident }, { adminOrgIds }] = await Promise.all([
+      import("@/lib/incidents/system"),
+      import("@/lib/notifications/admin-orgs"),
+    ]);
+    await resolveSystemIncident(await adminOrgIds(), KIND, about(name), `${name} is running cleanly again.`);
+  } catch (err) {
+    log.error(`Couldn't resolve the incident for ${name}:`, err);
   }
 }

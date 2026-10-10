@@ -2,10 +2,10 @@ import { isFeatureEnabled, type FeatureFlag } from "@/lib/config/features";
 import { logger, type Logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
 import { instanceId } from "./instance";
-import { recordOk, recordTick } from "./jobs";
+import { recordTick } from "./jobs";
 import { withFence } from "./fence";
 import { LEASE_TTL_MS, acquireLease, leasesEnabled, releaseLease, type Lease } from "./lease";
-import { logTickFailure, recordTickFailure } from "./tick-failure";
+import { logTickFailure, recordTickFailure, recordTickOk } from "./tick-failure";
 
 export type LoopRole = "web" | "worker";
 
@@ -202,7 +202,7 @@ export class IntervalLoop<T = unknown> {
       this.lastPassOk = true;
       if (quiet) return;
       this.lastBeatAt = Date.now();
-      this.queueBeat(() => recordOk(this.name));
+      this.queueBeat(() => recordTickOk(this.log, this.name));
     };
 
     if (this.feature && !isFeatureEnabled(this.feature)) {

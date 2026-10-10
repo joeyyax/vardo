@@ -168,6 +168,10 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
 
       const { jobs: readings } = await jobs.readJobs(["t5", "never-ran"]);
       expect(readings.map((r) => r.state)).toEqual(["failing", "never"]);
+
+      // A clean pass reports the streak it ended, which is what resolves a loop incident.
+      expect(await jobs.recordOk("t5")).toBe(2);
+      expect(await jobs.recordOk("t5")).toBe(0);
       await loop.stop();
     });
   });
