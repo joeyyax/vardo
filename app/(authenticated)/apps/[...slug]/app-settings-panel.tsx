@@ -87,6 +87,7 @@ export function AppSettingsPanel({
     isChildService ? (app.priority ?? "inherit") : (app.priority ?? "standard"),
   );
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
+  const [securityHeaders, setSecurityHeaders] = useState(app.securityHeaders ?? true);
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
@@ -145,6 +146,7 @@ export function AppSettingsPanel({
       if (fields.backendProtocol) {
         body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       }
+      if (fields.securityHeaders) body.securityHeaders = securityHeaders;
       if (fields.diskWriteAlert) {
         body.diskWriteAlertThreshold = diskWriteAlertThreshold
           ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824)
@@ -167,6 +169,7 @@ export function AppSettingsPanel({
         rootDirectory: app.rootDirectory || null,
         containerPort: app.containerPort,
         backendProtocol: app.backendProtocol ?? null,
+        securityHeaders: app.securityHeaders ?? true,
         restartPolicy: app.restartPolicy || "unless-stopped",
         cpuLimit: app.cpuLimit,
         memoryLimit: app.memoryLimit,
@@ -453,6 +456,24 @@ export function AppSettingsPanel({
             Protocol Traefik uses to reach {isComposeParent ? "a routed service" : "the container"}. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
           </p>
           <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+        </div>
+      )}
+
+      {/* Security headers */}
+      {fields.securityHeaders && (
+        <div className="flex items-center gap-3">
+          <Switch
+            id="edit-security-headers"
+            checked={securityHeaders}
+            onCheckedChange={setSecurityHeaders}
+          />
+          <div className="grid gap-0.5">
+            <Label htmlFor="edit-security-headers">Security headers</Label>
+            <p className="text-xs text-muted-foreground">
+              Adds HSTS, <span className="font-mono">X-Content-Type-Options: nosniff</span>, <span className="font-mono">X-Frame-Options: SAMEORIGIN</span> and <span className="font-mono">Referrer-Policy: strict-origin-when-cross-origin</span> to HTTPS responses. These replace any the app sends; turn off if it sets its own or needs to be framed.
+            </p>
+            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+          </div>
         </div>
       )}
 

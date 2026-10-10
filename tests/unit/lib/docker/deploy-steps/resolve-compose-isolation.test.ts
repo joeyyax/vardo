@@ -196,6 +196,11 @@ describe("resolveCompose — production names", () => {
       "traefik.http.routers.notes-api-dom-id-a.entrypoints": "websecure",
       "traefik.http.routers.notes-api-dom-id-a.tls": "true",
       "traefik.http.routers.notes-api-dom-id-a.tls.certresolver": "le-dns",
+      "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.stsSeconds": "31536000",
+      "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.contentTypeNosniff": "true",
+      "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.customFrameOptionsValue": "SAMEORIGIN",
+      "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.referrerPolicy": "strict-origin-when-cross-origin",
+      "traefik.http.routers.notes-api-dom-id-a.middlewares": "notes-api-dom-id-a-headers",
       "traefik.http.routers.notes-api-dom-id-a-http.rule": "Host(`knowledge.example.com`)",
       "traefik.http.routers.notes-api-dom-id-a-http.entrypoints": "web",
       "traefik.http.routers.notes-api-dom-id-a-http.service": "notes-api",
@@ -203,6 +208,19 @@ describe("resolveCompose — production names", () => {
       "traefik.http.middlewares.notes-api-dom-id-a-https-redirect.redirectscheme.permanent": "true",
       "traefik.http.routers.notes-api-dom-id-a-http.middlewares": "notes-api-dom-id-a-https-redirect",
     });
+  });
+
+  it("leave out security headers when the app opts out", async () => {
+    const app = makeApp(
+      [{ id: "dom-id-abcdef12", domain: "knowledge.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
+      { securityHeaders: false },
+    );
+    const compose: ComposeFile = { services: { web: { name: "web", image: "knowledge:latest" } } };
+    const ctx = await resolveCompose(makeCtx(compose, app, { name: "production", isolated: false }));
+
+    const keys = Object.keys(ctx.compose.services.web.labels ?? {});
+    expect(keys.filter((k) => k.includes("-headers"))).toEqual([]);
+    expect(keys).not.toContain("traefik.http.routers.notes-api-dom-id-a.middlewares");
   });
 
   it("keep the https transport name", async () => {

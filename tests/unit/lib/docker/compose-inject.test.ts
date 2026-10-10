@@ -10,6 +10,7 @@ import {
   injectNetwork,
   injectTraefikLabels,
   isTraefikSelfRouted,
+  SECURITY_HEADERS,
   stripTraefikLabels,
   stripVardoInjections,
 } from "@/lib/docker/compose-inject";
@@ -401,6 +402,86 @@ describe("injectTraefikLabels domain middlewares", () => {
     expect(() =>
       injectTraefikLabels(base(), { projectName: "p", domain: "a.test", containerPort: 80, middlewares: ["a`b"] }),
     ).toThrow(/invalid middleware/);
+  });
+});
+
+describe("injectTraefikLabels security headers", () => {
+  const base = (): ComposeFile => ({ services: { web: { name: "web", image: "app:latest" } } });
+  const opts = { projectName: "site-abc", appName: "site", domain: "site.test", containerPort: 80, securityHeaders: true };
+  const headerLabels = (labels: Record<string, string>) =>
+    Object.fromEntries(Object.entries(labels).filter(([k]) => k.startsWith("traefik.http.middlewares.site-abc-headers.")));
+
+  it("defines the headers middleware and puts it on the HTTPS router only", () => {
+    const labels = injectTraefikLabels(base(), opts).services.web.labels!;
+    expect(headerLabels(labels)).toEqual({
+      "traefik.http.middlewares.site-abc-headers.headers.stsSeconds": "31536000",
+      "traefik.http.middlewares.site-abc-headers.headers.contentTypeNosniff": "true",
+      "traefik.http.middlewares.site-abc-headers.headers.customFrameOptionsValue": "SAMEORIGIN",
+      "traefik.http.middlewares.site-abc-headers.headers.referrerPolicy": "strict-origin-when-cross-origin",
+    });
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("site-abc-headers");
+    expect(labels["traefik.http.routers.site-abc-http.middlewares"]).toBe("site-abc-https-redirect");
+  });
+
+  it("sends HSTS without includeSubDomains or preload", () => {
+    expect(Object.keys(SECURITY_HEADERS)).not.toContain("stsIncludeSubdomains");
+    expect(Object.keys(SECURITY_HEADERS)).not.toContain("stsPreload");
+    expect(Object.keys(SECURITY_HEADERS)).not.toContain("contentSecurityPolicy");
+  });
+
+  it("runs ahead of the domain's middlewares and the redirect", () => {
+    const labels = injectTraefikLabels(base(), {
+      ...opts,
+      middlewares: ["cloudflare-only@file"],
+      redirectTo: "https://new.test",
+    }).services.web.labels!;
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("site-abc-headers,cloudflare-only@file,site-abc-redirect");
+  });
+
+  it("adds nothing when the app opts out", () => {
+    const labels = injectTraefikLabels(base(), { ...opts, securityHeaders: false }).services.web.labels!;
+    expect(headerLabels(labels)).toEqual({});
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBeUndefined();
+  });
+
+  it("adds nothing to a plain-HTTP domain", () => {
+    const labels = injectTraefikLabels(base(), { ...opts, ssl: false }).services.web.labels!;
+    expect(headerLabels(labels)).toEqual({});
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBeUndefined();
+  });
+
+  it("is on by default in applyDeployTransforms and off when the app opts out", () => {
+    const domain: DeployTransformDomain = {
+      id: "abcdef123456",
+      domain: "site.test",
+      port: 80,
+      sslEnabled: true,
+      certResolver: "le-dns",
+      redirectTo: null,
+      redirectCode: null,
+    };
+    const run = (securityHeaders?: boolean) =>
+      applyDeployTransforms(base(), {
+        appName: "site",
+        containerPort: 80,
+        domains: [domain],
+        networkName: "vardo-network",
+        securityHeaders,
+      }).services.web.labels!["traefik.http.routers.site-abcdef.middlewares"];
+    expect(run()).toBe("site-abcdef-headers");
+    expect(run(false)).toBeUndefined();
+  });
+
+  it("is pruned from a sibling service when the route moves", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "app:latest" },
+        api: { name: "api", image: "api:latest" },
+      },
+    };
+    const first = injectTraefikLabels(compose, { ...opts, serviceName: "api" });
+    const moved = injectTraefikLabels(first, { ...opts, serviceName: "web" });
+    expect(Object.keys(moved.services.api.labels ?? {}).filter((k) => k.includes("site-abc-headers"))).toEqual([]);
   });
 });
 

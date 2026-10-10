@@ -680,6 +680,13 @@
       "when": 1791594405902,
       "tag": "0096_drop_backup_batch",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1791600530929,
+      "tag": "0097_security_headers",
+      "breakpoints": true
     }
   ]
 }

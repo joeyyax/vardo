@@ -63,6 +63,7 @@ const updateAppSchema = z.object({
   // Services that get the app's own certificates at /certs. Null or empty turns it off.
   certServices: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).max(63)).max(32).nullable().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
+  securityHeaders: z.boolean().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),

@@ -118,6 +118,8 @@ export const apps = pgTable(
     autoRestartUnhealthy: boolean("auto_restart_unhealthy"), // null = on for critical priority, off otherwise
     isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Deploy engine blocked
     backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Null = auto (https on 443/8443)
+    // Default security headers on the app's HTTPS routers.
+    securityHeaders: boolean("security_headers").notNull().default(true),
     envContent: text("env_content"), // Encrypted
     // Compose child to parent. Must cascade: set null moves children into app_top_level_name_uniq's scope.
     parentAppId: text("parent_app_id").references((): AnyPgColumn => apps.id, {

@@ -222,6 +222,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         containerPort: port,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
+        securityHeaders: app.securityHeaders ?? true,
       });
       const svcSuffix = targetService ? ` → ${targetService}` : "";
       const route = formatRoute(domain.domain, domain.pathPrefix);

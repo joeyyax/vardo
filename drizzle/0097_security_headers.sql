@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "security_headers" boolean DEFAULT true NOT NULL;

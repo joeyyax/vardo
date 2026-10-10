@@ -90,6 +90,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           middlewares: d.middlewares ?? null,
         })),
         backendProtocol: narrowBackendProtocol(app.backendProtocol),
+        securityHeaders: app.securityHeaders,
       },
       volumesList,
       NETWORK_NAME,
