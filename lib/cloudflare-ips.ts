@@ -59,7 +59,7 @@ function ipToNum(ip: string): number {
 /** Whether an IPv4 address is in a Cloudflare range. */
 export function isCloudflareIp(ip: string): boolean {
   const num = ipToNum(ip);
-  return parsedRanges.some(({ base, mask }) => (num & mask) === base);
+  return parsedRanges.some(({ base, mask }) => ((num & mask) >>> 0) === base);
 }
 
 /** Matches IPv4 and IPv6 addresses, IPv4-mapped included, against CIDRs and bare IPs. Invalid entries are skipped. */
