@@ -34,11 +34,18 @@ export async function getInstallationOctokit(installationId: number) {
   });
 }
 
+// Installation tokens last an hour; reuse each until five minutes before it expires.
+const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
+const tokenCache = new Map<number, { token: string; expiresAt: number }>();
+
 export async function getInstallationToken(installationId: number): Promise<string> {
+  const cached = tokenCache.get(installationId);
+  if (cached && cached.expiresAt - TOKEN_REUSE_MARGIN_MS > Date.now()) return cached.token;
   const octokit = await getAppOctokit();
   const { data } = await octokit.rest.apps.createInstallationAccessToken({
     installation_id: installationId,
   });
+  tokenCache.set(installationId, { token: data.token, expiresAt: Date.parse(data.expires_at) });
   return data.token;
 }
 
