@@ -260,6 +260,11 @@ export async function register() {
         .then(({ startLifecycleMonitor }) => startLifecycleMonitor())
         .catch((err) => log.error("Failed to start the lifecycle monitor:", err)),
 
+      // Redeploys of Vardo itself requested by `vardo update` on the host.
+      import("./lib/lifecycle/deploy-request")
+        .then(({ startDeployRequestWatcher }) => startDeployRequestWatcher())
+        .catch((err) => log.error("Failed to start the deploy request watcher:", err)),
+
       // Stamps app directory owners while top-level app names are still globally unique.
       import("./lib/docker/app-dir-owner")
         .then(({ stampAppDirOwnersAtStartup }) => stampAppDirOwnersAtStartup())

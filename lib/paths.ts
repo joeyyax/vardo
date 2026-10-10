@@ -2,7 +2,7 @@
 // VARDO_DIR is a fallback for VARDO_HOME_DIR.
 
 import { resolve, join, relative, isAbsolute, sep } from "path";
-import { accessSync, constants } from "fs";
+import { accessSync, lstatSync, constants } from "fs";
 import { mkdir, access, writeFile, readFile, readdir, rename, unlink } from "fs/promises";
 
 /** Root directory for all Vardo data. */
@@ -200,7 +200,7 @@ export async function listAppDirOwners(): Promise<string[]> {
   }
 }
 
-// Vardo's own app layout: apps/vardo/env/blue|green|current. Runtime references go through `current`.
+// Vardo's own app layout. Self-deploy: apps/vardo/production/blue|green|current. Legacy: apps/vardo/env/blue|green|current.
 
 /** Root of Vardo's self-managed app directory. */
 export const VARDO_APP_DIR = join(PROJECTS_DIR, "vardo");
@@ -214,7 +214,25 @@ export const VARDO_CURRENT_DIR = join(VARDO_ENV_DIR, "current");
 /** Compose file in the active slot. */
 export const VARDO_COMPOSE_FILE = join(VARDO_CURRENT_DIR, "docker-compose.yml");
 
-/** Slot directory (blue or green). */
+/** Self-deploy slots, rotated by the deploy engine. */
+export const VARDO_PRODUCTION_DIR = join(VARDO_APP_DIR, "production");
+
+/** The `current` symlink to the self-deploy slot serving now. */
+export const VARDO_PRODUCTION_CURRENT = join(VARDO_PRODUCTION_DIR, "current");
+
+/** Markers shared with install.sh: update progress and CLI deploy requests. */
+export const LIFECYCLE_DIR = join(VARDO_HOME_DIR, "lifecycle");
+
+/** True once Vardo deploys itself: the engine has written `production/current`. */
+export function isSelfDeployLayout(): boolean {
+  try {
+    return lstatSync(VARDO_PRODUCTION_CURRENT).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/** Legacy slot directory (blue or green). */
 export function vardoSlotDir(slot: "blue" | "green"): string {
   return join(VARDO_ENV_DIR, slot);
 }
@@ -245,22 +263,20 @@ export async function ensureDataDirs(): Promise<string[]> {
   return failures;
 }
 
-/** Vardo's compose file: the active slot's, or $VARDO_HOME_DIR/docker-compose.yml on legacy flat installs. */
+/** Vardo's compose file: the self-deploy slot's, then the legacy slot's, then $VARDO_HOME_DIR/docker-compose.yml. */
 export function resolveVardoComposeFile(): string {
-  try {
-    accessSync(VARDO_COMPOSE_FILE);
-    return VARDO_COMPOSE_FILE;
-  } catch {
-    return join(VARDO_HOME_DIR, "docker-compose.yml");
-  }
+  return join(resolveVardoDir(), "docker-compose.yml");
 }
 
-/** Vardo's source directory: VARDO_CURRENT_DIR, or VARDO_HOME_DIR on legacy flat installs. */
+/** Vardo's source directory: the self-deploy `current`, then the legacy one, then VARDO_HOME_DIR. */
 export function resolveVardoDir(): string {
-  try {
-    accessSync(VARDO_CURRENT_DIR);
-    return VARDO_CURRENT_DIR;
-  } catch {
-    return VARDO_HOME_DIR;
+  for (const dir of [VARDO_PRODUCTION_CURRENT, VARDO_CURRENT_DIR]) {
+    try {
+      accessSync(join(dir, "docker-compose.yml"));
+      return dir;
+    } catch {
+      // Next candidate.
+    }
   }
+  return VARDO_HOME_DIR;
 }

@@ -1,6 +1,6 @@
 // Registers Vardo itself as a managed project when selfManagement is on. Idempotent.
 
-import { readFile, access } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
 import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -16,7 +16,7 @@ import {
 } from "@/lib/docker/compose";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
-import { VARDO_HOME_DIR, VARDO_CURRENT_DIR } from "@/lib/paths";
+import { isSelfDeployLayout, resolveVardoDir } from "@/lib/paths";
 import type { ComposeService } from "@/lib/docker/compose-types";
 
 const log = logger.child("self-register");
@@ -47,16 +47,11 @@ function warnIfRoutingIsReplaceable(frontend: ComposeService | undefined): void 
 }
 
 /** Upsert the "vardo" project, its parent compose app and infra child apps. */
-export async function ensureVardoProject(): Promise<void> {
-  if (!(await isFeatureEnabledAsync("selfManagement"))) return;
+export async function ensureVardoProject(opts: { force?: boolean } = {}): Promise<void> {
+  // A self-deploying instance needs its record to update at all.
+  if (!opts.force && !isSelfDeployLayout() && !(await isFeatureEnabledAsync("selfManagement"))) return;
 
-  // Active slot, else VARDO_HOME_DIR for flat installs.
-  let vardoDir = VARDO_CURRENT_DIR;
-  try {
-    await access(join(vardoDir, "docker-compose.yml"));
-  } catch {
-    vardoDir = VARDO_HOME_DIR;
-  }
+  const vardoDir = resolveVardoDir();
 
   if (!process.env.PREVIEW_DATABASE_URL) {
     const overridden = process.env.VARDO_ALLOW_PREVIEW_PROD_DB === "true";
@@ -170,7 +165,8 @@ export async function ensureVardoProject(): Promise<void> {
         set: {
           projectId: project.id,
           gitUrl,
-          gitBranch: gitBranch ?? "main",
+          // A detached checkout keeps the configured branch.
+          ...(gitBranch ? { gitBranch } : {}),
           isSystemManaged: true,
           composeContent,
           containerPort: FRONTEND_PORT,

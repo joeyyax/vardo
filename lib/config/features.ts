@@ -1,5 +1,7 @@
 // System-wide feature flags. Resolution: env var > vardo.yml > DB system_settings > default (true).
 
+import { isSelfDeployLayout } from "@/lib/paths";
+
 export type FeatureFlag =
   | "ui"
   | "environments"
@@ -111,7 +113,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   selfManagement: {
     label: "Self-management",
     description:
-      "Register Vardo as a managed project visible in the dashboard. Enables PR preview deployments against the Vardo repo.",
+      "Register Vardo as a managed project visible in the dashboard. Enables PR preview deployments against the Vardo repo. On by default once Vardo deploys itself.",
     defaultValue: false,
     group: "deployment",
   },
@@ -220,6 +222,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
 };
 
+/** A flag's value when nothing sets it. Self-management defaults on once Vardo deploys itself. */
+export function flagDefault(flag: FeatureFlag): boolean {
+  if (flag === "selfManagement" && isSelfDeployLayout()) return true;
+  return FLAG_CONFIG[flag]?.defaultValue ?? true;
+}
+
 const TRUTHY = new Set(["1", "true", "yes", "on", "enabled"]);
 const FALSY = new Set(["0", "false", "no", "off", "disabled"]);
 
@@ -265,7 +273,7 @@ export function isFeatureEnabled(flag: FeatureFlag): boolean {
   const fromEnv = featureFlagFromEnv(flag);
   if (fromEnv !== undefined) return fromEnv;
   if (flagCache && flag in flagCache) return flagCache[flag];
-  return FLAG_CONFIG[flag]?.defaultValue ?? true;
+  return flagDefault(flag);
 }
 
 /** Authoritative check. Also refreshes the sync cache. */
@@ -280,7 +288,7 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   if (flags) flagCache = { ...flagCache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
-  return FLAG_CONFIG[flag]?.defaultValue ?? true;
+  return flagDefault(flag);
 }
 
 /** Label, description and other metadata for a flag. */
@@ -347,7 +355,7 @@ export function resolveFeatureFlag(
   if (fromEnv !== undefined) return { enabled: fromEnv, source: "env" };
   if (flag in layers.config) return { enabled: layers.config[flag], source: "config" };
   if (flag in layers.database) return { enabled: layers.database[flag], source: "database" };
-  return { enabled: FLAG_CONFIG[flag]?.defaultValue ?? true, source: "default" };
+  return { enabled: flagDefault(flag), source: "default" };
 }
 
 /** Every admin-settable flag with its state, source and metadata. */
