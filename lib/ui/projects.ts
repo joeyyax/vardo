@@ -168,7 +168,7 @@ export type ProjectStats = {
   deploying: number;
   issues: number;
   critical: number;
-  latestDeploy: ProjectsDeployment | null;
+  latestDeploy: (ProjectsDeployment & { appName: string }) | null;
   /** Apps with a backup on record, and how many of those are overdue. */
   backups: number;
   backupsOverdue: number;
@@ -184,8 +184,7 @@ export function projectStats(nodes: TreeNode[]): ProjectStats {
   const withBackup = all.filter((n) => n.app.lastBackupAt || problemOf(n)?.group === "backups");
   const latestDeploy =
     tops
-      .map((a) => a.deployments[0])
-      .filter(Boolean)
+      .flatMap((a) => (a.deployments[0] ? [{ ...a.deployments[0], appName: a.name }] : []))
       .sort((a, b) => time(b.startedAt) - time(a.startedAt))[0] ?? null;
   const lastBackupAt =
     all.map((n) => n.app.lastBackupAt).filter(Boolean).sort((a, b) => time(b) - time(a))[0] ?? null;
@@ -236,15 +235,14 @@ export function matchesQuery(node: TreeNode, project: ProjectsProject, query: st
 
 // --- The side panel's lists -------------------------------------------------
 
-export const PANEL_KEYS = ["attention", "deploying", "running", "stopped", "backups"] as const;
+/** Lists the Projects page opens itself. Problems open the shared attention panel. */
+export const PANEL_KEYS = ["deploying", "running", "stopped"] as const;
 export type PanelKey = (typeof PANEL_KEYS)[number];
 
 export const PANEL_TITLE: Record<PanelKey, string> = {
-  attention: "Needs attention",
   deploying: "Deploying now",
   running: "Running",
   stopped: "Stopped",
-  backups: "Backups overdue",
 };
 
 export function isPanelKey(value: unknown): value is PanelKey {

@@ -1,6 +1,7 @@
 // Tenant app status rows: apps whose container isn't doing its job. Pure; the read lives in ./rows.
 
 import type { AttentionItem, AttentionRow } from "@/lib/ui/attention";
+import { appDownUrgent } from "@/lib/ui/urgency";
 
 /** A transition older than this is settled, not something to act on now. */
 export const APP_DOWN_WINDOW_HOURS = 48;
@@ -52,6 +53,7 @@ export function appStatusRows(
       href: `/apps/${app.name}`,
       detail,
       since: app.statusChangedAt?.toISOString(),
+      urgent: appDownUrgent(app),
       ...(crashed
         ? { title: "Crashed", fix: { label: "Restart", run: "restart", app: { id: app.id, name: app.name } } }
         : {

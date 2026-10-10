@@ -42,6 +42,7 @@ describe("appStatusRows", () => {
         href: "/apps/hub",
         detail: "No container on the host",
         since: justNow.toISOString(),
+        urgent: false,
         group: "missing",
         title: "No container",
         tone: "warning",

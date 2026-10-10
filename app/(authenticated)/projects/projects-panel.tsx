@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress } from "@/components/deploy-progress";
-import { FixButton, type FixTarget, type Handled, type RunAction } from "@/components/fix-action";
-import { AllClear, HandledList, IssueGroup, IssueItem, IssueProgress, Since } from "@/components/issue-group";
+import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
+import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
+import { FixButton, type FixTarget, type RunAction } from "@/components/fix-action";
+import { AllClear, Since } from "@/components/issue-group";
 import { RelativeTime } from "@/components/relative-time";
 import type { AppMetrics, MetricsHistory } from "@/components/app-metrics-card";
 import { formatBytes, formatCores, formatMemLimit } from "@/lib/metrics/format";
@@ -18,7 +20,7 @@ import { SERVICE_KIND_LABEL } from "@/lib/ui/service-kind";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import {
   appsIn,
-  issueGroups,
+
   markSubject,
   problemOf,
   walk,
@@ -35,7 +37,6 @@ export type PanelContext = {
   sections: Section[];
   selected: string | null;
   busy: ReadonlySet<string>;
-  handled: Handled[];
   run: (target: FixTarget, action: RunAction, fixing?: Problem) => void;
   jump: (name: string) => void;
   open: (name: string) => void;
@@ -43,11 +44,6 @@ export type PanelContext = {
   history: Map<string, MetricsHistory>;
   cpuCount: number | null;
 };
-
-function where(loc: Located): string {
-  const parent = loc.node.parent?.displayName;
-  return parent ? `${loc.project.displayName} / ${parent}` : loc.project.displayName;
-}
 
 function FixActions({ loc, problem, ctx, primary = false }: { loc: Located; problem: Problem; ctx: PanelContext; primary?: boolean }) {
   const fix = problem.fix;
@@ -70,66 +66,37 @@ function FixActions({ loc, problem, ctx, primary = false }: { loc: Located; prob
   );
 }
 
-function IssuesBody({ ctx, only }: { ctx: PanelContext; only?: "backups" }) {
-  const groups = issueGroups(ctx.sections, only);
-  const items = groups.flatMap((g) => g.items);
-  if (items.length === 0) {
-    return (
-      <>
-        {only === "backups" ? (
-          <AllClear title="Backups are current" detail="Every app with data has a good backup." />
-        ) : (
-          <AllClear
-            title="Nothing needs attention"
-            detail={`Every app is running as expected.${ctx.handled.length ? ` You handled ${ctx.handled.length} just now.` : ""}`}
-          />
-        )}
-        <HandledList handled={ctx.handled} />
-      </>
-    );
-  }
-  const projects = new Set(items.map((i) => i.project.id)).size;
+/** "Project / Parent", each a link to its page. */
+export function Where({ loc }: { loc: Located }) {
+  const parent = loc.node.parent;
   return (
     <>
-      <IssueProgress open={items.length} projects={projects} handled={ctx.handled.length} />
-      {groups.map((g) => {
-        const fixable = g.items.filter((i) => i.problem.fix && "run" in i.problem.fix);
-        const bulk =
-          g.meta.bulk && fixable.length > 1 ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={() =>
-                fixable.forEach((i) => {
-                  const runs = (i.problem.fix as { run: RunAction }).run;
-                  ctx.run(fixTarget(i.node, runs), runs, i.problem);
-                })
-              }
-            >
-              {g.meta.bulk} {fixable.length === 2 ? "both" : `all ${fixable.length}`}
-            </Button>
-          ) : undefined;
-        return (
-          <IssueGroup key={g.key} title={g.meta.title} count={g.items.length} why={g.meta.why} bulk={bulk}>
-            {g.items.map((i) => (
-              <IssueItem
-                key={i.node.app.id}
-                itemKey={i.node.app.name}
-                name={i.node.app.displayName}
-                where={where(i)}
-                problem={i.problem}
-                showTitle={i.problem.title !== g.meta.title}
-                selected={ctx.selected === i.node.app.name}
-                onActivate={() => ctx.jump(i.node.app.name)}
-                actions={<FixActions loc={i} problem={i.problem} ctx={ctx} />}
-              />
-            ))}
-          </IssueGroup>
-        );
-      })}
-      <HandledList handled={ctx.handled} />
+      <EntityLink href={projectHref(loc.project.name)} className="hover:text-foreground">
+        {loc.project.displayName}
+      </EntityLink>
+      {parent && (
+        <>
+          {" / "}
+          <EntityLink href={appHref(parent.name)} className="hover:text-foreground">
+            {parent.displayName}
+          </EntityLink>
+        </>
+      )}
     </>
+  );
+}
+
+/** Jumps to an app's row in the list. The row around it does the same on click. */
+function ShowInList({ name, label }: { name: string; label: string }) {
+  return (
+    <button
+      type="button"
+      data-panel-item={name}
+      aria-label={label}
+      className="ml-auto shrink-0 cursor-pointer rounded-sm text-[12.5px] text-muted-foreground/70 outline-none hover:text-foreground focus-visible:text-foreground"
+    >
+      Show in list
+    </button>
   );
 }
 
@@ -138,32 +105,32 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const running = app.deployments.find((d) => d.status === "running" || d.status === "queued");
   return (
     <div
-      role="button"
-      tabIndex={0}
-      data-panel-item={app.name}
-      aria-label={`${app.displayName}, deploying`}
       onClick={() => ctx.jump(app.name)}
-      onKeyDown={(e) => {
-        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          ctx.jump(app.name);
-        }
-      }}
-      className="squircle grid cursor-pointer gap-2.5 rounded-md bg-background-deep p-3.5 outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brass"
+      className="squircle grid cursor-pointer gap-2.5 rounded-md bg-background-deep p-3.5 has-[[data-panel-item]:focus-visible]:outline-2 has-[[data-panel-item]:focus-visible]:outline-offset-1 has-[[data-panel-item]:focus-visible]:outline-brass"
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="motion-safe:animate-pulse">
           <StatusMark tone="info" pending />
         </span>
-        <span className="font-semibold">{app.displayName}</span>
-        <span className="text-muted-foreground/70">{where(loc)}</span>
-        {running?.gitSha && <span className="ml-auto font-mono text-xs text-muted-foreground/70">{running.gitSha.slice(0, 7)}</span>}
+        <EntityLink href={appHref(app.name)} className="font-semibold">
+          {app.displayName}
+        </EntityLink>
+        <span className="text-muted-foreground/70">
+          <Where loc={loc} />
+        </span>
+        {running?.gitSha && (
+          <EntityLink href={deployHref(app.name, running.id)} className="font-mono text-xs text-muted-foreground/70 hover:text-foreground">
+            {running.gitSha.slice(0, 7)}
+          </EntityLink>
+        )}
+        <ShowInList name={app.name} label={`Show ${app.displayName} in the list`} />
       </div>
       <div onClick={(e) => e.stopPropagation()}>
         <DeployProgress
           orgId={ctx.orgId}
           appId={app.id}
           appName={app.name}
+          deploymentId={running?.id}
           startedAt={running?.startedAt ?? new Date()}
           typicalMs={typicalElapsedMs(app.deployments)}
         />
@@ -209,7 +176,11 @@ function StateBody({ ctx, kind }: { ctx: PanelContext; kind: "running" | "stoppe
   return (
     <>
       {[...byProject.values()].map((locs) => (
-        <IssueGroupless key={locs[0].project.id} title={locs[0].project.displayName} count={locs.length}>
+        <IssueGroupless
+          key={locs[0].project.id}
+          title={<EntityLink href={projectHref(locs[0].project.name)}>{locs[0].project.displayName}</EntityLink>}
+          count={locs.length}
+        >
           {locs.map((loc) => (
             <SlimItem key={loc.node.app.id} loc={loc} ctx={ctx} right={kind === "stopped" ? "stopped by you" : undefined} />
           ))}
@@ -219,7 +190,7 @@ function StateBody({ ctx, kind }: { ctx: PanelContext; kind: "running" | "stoppe
   );
 }
 
-function IssueGroupless({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+function IssueGroupless({ title, count, children }: { title: ReactNode; count: number; children: ReactNode }) {
   return (
     <section className="grid gap-1">
       <div className="flex items-center gap-2">
@@ -236,24 +207,22 @@ function SlimItem({ loc, ctx, right }: { loc: Located; ctx: PanelContext; right?
   const mark = statusMarkTone(markSubject(loc.node));
   return (
     <div
-      role="button"
-      tabIndex={0}
-      data-panel-item={app.name}
       onClick={() => ctx.jump(app.name)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          ctx.jump(app.name);
-        }
-      }}
-      className="flex cursor-pointer items-center gap-3 rounded-[10px] px-2.5 py-2 text-sm outline-none hover:bg-row-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brass"
+      className="flex cursor-pointer items-center gap-3 rounded-[10px] px-2.5 py-2 text-sm hover:bg-row-hover has-[[data-panel-item]:focus-visible]:bg-row-hover has-[[data-panel-item]:focus-visible]:outline-2 has-[[data-panel-item]:focus-visible]:-outline-offset-2 has-[[data-panel-item]:focus-visible]:outline-brass"
     >
       <StatusMark tone={mark.tone} pending={mark.pending} />
-      <span className="font-semibold">{app.displayName}</span>
-      <span className="min-w-0 truncate text-muted-foreground/70">{app.domains[0] ?? ""}</span>
-      <span className="ml-auto shrink-0 text-[12.5px] text-muted-foreground/70">
+      <EntityLink href={appHref(app.name)} className="shrink-0 font-semibold">
+        {app.displayName}
+      </EntityLink>
+      {app.domains[0] && <DomainLink domain={app.domains[0]} className="min-w-0 text-muted-foreground/70 hover:text-foreground" />}
+      <button
+        type="button"
+        data-panel-item={app.name}
+        aria-label={`Show ${app.displayName} in the list`}
+        className="ml-auto min-w-0 flex-1 cursor-pointer text-right text-[12.5px] text-muted-foreground/70 outline-none"
+      >
         {right ?? (app.containerStartedAt ? <Since since={new Date(app.containerStartedAt).toISOString()} /> : null)}
-      </span>
+      </button>
     </div>
   );
 }
@@ -261,10 +230,6 @@ function SlimItem({ loc, ctx, right }: { loc: Located; ctx: PanelContext; right?
 /** The list a page stat opens. */
 export function PanelList({ panel, ctx }: { panel: PanelKey; ctx: PanelContext }) {
   switch (panel) {
-    case "attention":
-      return <IssuesBody ctx={ctx} />;
-    case "backups":
-      return <IssuesBody ctx={ctx} only="backups" />;
     case "deploying":
       return <DeployingBody ctx={ctx} />;
     case "running":
@@ -354,7 +319,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           <FixActions loc={loc} problem={p} ctx={ctx} primary />
         ) : app.status === "deploying" ? (
           <Button asChild size="sm">
-            <Link href={`/apps/${app.name}/deployments`}>View deploy</Link>
+            <Link href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}>View deploy</Link>
           </Button>
         ) : (
           <FixButton
@@ -367,7 +332,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
         )}
         {p?.look.label !== "View logs" && (
           <Button asChild size="sm" variant="ghost">
-            <Link href={`/apps/${app.name}/logs`}>Logs</Link>
+            <Link href={appHref(app.name, "logs")}>Logs</Link>
           </Button>
         )}
         <RowMenu node={node} ctx={ctx} />
@@ -412,36 +377,65 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
       <dl className="grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
         <dt className="text-muted-foreground">Image</dt>
         <dd className="font-mono text-xs [overflow-wrap:anywhere]">
-          {app.imageName ?? (app.services.length ? `compose · ${app.services.length} services` : app.gitUrl ? "built from source" : "—")}
+          {app.imageName ? (
+            (() => {
+              const url = imageUrl(app.imageName);
+              return url ? (
+                <a href={url} target="_blank" rel="noreferrer" title="Open the registry page" className={entityLinkClass}>
+                  {app.imageName}
+                </a>
+              ) : (
+                app.imageName
+              );
+            })()
+          ) : app.services.length ? (
+            <EntityLink href={appHref(app.name, "services")}>compose · {app.services.length} services</EntityLink>
+          ) : app.gitUrl ? (
+            <EntityLink href={appHref(app.name, "build")}>built from source</EntityLink>
+          ) : (
+            "—"
+          )}
         </dd>
         {app.domains[0] && (
           <>
             <dt className="text-muted-foreground">Domain</dt>
-            <dd className="[overflow-wrap:anywhere]">{app.domains[0]}</dd>
+            <dd className="flex min-w-0 items-center gap-1">
+              <DomainLink domain={app.domains[0]} />
+              <CopyButton value={siteUrl(app.domains[0])} label={`Copy ${app.domains[0]}`} />
+              {app.domains.length > 1 && (
+                <EntityLink href={appHref(app.name, "networking")} className="text-muted-foreground hover:text-foreground">
+                  +{app.domains.length - 1}
+                </EntityLink>
+              )}
+            </dd>
           </>
         )}
         <dt className="text-muted-foreground">Deployed</dt>
         <dd>
           {app.deployments[0] ? (
-            <span className="inline-flex items-baseline gap-1.5">
+            <EntityLink href={deployHref(app.name, app.deployments[0].id)} className="inline-flex items-baseline gap-1.5">
               {app.deployments[0].gitSha && <span className="font-mono text-xs">{app.deployments[0].gitSha.slice(0, 7)}</span>}
               <RelativeTime date={app.deployments[0].startedAt} className="text-muted-foreground" />
-            </span>
+            </EntityLink>
           ) : node.relation === "service" && node.parent ? (
-            `with ${node.parent.displayName}`
+            <>
+              with <EntityLink href={appHref(node.parent.name, "deployments")}>{node.parent.displayName}</EntityLink>
+            </>
           ) : (
             "—"
           )}
         </dd>
         <dt className="text-muted-foreground">Backups</dt>
         <dd>
-          {app.lastBackupAt ? (
-            <span className="text-muted-foreground">
-              last good <RelativeTime date={app.lastBackupAt} />
-            </span>
-          ) : (
-            <span className="text-muted-foreground/70">none on record</span>
-          )}
+          <EntityLink href={appHref(app.name, "backups")} className={app.lastBackupAt ? "text-muted-foreground hover:text-foreground" : "text-muted-foreground/70 hover:text-foreground"}>
+            {app.lastBackupAt ? (
+              <>
+                last good <RelativeTime date={app.lastBackupAt} />
+              </>
+            ) : (
+              "none on record"
+            )}
+          </EntityLink>
         </dd>
         <dt className="text-muted-foreground">Kind</dt>
         <dd>{SERVICE_KIND_LABEL[app.kind]}</dd>
@@ -459,18 +453,23 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
             {related.map((r) => {
               const m = statusMarkTone(markSubject(r.node));
               return (
-                <button
+                <div
                   key={`${r.label}-${r.node.app.id}`}
-                  type="button"
-                  data-panel-item={r.node.app.name}
                   onClick={() => ctx.jump(r.node.app.name)}
-                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[13px] hover:bg-accent"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[13px] hover:bg-accent has-[[data-panel-item]:focus-visible]:bg-accent"
                 >
                   <span className="w-16 shrink-0 text-[12.5px] text-muted-foreground/70">{r.label}</span>
                   <StatusMark tone={m.tone} pending={m.pending} />
-                  <span>{r.node.app.displayName}</span>
-                  <span className="ml-auto text-[12.5px] text-muted-foreground/70">{r.note}</span>
-                </button>
+                  <EntityLink href={appHref(r.node.app.name)}>{r.node.app.displayName}</EntityLink>
+                  <button
+                    type="button"
+                    data-panel-item={r.node.app.name}
+                    aria-label={`Show ${r.node.app.displayName} here`}
+                    className="ml-auto min-w-0 flex-1 cursor-pointer text-right text-[12.5px] text-muted-foreground/70 outline-none"
+                  >
+                    {r.note}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -481,7 +480,11 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
         <PanelSection title="Deploys">
           <div className="grid text-[13px]">
             {app.deployments.map((d, i) => (
-              <div key={d.id} className="flex items-center gap-2.5 py-1">
+              <Link
+                key={d.id}
+                href={deployHref(app.name, d.id)}
+                className="-mx-1.5 flex items-center gap-2.5 rounded-md px-1.5 py-1 outline-none hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
+              >
                 {deployMark(d.status)}
                 <span className="font-mono text-xs">{d.gitSha ? d.gitSha.slice(0, 7) : d.trigger ?? "deploy"}</span>
                 <RelativeTime date={d.startedAt} className="text-muted-foreground" />
@@ -496,16 +499,21 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
                 >
                   {d.status === "success" ? (i === 0 ? "live" : "") : d.status.replace("_", " ")}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </PanelSection>
       )}
-
-      <Link href={`/apps/${app.name}`} className="w-fit text-[13px] text-muted-foreground hover:text-foreground">
-        Open app page →
-      </Link>
     </>
+  );
+}
+
+/** The drawer header's way out to the full page. */
+export function OpenAppLink({ name }: { name: string }) {
+  return (
+    <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
+      <Link href={appHref(name)}>Open app →</Link>
+    </Button>
   );
 }
 

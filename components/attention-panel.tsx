@@ -6,6 +6,7 @@ import { ChevronDown } from "lucide-react";
 import { isInlineRow, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
 import { formatSpan } from "@/lib/ui/relative-time";
 import { AttentionActionLink } from "./attention-action";
+import { cn } from "@/lib/utils";
 
 const DOT: Record<AttentionTone, string> = {
   error: "bg-status-error",
@@ -26,12 +27,17 @@ const LABEL_WIDTH = "sm:w-40";
 const LABEL_COL = `w-full shrink-0 ${LABEL_WIDTH}`;
 
 /** The rows behind the attention bar. Long rows collapse. */
-export function AttentionRowList({ rows }: { rows: AttentionRow[] }) {
+export function AttentionRowList({ rows, highlight = null }: { rows: AttentionRow[]; highlight?: string | null }) {
+  const mark = (key: string) => (key === highlight ? "rounded-lg bg-brass-muted" : undefined);
   return (
     <div className="divide-y">
       {rows.map((row) =>
         isInlineRow(row) ? (
-          <div key={row.key} className="flex flex-wrap items-start gap-x-2 gap-y-1 px-3 py-2">
+          <div
+            key={row.key}
+            data-attention-target={row.key}
+            className={cn("flex scroll-mt-4 flex-wrap items-start gap-x-2 gap-y-1 px-3 py-2", mark(row.key))}
+          >
             <span className={`${LABEL_COL} flex items-center gap-2 ${LABEL[row.tone]}`}>
               <Dot tone={row.tone} />
               {row.label}
@@ -39,7 +45,12 @@ export function AttentionRowList({ rows }: { rows: AttentionRow[] }) {
             <Subjects row={row} />
           </div>
         ) : (
-          <details key={row.key} className="group">
+          <details
+            key={row.key}
+            data-attention-target={row.key}
+            open={row.key === highlight || undefined}
+            className={cn("group scroll-mt-4", mark(row.key))}
+          >
             <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
               <Dot tone={row.tone} />
               <span className={LABEL[row.tone]}>{row.label}</span>

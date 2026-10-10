@@ -9,6 +9,7 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
+import { AttentionProvider } from "@/components/attention-provider";
 import { CapabilitiesProvider } from "@/components/capabilities-provider";
 import { capabilitiesFor } from "@/lib/auth/permissions";
 import { isAppAdmin } from "@/lib/auth/admin";
@@ -63,37 +64,39 @@ export default async function AppLayout({
   return (
     <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership, { instanceAdmin })}>
       <TooltipProvider>
-        <div className="min-h-dvh flex flex-col bg-background">
-          <div className="sticky top-0 z-40 bg-sidebar">
-            <TopNav
-              currentOrgId={organization.id}
-              organizations={organizations}
-              teamsEnabled={teamsEnabled}
-              activityEnabled={activityEnabled}
-              cronEnabled={cronEnabled}
-            />
-            <AttentionBar orgId={organization.id} />
+        <AttentionProvider orgId={organization.id}>
+          <div className="min-h-dvh flex flex-col bg-background">
+            <div className="sticky top-0 z-40 bg-sidebar">
+              <TopNav
+                currentOrgId={organization.id}
+                organizations={organizations}
+                teamsEnabled={teamsEnabled}
+                activityEnabled={activityEnabled}
+                cronEnabled={cronEnabled}
+              />
+              <AttentionBar />
+            </div>
+
+            <main className="flex-1">
+              <section className="py-10 sm:py-14">
+                <div className="container">
+                  {children}
+                </div>
+              </section>
+            </main>
+
+            <SessionFooter />
           </div>
 
-          <main className="flex-1">
-            <section className="py-10 sm:py-14">
-              <div className="container">
-                {children}
-              </div>
-            </section>
-          </main>
-
-          <SessionFooter />
-        </div>
-
-        <CommandPalette
-          orgId={organization.id}
-          teamsEnabled={teamsEnabled}
-          activityEnabled={activityEnabled}
-          cronEnabled={cronEnabled}
-        />
-        <KeyboardShortcuts />
-        <NotificationListener orgId={organization.id} canLinkToAdmin={instanceAdmin} />
+          <CommandPalette
+            orgId={organization.id}
+            teamsEnabled={teamsEnabled}
+            activityEnabled={activityEnabled}
+            cronEnabled={cronEnabled}
+          />
+          <KeyboardShortcuts />
+          <NotificationListener orgId={organization.id} canLinkToAdmin={instanceAdmin} />
+        </AttentionProvider>
       </TooltipProvider>
     </CapabilitiesProvider>
   );

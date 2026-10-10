@@ -33,7 +33,12 @@ import {
 import { cn } from "@/lib/utils";
 import { ProjectList, usageOf, type ListContext } from "./project-list";
 import { useImageUpdates } from "./updates-banner";
-import { AppDetail, BackLink, PanelList, type PanelContext } from "./projects-panel";
+import { AppDetail, BackLink, OpenAppLink, PanelList, Where, type PanelContext } from "./projects-panel";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
+import { useAttention, useAttentionTarget } from "@/components/attention-provider";
+import { ATTENTION_PANEL_ID } from "@/components/layout/attention-bar";
+import { sameTarget, type AttentionTarget } from "@/lib/ui/attention";
 
 // Container state can change outside Vardo; the reconciler polls every 60s, so faster gains nothing.
 const REFRESH_MS = 60_000;
@@ -93,7 +98,9 @@ export function ProjectsView({
   const [keysOpen, setKeysOpen] = useState(false);
 
   const { metrics, history, cpuCount } = useAppMetrics(orgId);
-  const { busy, handled, run } = useFixRunner(orgId);
+  const attention = useAttention();
+  const { target: attentionTarget, toggle: toggleAttention } = useAttentionTarget();
+  const { busy, run } = useFixRunner(orgId);
   const updates = useImageUpdates(orgId);
   const updatesByApp = useMemo(() => new Map((updates?.appsWithUpdates ?? []).map((a) => [a.id, a.count])), [updates]);
 
@@ -263,7 +270,7 @@ export function ProjectsView({
         e.preventDefault();
         return searchRef.current?.focus();
       }
-      if (e.key === "a") return openPanel("attention");
+      if (e.key === "a") return toggleAttention("all");
       if (e.key === "d") return setDensity(dense ? "comfortable" : "dense");
 
       const active = document.activeElement as HTMLElement | null;
@@ -315,6 +322,14 @@ export function ProjectsView({
         const parentKey = path.length > 1 ? path[path.length - 2] : loc ? `project:${loc.project.id}` : null;
         return focusRow(listRef.current, parentKey ? rows.find((r) => r.dataset.nav === parentKey) ?? null : null);
       }
+      if (e.key === "Enter" && e.shiftKey) {
+        if (active !== current) return;
+        e.preventDefault();
+        // Dense rows are links themselves.
+        const link = current.matches("a[href]") ? current : current.querySelector<HTMLElement>("[data-row-link]");
+        if (link instanceof HTMLAnchorElement) return router.push(link.getAttribute("href")!);
+        return;
+      }
       if (e.key === "Enter" || e.key === " " || e.key === "o") {
         if (active !== current) return;
         e.preventDefault();
@@ -330,7 +345,7 @@ export function ProjectsView({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, sections, selected, setDensity, toggleApp, toggleProject]);
+  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, router, sections, selected, setDensity, toggleApp, toggleAttention, toggleProject]);
 
   // --- Render ---------------------------------------------------------------
 
@@ -354,7 +369,7 @@ export function ProjectsView({
     matches,
   };
 
-  const panelCtx: PanelContext = { orgId, sections, selected, busy, handled, run, jump, open: openApp, metrics, history, cpuCount };
+  const panelCtx: PanelContext = { orgId, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
 
   const usage = sections
     .flatMap((s) => s.nodes)
@@ -364,8 +379,7 @@ export function ProjectsView({
   const memory = usage.reduce((n, u) => n + u.memory, 0);
 
   const loc = selected ? locate(sections, selected) : null;
-  const open = !!(panel || loc);
-  const attentionTone = counts.critical ? "text-status-error" : counts.attention ? "text-status-warning" : undefined;
+  const open = !!(panel || loc || attentionTarget);
 
   const stat = (key: PanelKey, value: ReactNode, label: string, tone?: string, unit?: ReactNode) => (
     <StatFilter
@@ -380,18 +394,43 @@ export function ProjectsView({
     />
   );
 
+  // Problems and routine notices open the shared attention panel, the same one the bar opens.
+  const routine = attention.summary;
+  const backups = new Set(routine.routine.find((g) => g.key === "backups")?.items.map((i) => i.subject)).size;
+  const infoCount = (key: string) => routine.info.find((r) => r.key === key)?.items.length ?? 0;
+  const updateCount = infoCount("image-updates");
+  const unlimited = infoCount("no-memory-limit");
+  const attentionStat = (t: AttentionTarget, value: number, label: string, tone?: string) => {
+    const key = typeof t === "string" ? t : t.group;
+    return (
+      <StatFilter
+        id={`stat-attention-${key}`}
+        trigger={key}
+        value={value}
+        label={label}
+        tone={tone}
+        pressed={sameTarget(attentionTarget, t)}
+        controls={ATTENTION_PANEL_ID}
+        onPress={() => toggleAttention(t)}
+      />
+    );
+  };
+
   return (
     <div
       data-density={density}
       data-healthy={dense ? undefined : "quiet"}
       className={cn("grid gap-(--section-gap)", open && DETAIL_PANEL_GUTTER)}
     >
-      <StatGroup label="Open a list" active={!!panel}>
+      <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
         {stat("running", counts.running, "apps running", undefined, `of ${counts.apps}`)}
-        {stat("attention", counts.attention, counts.attention === 1 ? "needs attention" : "need attention", attentionTone)}
+        {attention.loaded &&
+          attentionStat("all", routine.routineFaults, routine.routineFaults === 1 ? "needs attention" : "need attention", routine.routineFaults ? "text-status-warning" : undefined)}
         {counts.deploying > 0 && stat("deploying", counts.deploying, "deploying now", "text-status-info")}
         {counts.stopped > 0 && stat("stopped", counts.stopped, "stopped")}
-        {counts.backupsOverdue > 0 && stat("backups", counts.backupsOverdue, "backups overdue", "text-status-warning")}
+        {backups > 0 && attentionStat({ group: "backups" }, backups, backups === 1 ? "backup needs a look" : "backups need a look", "text-status-warning")}
+        {updateCount > 0 && attentionStat({ group: "image-updates" }, updateCount, updateCount === 1 ? "image update" : "image updates")}
+        {unlimited > 0 && attentionStat({ group: "no-memory-limit" }, unlimited, "without a memory limit")}
         {usage.length > 0 && (
           <>
             <Stat value={formatCoresShort(cpu)} unit={cpuCount ? `of ${cpuCount} cores` : "cores"} label="CPU in use" />
@@ -473,14 +512,23 @@ export function ProjectsView({
             <>
               {panel && <BackLink panel={panel} onBack={back} />}
               <div className="text-[12.5px] text-muted-foreground">
-                {[loc.project.displayName, loc.node.parent?.displayName].filter(Boolean).join(" / ")}
+                <Where loc={loc} />
               </div>
             </>
           ) : (
             <div className="text-[12.5px] text-muted-foreground">Projects</div>
           )
         }
-        title={loc ? loc.node.app.displayName : panel ? PANEL_TITLE[panel] : ""}
+        title={
+          loc ? (
+            <EntityLink href={appHref(loc.node.app.name)}>{loc.node.app.displayName}</EntityLink>
+          ) : panel ? (
+            PANEL_TITLE[panel]
+          ) : (
+            ""
+          )
+        }
+        actions={loc ? <OpenAppLink name={loc.node.app.name} /> : undefined}
       >
         <div id={PANEL_ID} data-healthy="quiet" className="grid gap-5.5">
           {loc ? <AppDetail loc={loc} ctx={panelCtx} /> : panel ? <PanelList panel={panel} ctx={panelCtx} /> : null}
@@ -502,6 +550,9 @@ function KeysHelp() {
       </span>
       <span>
         <kbd className={k}>Enter</kbd> to open details, <kbd className={k}>.</kbd> for actions
+      </span>
+      <span>
+        <kbd className={k}>Shift</kbd> <kbd className={k}>Enter</kbd> to go to the app or project page
       </span>
       <span>
         <kbd className={k}>/</kbd> to filter, <kbd className={k}>Esc</kbd> to close

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import { AppRow } from "@/components/app-row";
+import { DomainLink, EntityLink } from "@/components/entity-link";
+import { appHref, deployHref, projectHref } from "@/lib/ui/hrefs";
 import { ListRow } from "@/components/list-row";
 import { SectionHeader, SectionNumber } from "@/components/section-header";
 import { SystemBadge } from "@/components/system-badge";
@@ -94,17 +96,25 @@ function Uptime({ since }: { since: Date | string }) {
   return text ? <>up {text}</> : null;
 }
 
-function signalOf(node: TreeNode, expanded: boolean | undefined): string {
+function signalOf(node: TreeNode, expanded: boolean | undefined): ReactNode {
   const app = node.app;
   const parentDomain = node.parent?.domains[0];
   const domain = app.domains[0] && app.domains[0] !== parentDomain ? app.domains[0] : null;
   const image = app.imageName ? sourceRef(app)?.replace(/^.*\//, "") : app.gitUrl ? "built from source" : null;
-  const bits = [domain ?? image ?? ""];
+  const bits: string[] = [];
+  if (!domain && image) bits.push(image);
   if (node.relation === "dependency") bits.push("dependency");
   if (expanded === false && node.children.length) {
     bits.push(app.services.length ? `${app.services.length} services` : `${node.children.length} linked`);
   }
-  return bits.filter(Boolean).join(" · ");
+  const rest = bits.join(" · ");
+  if (!domain) return rest;
+  return (
+    <>
+      <DomainLink domain={domain} tabIndex={-1} className="max-w-full align-bottom hover:text-foreground" />
+      {rest && ` · ${rest}`}
+    </>
+  );
 }
 
 function toneClass(p: Problem) {
@@ -191,6 +201,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
               mark={statusMarkTone(markSubject(node))}
               name={app.displayName}
               nameTitle={app.name}
+              href={appHref(app.name)}
               signal={signalOf(node, expanded)}
               status={status}
               action={
@@ -309,8 +320,10 @@ function SectionNumbers({ section, ctx }: { section: Section; ctx: ListContext }
       {s.deploying > 0 && <SectionNumber tone="text-status-info">{s.deploying} deploying</SectionNumber>}
       {s.latestDeploy && s.latestDeploy.status !== "running" && s.latestDeploy.status !== "queued" && (
         <SectionNumber optional tone={s.latestDeploy.status === "failed" ? "text-status-error" : undefined}>
-          {s.latestDeploy.status === "failed" ? "deploy failed" : "deployed"}{" "}
-          <RelativeTime date={s.latestDeploy.startedAt} className="font-medium tabular-nums" />
+          <EntityLink href={deployHref(s.latestDeploy.appName, s.latestDeploy.id)} className="hover:text-foreground">
+            {s.latestDeploy.status === "failed" ? "deploy failed" : "deployed"}{" "}
+            <RelativeTime date={s.latestDeploy.startedAt} className="font-medium tabular-nums" />
+          </EntityLink>
         </SectionNumber>
       )}
       {s.backups > 0 && (
@@ -351,6 +364,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
             <SectionHeader
               navKey={`project:${project.id}`}
               title={project.displayName}
+              href={projectHref(project.name)}
               badge={project.isSystemManaged ? <SystemBadge compact className="shrink-0" /> : undefined}
               expanded={open}
               onToggle={() => ctx.toggleProject(project.id)}

@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 
 import {
   announceAttention,
-  attentionPanelGroup,
   attentionPanelKey,
+  attentionPanelTarget,
+  sameTarget,
   conditionRows,
   groupAttention,
   isInlineRow,
@@ -358,13 +359,26 @@ describe("announceAttention", () => {
 
 describe("attention panel keys", () => {
   it("round-trips a group through ?panel=", () => {
-    expect(attentionPanelGroup(attentionPanelKey("backups"))).toBe("backups");
+    expect(attentionPanelTarget(attentionPanelKey({ group: "backups" }))).toEqual({ group: "backups" });
+  });
+
+  it("round-trips everything and the informational rows", () => {
+    expect(attentionPanelTarget(attentionPanelKey("all"))).toBe("all");
+    expect(attentionPanelTarget(attentionPanelKey("info"))).toBe("info");
   });
 
   // The Projects page's own panels share the parameter and must not open this one.
   it("ignores another page's panel", () => {
-    expect(attentionPanelGroup("backups")).toBeNull();
-    expect(attentionPanelGroup("attention")).toBeNull();
-    expect(attentionPanelGroup(null)).toBeNull();
+    expect(attentionPanelTarget("backups")).toBeNull();
+    expect(attentionPanelTarget("attention")).toBeNull();
+    expect(attentionPanelTarget("attention-")).toBeNull();
+    expect(attentionPanelTarget(null)).toBeNull();
+  });
+
+  it("compares targets by what they open", () => {
+    expect(sameTarget({ group: "crash" }, { group: "crash" })).toBe(true);
+    expect(sameTarget({ group: "crash" }, "all")).toBe(false);
+    expect(sameTarget(null, null)).toBe(true);
+    expect(sameTarget("info", null)).toBe(false);
   });
 });

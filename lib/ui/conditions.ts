@@ -121,6 +121,7 @@ export type ProblemGroup =
   | "vardo"
   | "crash"
   | "failed"
+  | "anomaly"
   | "missing"
   | "domains"
   | "health"
@@ -179,6 +180,11 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
   vardo: { title: "Vardo", why: "Vardo's own stack and the services it runs on.", bulk: null },
   crash: { title: "Crash looping", why: "Restarting over and over. The logs usually say why.", bulk: null },
   failed: { title: "Failed or crashed", why: "The last deploy or the running container failed.", bulk: "Retry" },
+  anomaly: {
+    title: "Unusual activity",
+    why: "Far outside its own normal for this time of day. Check logs, recent deploys and processes.",
+    bulk: null,
+  },
   missing: {
     title: "No container",
     why: "Vardo expects these to run, but Docker has no container for them.",
@@ -203,6 +209,7 @@ export const PROBLEM_GROUP_ORDER: ProblemGroup[] = [
   "vardo",
   "crash",
   "failed",
+  "anomaly",
   "missing",
   "domains",
   "health",

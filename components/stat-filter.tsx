@@ -42,6 +42,7 @@ export function StatFilter({
   tone,
   pressed,
   controls,
+  trigger,
   onPress,
 }: {
   id?: string;
@@ -54,6 +55,8 @@ export function StatFilter({
   pressed: boolean;
   /** Id of what it opens. */
   controls?: string;
+  /** Names it to the attention panel, which returns focus here on close. */
+  trigger?: string;
   onPress: () => void;
 }) {
   return (
@@ -63,6 +66,7 @@ export function StatFilter({
       aria-pressed={pressed}
       aria-controls={controls}
       data-pressed={pressed}
+      data-attention-trigger={trigger}
       onClick={onPress}
       className={cn(
         CELL,

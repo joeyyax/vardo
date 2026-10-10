@@ -8,6 +8,7 @@ import {
   type ProblemGroup,
 } from "@/lib/ui/conditions";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
+import { conditionUrgent, URGENT_ROW_KEYS } from "@/lib/ui/urgency";
 
 /** "activity" is routine work in progress, not a problem. */
 export type AttentionTone = "error" | "warning" | "neutral" | "activity";
@@ -37,7 +38,11 @@ export type AttentionItem = {
   group?: ProblemGroup;
   /** Project, and parent when nested. */
   where?: string;
+  /** The project page. */
+  whereHref?: string;
   fix?: AttentionFix;
+  /** Broken right now and needs a person. Set through lib/ui/urgency. */
+  urgent?: boolean;
 };
 
 /** Serializable; rows cross the API boundary, so no ReactNode. */
@@ -79,6 +84,15 @@ export function presentRows(rows: AttentionRow[]): AttentionRow[] {
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
 }
 
+/** Nothing about an app stopped on purpose is urgent, whichever source reported it. */
+export function calmQuietSubjects(rows: AttentionRow[], quiet: ReadonlySet<string>): AttentionRow[] {
+  if (quiet.size === 0) return rows;
+  return rows.map((row) => ({
+    ...row,
+    items: row.items.map((item) => (quiet.has(subjectOf(item)) ? { ...item, urgent: false } : item)),
+  }));
+}
+
 /** Instance rows, then org rows minus subjects the instance already reported. */
 export function mergeAttentionRows(
   instanceRows: AttentionRow[],
@@ -106,9 +120,11 @@ export type GroupedItem = {
   href?: string;
   external?: boolean;
   where?: string;
+  whereHref?: string;
   fix?: AttentionFix;
   /** Other problems reported for the same subject. */
   also: string[];
+  urgent: boolean;
 };
 
 export type AttentionGroup = {
@@ -131,6 +147,12 @@ function groupRank(key: string): number {
 }
 
 const time = (iso?: string) => (iso ? Date.parse(iso) : Infinity);
+
+/** Urgent when its producer said so, or when it is an error on a row that is urgent by kind. */
+function isUrgentItem(row: AttentionRow, item: AttentionItem): boolean {
+  if (item.urgent !== undefined) return item.urgent;
+  return !!URGENT_ROW_KEYS[row.key] && (item.tone ?? row.tone) === "error";
+}
 
 /** Problem rows folded into one group per kind and one item per subject, worst group first. */
 export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
@@ -158,8 +180,10 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
         href: item.href,
         external: item.external,
         where: item.where,
+        whereHref: item.whereHref,
         fix: item.fix,
         also: [],
+        urgent: isUrgentItem(row, item),
       };
       const held = group.items.get(next.subject);
       if (!held) {
@@ -172,8 +196,10 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
       group.items.set(next.subject, {
         ...lead,
         where: lead.where ?? other.where,
+        whereHref: lead.whereHref ?? other.whereHref,
         fix: lead.fix ?? other.fix,
         also,
+        urgent: lead.urgent || other.urgent,
       });
     }
   }
@@ -200,41 +226,85 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
 
 const PANEL_PREFIX = "attention-";
 
-/** The ?panel= value that opens the triage panel on one group. */
-export function attentionPanelKey(group: string): string {
-  return PANEL_PREFIX + group;
+/** What the panel opens on: everything, one group scrolled into view, or the informational rows. */
+export type AttentionTarget = "all" | "info" | { group: string };
+
+/** The ?panel= value that opens the panel on a target. */
+export function attentionPanelKey(target: AttentionTarget): string {
+  return PANEL_PREFIX + (typeof target === "string" ? target : target.group);
 }
 
-/** The group a ?panel= value opens, or null when it names another panel. */
-export function attentionPanelGroup(panel: string | null): string | null {
-  return panel?.startsWith(PANEL_PREFIX) ? panel.slice(PANEL_PREFIX.length) || null : null;
+/** The target a ?panel= value opens, or null when it names another panel. */
+export function attentionPanelTarget(panel: string | null): AttentionTarget | null {
+  const rest = panel?.startsWith(PANEL_PREFIX) ? panel.slice(PANEL_PREFIX.length) : "";
+  if (!rest) return null;
+  return rest === "all" || rest === "info" ? rest : { group: rest };
+}
+
+/** Whether two targets open the same thing. */
+export function sameTarget(a: AttentionTarget | null, b: AttentionTarget | null): boolean {
+  if (!a || !b) return a === b;
+  return attentionPanelKey(a) === attentionPanelKey(b);
 }
 
 export type BarSummary = {
   /** Problems, one group per kind, worst first. */
   groups: AttentionGroup[];
+  /** The urgent items of each group. The only thing the global bar shows. */
+  urgent: AttentionGroup[];
+  /** The rest of each group. The Projects stats carry these. */
+  routine: AttentionGroup[];
   /** Updates, inventory and work in progress. Never counted as problems. */
   info: AttentionRow[];
   /** Distinct subjects with a problem. */
   faults: number;
+  /** Distinct subjects with an urgent problem. */
+  urgentFaults: number;
+  /** Distinct subjects with problems, none of them urgent. */
+  routineFaults: number;
   worst: AttentionTone | null;
 };
 
-/** What the bar shows: problem groups, then the informational rows. */
+function narrow(groups: AttentionGroup[], keep: (i: GroupedItem) => boolean): AttentionGroup[] {
+  return groups
+    .map((g) => {
+      const items = g.items.filter(keep);
+      return { ...g, items, tone: items.some((i) => i.tone === "error") ? ("error" as const) : ("warning" as const) };
+    })
+    .filter((g) => g.items.length > 0);
+}
+
+const subjects = (groups: AttentionGroup[]) => new Set(groups.flatMap((g) => g.items.map((i) => i.subject)));
+
+/** Problem groups split into urgent and routine, then the informational rows. */
 export function summarize(rows: AttentionRow[]): BarSummary {
   const groups = groupAttention(rows);
   const info = presentRows(rows.filter((r) => !isProblemRow(r)));
-  const faults = new Set(groups.flatMap((g) => g.items.map((i) => i.subject))).size;
-  return { groups, info, faults, worst: groups[0]?.tone ?? info[0]?.tone ?? null };
+  const urgent = narrow(groups, (i) => i.urgent);
+  const routine = narrow(groups, (i) => !i.urgent);
+  const urgentSubjects = subjects(urgent);
+  return {
+    groups,
+    urgent,
+    routine,
+    info,
+    faults: subjects(groups).size,
+    urgentFaults: urgentSubjects.size,
+    routineFaults: [...subjects(routine)].filter((s) => !urgentSubjects.has(s)).length,
+    worst: groups[0]?.tone ?? info[0]?.tone ?? null,
+  };
 }
 
-/** One sentence per group, then per informational row, for screen readers. */
+/** The bar renders only for something broken right now. */
+export function showsBar(summary: Pick<BarSummary, "urgent">): boolean {
+  return summary.urgent.length > 0;
+}
+
+/** One sentence per urgent group, for screen readers. Routine changes stay quiet. */
 export function announceAttention(rows: AttentionRow[]): string {
-  const { groups, info } = summarize(rows);
-  return [
-    ...groups.map((g) => ({ label: g.title, names: g.items.map((i) => i.name) })),
-    ...info.map((r) => ({ label: r.label, names: r.items.map((i) => i.name) })),
-  ]
+  const { urgent } = summarize(rows);
+  return urgent
+    .map((g) => ({ label: g.title, names: g.items.map((i) => i.name) }))
     .map(({ label, names }) => (names.length ? `${label}: ${names.join(", ")}.` : `${label}.`))
     .join(" ");
 }
@@ -251,6 +321,9 @@ type ConditionSubject = {
   name: string;
   displayName: string;
   conditions: AppCondition[] | null;
+  /** Absent reads as running. */
+  status?: string;
+  parked?: boolean;
 };
 
 /** One row per problem group across the fleet, each item titled by its own condition. */
@@ -278,6 +351,7 @@ export function conditionRows(apps: ConditionSubject[]): AttentionRow[] {
         detail: p.detail,
         since: condition.since,
         fix: attentionFix(p.fix, app),
+        urgent: conditionUrgent(condition, { parked: app.parked, status: app.status ?? "active" }),
       });
       byGroup.set(p.group, row);
     }

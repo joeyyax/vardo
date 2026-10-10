@@ -1,10 +1,20 @@
 import "server-only";
 
-import { and, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backupJobVolumes, backups, projects, volumes } from "@/lib/db/schema";
+import {
+  apps,
+  backupJobApps,
+  backupJobs,
+  backupJobVolumes,
+  backups,
+  deployments,
+  notificationSends,
+  projects,
+  volumes,
+} from "@/lib/db/schema";
 import { resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { isBackupSelected } from "@/lib/backups/durability";
 import { listUncoveredApps } from "@/lib/backups/enroll";
@@ -12,7 +22,10 @@ import { OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
-import { conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/lib/ui/attention";
+import { calmQuietSubjects, conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/lib/ui/attention";
+import { projectHref } from "@/lib/ui/hrefs";
+import { isQuiet } from "@/lib/ui/urgency";
+import { ANOMALY_ALERT_TYPES } from "@/lib/anomaly/pass";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { BACKUP_TITLE } from "@/lib/ui/conditions";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
@@ -36,6 +49,7 @@ import { backupCoverageRows, type SystemJobState } from "./backup-coverage-rows"
 import { standingBackupFailures } from "./backup-failures";
 import { errorRateRows } from "./error-rate-rows";
 import { getFleetAttention } from "./fleet";
+import { anomalyRows, deployFailureRows, DEPLOY_FAILURE_WINDOW_HOURS } from "./urgent-rows";
 
 /** A failure older than this is history, not something to act on now. */
 const BACKUP_FAILURE_WINDOW_HOURS = 48;
@@ -246,11 +260,51 @@ async function loadStatusSubjects(orgId: string) {
       conditions: apps.conditions,
       isSystemManaged: apps.isSystemManaged,
       projectName: projects.displayName,
+      projectSlug: projects.name,
     })
     .from(apps)
     .leftJoin(projects, eq(projects.id, apps.projectId))
     .where(eq(apps.organizationId, orgId));
   return rows.filter((a) => !isVardoManagedApp(a));
+}
+
+/** Each app's latest deploy, when it started inside the window. A newer deploy would be inside it too. */
+async function loadLatestDeploys(appIds: string[], now: number) {
+  if (appIds.length === 0) return [];
+  const since = new Date(now - DEPLOY_FAILURE_WINDOW_HOURS * 3_600_000);
+  const rows = await db
+    .select({
+      id: deployments.id,
+      appId: deployments.appId,
+      status: deployments.status,
+      gitSha: deployments.gitSha,
+      startedAt: deployments.startedAt,
+      finishedAt: deployments.finishedAt,
+    })
+    .from(deployments)
+    .where(and(inArray(deployments.appId, appIds), gte(deployments.startedAt, since)))
+    .orderBy(desc(deployments.startedAt));
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) if (!latest.has(row.appId)) latest.set(row.appId, row);
+  return [...latest.values()];
+}
+
+/** Anomaly alerts that fired and haven't cleared. */
+async function loadOpenAnomalies(orgId: string) {
+  const rows = await db
+    .select({ about: notificationSends.about, sentAt: notificationSends.sentAt, detail: notificationSends.detail })
+    .from(notificationSends)
+    .where(
+      and(
+        eq(notificationSends.organizationId, orgId),
+        inArray(notificationSends.type, ANOMALY_ALERT_TYPES),
+        isNull(notificationSends.clearedAt),
+      ),
+    );
+  return rows.map((r) => {
+    const detail = (r.detail ?? {}) as { appId?: string; title?: string };
+    return { about: r.about, appId: detail.appId ?? null, title: detail.title ?? "Unusual activity", sentAt: r.sentAt };
+  });
 }
 
 type BuildOptions = {
@@ -304,6 +358,8 @@ export async function buildAttentionRows(
     subjects,
     elevated,
     coverage,
+    latestDeploys,
+    anomalies,
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
@@ -316,9 +372,13 @@ export async function buildAttentionRows(
     loadStatusSubjects(orgId),
     getElevatedApps(),
     backupsEnabled ? loadBackupCoverage(orgId, isAppAdmin) : null,
+    loadLatestDeploys(appIds, Date.now()),
+    loadOpenAnomalies(orgId),
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
+  rows.push(...deployFailureRows(subjects, latestDeploys, Date.now()));
+  rows.push(...anomalyRows(subjects, anomalies));
   rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
   rows.push(...appStatusRows(subjects, Date.now(), APP_DOWN_WINDOW_HOURS * 3_600_000));
   rows.push(...appStoppedRows(subjects));
@@ -476,15 +536,23 @@ export async function buildAttentionRows(
 
   if (version) rows.push(version);
 
-  return withWhere(rows, subjects);
+  const quiet = new Set(subjects.filter(isQuiet).map((s) => s.id));
+  return calmQuietSubjects(withWhere(rows, subjects), quiet);
 }
 
 /** Names each app item's project, and parent when nested. */
 function withWhere(
   rows: AttentionRow[],
-  subjects: { id: string; parentAppId: string | null; displayName: string; projectName: string | null }[],
+  subjects: {
+    id: string;
+    parentAppId: string | null;
+    displayName: string;
+    projectName: string | null;
+    projectSlug: string | null;
+  }[],
 ): AttentionRow[] {
   const byId = new Map(subjects.map((s) => [s.id, s]));
+  const project = (id: string) => byId.get(id)?.projectSlug ?? undefined;
   const where = (id: string) => {
     const app = byId.get(id);
     if (!app) return undefined;
@@ -493,6 +561,13 @@ function withWhere(
   };
   return rows.map((row) => ({
     ...row,
-    items: row.items.map((item) => ({ ...item, where: item.where ?? where(item.subject ?? item.id) })),
+    items: row.items.map((item) => {
+      const slug = project(item.subject ?? item.id);
+      return {
+        ...item,
+        where: item.where ?? where(item.subject ?? item.id),
+        whereHref: item.whereHref ?? (slug ? projectHref(slug) : undefined),
+      };
+    }),
   }));
 }
