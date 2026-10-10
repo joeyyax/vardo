@@ -6,11 +6,28 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 type Entry = { key: string; payload: string };
 type Handler = (key: string, entry: { id: string; fields: Record<string, string> }) => Promise<void>;
 
-const { stream, send, consumer } = vi.hoisted(() => ({
+const { stream, send, consumer, shared } = vi.hoisted(() => ({
   stream: [] as Entry[],
   send: vi.fn(async () => {}),
   consumer: { handler: null as Handler | null, keys: [] as string[] },
+  // The Redis set every process's consumer keeps alive.
+  shared: new Set<string>(),
 }));
+
+vi.mock("@/lib/redis", () => {
+  const multi = () => {
+    const chain = {
+      sadd: (_key: string, ...ids: string[]) => {
+        for (const id of ids) shared.add(id);
+        return chain;
+      },
+      pexpire: () => chain,
+      exec: async () => [],
+    };
+    return chain;
+  };
+  return { redis: { multi, sismember: async (_key: string, id: string) => (shared.has(id) ? 1 : 0) } };
+});
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -86,6 +103,7 @@ async function drainStream() {
 
 beforeEach(() => {
   stream.length = 0;
+  shared.clear();
   send.mockClear();
 });
 
@@ -102,6 +120,24 @@ describe("notification dispatch", () => {
     await drainStream();
     await flush();
 
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves an org to another process's consumer instead of sending it directly too", async () => {
+    // A second console's consumer reads org-1; this process runs none.
+    shared.add("org-1");
+
+    emit("org-1", deploySuccess);
+    await flush();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(stream).toHaveLength(1);
+
+    // That consumer stopped and its claim lapsed: the direct hook delivers again.
+    shared.clear();
+    emit("org-1", deploySuccess);
+    await flush();
+    await flush();
     expect(send).toHaveBeenCalledTimes(1);
   });
 

@@ -22,11 +22,13 @@ import { isUiOnlyEvent } from "./ui-only";
 import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
 import { markConsumedOrgs, clearConsumedOrgs } from "./consumer-state";
 import { logger } from "@/lib/logger";
+import { instanceName } from "@/lib/worker/instance";
 
 const log = logger.child("notifications-consumer");
 
 const CONSUMER_GROUP = "notifications";
-const CONSUMER_NAME = `notifications-${process.pid}`;
+// Stable across restarts of one container, so it picks its own pending entries back up.
+const CONSUMER_NAME = `notifications-${instanceName()}`;
 
 /** Parse a stream entry back into an orgId + BusEvent. */
 function parseEventEntry(

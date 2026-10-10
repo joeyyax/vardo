@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
 import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
-import { isConsumedOrg } from "./consumer-state";
+import { isConsumedAnywhere, isConsumedOrg } from "./consumer-state";
 import type { DeliveryReceipt } from "./port";
 
 const log = logger.child("notifications");
@@ -74,6 +74,8 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 
   Promise.resolve().then(async () => {
     try {
+      // Another process's consumer delivers it from the stream.
+      if (await isConsumedAnywhere(orgId)) return;
       const channels = await db.query.notificationChannels.findMany({
         where: and(
           eq(notificationChannels.organizationId, orgId),
