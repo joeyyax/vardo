@@ -5,7 +5,8 @@ import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { getChannelUpdate } from "@/lib/version";
+import { getChannelUpdate, moreCommits } from "@/lib/version";
+import { shortSha } from "@/lib/email/format";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { effectiveChannel } from "@/lib/self-update/policy";
 import { getUpdatePolicy } from "@/lib/self-update/store";
@@ -282,8 +283,8 @@ export async function checkUpdateAlert(): Promise<void> {
     if (!shouldFire("update-available", channel)) return;
     markFired("update-available", channel);
 
-    const remoteHead = update.targetSha.slice(0, 8);
-    const localHead = update.localSha.slice(0, 8);
+    const remoteHead = shortSha(update.targetSha);
+    const localHead = shortSha(update.localSha);
     const selfDeploy = isSelfDeployLayout();
     await emitAll({
       type: "system.update-available",
@@ -297,6 +298,10 @@ export async function checkUpdateAlert(): Promise<void> {
       target: channel === "releases" ? update.targetLabel : undefined,
       commitsBehind: update.commitsBehind ?? undefined,
       selfDeploy,
+      commits: update.commits ?? [],
+      ...moreCommits(update.commitsBehind, update.commits?.length ?? 0),
+      changesUrl: channel === "releases" ? update.url : (update.compareUrl ?? update.url),
+      ...(update.releaseNotes ? { releaseNotes: update.releaseNotes } : {}),
     });
   } catch (err) {
     log.debug("Update check error:", err);

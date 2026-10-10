@@ -1,7 +1,35 @@
-import type { BusEvent } from "@/lib/bus/events";
-import { formatDuration } from "../format";
-import type { NotificationMailBody } from "./components";
+import type { BusEvent, UpdateChanges } from "@/lib/bus/events";
+import { formatDuration, plural, truncate } from "../format";
+import type { MailFact, MailLink, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
+
+/** Release-note lines an update email quotes. */
+const NOTE_LINES = 8;
+
+/** Release notes as plain lines: headings, bullets and emphasis stripped. */
+function noteLines(notes: string): string[] {
+  return notes
+    .split("\n")
+    .map((l) => l.replace(/^\s*(?:#+|[-*+]|\d+\.)\s+/, "").replace(/[*_`]+/g, "").trim())
+    .filter(Boolean)
+    .slice(0, NOTE_LINES)
+    .map((l) => truncate(l, 160));
+}
+
+/** "What's new": the newest commits, or the release notes, and the link to everything. */
+export function changeSections(changes: UpdateChanges): { sections: { title: string; facts: MailFact[] }[]; paragraphs: string[]; links: MailLink[] } {
+  const facts: MailFact[] = (changes.commits ?? []).map((c) => ({
+    label: c.sha,
+    value: `${truncate(c.subject, 100)}${c.author ? ` · ${c.author}` : ""}`,
+  }));
+  if (facts.length && changes.moreCommits) facts.push({ label: "", value: `and ${plural(changes.moreCommits, "more commit")}` });
+  const notes = !facts.length && changes.releaseNotes ? noteLines(changes.releaseNotes) : [];
+  return {
+    sections: facts.length ? [{ title: "What's new", facts }] : notes.length ? [{ title: "What's new", facts: notes.map((n) => ({ label: "", value: n })) }] : [],
+    paragraphs: [],
+    links: changes.changesUrl ? [{ label: "View all changes on GitHub", href: changes.changesUrl }] : [],
+  };
+}
 
 export type SystemAlertEvent = Extract<
   BusEvent,
@@ -69,23 +97,29 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         footer,
       };
     }
-    case "system.update-available":
+    case "system.update-available": {
+      const changes = changeSections(event);
+      const head = event.commits?.[0];
       return {
         tone: "info",
         status: "Update available",
         mark: "↑",
         heading: `A Vardo update is available for ${ctx.instanceName}`,
+        preheader: head ? head.subject : undefined,
         paragraphs: ["Update when it suits you. Deployed apps keep running during the update."],
         facts: [
           { label: "Running", value: event.localHead, mono: true },
           { label: "Latest", value: event.target ? `${event.target} (${event.remoteHead})` : event.remoteHead, mono: true },
-          ...(event.commitsBehind ? [{ label: "Behind", value: `${event.commitsBehind} commit${event.commitsBehind === 1 ? "" : "s"}` }] : []),
+          ...(event.commitsBehind ? [{ label: "Behind", value: plural(event.commitsBehind, "commit") }] : []),
         ],
+        sections: changes.sections,
         ...(event.selfDeploy
           ? { action: { label: "Update now", href: consolePage(ctx, "/admin/settings/maintenance?update=now#updates") } }
           : { command: { title: "Run on the host", text: "sudo vardo update" }, action: admin }),
+        links: changes.links,
         footer,
       };
+    }
     case "app.auto-restarted":
       return {
         tone: event.gaveUp || !event.success ? "fail" : "warn",

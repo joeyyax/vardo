@@ -1,7 +1,9 @@
-import type { BusEvent } from "@/lib/bus/events";
-import { formatDuration } from "../format";
+import type { BusEvent, UpdateChanges } from "@/lib/bus/events";
+import { formatDuration, truncate, versionShort } from "../format";
+import { timeLabel } from "./alerts";
 import type { MailFact, NotificationMailBody } from "./components";
 import { consolePage, footerFor, type MailContext } from "./context";
+import { changeSections } from "./system-alert";
 
 export type LifecycleEvent = Extract<
   BusEvent,
@@ -24,6 +26,13 @@ function seconds(s: number | undefined): string | undefined {
 
 function fact(label: string, value: string | undefined, mono = false): MailFact[] {
   return value ? [{ label, value, mono }] : [];
+}
+
+/** "bc2083d → 559e5b2 fix(x): the head commit", the commits in place of the package version. */
+function versionChange(from: string, to: string | undefined, changes: UpdateChanges): string {
+  const head = changes.commits?.[0]?.subject;
+  const target = to ? `${versionShort(to)}${head ? ` ${truncate(head, 80)}` : ""}` : undefined;
+  return target ? `${versionShort(from)} → ${target}` : versionShort(from);
 }
 
 function slots(from?: string, to?: string): string | undefined {
@@ -79,7 +88,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         ],
         facts: [
           ...fact("Down for", down ? `about ${down}` : undefined),
-          ...fact("Last heartbeat", event.lastHeartbeatAt),
+          ...fact("Last heartbeat", event.lastHeartbeatAt ? timeLabel(event.lastHeartbeatAt, ctx.timeZone) : undefined),
           { label: "Host rebooted", value: event.hostRebooted ? "Yes" : "No" },
           { label: "Version", value: event.version, mono: true },
         ],
@@ -93,30 +102,34 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         tone: "info",
         status: "Updating",
         mark: "↑",
-        heading: `Vardo is updating on ${host}`,
-        paragraphs: ["The console is briefly unavailable during the swap. Deployed apps keep running."],
+        heading: `Vardo is still updating on ${host}`,
+        paragraphs: ["The update has run for over 10 minutes. You'll get one more email when it finishes or fails. Deployed apps keep running."],
         facts: [
-          { label: "From", value: event.fromVersion, mono: true },
+          { label: "From", value: versionShort(event.fromVersion), mono: true },
           ...fact("Branch", event.branch, true),
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
         ],
         footer,
       };
-    case "system.updated":
+    case "system.updated": {
+      const changes = changeSections(event);
       return {
         tone: "success",
         status: "Updated",
         heading: `Vardo updated on ${host}`,
-        preheader: `${event.fromVersion} → ${event.toVersion}`,
+        preheader: versionChange(event.fromVersion, event.toVersion, event),
         facts: [
-          { label: "Version", value: `${event.fromVersion} → ${event.toVersion}`, mono: true },
+          { label: "Version", value: versionChange(event.fromVersion, event.toVersion, event) },
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
           ...fact("Took", seconds(event.durationSeconds)),
           ...fact("Console down", seconds(event.downSeconds)),
         ],
+        sections: changes.sections,
         action: admin,
+        links: changes.links,
         footer,
       };
+    }
     case "system.update-failed":
       return {
         tone: "fail",
@@ -124,16 +137,17 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         heading: `Vardo update failed on ${host} at ${event.step}`,
         preheader: event.error ?? event.message,
         paragraphs: [
-          event.rolledBack ? `The console rolled back and is running ${event.fromVersion}.` : `The console is still running ${event.fromVersion}.`,
+          event.rolledBack ? `The console rolled back and is running ${versionShort(event.fromVersion)}.` : `The console is still running ${versionShort(event.fromVersion)}.`,
           "Fix the cause, then run the update again.",
         ],
         facts: [
           { label: "Failed at", value: event.step },
           ...fact("Error", event.error),
-          { label: "Version", value: event.toVersion ? `${event.fromVersion} → ${event.toVersion}` : event.fromVersion, mono: true },
+          { label: "Version", value: versionChange(event.fromVersion, event.toVersion, event) },
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
           ...fact("Ran for", seconds(event.durationSeconds)),
         ],
+        sections: changeSections(event).sections,
         log: event.logTail?.length ? { title: "Last log lines", lines: event.logTail } : undefined,
         command: { title: "Retry on the host", text: "sudo vardo update" },
         footer,
@@ -146,7 +160,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         preheader: event.reasons[0] ?? event.message,
         paragraphs: [`The automatic update to ${event.target} didn't pass its checks. It tries again in the next maintenance window.`],
         facts: [
-          { label: "Running", value: event.fromVersion, mono: true },
+          { label: "Running", value: versionShort(event.fromVersion), mono: true },
           { label: "Target", value: event.target, mono: true },
         ],
         sections: [{ title: "Checks that failed", facts: event.reasons.map((r, i) => ({ label: String(i + 1), value: r })) }],
