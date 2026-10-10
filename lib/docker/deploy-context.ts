@@ -6,6 +6,7 @@ import type { HostConfig } from "@/lib/config/host-config";
 import type { DeployStage } from "./deploy-logger";
 
 import type { StageTimer } from "./stage-timings";
+import type { RebuildMode } from "./build-key";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
 
@@ -154,6 +155,14 @@ export type DeployContext = {
 
   /** This environment's copy of the deployed commit without .git; builds read it. Unset falls back to repoDir. */
   buildSourceDir?: string;
+  /** The build tree carries .git because a Dockerfile reads it. */
+  buildSourceHasGit?: boolean;
+
+  /** Rebuild even when an image with this build key exists; "no-cache" also skips the layer cache. */
+  rebuild?: RebuildMode;
+
+  /** Identity of this deploy's repo build, stored on the deployment. */
+  buildKey?: string;
 
   /** Commit this deploy ships. Unset for an app without a repo. */
   gitSha?: string;

@@ -64,6 +64,25 @@ Limits:
 - The alternative is a build arg: Dockerfile and compose builds get `VARDO_GIT_SHA` (compose only when the file doesn't set it). Declare `ARG VARDO_GIT_SHA` to use it; undeclared, it changes nothing.
 - Each environment's build tree is a full copy of the commit's files.
 
+## Image reuse
+
+A Dockerfile, Railpack or Nixpacks build whose inputs match an earlier deploy of the same app skips the build and retags that image. The log says `Reused image from deploy <id>, nothing build-relevant changed`.
+
+The key (`deployment.build_key`, and the `vardo.build.key` label on Dockerfile images) is a SHA-256 of:
+
+- Vardo's build config version (`BUILD_CONFIG_VERSION` in `lib/docker/build-key.ts`; bump it when build flags or context handling change)
+- the app id, so no image crosses apps
+- the deployed commit SHA and the root directory
+- the engine (`dockerfile`, `railpack`, `nixpacks`), its version, and the Dockerfile path for Dockerfile builds
+- the build and start command overrides
+- a SHA-256 of every build arg the build gets, and whether `.git` is in the context
+
+Every app env var is a build arg today (`--build-arg` for Dockerfiles, `--env` for Railpack and Nixpacks), so any env change, runtime-only or not, rebuilds. The newest of the last 10 deploys with the key whose image is still on the host is reused; image reclaim may have removed older ones.
+
+"Rebuild without cache" in the app's menu (`rebuild: "no-cache"` on the deploy API and the MCP tool) skips reuse and passes `--no-cache`. `rebuild: "force"` skips reuse but keeps the layer cache.
+
+Compose builds aren't reused yet; they get the build tree and `--no-cache` on a no-cache rebuild.
+
 ## Change: per-app Railpack cache key
 
 Railpack names its cache mounts `next`, `node-modules` and `npm-install` with no app prefix, so every app on the daemon shared them. A build could read another app's `.next/cache`: a marker file written by one app's build was readable from a second app's build. Vardo now passes `--cache-key <appId>`, which scopes the mounts per app. Layer cache is unaffected: a fresh key on identical content rebuilt in 1.1s, and a source change took 10.9s with a key vs 9.8s without.

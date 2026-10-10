@@ -3,7 +3,7 @@
 import { deploymentImageName } from "@/lib/docker/image-tag";
 import { db } from "@/lib/db";
 import { volumes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { readFile, rm } from "fs/promises";
 import { join } from "path";
@@ -53,8 +53,10 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
-import { nixpacksBuildArgs, railpackBuildArgs, type BuildOverrides } from "../buildpack-args";
-import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type ProviderMarker } from "../build-plan";
+import { dockerfileBuildArgs, nixpacksBuildArgs, railpackBuildArgs, type BuildOverrides } from "../buildpack-args";
+import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
+import { buildKey, findReusableImage } from "../build-key";
+import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -89,7 +91,8 @@ async function writeBuildSource(
         compose: ctx.app.deployType === "compose",
       })).some(dockerfileNeedsGit)
     : false;
-  if (asked || reads) {
+  ctx.buildSourceHasGit = asked || reads;
+  if (ctx.buildSourceHasGit) {
     await copyGitDir({ git, repoDir, dir, sha });
     ctx.log(`[build] ${asked ? `${INCLUDE_GIT_ENV} is set` : "A Dockerfile reads .git"}, so the build context includes .git; every commit rebuilds from the first COPY of it`);
   }
@@ -272,37 +275,76 @@ function spawnStream(
   });
 }
 
-async function buildFromRepo(
-  repoPath: string,
+type RepoBuildEngine = "dockerfile" | "railpack" | "nixpacks";
+
+/** How many earlier deploys with the same key to look through for an image still on the host. */
+const REUSE_LOOKBACK = 10;
+
+/** Tags this app's newest image built with `key` as `imageName`. Null when none is left on the host. */
+async function reuseImage(
+  ctx: DeployContext,
+  key: string,
   imageName: string,
-  deployType: string,
-  logs: { push: (line: string) => void },
-  envVars: Record<string, string> | undefined,
-  dockerfilePath: string | undefined,
-  cacheKey: string,
-  signal?: AbortSignal,
-  overrides?: BuildOverrides,
-): Promise<void> {
+): Promise<{ id: string; buildPlan: BuildPlanRecord | null } | null> {
+  try {
+    const rows = await db.query.deployments.findMany({
+      where: and(eq(deployments.appId, ctx.appId), eq(deployments.buildKey, key), ne(deployments.id, ctx.deploymentId)),
+      orderBy: [desc(deployments.startedAt)],
+      limit: REUSE_LOOKBACK,
+      columns: { id: true, buildPlan: true },
+    });
+    const found = await findReusableImage(
+      rows.map((r) => ({ id: r.id, image: deploymentImageName(ctx.app.name, r.id) })),
+      (image) =>
+        execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT })
+          .then(() => true, () => false),
+    );
+    if (!found) return null;
+    await execFileAsync("docker", ["tag", found.image, imageName], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT });
+    return { id: found.id, buildPlan: rows.find((r) => r.id === found.id)?.buildPlan ?? null };
+  } catch (err) {
+    ctx.log(`[build] Couldn't reuse an earlier image, building: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+type RepoBuild = {
+  repoPath: string;
+  imageName: string;
+  engine: RepoBuildEngine;
+  logs: { push: (line: string) => void };
+  envVars: Record<string, string>;
+  dockerfilePath?: string;
+  cacheKey: string;
+  signal?: AbortSignal;
+  overrides?: BuildOverrides;
+  noCache: boolean;
+  gitSha?: string;
+  buildKey?: string;
+};
+
+async function buildFromRepo(build: RepoBuild): Promise<void> {
+  const { repoPath, imageName, logs, envVars, cacheKey, signal, overrides, noCache } = build;
   // Base images may be private, so builders get registry credentials.
   await withRegistryAuth(async (authEnv) => {
     // App vars reach the builders only through --env; in the process env, LD_PRELOAD or PATH would run repo code here.
     const buildEnv = { ...authEnv };
 
-    if (deployType === "nixpacks") {
+    if (build.engine === "nixpacks") {
       logs.push(`[build] Building with Nixpacks...`);
-      const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides);
+      const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides, noCache);
       await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
       logs.push(`[build] Nixpacks build complete: ${imageName}`);
       return;
     }
 
-    if (deployType === "railpack") {
+    if (build.engine === "railpack") {
       // Railpack needs BuildKit; fail fast when it isn't reachable.
       if (!buildEnv.BUILDKIT_HOST) buildEnv.BUILDKIT_HOST = DEFAULT_BUILDKIT_HOST;
       await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
 
       logs.push(`[build] Building with Railpack...`);
-      const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars, overrides);
+      const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars, overrides, noCache);
       try {
         await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
       } catch (err) {
@@ -312,16 +354,19 @@ async function buildFromRepo(
       return;
     }
 
-    const dfPath = dockerfilePath || "Dockerfile";
+    const dfPath = build.dockerfilePath || "Dockerfile";
     logs.push(`[build] Building with Dockerfile (${dfPath})...`);
     const bounded = await boundedBuild((line) => logs.push(line), signal);
-    const args = ["build", ...bounded.loadArgs, "-t", imageName, "-f", join(repoPath, dfPath)];
-    if (envVars) {
-      for (const [k, v] of Object.entries(envVars)) {
-        args.push("--build-arg", `${k}=${v}`);
-      }
-    }
-    args.push(repoPath);
+    const args = dockerfileBuildArgs({
+      imageName,
+      dockerfile: join(repoPath, dfPath),
+      context: repoPath,
+      loadArgs: bounded.loadArgs,
+      envVars,
+      noCache,
+      buildKey: build.buildKey,
+      gitSha: build.gitSha,
+    });
     try {
       await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]");
     } catch (err) {
@@ -676,39 +721,88 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
 
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
       const overrides: BuildOverrides = { buildCommand: app.buildCommand, startCommand: app.startCommand };
-      if (buildType === "railpack" || buildType === "nixpacks") {
-        const plan = await captureBuildPlan(buildType, root, {
-          envVars: envMap,
-          overrides,
-          markers: markers ?? (await providerMarkers(root)),
-          log,
-          signal,
-        });
-        if (plan) {
-          for (const line of buildPlanLogLines(plan)) log(line);
-          await db.update(deployments).set({ buildPlan: plan }).where(eq(deployments.id, ctx.deploymentId))
+      const engine = buildType as RepoBuildEngine;
+      const keyFor = async () =>
+        ctx.gitSha
+          ? buildKey({
+              appId: ctx.appId,
+              gitSha: ctx.gitSha,
+              rootDirectory: app.rootDirectory || hostConfig?.project?.rootDirectory || "",
+              engine,
+              engineVersion: await engineVersion(engine),
+              dockerfilePath: app.dockerfilePath,
+              buildCommand: app.buildCommand ?? null,
+              startCommand: app.startCommand ?? null,
+              buildArgs: envMap,
+              withGitDir: ctx.buildSourceHasGit === true,
+            })
+          : undefined;
+      let key = await keyFor();
+      const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName) : null;
+
+      if (reused) {
+        log(`[build] Reused image from deploy ${reused.id.slice(0, 8)}, nothing build-relevant changed`);
+        if (reused.buildPlan) {
+          await db.update(deployments).set({ buildPlan: reused.buildPlan }).where(eq(deployments.id, ctx.deploymentId))
             .catch(() => log(`[build] Couldn't save the build plan`));
         }
-      }
-      try {
-        await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal, overrides);
-      } catch (buildErr) {
-        const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
-
-        if (signal?.aborted) throw buildErr;
-
-        const fixes = detectCompatIssues(errMsg);
-        if (fixes.length > 0) {
-          log(`[compat] Build failed, detected fixable issues:`);
-          for (const fix of fixes) {
-            log(`[compat]   ${fix.name}: ${fix.description}`);
+      } else {
+        if (ctx.rebuild) log(`[build] ${ctx.rebuild === "no-cache" ? "Rebuilding without the build cache" : "Rebuilding"}, as asked`);
+        if (buildType === "railpack" || buildType === "nixpacks") {
+          const plan = await captureBuildPlan(buildType, root, {
+            envVars: envMap,
+            overrides,
+            markers: markers ?? (await providerMarkers(root)),
+            log,
+            signal,
+          });
+          if (plan) {
+            for (const line of buildPlanLogLines(plan)) log(line);
+            await db.update(deployments).set({ buildPlan: plan }).where(eq(deployments.id, ctx.deploymentId))
+              .catch(() => log(`[build] Couldn't save the build plan`));
           }
-          log(`[compat] Retrying with fixes applied...`);
-          Object.assign(envMap, applyCompatFixes(envMap, fixes));
-          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal, overrides);
-        } else {
-          throw buildErr;
         }
+        const run = () => buildFromRepo({
+          repoPath: root,
+          imageName,
+          engine,
+          logs,
+          envVars: envMap,
+          dockerfilePath: customDockerfile,
+          cacheKey: ctx.appId,
+          signal,
+          overrides,
+          noCache: ctx.rebuild === "no-cache",
+          gitSha: ctx.gitSha,
+          buildKey: key,
+        });
+        try {
+          await run();
+        } catch (buildErr) {
+          const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
+
+          if (signal?.aborted) throw buildErr;
+
+          const fixes = detectCompatIssues(errMsg);
+          if (fixes.length > 0) {
+            log(`[compat] Build failed, detected fixable issues:`);
+            for (const fix of fixes) {
+              log(`[compat]   ${fix.name}: ${fix.description}`);
+            }
+            log(`[compat] Retrying with fixes applied...`);
+            Object.assign(envMap, applyCompatFixes(envMap, fixes));
+            key = await keyFor();
+            await run();
+          } else {
+            throw buildErr;
+          }
+        }
+      }
+
+      if (key) {
+        ctx.buildKey = key;
+        await db.update(deployments).set({ buildKey: key }).where(eq(deployments.id, ctx.deploymentId))
+          .catch(() => log(`[build] Couldn't save the build key; the next deploy rebuilds`));
       }
 
       ctx.builtLocally = true;

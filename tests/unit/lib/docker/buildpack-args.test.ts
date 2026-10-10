@@ -64,6 +64,17 @@ describe("nixpacksBuildArgs", () => {
   });
 });
 
+describe("rebuilding without cache", () => {
+  it("passes --no-cache to both engines only when asked", () => {
+    expect(railpackBuildArgs("img", "/repo", "app-1", undefined, undefined, true)).toEqual([
+      "build", "--name", "img", "--cache-key", "app-1", "--no-cache", "/repo",
+    ]);
+    expect(nixpacksBuildArgs("img", "/repo", undefined, undefined, true)).toEqual(["build", "/repo", "--name", "img", "--no-cache"]);
+    expect(railpackBuildArgs("img", "/repo", "app-1")).not.toContain("--no-cache");
+    expect(nixpacksBuildArgs("img", "/repo")).not.toContain("--no-cache");
+  });
+});
+
 describe("nixpacksPlanArgs", () => {
   it("asks plan for JSON with the same overrides and env as the build", () => {
     expect(nixpacksPlanArgs("/repo", { A: "1" }, overrides)).toEqual([

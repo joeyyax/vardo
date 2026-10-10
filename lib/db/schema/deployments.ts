@@ -31,6 +31,8 @@ export const deployments = pgTable("deployment", {
   stageTimings: jsonb("stage_timings").$type<StageTimings>(),
   // Railpack or Nixpacks plan, captured before the build.
   buildPlan: jsonb("build_plan").$type<BuildPlanRecord>(),
+  // Hash of everything a repo build reads (lib/docker/build-key.ts). Equal keys build the same image.
+  buildKey: text("build_key"),
   environmentId: text("environment_id").references(() => environments.id, {
     onDelete: "set null",
   }),
@@ -61,5 +63,6 @@ export const deployments = pgTable("deployment", {
     index("deployment_app_id_idx").on(t.appId),
     index("deployment_app_started_at_idx").on(t.appId, t.startedAt),
     index("deployment_app_status_slot_idx").on(t.appId, t.status, t.slot),
+    index("deployment_app_build_key_idx").on(t.appId, t.buildKey),
   ]
 );

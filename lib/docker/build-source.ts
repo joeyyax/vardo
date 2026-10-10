@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, rm, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { parseComposeYaml } from "./compose";
 import { isUnder } from "./compose-root";
+import { GIT_SHA_ARG } from "./build-key";
 
 /** Runs git against the shared checkout with extra environment. */
 export type BuildSourceGit = (args: string[], env?: Record<string, string>) => Promise<unknown>;
@@ -51,9 +52,6 @@ export async function copyGitDir(opts: { git: BuildSourceGit; repoDir: string; d
   await opts.git(["--git-dir", gitDir, "update-ref", "--no-deref", "HEAD", opts.sha]);
   await opts.git(["--git-dir", gitDir, "--work-tree", opts.dir, "read-tree", opts.sha]);
 }
-
-/** Build arg carrying the deployed commit, for builds that would otherwise read .git. */
-export const GIT_SHA_ARG = "VARDO_GIT_SHA";
 
 export type BuildSpec = { context: string; args?: Record<string, string> | string[] } & Record<string, unknown>;
 
