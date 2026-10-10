@@ -471,6 +471,13 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           ctx.rollback.gitSha,
           log,
         );
+      } else if (ctx.pinnedGitSha) {
+        await checkoutRollbackSha(
+          (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
+          ctx.pinnedGitSha,
+          log,
+        );
+        log(`[deploy] Pinned to ${ctx.pinnedGitSha.slice(0, 7)}`);
       }
     } finally {
       if (sshKeyFile) {

@@ -34,9 +34,30 @@ The `vardo` app record comes from `lib/docker/self-register.ts`, which runs on e
 
 Any of these redeploys the `vardo` app:
 
+- **Update now** under Admin → Settings → Maintenance → Updates, on the attention bar's Vardo update row, or from the link in the update email.
 - **Redeploy** on the `vardo` app in the dashboard. The app lives in the Vardo system organization.
 - `vardo update` on the host.
-- `POST /api/v1/admin/maintenance/update` as an instance admin.
+- `POST /api/v1/admin/maintenance/update` as an instance admin, which is what Update now calls.
+
+Update now dumps the database to `/opt/vardo/lifecycle/backups/` first, keeping the newest three, and follows the policy's channel. After the cutover the new console checks its services for five minutes and rolls back to the previous deploy through the engine when three checks in a row fail.
+
+### Update policy
+
+Set under Updates, per instance:
+
+| Policy | What happens |
+| --- | --- |
+| Off | No update notices. Update now still works. |
+| Notify | Admins get one email a day while an update is out. The default for new installs. |
+| Auto | Vardo updates itself inside the maintenance window. |
+
+The channel is every commit on `main` or GitHub releases only. Auto follows releases unless a channel is set. The maintenance window is a start and end time in the instance's time zone, or its own when one is set; an end before the start runs past midnight.
+
+Before an automatic update starts, it checks that no deploy, backup, restore or restore drill is running, the disk has 5 GB free and is under 90% full, the core services are healthy and the target hasn't already failed here. Then it dumps the database. When any of that fails it skips the update and emails the reasons once a day per target; it tries again in the next window.
+
+### Linked instances
+
+On a mesh, mark one instance **Canary** and the others **Follows a canary**. Each heartbeat carries the instance's commit, since when it has run it and whether it's healthy. A follower on Auto takes a version once the canary has run that commit healthy for the configured hours, or once an admin approves it under Updates. Peers on a version without this report never satisfy the wait, so approval is the way through until they update.
 
 The running console builds the new one, starts it beside itself, waits for it to pass its health check, records the deploy and stops itself last. Both serve during the cutover.
 

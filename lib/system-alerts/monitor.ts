@@ -5,7 +5,10 @@ import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { getCommitUpdate } from "@/lib/version";
+import { getChannelUpdate } from "@/lib/version";
+import { isSelfDeployLayout } from "@/lib/paths";
+import { effectiveChannel } from "@/lib/self-update/policy";
+import { getUpdatePolicy } from "@/lib/self-update/store";
 import { runAlertPass } from "@/lib/alerts/pass";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
@@ -266,24 +269,34 @@ export async function checkWatchdogEvents(): Promise<void> {
   }
 }
 
-// Update available: compare the build commit to main on GitHub.
+// Update available: Notify policy only. Auto applies updates itself; Off stays quiet.
 
 export async function checkUpdateAlert(): Promise<void> {
   try {
-    const update = await getCommitUpdate();
+    const policy = await getUpdatePolicy();
+    if (policy.mode !== "notify") return;
+    const channel = effectiveChannel(policy);
+    const update = await getChannelUpdate(channel);
     if (!update?.hasUpdate) return;
 
-    if (!shouldFire("update-available", "main")) return;
-    markFired("update-available", "main");
+    if (!shouldFire("update-available", channel)) return;
+    markFired("update-available", channel);
 
-    const remoteHead = update.remoteSha.slice(0, 8);
+    const remoteHead = update.targetSha.slice(0, 8);
     const localHead = update.localSha.slice(0, 8);
+    const selfDeploy = isSelfDeployLayout();
     await emitAll({
       type: "system.update-available",
       title: "Vardo update available",
-      message: `A new version of Vardo is available. Remote: ${remoteHead} — Local: ${localHead}. Run vardo update when ready.`,
+      message: `A new version of Vardo is available. Remote: ${remoteHead} — Local: ${localHead}. ${
+        selfDeploy ? "Update now from Admin → Maintenance." : "Run vardo update when ready."
+      }`,
       remoteHead,
       localHead,
+      channel,
+      target: channel === "releases" ? update.targetLabel : undefined,
+      commitsBehind: update.commitsBehind ?? undefined,
+      selfDeploy,
     });
   } catch (err) {
     log.debug("Update check error:", err);

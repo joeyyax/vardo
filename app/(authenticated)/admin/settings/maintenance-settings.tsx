@@ -21,7 +21,6 @@ import {
 import {
   Loader2,
   RefreshCw,
-  ArrowUpCircle,
   HardDrive,
   Server,
   AlertCircle,
@@ -33,6 +32,7 @@ import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
 import { containerStateVariant } from "@/lib/ui/container-state";
 import { DetachedVolumesCard } from "./detached-volumes-card";
+import { UpdatesCard } from "./updates-card";
 
 type ServiceStatus = {
   name: string;
@@ -175,7 +175,6 @@ export function MaintenanceSettings() {
     vardoMount2: { source: "", destination: "" },
   });
   const [restarting, setRestarting] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
   const [savingMounts, setSavingMounts] = useState(false);
   const [buildCache, setBuildCache] = useState<BuildCacheStatus | null>(null);
   const [loadingBuildCache, setLoadingBuildCache] = useState(true);
@@ -408,25 +407,6 @@ export function MaintenanceSettings() {
     }
   }
 
-  async function handleUpdate() {
-    setUpdating(true);
-    try {
-      const res = await fetch("/api/v1/admin/maintenance/update", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "Update failed");
-        return;
-      }
-      toast.success("Update initiated", {
-        description: "Rebuilding and restarting in the background. The page will refresh automatically.",
-      });
-      setTimeout(() => window.location.reload(), 30000);
-    } catch {
-      toast.error("Couldn't initiate update");
-    } finally {
-      setUpdating(false);
-    }
-  }
 
   async function handleSaveMounts(e: React.FormEvent) {
     e.preventDefault();
@@ -489,7 +469,7 @@ export function MaintenanceSettings() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={restarting !== null || updating}
+                  disabled={restarting !== null}
                   aria-label="Restart all services"
                 >
                   {restarting === "__all__" ? (
@@ -504,7 +484,7 @@ export function MaintenanceSettings() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Restart all services?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This restarts the shared services (database, cache, proxy and the rest) and interrupts active sessions. The frontend updates through Update.
+                    This restarts the shared services (database, cache, proxy and the rest) and interrupts active sessions. The console updates through Update now.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -547,7 +527,7 @@ export function MaintenanceSettings() {
                       size="sm"
                       className="h-7 px-2"
                       onClick={() => void handleRestart(svc.name)}
-                      disabled={restarting !== null || updating}
+                      disabled={restarting !== null}
                       aria-label={`Restart ${svc.name}`}
                     >
                       {restarting === svc.name ? (
@@ -564,65 +544,7 @@ export function MaintenanceSettings() {
         </CardContent>
       </Card>
 
-      {/* One-click update */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ArrowUpCircle className="size-4" aria-hidden="true" />
-            Update Vardo
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Pull the latest code from git, rebuild the frontend image and restart the stack.
-            The current session will be interrupted while the container restarts.
-          </p>
-          {!loadingStatus && !status?.hasVardoDir && (
-            <div className="flex items-start gap-2 text-sm text-status-warning">
-              <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <span>
-                <code className="text-xs font-mono">VARDO_HOME_DIR</code> isn&apos;t set. Update requires
-                access to the installation directory.
-              </span>
-            </div>
-          )}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                disabled={updating || restarting !== null || loadingStatus || !status?.hasVardoDir}
-              >
-                {updating ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    Updating...
-                  </>
-                ) : (
-                  <>
-                    <ArrowUpCircle className="size-4" aria-hidden="true" />
-                    Pull &amp; rebuild
-                  </>
-                )}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent size="sm">
-              <AlertDialogHeader>
-                <AlertDialogTitle>Pull and rebuild?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will run git pull, rebuild the frontend image and restart the stack.
-                  All active sessions will be interrupted during the restart.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => void handleUpdate()}>
-                  Update
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </CardContent>
-      </Card>
+      <UpdatesCard />
 
       {/* Build cache */}
       <Card>

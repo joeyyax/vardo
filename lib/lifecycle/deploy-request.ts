@@ -38,7 +38,7 @@ export function parseDeployRequest(text: string): DeployRequest | null {
 }
 
 /** Queues a deploy of the `vardo` app and returns its id without waiting for it. */
-export async function triggerSelfDeploy(opts: { triggeredBy?: string } = {}): Promise<{ deploymentId: string }> {
+export async function triggerSelfDeploy(opts: { triggeredBy?: string; gitSha?: string } = {}): Promise<{ deploymentId: string }> {
   // Registers the app on installs that haven't yet: a fresh install's first handover.
   const { ensureVardoProject } = await import("@/lib/docker/self-register");
   await ensureVardoProject({ force: true });
@@ -53,7 +53,7 @@ export async function triggerSelfDeploy(opts: { triggeredBy?: string } = {}): Pr
   const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
   const deployOpts = { appId: app.id, organizationId: app.organizationId, trigger: "api" as const, triggeredBy: opts.triggeredBy };
   const deploymentId = await createDeployment(deployOpts);
-  void requestDeploy({ ...deployOpts, deploymentId }).catch((err) => log.error(`Deploy ${deploymentId} failed to run:`, err));
+  void requestDeploy({ ...deployOpts, deploymentId, gitSha: opts.gitSha }).catch((err) => log.error(`Deploy ${deploymentId} failed to run:`, err));
   return { deploymentId };
 }
 

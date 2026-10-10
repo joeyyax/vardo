@@ -11,6 +11,8 @@ import {
   type Heartbeat,
 } from "@/lib/lifecycle/classify";
 import {
+  formatVersion,
+  fromVersionLabel,
   isSelfUpdate,
   selfDeployMarker,
   targetVersion,
@@ -51,6 +53,35 @@ describe("targetVersion", () => {
     expect(targetVersion('{"version":"0.2.0"}', "4f1a9b2c0d")).toBe("0.2.0 (4f1a9b2)");
     expect(targetVersion(null, "4f1a9b2c0d")).toBe("4f1a9b2");
     expect(targetVersion("not json", null)).toBeUndefined();
+  });
+
+  it("leaves out a sha that isn't a commit", () => {
+    expect(targetVersion('{"version":"0.2.0"}', "local")).toBe("0.2.0");
+  });
+});
+
+describe("fromVersionLabel", () => {
+  it("prints the build's commit like the target version does", () => {
+    const from = fromVersionLabel("0.1.0", "71b4f31c9e", "e36c2e3aa1");
+    expect(from).toBe("0.1.0 (71b4f31)");
+    expect(from).toBe(targetVersion('{"version":"0.1.0"}', "71b4f31c9e"));
+  });
+
+  it("takes the last deploy's commit when the build has none", () => {
+    expect(fromVersionLabel("0.1.0", "", "71b4f31c9e")).toBe("0.1.0 (71b4f31)");
+    expect(fromVersionLabel("0.1.0", "local", "71b4f31c9e")).toBe("0.1.0 (71b4f31)");
+  });
+
+  it("falls back to the package version alone", () => {
+    expect(fromVersionLabel("0.1.0", "", null)).toBe("0.1.0");
+  });
+});
+
+describe("formatVersion", () => {
+  it("shortens the sha and drops non-commits", () => {
+    expect(formatVersion("0.1.0", "71B4F31C9E")).toBe("0.1.0 (71B4F31)");
+    expect(formatVersion("0.1.0", "")).toBe("0.1.0");
+    expect(formatVersion(undefined, undefined)).toBeUndefined();
   });
 });
 

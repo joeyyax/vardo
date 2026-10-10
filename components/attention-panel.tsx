@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 
 import { isInlineRow, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
 import { formatSpan } from "@/lib/ui/relative-time";
+import { AttentionActionLink } from "./attention-action";
 
 const DOT: Record<AttentionTone, string> = {
   error: "bg-status-error",
@@ -104,14 +105,7 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
       {(row.footer || row.action) && (
         <p className="text-xs text-muted-foreground">
           {row.footer}
-          {row.action && (
-            <Link
-              href={row.action.href}
-              className="ml-1 text-foreground underline underline-offset-2"
-            >
-              {row.action.label}
-            </Link>
-          )}
+          {row.action && <AttentionActionLink action={row.action} />}
         </p>
       )}
     </div>

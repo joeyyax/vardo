@@ -49,6 +49,7 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "system.update-started": "Update started",
   "system.updated": "Update finished",
   "system.update-failed": "Update failed",
+  "system.update-skipped": "Update skipped",
   "system.containers-missing": "Containers missing after restart",
   "digest.health": "Health summary",
 };

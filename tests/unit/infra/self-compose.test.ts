@@ -66,6 +66,14 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     expect(cfg.services.frontend.environment?.DATABASE_URL).toBe("postgresql://host:db-pass@vardo-postgres:5432/host");
   });
 
+  it("builds the console with the engine's commit, then install.sh's", () => {
+    const arg = (env: Record<string, string>) =>
+      (resolve(env).services.frontend as Service & { build?: { args?: Record<string, string> } }).build?.args?.GIT_SHA;
+    expect(arg({ VARDO_GIT_SHORT_SHA: "71b4f31", GIT_SHA: "e36c2e3" })).toBe("71b4f31");
+    expect(arg({ GIT_SHA: "e36c2e3" })).toBe("e36c2e3");
+    expect(arg({})).toBe("");
+  });
+
   it("never serves Traefik's API insecurely", () => {
     const command = resolve({}).services.traefik.command ?? [];
     expect(command).not.toContain("--api.insecure=true");

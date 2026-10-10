@@ -51,6 +51,16 @@ describe("notification subjects", () => {
     expect(subject(fixture("system-started"))).toBe("✓ Vardo back on node-a after 2 min 29 s");
     expect(subject(fixture("system-updated"))).toBe("✓ Vardo updated on node-a · e36c2e3 → 4f1a9b2");
     expect(subject(fixture("system-update-failed"))).toBe("✗ Vardo update failed on node-a at Health check");
+    expect(subject(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped on node-a · v0.2.0");
+    expect(subject(fixture("system-update-available-self-deploy"))).toBe("↑ Vardo update available on node-a · 12 commits");
+  });
+
+  it("links Update now in the update email on a self-deploy instance, and the host command otherwise", () => {
+    const self = notificationMailBody(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT)!;
+    expect(self.action).toEqual({ label: "Update now", href: "https://vardo.example.com/admin/settings/maintenance?update=now#updates" });
+    expect(self.command).toBeUndefined();
+    const legacy = notificationMailBody({ ...fixture<"system.update-available">("system-update-available-self-deploy"), selfDeploy: false }, FIXTURE_CONTEXT)!;
+    expect(legacy.command?.text).toBe("sudo vardo update");
   });
 });
 
