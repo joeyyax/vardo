@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "timers/promises";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -44,7 +43,6 @@ const deps: GuardDeps = {
   markUsed,
   appForHost,
   robotsFor: renderAppRobots,
-  sleep: (ms) => sleep(ms),
   allowed: isAllowlisted,
   blockedRange: inBlockedRange,
   queueReport: queueAbuseReport,
