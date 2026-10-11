@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { channelHasUpdate, parseCompare } from "@/lib/version";
 import { dumpFileName, dumpsToPrune, dumpTarget } from "@/lib/self-update/dump";
-import { vardoUpdateRow } from "@/lib/attention/vardo-update-row";
+import { VARDO_UPDATING_ROW_KEY, vardoUpdateRow, vardoUpdatingRow } from "@/lib/attention/vardo-update-row";
 import type { ChannelUpdate } from "@/lib/version";
 
 describe("channelHasUpdate", () => {
@@ -97,5 +97,12 @@ describe("vardoUpdateRow", () => {
     expect(vardoUpdateRow({ update, currentVersion: "0.1.0", selfDeploy: true, runActive: true })?.label).toBe("Vardo updating");
     expect(vardoUpdateRow({ update: { ...update, hasUpdate: false }, currentVersion: "0.1.0", selfDeploy: true, runActive: false })).toBeNull();
     expect(vardoUpdateRow({ update: null, currentVersion: "0.1.0", selfDeploy: true, runActive: false })).toBeNull();
+  });
+
+  it("names the target while an update runs", () => {
+    const row = vardoUpdatingRow({ id: "dep_1", toVersion: "0.1.0 (559e5b2c)", startedAt: Date.parse("2026-10-10T12:00:00Z") });
+    expect(row).toMatchObject({ key: VARDO_UPDATING_ROW_KEY, tone: "activity" });
+    expect(row.items[0]).toMatchObject({ name: "Updating Vardo to 559e5b2…", since: "2026-10-10T12:00:00.000Z" });
+    expect(vardoUpdatingRow(null).items[0].name).toBe("Updating Vardo…");
   });
 });

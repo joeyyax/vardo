@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const settings = new Map<string, string>();
 const files = new Map<string, string>();
+const claims = new Set<string>();
 const emitted: { orgId: string; event: { type: string } & Record<string, unknown> }[] = [];
 
 vi.mock("@/lib/db", () => {
@@ -52,7 +53,22 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
-const { checkUpdateMarker, startLifecycleMonitor, UPDATE_MARKER_FILE, UPDATE_POLL_MS, UPDATE_WAIT_MS } = await import("@/lib/lifecycle/monitor");
+vi.mock("@/lib/redis-lock", () => ({
+  acquireLock: async (key: string) => {
+    if (claims.has(key)) return null;
+    claims.add(key);
+    return "token";
+  },
+}));
+vi.mock("@/lib/incidents/store", () => ({
+  safely: async <T,>(_what: string, fn: () => Promise<T>, fallback: T) => fn().catch(() => fallback),
+  openIncident: async (_org: string, req: { about: string }) => ({ id: `inc_${req.about}`, transition: "opened" }),
+  resolveIncidents: async (_org: string, _kind: string, abouts: string[]) =>
+    new Map(abouts.map((about) => [about, { id: `inc_${about}`, transition: "resolved" }])),
+}));
+
+const { checkUpdateMarker, startLifecycleMonitor, UPDATE_MARKER_FILE, UPDATE_POLL_MS } = await import("@/lib/lifecycle/monitor");
+const { UPDATE_WAIT_MS } = await import("@/lib/self-update/lifecycle");
 
 const nowS = () => Math.floor(Date.now() / 1000);
 
@@ -63,25 +79,19 @@ function writeMarker(marker: Record<string, unknown>) {
 beforeEach(() => {
   settings.clear();
   files.clear();
+  claims.clear();
   emitted.length = 0;
   delete (globalThis as { __vardo_lifecycle?: boolean }).__vardo_lifecycle;
 });
 
 describe("update event flow", () => {
-  it("announces a slow update from the console that was running, once", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      // Started after this process: the running console is the old one.
-      writeMarker({ id: "run-1", state: "started", startedAt: nowS() + 5, fromVersion: "e36c2e3", branch: "main", fromSlot: "blue", toSlot: "green" });
-      expect(await checkUpdateMarker()).toBeNull();
-      vi.setSystemTime(Date.now() + 11 * 60_000);
-      expect(await checkUpdateMarker()).toBe("started");
-      expect(await checkUpdateMarker()).toBeNull();
-      expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
-      expect(emitted[0]).toMatchObject({ orgId: "org_admin", event: { fromVersion: "e36c2e3", toSlot: "green" } });
-    } finally {
-      vi.useRealTimers();
-    }
+  it("announces the start from the console that was running at once, once", async () => {
+    // Started after this process: the running console is the old one.
+    writeMarker({ id: "run-1", state: "started", startedAt: nowS() + 5, fromVersion: "e36c2e3", branch: "main", fromSlot: "blue", toSlot: "green" });
+    expect(await checkUpdateMarker()).toBe("started");
+    expect(await checkUpdateMarker()).toBeNull();
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
+    expect(emitted[0]).toMatchObject({ orgId: "org_admin", event: { fromVersion: "e36c2e3", toSlot: "green", incident: { id: "inc_run-1" } } });
   });
 
   it("sends nothing when an update lands on the commit it started from", async () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const settings = new Map<string, string>();
 const files = new Map<string, string>();
+const claims = new Set<string>();
 const emitted: { orgId: string; event: { type: string } & Record<string, unknown> }[] = [];
 const running: { id: string; name: string; labels: Record<string, string> }[] = [];
 const shutdownClosers: (() => Promise<unknown> | unknown)[] = [];
@@ -60,6 +61,20 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
+vi.mock("@/lib/redis-lock", () => ({
+  acquireLock: async (key: string) => {
+    if (claims.has(key)) return null;
+    claims.add(key);
+    return "token";
+  },
+}));
+vi.mock("@/lib/incidents/store", () => ({
+  safely: async <T,>(_what: string, fn: () => Promise<T>, fallback: T) => fn().catch(() => fallback),
+  openIncident: async (_org: string, req: { about: string }) => ({ id: `inc_${req.about}`, transition: "opened" }),
+  resolveIncidents: async (_org: string, _kind: string, abouts: string[]) =>
+    new Map(abouts.map((about) => [about, { id: `inc_${about}`, transition: "resolved" }])),
+}));
+
 const { checkUpdateMarker, startLifecycleMonitor, UPDATE_MARKER_FILE, UPDATE_POLL_MS } = await import("@/lib/lifecycle/monitor");
 
 const OLD = "a1b2c3d4e5f6";
@@ -85,6 +100,7 @@ const selfDeploy = (state: string, extra: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   settings.clear();
   files.clear();
+  claims.clear();
   emitted.length = 0;
   running.length = 0;
   shutdownClosers.length = 0;
@@ -100,29 +116,18 @@ describe("the console running a self-deploy", () => {
     process.env.CONTAINER_ID = OLD;
   });
 
-  it("stays quiet about the start while the update is quick", async () => {
+  it("announces the start at once", async () => {
     writeMarker(selfDeploy("started", { startedAt: Date.now() + 5_000 }));
+    expect(await checkUpdateMarker()).toBe("started");
     expect(await checkUpdateMarker()).toBeNull();
-    expect(emitted).toEqual([]);
-  });
-
-  it("announces the start once the update runs past 10 minutes", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      writeMarker(selfDeploy("started", { startedAt: Date.now() + 5_000 }));
-      vi.setSystemTime(Date.now() + 11 * 60_000);
-      expect(await checkUpdateMarker()).toBe("started");
-      expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
+    expect(emitted[0].event).toMatchObject({ toVersion: "0.1.0 (4f1a9b2)", incident: { id: "inc_dep_123" } });
   });
 
   it("leaves the updated message to the new console", async () => {
     writeMarker(selfDeploy("updated", { finishedAt: Date.now() }));
     expect(await checkUpdateMarker()).toBeNull();
     expect(emitted).toEqual([]);
-    expect(settings.has("lifecycle_update_seen")).toBe(false);
   });
 
   it("announces a failure, since it keeps serving", async () => {
@@ -153,6 +158,8 @@ describe("the console a self-deploy starts", () => {
 
   it("waits through the deploy and sends one updated message", async () => {
     settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 10_000, hostBootAt: null, version: "x", host: OLD }));
+    // The old console announced the start.
+    claims.add("self-update:notice:dep_123:started");
     writeMarker(selfDeploy("started"));
     await startLifecycleMonitor();
     expect(emitted).toEqual([]);

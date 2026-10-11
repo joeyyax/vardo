@@ -6,6 +6,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type AttentionRunner } from "@/components/attention-issues";
 import { useFixRunner } from "@/components/fix-action";
 import { useInfrastructureStatus } from "@/hooks/use-infrastructure-status";
+import { INFRA_RECHECK_EVENT } from "@/lib/attention/infrastructure-view";
+import { VARDO_UPDATING_ROW_KEY } from "@/lib/attention/vardo-update-row";
 import {
   attentionPanelKey,
   attentionPanelTarget,
@@ -19,6 +21,8 @@ import {
 } from "@/lib/ui/attention";
 
 const POLL_MS = 60_000;
+/** While Vardo updates, so the banner clears soon after. */
+const UPDATING_POLL_MS = 10_000;
 
 type AttentionContextValue = {
   rows: AttentionRow[];
@@ -62,15 +66,19 @@ export function AttentionProvider({ orgId, children }: { orgId: string; children
     load();
   }, [load, pathname]);
 
+  const updating = orgRows.some((r) => r.key === VARDO_UPDATING_ROW_KEY);
+
   useEffect(() => {
     const tick = () => document.visibilityState === "visible" && load();
-    const interval = setInterval(tick, POLL_MS);
+    const interval = setInterval(tick, updating ? UPDATING_POLL_MS : POLL_MS);
     document.addEventListener("visibilitychange", tick);
+    window.addEventListener(INFRA_RECHECK_EVENT, tick);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener(INFRA_RECHECK_EVENT, tick);
     };
-  }, [load]);
+  }, [load, updating]);
 
   // Refresh once the server answers again after a self-deploy.
   useEffect(() => {

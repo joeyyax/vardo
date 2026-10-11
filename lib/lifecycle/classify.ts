@@ -186,32 +186,6 @@ export function stoppingForSelfDeploy(marker: UpdateMarker | null, host: string,
   return marker.state === "updated" && now - (marker.finishedAt ?? marker.startedAt) < SELF_DEPLOY_STOP_WINDOW_MS;
 }
 
-/** An update still running after this gets an "updating" email; a quicker one sends only its result. */
-export const UPDATE_SLOW_MS = 10 * 60_000;
-
-/** States of one update run already announced. */
-export type UpdateSeen = { id: string; states: UpdateMarker["state"][] };
-
-/** What to announce for a marker, or null. One email per update: the start only when it runs long, never after the result. */
-export function updateAnnouncement(
-  marker: UpdateMarker | null,
-  seen: UpdateSeen | null,
-  now: number,
-): UpdateMarker["state"] | null {
-  if (!marker) return null;
-  if (now - (marker.finishedAt ?? marker.startedAt) > UPDATE_MARKER_MAX_AGE_MS) return null;
-  const announced = seen?.id === marker.id ? seen.states : [];
-  if (announced.includes(marker.state)) return null;
-  if (marker.state === "started" && announced.length > 0) return null;
-  if (marker.state === "started" && now - marker.startedAt < UPDATE_SLOW_MS) return null;
-  return marker.state;
-}
-
-export function markSeen(seen: UpdateSeen | null, marker: UpdateMarker, state: UpdateMarker["state"]): UpdateSeen {
-  const states = seen?.id === marker.id ? seen.states : [];
-  return { id: marker.id, states: [...new Set([...states, state])] };
-}
-
 export function seconds(fromMs: number | undefined, toMs: number | undefined): number | undefined {
   return fromMs !== undefined && toMs !== undefined && toMs >= fromMs ? Math.round((toMs - fromMs) / 1000) : undefined;
 }

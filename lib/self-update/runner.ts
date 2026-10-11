@@ -7,9 +7,6 @@ import pkg from "@/package.json";
 import { db } from "@/lib/db";
 import { apps, backupRuns, backups, deployments, instanceRestores, meshPeers } from "@/lib/db/schema";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
-import type { BusEvent } from "@/lib/bus/events";
-import { emit } from "@/lib/notifications/dispatch";
-import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
@@ -19,6 +16,7 @@ import { formatVersion } from "@/lib/lifecycle/self-deploy";
 import { canaryVerdict, sameCommit, type CanaryPeer, type CanaryVerdict } from "./canary";
 import { DEPLOY_TIMEOUT_MS, decideTick, isRunActive, verifyStep } from "./decide";
 import { evaluateGates, type GateFailure, type GateInputs } from "./gates";
+import { updateFailed, updateSkipped } from "./lifecycle";
 import { setLocalVardoStatus } from "./peer-status";
 import { effectiveChannel, type UpdatePolicy } from "./policy";
 import { getUpdatePolicy, getUpdateRun, getUpdateState, setUpdateRun, updateState, type UpdateRun, type UpdateState } from "./store";
@@ -36,14 +34,6 @@ const HEALTH_REFRESH_MS = 5 * 60_000;
 const SKIP_RENOTIFY_MS = 24 * 60 * 60_000;
 
 export class UpdateBlockedError extends Error {}
-
-async function emitToAdmins(event: BusEvent): Promise<void> {
-  try {
-    for (const orgId of await adminOrgIds()) emit(orgId, event);
-  } catch (err) {
-    log.error(`Couldn't send ${event.type}:`, err);
-  }
-}
 
 function currentVersion(): string {
   return formatVersion(pkg.version, getBuildSha()) ?? pkg.version;
@@ -195,7 +185,7 @@ async function rollBack(run: UpdateRun, reason: string): Promise<void> {
   await markTargetFailed(run.toSha ?? run.fromSha);
   if (!app || !run.previousDeploymentId) {
     await finish(run, "rollback-failed", { error: `${reason}. No earlier deploy to roll back to.` });
-    await emitToAdmins(failedEvent(run, reason, false));
+    await reportFailed(run, reason, false);
     return;
   }
   const { createDeployment } = await import("@/lib/docker/deploy");
@@ -212,20 +202,20 @@ async function rollBack(run: UpdateRun, reason: string): Promise<void> {
   );
   await setUpdateRun({ ...run, state: "rolling-back", rollbackDeploymentId, error: reason });
   log.warn(`${reason}; rolling back as ${rollbackDeploymentId}`);
-  await emitToAdmins(failedEvent(run, reason, true));
+  await reportFailed(run, reason, true);
 }
 
-function failedEvent(run: UpdateRun, reason: string, rolledBack: boolean, step = "post-update health check"): BusEvent {
-  return {
-    type: "system.update-failed",
-    title: "Vardo update failed",
-    message: rolledBack ? `${reason}. Rolling back.` : reason,
+/** Reports the run's failure to the update lifecycle, in the deploy's thread. */
+async function reportFailed(run: UpdateRun, reason: string, rolledBack: boolean, step = "post-update health check"): Promise<void> {
+  await updateFailed({
+    id: run.deploymentId,
+    source: "self-deploy",
+    startedAt: Date.parse(run.startedAt),
     fromVersion: formatVersion(pkg.version, run.fromSha) ?? pkg.version,
-    toVersion: run.toLabel,
     step,
     error: reason,
     rolledBack,
-  };
+  }).catch((err) => log.error("Couldn't report the failed update:", err));
 }
 
 export async function advanceRun(run: UpdateRun, now = Date.now()): Promise<void> {
@@ -269,7 +259,7 @@ export async function advanceRun(run: UpdateRun, now = Date.now()): Promise<void
     if (status === "success") await finish(run, "rolled-back");
     else if (status && status !== "queued" && status !== "running") {
       await finish(run, "rollback-failed");
-      await emitToAdmins(failedEvent(run, `Rollback ${status}; the update is still running`, false, "rollback"));
+      await reportFailed(run, `Rollback ${status}; the update is still running`, false, "rollback");
     }
   }
 }
@@ -310,14 +300,7 @@ async function notifySkipped(update: ChannelUpdate, failures: GateFailure[], sta
   await updateState((s) => ({ ...s, lastSkip: { sha: update.targetSha, key, at: new Date().toISOString() } }));
   const reasons = failures.map((f) => f.reason);
   log.warn(`Automatic update to ${update.targetLabel} skipped: ${reasons.join("; ")}`);
-  await emitToAdmins({
-    type: "system.update-skipped",
-    title: "Vardo update skipped",
-    message: reasons.join("; "),
-    fromVersion: currentVersion(),
-    target: update.targetLabel,
-    reasons,
-  });
+  await updateSkipped({ fromVersion: currentVersion(), target: update.targetLabel, reasons });
 }
 
 async function autoTick(policy: UpdatePolicy, state: UpdateState, now: Date): Promise<void> {

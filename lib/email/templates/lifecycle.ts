@@ -102,10 +102,11 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         tone: "info",
         status: "Updating",
         mark: "↑",
-        heading: `Vardo is still updating on ${host}`,
-        paragraphs: ["The update has run for over 10 minutes. You'll get one more email when it finishes or fails. Deployed apps keep running."],
+        heading: `Vardo is updating on ${host}`,
+        paragraphs: ["You'll get one more email when it finishes or fails. Deployed apps keep running."],
         facts: [
           { label: "From", value: versionShort(event.fromVersion), mono: true },
+          ...fact("To", event.toVersion ? versionShort(event.toVersion) : undefined, true),
           ...fact("Branch", event.branch, true),
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
         ],

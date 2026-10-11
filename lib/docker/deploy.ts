@@ -61,7 +61,7 @@ export type { DeployStage } from "./deploy-logger";
 const CONTAINER_STAGES: ReadonlySet<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
 
 /** Records a deploy of Vardo itself in the update marker. A no-op for every other app. */
-export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome: MarkerOutcome): Promise<void> {
+export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome: MarkerOutcome, opts?: { marker?: boolean }): Promise<void> {
   if (!ctx?.app) return Promise.resolve();
   return recordSelfDeploy(
     {
@@ -82,6 +82,7 @@ export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome:
       logLines: ctx.logLines,
     },
     outcome,
+    opts,
   );
 }
 
@@ -533,6 +534,8 @@ export async function runDeployment(
 
     // Each step reads and mutates ctx.
     ctx = await prepareRepo(ctx);
+    // The checkout names the target, so "updating" goes out before the build.
+    await recordSelfUpdate(ctx, { state: "started" }, { marker: false });
     ctx.projectNetwork = await prepareProjectNetwork(ctx);
     ctx = await resolveCompose(ctx);
     ctx = await build(ctx);

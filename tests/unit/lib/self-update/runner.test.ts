@@ -13,6 +13,8 @@ const m = vi.hoisted(() => ({
   dump: vi.fn(async () => "/opt/vardo/lifecycle/backups/pre-update.sql.gz"),
   unhealthy: { current: [] as string[] },
   emit: vi.fn(),
+  updateFailed: vi.fn(async (_report: unknown) => true),
+  updateSkipped: vi.fn(async (_event: unknown) => {}),
   buildSha: { current: "4f1a9b2c0d" },
 }));
 
@@ -44,6 +46,7 @@ vi.mock("@/lib/config/health", () => ({
   })),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: m.emit }));
+vi.mock("@/lib/self-update/lifecycle", () => ({ updateFailed: m.updateFailed, updateSkipped: m.updateSkipped }));
 vi.mock("@/lib/notifications/admin-orgs", () => ({ adminOrgIds: vi.fn(async () => ["org1"]) }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: vi.fn(async () => true), releaseLock: vi.fn(async () => {}) }));
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: vi.fn() }));
@@ -111,10 +114,10 @@ describe("advanceRun", () => {
       expect.objectContaining({ appId: "app_vardo", trigger: "rollback", rollback: { targetDeploymentId: "dep_old" } }),
     );
     expect(lastRun()).toMatchObject({ state: "rolling-back", rollbackDeploymentId: "dep_rollback" });
-    expect(m.emit).toHaveBeenCalledWith(
-      "org1",
-      expect.objectContaining({ type: "system.update-failed", rolledBack: true, step: "post-update health check" }),
+    expect(m.updateFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "dep_new", rolledBack: true, step: "post-update health check" }),
     );
+    expect(m.emit).not.toHaveBeenCalled();
     expect(m.state.current.failedTargets).toEqual(["4f1a9b2c0d5e"]);
   });
 

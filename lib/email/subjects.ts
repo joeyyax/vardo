@@ -144,7 +144,7 @@ export function subjectLine(event: BusEvent): string {
     case "system.recovered-unclean":
       return "⚠ Vardo recovered after an unclean stop";
     case "system.update-started":
-      return `↑ Vardo updating · ${versionShort(event.fromVersion)}`;
+      return `↑ Vardo updating · ${versionShort(event.fromVersion)}${event.toVersion ? ` → ${versionShort(event.toVersion)}` : ""}`;
     case "system.updated":
       return [`✓ Vardo updated · ${versionShort(event.fromVersion)} → ${versionShort(event.toVersion)}`, headSubject(event.commits)]
         .filter(Boolean)

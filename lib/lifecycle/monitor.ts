@@ -14,42 +14,35 @@ import { logger } from "@/lib/logger";
 import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
-import { fetchCompare, getBuildSha, moreCommits } from "@/lib/version";
+import { getBuildSha } from "@/lib/version";
 import { formatDuration } from "@/lib/email/format";
 import { formatVersion } from "./self-deploy";
 import {
   classifyBoot,
   isConsoleHandover,
   isOtherConsole,
-  markSeen,
   missingContainers,
   parseBtime,
   parseUpdateMarker,
-  ranSelfDeploy,
-  seconds,
   stoppingForSelfDeploy,
-  updateAnnouncement,
   updateInFlight,
   type BootClassification,
   type Heartbeat,
   type ShutdownMarker,
   type SnapshotContainer,
   type UpdateMarker,
-  type UpdateSeen,
 } from "./classify";
 
 const log = logger.child("lifecycle");
 
 export const HEARTBEAT_KEY = "lifecycle_heartbeat";
 export const SHUTDOWN_KEY = "lifecycle_shutdown";
-export const UPDATE_SEEN_KEY = "lifecycle_update_seen";
 export const UPDATE_MARKER_FILE = join(LIFECYCLE_DIR, "update.json");
 
 const HEARTBEAT_MS = 30_000;
 const MISSING_CHECK_DELAY_MS = 3 * 60_000;
-/** How often, and how long, a console booted mid-update waits for install.sh to report. */
+/** How often a console booted mid-update reads the marker. */
 export const UPDATE_POLL_MS = 5_000;
-export const UPDATE_WAIT_MS = 10 * 60_000;
 
 export function versionLabel(): string {
   return formatVersion(pkg.version, getBuildSha()) ?? pkg.version;
@@ -133,147 +126,31 @@ function describeSignal(signal: string | undefined): string {
   return "Stop signal: host shutdown, restart or container stop";
 }
 
-function updateEvent(marker: UpdateMarker, state: UpdateMarker["state"], downSeconds?: number): BusEvent {
-  const version = marker.toVersion ? `${marker.fromVersion} → ${marker.toVersion}` : marker.fromVersion;
-  const durationSeconds = seconds(marker.startedAt, marker.finishedAt);
-  switch (state) {
-    case "started":
-      return {
-        type: "system.update-started",
-        title: "Vardo update started",
-        message: `vardo update started from ${marker.fromVersion}.`,
-        fromVersion: marker.fromVersion,
-        branch: marker.branch,
-        fromSlot: marker.fromSlot,
-        toSlot: marker.toSlot,
-      };
-    case "updated":
-      return {
-        type: "system.updated",
-        title: "Vardo updated",
-        message: `Vardo updated ${version}${durationSeconds !== undefined ? ` in ${formatDuration(durationSeconds * 1000)}` : ""}.`,
-        fromVersion: marker.fromVersion,
-        toVersion: marker.toVersion ?? "unknown version",
-        fromSlot: marker.fromSlot,
-        toSlot: marker.toSlot,
-        durationSeconds,
-        downSeconds: seconds(marker.swapStartedAt, marker.healthyAt) ?? downSeconds,
-      };
-    case "failed":
-      return {
-        type: "system.update-failed",
-        title: "Vardo update failed",
-        message: `vardo update failed at ${marker.step ?? "an unknown step"}${marker.error ? `: ${marker.error}` : "."}`,
-        fromVersion: marker.fromVersion,
-        toVersion: marker.toVersion,
-        fromSlot: marker.fromSlot,
-        toSlot: marker.toSlot,
-        step: marker.step ?? "an unknown step",
-        error: marker.error,
-        durationSeconds,
-        rolledBack: marker.rolledBack,
-        logTail: marker.logTail,
-      };
-  }
-}
-
-const SHA_IN_LABEL = /(?:^|\()([0-9a-f]{7,40})\)?\s*$/i;
-
-/** The commit in a version label like "0.1.0 (bc2083d)". */
-export function labelSha(label: string | undefined): string | undefined {
-  return label?.match(SHA_IN_LABEL)?.[1];
-}
-
-/** An update that lands where it started: a redeploy of the same commit, nothing to tell anyone. */
-export function sameVersion(marker: Pick<UpdateMarker, "fromVersion" | "toVersion">): boolean {
-  if (!marker.toVersion) return false;
-  const from = labelSha(marker.fromVersion);
-  const to = labelSha(marker.toVersion);
-  return from && to ? to.toLowerCase().startsWith(from.toLowerCase()) || from.toLowerCase().startsWith(to.toLowerCase()) : marker.fromVersion === marker.toVersion;
-}
-
-/** The update's commits from GitHub, when both ends are commits it knows. Best effort. */
-async function withChanges(event: BusEvent): Promise<BusEvent> {
-  if (event.type !== "system.updated" && event.type !== "system.update-failed") return event;
-  const from = labelSha(event.fromVersion);
-  const to = labelSha(event.toVersion);
-  if (!from || !to) return event;
-  const compare = await fetchCompare(from, to).catch(() => null);
-  if (!compare?.commits.length) return event;
-  return { ...event, commits: compare.commits, ...moreCommits(compare.aheadBy, compare.commits.length), ...(compare.url ? { changesUrl: compare.url } : {}) };
-}
-
 /** This process's start, and how long the console was down before it. */
 const processStartedAt = Date.now() - Math.round(process.uptime() * 1000);
 let bootDownSeconds: number | undefined;
 
-// Update announcements run one at a time, so the boot wait and the heartbeat can't both send one.
-let updateQueue: Promise<unknown> = Promise.resolve();
-
-function serialized<T>(fn: () => Promise<T>): Promise<T> {
-  const run = updateQueue.then(fn, fn);
-  updateQueue = run.catch(() => {});
-  return run;
-}
-
-/** Announces an update marker state not yet announced. Returns the state announced. */
-export function checkUpdateMarker(): Promise<UpdateMarker["state"] | null> {
-  return serialized(async () => {
-    const marker = await readUpdateMarker();
-    if (!marker) return null;
-    const seen = await readJson<UpdateSeen>(UPDATE_SEEN_KEY);
-    const state = updateAnnouncement(marker, seen, Date.now());
-    if (!state) return null;
-    // The console an update started is the new one; its "updated" message covers the start.
-    if (state === "started" && marker.startedAt < processStartedAt) return null;
-    // A self-deploy's new console reports the result; the old one is about to stop.
-    if (state === "updated" && ranSelfDeploy(marker, selfHost())) return null;
-    await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, state));
-    if (state === "updated" && sameVersion(marker)) {
-      log.info(`Update ${marker.id} kept ${marker.fromVersion}; nothing to announce`);
-      return null;
-    }
-    await emitToAdmins(await withChanges(updateEvent(marker, state, bootDownSeconds)));
-    log.info(`Announced update ${marker.id}: ${state}`);
-    return state;
-  });
-}
-
-/** Reports an update install.sh never finished, unless its outcome was announced meanwhile. */
-function announceUpdateSilent(marker: UpdateMarker): Promise<void> {
-  return serialized(async () => {
-    const seen = await readJson<UpdateSeen>(UPDATE_SEEN_KEY);
-    if (seen?.id === marker.id && seen.states.some((s) => s !== "started")) return;
-    await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, "failed"));
-    const minutes = Math.round(UPDATE_WAIT_MS / 60_000);
-    await emitToAdmins(
-      updateEvent(
-        {
-          ...marker,
-          state: "failed",
-          step: marker.step ?? "the swap",
-          error: `vardo update didn't report a result within ${minutes} minutes of the new console starting. Check the install log.`,
-        },
-        "failed",
-      ),
-    );
-    log.warn(`Update ${marker.id} didn't report a result`);
+/** Hands the update marker to the update lifecycle. Returns the notice it sent. */
+export async function checkUpdateMarker(marker?: UpdateMarker | null): Promise<UpdateMarker["state"] | null> {
+  const { ingestUpdateMarker } = await import("@/lib/self-update/lifecycle");
+  return ingestUpdateMarker(marker === undefined ? await readUpdateMarker() : marker, {
+    host: selfHost(),
+    processStartedAt,
+    downSeconds: bootDownSeconds,
   });
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
 
-/** Waits for an update this console booted into to finish, then announces it. */
-async function awaitUpdateOutcome(started: UpdateMarker): Promise<void> {
-  const deadline = Date.now() + UPDATE_WAIT_MS;
-  while (Date.now() < deadline) {
+/** Follows an update this console booted into until the lifecycle closes it. */
+async function watchUpdate(): Promise<void> {
+  const { activeUpdate, awaitResult, reconcileUpdate } = await import("@/lib/self-update/lifecycle");
+  await awaitResult();
+  while (await activeUpdate()) {
     await sleep(UPDATE_POLL_MS);
-    const marker = await readUpdateMarker();
-    if (marker?.id === started.id && marker.state === "started") continue;
-    await checkUpdateMarker();
-    return;
+    await checkUpdateMarker().catch((err) => log.warn("Update marker check failed:", err));
+    await reconcileUpdate();
   }
-  await announceUpdateSilent(started);
 }
 
 function bootEvent(boot: BootClassification): BusEvent | null {
@@ -367,7 +244,9 @@ export const lifecycleHeartbeatLoop = new IntervalLoop({
   run: async () => {
     const [beaten] = await Promise.allSettled([
       beat(),
-      checkUpdateMarker().catch((err) => log.warn("Update marker check failed:", err)),
+      checkUpdateMarker()
+        .then(async () => (await import("@/lib/self-update/lifecycle")).reconcileUpdate())
+        .catch((err) => log.warn("Update marker check failed:", err)),
     ]);
     if (beaten.status === "rejected") throw beaten.reason;
   },
@@ -412,9 +291,10 @@ export async function startLifecycleMonitor(): Promise<void> {
   const marker = await readUpdateMarker();
   if (updateInFlight(marker, Date.now())) {
     log.info(`Update ${marker.id} in progress; waiting for its result`);
-    void awaitUpdateOutcome(marker).catch((err) => log.error("Update wait failed:", err));
+    await checkUpdateMarker(marker).catch(() => null);
+    void watchUpdate().catch((err) => log.error("Update wait failed:", err));
   } else {
-    const announced = await checkUpdateMarker().catch(() => null);
+    const announced = await checkUpdateMarker(marker).catch(() => null);
     const handover =
       !announced &&
       boot.kind === "unclean" &&

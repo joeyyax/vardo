@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/lib/messenger";
+import { versionShort } from "@/lib/email/format";
 import type { UpdatePolicy } from "@/lib/self-update/policy";
 import type { UpdateStatus } from "@/lib/self-update/status";
 
@@ -95,11 +96,13 @@ export function UpdatesCard() {
     void load();
   }, []);
 
+  const busy = !!status?.runActive || !!status?.active;
+
   useEffect(() => {
-    if (!status?.runActive) return;
+    if (!busy) return;
     const t = setInterval(() => void load(), 10_000);
     return () => clearInterval(t);
-  }, [status?.runActive]);
+  }, [busy]);
 
   async function check() {
     setChecking(true);
@@ -218,6 +221,13 @@ export function UpdatesCard() {
                 <p className="text-sm text-muted-foreground">Couldn&apos;t check GitHub for updates.</p>
               )}
 
+              {status.active && !status.runActive && (
+                <p className="flex items-center gap-2 text-sm">
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                  Updating Vardo{status.active.toVersion ? <> to <span className="font-mono">{versionShort(status.active.toVersion)}</span></> : null}…
+                </p>
+              )}
+
               {run && (
                 <p className="text-sm text-muted-foreground">
                   {status.runActive ? "Updating" : "Last update"} to <span className="font-mono">{run.toLabel}</span> ({run.trigger}):{" "}
@@ -240,14 +250,14 @@ export function UpdatesCard() {
                 <Button
                   variant="outline"
                   onClick={() => setConfirmOpen(true)}
-                  disabled={updating || status.runActive}
+                  disabled={updating || busy}
                 >
-                  {updating || status.runActive ? (
+                  {updating || busy ? (
                     <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                   ) : (
                     <ArrowUpCircle className="size-4" aria-hidden="true" />
                   )}
-                  {status.runActive ? "Updating..." : "Update now"}
+                  {busy ? "Updating..." : "Update now"}
                 </Button>
               ) : (
                 <div className="space-y-1.5">
@@ -414,7 +424,7 @@ export function UpdatesCard() {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               {status?.selfDeploy && (
-                <AlertDialogAction onClick={() => void updateNow()} disabled={status.runActive}>
+                <AlertDialogAction onClick={() => void updateNow()} disabled={busy}>
                   Update now
                 </AlertDialogAction>
               )}
