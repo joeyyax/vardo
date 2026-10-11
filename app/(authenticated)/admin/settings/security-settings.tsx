@@ -14,6 +14,7 @@ import { GuardHistory } from "@/components/probe-guard/guard-history";
 import { DEFAULT_INSTANCE_PROBE_GUARD, type InstanceProbeGuard } from "@/lib/probe-guard/settings";
 import { useSystemSetting } from "./use-system-setting";
 import { AbuseReportingCard } from "./abuse-reporting-card";
+import { BlockedCard } from "./blocked-card";
 import { ALLOWLIST_ENDPOINT, AllowlistCard } from "./allowlist-card";
 
 const ENDPOINT = "/api/v1/admin/probe-guard";
@@ -194,6 +195,8 @@ export function SecuritySettings() {
       <AllowlistCard version={allowVersion} onChange={() => void refetch()} />
 
       <AbuseReportingCard />
+
+      <BlockedCard version={allowVersion} />
 
       <Card>
         <CardHeader>

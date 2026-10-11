@@ -214,6 +214,8 @@ export type BanView = {
   createdAt: Date;
   expiresAt: Date;
   appId: string | null;
+  blockedCount: number;
+  lastBlockedAt: Date | null;
 };
 
 /** Active bans, newest first, blocklist bans left out. Scoped to one app's bans when given. */
@@ -230,6 +232,8 @@ export async function listActiveBans(opts: { appId?: string; limit?: number } = 
       createdAt: probeBans.createdAt,
       expiresAt: probeBans.expiresAt,
       appId: probeBans.appId,
+      blockedCount: probeBans.blockedCount,
+      lastBlockedAt: probeBans.lastBlockedAt,
     })
     .from(probeBans)
     .where(and(...filters))
@@ -350,4 +354,32 @@ export async function blocklistBanCount(now = new Date()): Promise<number> {
     .from(probeBans)
     .where(and(eq(probeBans.reason, "blocklist"), isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)));
   return row?.n ?? 0;
+}
+
+/** Active bans by address, for attributing blocked requests. */
+export async function activeBanRefs(now = new Date()): Promise<Map<string, { id: string; blocklist: boolean }>> {
+  const rows = await db
+    .select({ id: probeBans.id, ip: probeBans.ip, reason: probeBans.reason })
+    .from(probeBans)
+    .where(and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)));
+  const out = new Map<string, { id: string; blocklist: boolean }>();
+  // A local ban outranks a blocklist one on the same address.
+  for (const r of rows) if (!out.has(r.ip) || r.reason !== "blocklist") out.set(r.ip, { id: r.id, blocklist: r.reason === "blocklist" });
+  return out;
+}
+
+/** Adds flushed block counts to their bans. Bans deleted since are skipped. */
+export async function addBanBlocks(rows: readonly { id: string; count: number; lastAt: Date }[]): Promise<void> {
+  if (rows.length === 0) return;
+  const values = sql.join(
+    rows.map((r) => sql`(${r.id}, ${r.count}::integer, ${r.lastAt.toISOString()}::timestamptz)`),
+    sql`, `,
+  );
+  await db.execute(sql`
+    update ${probeBans} set
+      blocked_count = ${probeBans.blockedCount} + v.n,
+      last_blocked_at = greatest(${probeBans.lastBlockedAt}, v.at)
+    from (values ${values}) as v(id, n, at)
+    where ${probeBans.id} = v.id
+  `);
 }

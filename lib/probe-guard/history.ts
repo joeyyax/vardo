@@ -30,6 +30,8 @@ export type HistoryBan = {
   expiresAt: Date;
   liftedAt: Date | null;
   liftedByName: string | null;
+  blockedCount: number;
+  lastBlockedAt: Date | null;
   status: BanStatus;
   detail: BanDetail | null;
   reportedTo: string | null;
@@ -104,6 +106,8 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
         expiresAt: probeBans.expiresAt,
         liftedAt: probeBans.liftedAt,
         liftedByName: user.name,
+        blockedCount: probeBans.blockedCount,
+        lastBlockedAt: probeBans.lastBlockedAt,
       })
       .from(probeBans)
       .leftJoin(user, eq(user.id, probeBans.liftedBy))

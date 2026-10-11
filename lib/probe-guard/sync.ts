@@ -20,6 +20,7 @@ import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings
 import { getProbeGuardSettings, guardKey } from "./instance";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { banRenderOrder } from "./ban-policy";
+import { blockableRanges } from "./blocklist/import";
 import { PERMANENT_UNTIL } from "./permanent";
 
 const log = logger.child("probe-guard");
@@ -68,7 +69,7 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
 }
 
 /** Permanent bans first, then the newest local ones, then blocklist bans by confidence. */
-export async function activeBannedIps(now = new Date()): Promise<string[]> {
+async function renderedBans(now: Date): Promise<{ ips: string[]; blocklist: Set<string>; local: Set<string> }> {
   const columns = { ip: probeBans.ip, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt, reason: probeBans.reason, hits: probeBans.hits };
   const active = and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now));
   const [local, blocklist] = await Promise.all([
@@ -85,13 +86,28 @@ export async function activeBannedIps(now = new Date()): Promise<string[]> {
       .orderBy(desc(probeBans.hits), desc(probeBans.createdAt))
       .limit(MAX_RENDERED_BLOCKLIST),
   ]);
-  return banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST);
+  return {
+    ips: banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST),
+    blocklist: new Set(blocklist.map((r) => r.ip)),
+    local: new Set(local.map((r) => r.ip)),
+  };
 }
 
-/** Spamhaus DROP ranges while that blocklist is on. */
+export async function activeBannedIps(now = new Date()): Promise<string[]> {
+  return (await renderedBans(now)).ips;
+}
+
+/** Blocklist bans that make it into the guard file. */
+export async function enforcedBlocklistBans(now = new Date()): Promise<number> {
+  const { ips, blocklist, local } = await renderedBans(now);
+  return ips.filter((ip) => blocklist.has(ip) && !local.has(ip)).length;
+}
+
+/** Spamhaus DROP ranges while that blocklist is on, less any overlapping the current allowlist. */
 export async function activeBannedRanges(): Promise<string[]> {
-  const [settings, drop] = await Promise.all([getAbuseSettings(), getDropRanges()]);
-  return settings.blocklists.spamhaus.enabled ? drop.ranges.slice(0, MAX_RENDERED_RANGES) : [];
+  const [settings, drop, allowlist] = await Promise.all([getAbuseSettings(), getDropRanges(), getAllowlist()]);
+  if (!settings.blocklists.spamhaus.enabled) return [];
+  return blockableRanges(drop.ranges, { allowlist: allowlist.map((e) => e.value) }).slice(0, MAX_RENDERED_RANGES);
 }
 
 // Docker networks, where a cloudflared tunnel connects from.
@@ -139,6 +155,7 @@ export async function loadGuardState(): Promise<GuardState | null> {
     bannedIps,
     bannedRanges,
     skipClients: allowlist.filter((e) => e.skipGuard).map((e) => e.value),
+    allowedClients: allowlist.map((e) => e.value),
     forwardingPeers: forwardingPeers(),
     trapPaths: settings.traps.enabled ? settings.traps.paths : [],
     markers,

@@ -69,6 +69,20 @@ describe("renderGuardConfig", () => {
     expect(http.routers!["vardo-guard-a-trap-web"].rule).toMatch(/&& !PathPrefix\(`\/actuator`\)$/);
   });
 
+  it("never sends an allowlisted client to the banned router, skip-guard or not", () => {
+    const { http } = parse(state({
+      bannedIps: ["203.0.113.9"],
+      bannedRanges: ["198.51.100.0/24"],
+      allowedClients: ["198.51.100.7"],
+      forwardingPeers: ["173.245.48.0/20"],
+    }));
+    const rule = http.routers!["vardo-guard-banned-websecure"].rule;
+    expect(rule).toMatch(/&& !\(ClientIP\(`198\.51\.100\.7`\)/);
+    expect(rule).toContain("198\\.51\\.100\\.7");
+    expect(() => parseRule(rule)).not.toThrow();
+    expect(http.routers!["vardo-guard-app1-probe-web"].rule).not.toContain("198.51.100.7");
+  });
+
   it("puts bans and canaries above traps, probes and robots", () => {
     const { http } = parse(state({
       bannedIps: ["203.0.113.9"],

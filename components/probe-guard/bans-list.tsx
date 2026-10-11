@@ -34,6 +34,9 @@ export type BanItem = {
   detail?: BanDetail | null;
   /** The reporter that took a report on this address. */
   reportedTo?: string | null;
+  /** Requests turned away under this ban. */
+  blockedCount?: number;
+  lastBlockedAt?: string | null;
   /** Set for bans that may have ended; missing means active. */
   status?: BanStatus;
 };
@@ -121,13 +124,14 @@ export function BansList({
         const ended = ban.status?.kind === "expired" || ban.status?.kind === "lifted";
         return (
           <li key={ban.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
-            <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="min-w-0 flex-1 basis-60 space-y-0.5">
               <p className="font-mono text-sm">{ban.ip}</p>
               <BanReason ban={ban} permanent={permanent} ended={ended} showCreated={showCreated} />
+              <BlockedLine ban={ban} />
               <ReportedLink ban={ban} />
             </div>
             {ended && (canBanAgain || allowUrl) && (
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {canBanAgain && (
                   <Button size="sm" variant="outline" onClick={() => void banAgain(ban)} disabled={busy}>
                     {busy ? <Loader2 className="size-4 animate-spin" /> : "Ban again"}
@@ -137,7 +141,7 @@ export function BansList({
               </div>
             )}
             {!ended && (canUnban || allowUrl || (canBanPermanently && !permanent)) && (
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
                 {canBanPermanently && !permanent && (
                   <AlertDialog>
@@ -195,6 +199,17 @@ function AllowButton({ ip, busy, onConfirm }: { ip: string; busy: boolean; onCon
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function BlockedLine({ ban }: { ban: BanItem }) {
+  if (ban.blockedCount === undefined) return null;
+  if (ban.blockedCount === 0) return <p className="text-xs text-muted-foreground">Not blocked yet</p>;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Blocked {ban.blockedCount.toLocaleString("en-US")} {ban.blockedCount === 1 ? "time" : "times"}
+      {ban.lastBlockedAt && <>, last <RelativeTime date={ban.lastBlockedAt} /></>}
+    </p>
   );
 }
 

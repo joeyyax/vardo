@@ -19,6 +19,9 @@ export const probeBans = pgTable(
     appId: text("app_id").references(() => apps.id, { onDelete: "set null" }),
     /** Probe hits; for blocklist bans, the source's confidence score. */
     hits: integer("hits").notNull().default(0),
+    /** Requests the guard turned away under this ban. */
+    blockedCount: integer("blocked_count").notNull().default(0),
+    lastBlockedAt: timestamp("last_blocked_at", { withTimezone: true }),
     /** The linked instance that sent this ban. Received bans are never sent on. */
     originPeerId: text("origin_peer_id").references(() => meshPeers.id, { onDelete: "set null" }),
     originName: text("origin_name"),

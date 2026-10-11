@@ -3,7 +3,8 @@
 import { logger } from "@/lib/logger";
 import { OTHER_RULE_ID, matchProbe } from "./rules";
 import { RESPONSE_HEADERS, responseBody, type ResponseKind } from "./responses";
-import { reachesThreshold } from "./ban-policy";
+import { normalizeIp, reachesThreshold } from "./ban-policy";
+import { attributeBlock, type BanRef, type BlockMatch } from "./block-source";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from "./canary";
 import { decoyPath, type InstanceProbeGuard } from "./settings";
 import { APP_HEADER, KEY_HEADER, type GuardKind } from "./traefik-file";
@@ -36,8 +37,12 @@ export type GuardDeps = {
   robotsFor: (settings: InstanceProbeGuard) => string;
   /** On the never-ban list: answered, never counted. */
   allowed?: (ip: string) => Promise<boolean>;
-  /** In a blocklist range, for forwarded clients the guard file's ClientIP matchers can't see. */
-  blockedRange?: (ip: string) => Promise<boolean>;
+  /** The blocklist range an address is in, for forwarded clients the guard file's ClientIP matchers can't see. */
+  blockedRange?: (ip: string) => Promise<string | null>;
+  /** Active bans by address; the candidates let a cache refresh on a miss. */
+  banLookup?: (ips: readonly string[]) => Promise<(ip: string) => BanRef | undefined>;
+  /** Counts a blocked request. Must not throw or wait. */
+  recordBlock?: (ip: string, match: BlockMatch) => void;
   /** Queues an exploit attempt for abuse reporting. */
   queueReport?: (ip: string) => Promise<unknown>;
 };
@@ -67,6 +72,20 @@ export function carriedMarker(headers: Headers, url: URL, markers: readonly stri
   return null;
 }
 
+/** The peer Traefik saw: the last X-Forwarded-For hop, which its ClientIP matchers compare. */
+function traefikPeer(headers: Headers): string | null {
+  return headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() || null;
+}
+
+/** Counts a banned-router request against the ban or range that explains it. */
+async function countBanned(ip: string, headers: Headers, deps: GuardDeps): Promise<void> {
+  if (!deps.recordBlock) return;
+  const candidates = [...new Set([ip, traefikPeer(headers) ?? ""].map(normalizeIp).filter((c): c is string => !!c))];
+  const banFor = (await deps.banLookup?.(candidates)) ?? (() => undefined);
+  const ranges = new Map(await Promise.all(candidates.map(async (c) => [c, (await deps.blockedRange?.(c)) ?? null] as const)));
+  deps.recordBlock(ip, attributeBlock(candidates, banFor, (c) => ranges.get(c) ?? null));
+}
+
 /** Handles one guarded request. Never throws and never says anything about the app. */
 export async function handleGuardRequest(kind: GuardKind, request: Request, deps: GuardDeps): Promise<Response> {
   const method = request.method.toUpperCase();
@@ -81,10 +100,15 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const appId = appHeader && APP_ID_RE.test(appHeader) ? appHeader : null;
     const path = originalPath(request.headers);
 
-    if (kind === "banned") return reply(403, responseBody("banned", 403, humor), method);
+    if (kind === "banned") {
+      if (!(await deps.allowed?.(ip).catch(() => false))) await countBanned(ip, request.headers, deps).catch(() => {});
+      return reply(403, responseBody("banned", 403, humor), method);
+    }
 
     const allowed = kind !== "robots" && !!(await deps.allowed?.(ip).catch(() => false));
-    if (!allowed && kind !== "robots" && (await deps.blockedRange?.(ip).catch(() => false))) {
+    const range = !allowed && kind !== "robots" ? await deps.blockedRange?.(ip).catch(() => null) : null;
+    if (range) {
+      deps.recordBlock?.(ip, { source: "spamhaus", range });
       return reply(403, responseBody("banned", 403, humor), method);
     }
 

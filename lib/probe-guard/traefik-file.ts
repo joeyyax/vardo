@@ -63,6 +63,8 @@ export type GuardState = {
   bannedRanges?: string[];
   /** Allowlist entries the probe, trap and canary routers skip. */
   skipClients?: string[];
+  /** Every allowlist entry. The banned router skips them all. */
+  allowedClients?: string[];
   /** Peers whose Cf-Connecting-Ip a skip entry trusts: Cloudflare, trusted proxies, local networks. */
   forwardingPeers?: string[];
   /** Points the responder at a URL instead of the console's docker service. */
@@ -235,7 +237,8 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
   const allHosts = hostClause(apps.filter((a) => !a.console).flatMap((a) => a.hosts));
   if (allHosts) {
     const bans = banClause(state.bannedIps, state.bannedRanges ?? []);
-    if (bans) add(`${GUARD_PREFIX}banned`, "banned", `${allHosts} && ${bans}`, `${GUARD_PREFIX}tag`);
+    const allowed = skipClause(state.allowedClients ?? [], state.forwardingPeers ?? []);
+    if (bans) add(`${GUARD_PREFIX}banned`, "banned", allowed ? `${allHosts} && ${bans} && ${allowed}` : `${allHosts} && ${bans}`, `${GUARD_PREFIX}tag`);
     const canary = canaryClause(state.markers);
     if (canary) add(`${GUARD_PREFIX}canary`, "canary", unlessSkipped(`${allHosts} && ${canary}`), `${GUARD_PREFIX}tag`);
   }
