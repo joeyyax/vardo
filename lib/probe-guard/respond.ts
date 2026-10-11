@@ -35,6 +35,12 @@ export type GuardDeps = {
   appForHost: (host: string) => Promise<{ id: string } | null>;
   robotsFor: (settings: InstanceProbeGuard) => string;
   sleep: (ms: number) => Promise<void>;
+  /** On the never-ban list: answered, never counted. */
+  allowed?: (ip: string) => Promise<boolean>;
+  /** In a blocklist range, for forwarded clients the guard file's ClientIP matchers can't see. */
+  blockedRange?: (ip: string) => Promise<boolean>;
+  /** Queues an exploit attempt for abuse reporting. */
+  queueReport?: (ip: string) => Promise<unknown>;
 };
 
 function reply(status: number, body: string, method: string): Response {
@@ -79,6 +85,11 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
 
     if (kind === "banned") return reply(403, responseBody("banned", 403, humor), method);
 
+    const allowed = kind !== "robots" && !!(await deps.allowed?.(ip).catch(() => false));
+    if (!allowed && kind !== "robots" && (await deps.blockedRange?.(ip).catch(() => false))) {
+      return reply(403, responseBody("banned", 403, humor), method);
+    }
+
     if (kind === "robots") {
       return new Response(method === "HEAD" ? null : deps.robotsFor(settings), {
         status: 200,
@@ -87,6 +98,7 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     }
 
     if (kind === "trap") {
+      if (allowed) return reply(404, responseBody("trap", 404, humor), method);
       await deps.recordEvent({ kind: "trap", ip, path, appId });
       await deps.ban({ ip, reason: "trap", appId, hits: 1 });
       await tarpit();
@@ -99,6 +111,7 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     }
 
     if (kind === "canary") {
+      if (allowed) return reply(403, responseBody("canary", 403, humor), method);
       const markers = await deps.activeMarkers();
       const found = carriedMarker(request.headers, new URL(request.url), markers.map((m) => m.marker));
       const canary = found ? markers.find((m) => m.marker === found) : undefined;
@@ -114,6 +127,8 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const match = matchProbe(path);
     const status = match?.rule.status ?? 403;
     const category: ResponseKind = match?.rule.category ?? "framework";
+    if (allowed) return reply(status, responseBody(category, status, humor), method);
+    if (match?.rule.report === "exploit") void deps.queueReport?.(ip)?.catch(() => {});
     const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000).catch(() => 0);
     if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });

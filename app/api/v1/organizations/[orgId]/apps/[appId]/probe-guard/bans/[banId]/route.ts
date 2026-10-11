@@ -4,8 +4,9 @@ import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { recordActivity } from "@/lib/activity";
 import { isAppAdmin } from "@/lib/auth/admin";
-import { liftBan, makeBanPermanent } from "@/lib/probe-guard/bans";
+import { banAgain, liftBan, makeBanPermanent } from "@/lib/probe-guard/bans";
 import { banPatchSchema } from "@/lib/probe-guard/settings";
+import { banAgainResponse } from "@/lib/probe-guard/ban-again-response";
 
 type RouteParams = { params: Promise<{ orgId: string; appId: string; banId: string }> };
 
@@ -25,16 +26,18 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** PATCH — makes one of this app's bans permanent. Instance admins only. */
+/** PATCH — bans an old ban's address again, or makes a ban permanent (instance admins only). */
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, banId } = await params;
     const org = await verifyOrgAccess(orgId, "app.config");
     if (!org) return apiError.forbidden();
     const app = await verifyAppAccess(orgId, appId, "app.config");
-    if (!app || !(await isAppAdmin())) return apiError.forbidden();
+    if (!app) return apiError.forbidden();
     const parsed = banPatchSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return apiError.validation(parsed.error);
+    if ("again" in parsed.data) return banAgainResponse(await banAgain(banId, { appId }));
+    if (!(await isAppAdmin())) return apiError.forbidden();
     if (!(await makeBanPermanent(banId, org.session.user.id, { appId }))) return apiError.notFound("ban");
     return NextResponse.json({ ok: true });
   } catch (error) {

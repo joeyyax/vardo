@@ -22,7 +22,26 @@ The file is rewritten on every settings change and ban, and each minute by the `
 
 The console counts probe hits per client address in Redis. Five within 10 minutes bans the address for an hour; each repeat within 30 days doubles that, up to 24 hours. A trap hit or a used decoy credential bans at once. All of these are instance settings.
 
-Vardo never bans private, loopback, link-local, CGNAT (Tailscale) or mesh addresses, its own public address, `VARDO_TRUSTED_PROXIES`, linked instances' addresses or Cloudflare's edge ranges.
+Vardo never bans private, loopback, link-local, CGNAT (Tailscale) or mesh addresses, its own public address, `VARDO_TRUSTED_PROXIES`, linked instances' addresses, Cloudflare's edge ranges or anything on the **Never ban** list.
+
+### Never ban
+
+Admins keep up to 200 IPs or CIDRs (no broader than /8 for IPv4 or /16 for IPv6) under **Admin → Security → Never ban**. Listed addresses are never banned, accepted from a linked instance, reported or blocked by a blocklist, and adding one lifts any ban it covers. Their probes still get the guard's 403 or 404 but never count. **Skip the probe guard entirely** also excludes the address from the probe, trap and canary routers, matched on the TCP peer, the last `X-Forwarded-For` hop and `Cf-Connecting-Ip` from Cloudflare, a trusted proxy or a local network. IPv6 ranges whose prefix isn't a multiple of 16 match the TCP peer only.
+
+### Blocklists
+
+Two sources, both off by default and fetched about once a day:
+
+- **AbuseIPDB blocklist** (needs the API key): up to 10,000 addresses at or above the confidence threshold (default 90, minimum 75; the free tier only returns 100). Each becomes a 24-hour `blocklist` ban, refreshed daily and never permanent.
+- **Spamhaus DROP**: hijacked and criminal netblocks from `drop_v4.json` and `drop_v6.json`. Ranges that overlap any never-ban range are skipped.
+
+The guard file renders up to 1,000 addresses: permanent bans, then local bans, then at most 500 blocklist bans by confidence. DROP ranges render as up to 2,000 `ClientIP` matchers, which match the TCP peer only. Writing CIDRs into the forwarded-header regex would make it large and slow, so a proxied client in a DROP range is caught only when it reaches a guard route, where the responder checks it against the ranges in memory.
+
+### Abuse reporting
+
+With **Report confirmed abuse** on, the console reports to AbuseIPDB: exploit-rule hits (Laravel Ignition, PHPUnit, path traversal, router exploits, sensitive Actuator paths) on sight, and trap fetches, decoy credential use and credential hunting (env files, cloud credentials, SSH keys) when they end in a ban. Plain threshold bans of other paths, shared bans and blocklist bans aren't reported. Each address is rechecked against the never-ban rules at send time.
+
+Reports go from a Redis queue drained by the `abuse-report` loop: one per address per 15 minutes, a daily cap (default 500) and a backoff on 429 that honors `Retry-After`. Comments carry rule labels and sanitized paths only, with no query strings and no segment that looks like a host, address, email, token or the name of any app, project, org or domain on the instance.
 
 ### Behind Cloudflare
 
@@ -49,3 +68,5 @@ With **Share bans with linked instances** on, new local bans go to every directl
 ## Activity
 
 Bans, trap hits and canary use leave quiet activity rows on the app. Counts show on the app's Security tab and the admin Security page. Nothing sends alerts or email.
+
+Both pages take a range (1h, 24h, 7d, 30d, 90d or all time, in `?range=`, default 7d) for the summary, recent bans, what was probed and top sources. Ban rows and probe events are kept for 90 days, so all time means everything retained. Probe events are capped per address per window; Redis keeps the full counts.

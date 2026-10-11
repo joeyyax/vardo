@@ -112,6 +112,7 @@ const LABELS: Record<string, [path: string, label: string]> = {
   phpunit: ["/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php", "PHPUnit exploit (RCE)"],
   ignition: ["/_ignition/execute-solution", "Laravel Ignition exploit (RCE)"],
   actuator: ["/actuator/env", "Spring Boot Actuator"],
+  "actuator-index": ["/actuator", "Spring Boot Actuator"],
   "server-status": ["/server-status", "Apache server status"],
   "php-backup": ["/config.php.bak", "config backups"],
   "wp-config": ["/wp-config.php", "WordPress config"],

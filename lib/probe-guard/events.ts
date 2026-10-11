@@ -9,7 +9,7 @@ import { generateMarker } from "./canary";
 import { MAX_RENDERED_MARKERS } from "./traefik-file";
 import { syncGuardFileSoon } from "./sync";
 
-const EVENT_TTL_MS = 30 * 86_400_000;
+const EVENT_TTL_MS = 90 * 86_400_000;
 const MARKER_TTL_MS = 30 * 86_400_000;
 
 const EVENT_ACTIVITY: Partial<Record<ProbeEventKind, string>> = {

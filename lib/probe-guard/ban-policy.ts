@@ -32,6 +32,8 @@ export type NeverBanContext = {
   ownIps?: readonly string[];
   /** Trusted proxies, linked instances and anything else to leave alone. */
   extraRanges?: readonly string[];
+  /** The admin's never-ban list. */
+  allowlist?: readonly string[];
 };
 
 /** The bare address an IP string normalizes to, or null when it isn't one. */
@@ -47,8 +49,57 @@ export function neverBanReason(raw: string, ctx: NeverBanContext = {}): string |
   if (fixed(ip)) return "private or reserved range";
   if (cloudflare(ip)) return "Cloudflare edge";
   if (ctx.ownIps?.some((o) => normalizeIp(o) === ip)) return "this instance";
+  if (ctx.allowlist?.length && cidrMatcher(ctx.allowlist)(ip)) return "on the allowlist";
   if (ctx.extraRanges?.length && cidrMatcher(ctx.extraRanges)(ip)) return "trusted proxy or linked instance";
   return null;
+}
+
+/** Address and prefix of an IP or CIDR, or null. A bare address gets its full length. */
+export function parseCidr(raw: string): { addr: string; prefix: number; family: 4 | 6 } | null {
+  const [rawAddr, prefixText, extra] = raw.trim().split("/");
+  if (extra !== undefined) return null;
+  const addr = normalizeIp(rawAddr);
+  if (!addr) return null;
+  const family = isIP(addr) as 4 | 6;
+  const max = family === 4 ? 32 : 128;
+  if (prefixText === undefined) return { addr, prefix: max, family };
+  if (!/^\d{1,3}$/.test(prefixText) || Number(prefixText) > max) return null;
+  return { addr, prefix: Number(prefixText), family };
+}
+
+/** Whether two IPs or CIDRs share any address. CIDR blocks are nested or disjoint, so one holds the other's address. */
+export function rangesOverlap(a: string, b: string): boolean {
+  const pa = parseCidr(a);
+  const pb = parseCidr(b);
+  if (!pa || !pb || pa.family !== pb.family) return false;
+  return cidrMatcher([a])(pb.addr) || cidrMatcher([b])(pa.addr);
+}
+
+/** Every range and address the context never bans. */
+export function neverBanRanges(ctx: NeverBanContext = {}): string[] {
+  return [
+    ...NEVER_BAN_RANGES,
+    ...CLOUDFLARE_IPV4_RANGES,
+    ...CLOUDFLARE_IPV6_RANGES,
+    ...(ctx.ownIps ?? []),
+    ...(ctx.extraRanges ?? []),
+    ...(ctx.allowlist ?? []),
+  ].filter((r) => parseCidr(r));
+}
+
+/** Why a blocklist range can't be blocked, or null. Any overlap with a never-ban range refuses it. */
+export function rangeNeverBanReason(range: string, ctx: NeverBanContext = {}, never = neverBanMatcher(ctx)): string | null {
+  const parsed = parseCidr(range);
+  if (!parsed) return "not an IP range";
+  if (never.contains(parsed.addr)) return "overlaps a never-ban range";
+  const inRange = cidrMatcher([range]);
+  return never.addrs.some((a) => inRange(a)) ? "overlaps a never-ban range" : null;
+}
+
+/** The never-ban ranges as one matcher plus each range's own address, for overlap checks in bulk. */
+export function neverBanMatcher(ctx: NeverBanContext = {}): { contains: (ip: string) => boolean; addrs: string[] } {
+  const ranges = neverBanRanges(ctx);
+  return { contains: cidrMatcher(ranges), addrs: ranges.map((r) => parseCidr(r)!.addr) };
 }
 
 /** Ban length for an address with `priorBans` recent bans: doubling from the base, capped. */
@@ -61,6 +112,9 @@ export function banDurationMs(priorBans: number, settings: Pick<InstanceProbeGua
 
 /** How far back earlier bans count toward doubling. */
 export const REPEAT_LOOKBACK_MS = 30 * 24 * 3_600_000;
+
+/** How long ban rows and probe events are kept, for the Security page's ranges. */
+export const RETENTION_MS = 90 * 24 * 3_600_000;
 
 /** Sliding-window check: hit timestamps within the window, threshold reached. */
 export function windowHits(timestamps: readonly number[], now: number, windowMs: number): number {
@@ -78,16 +132,41 @@ export function remoteBanExpiry(remote: Date, now: Date, settings: Pick<Instance
   return at > now.getTime() ? new Date(at) : null;
 }
 
-/** Guard file order: permanent bans first, then the newest temporary ones, one entry per address. */
-export function banRenderOrder(rows: readonly { ip: string; expiresAt: Date; createdAt: Date }[], max: number): string[] {
-  const sorted = [...rows].sort((a, b) => {
-    const p = Number(isPermanent(b.expiresAt)) - Number(isPermanent(a.expiresAt));
-    return p !== 0 ? p : b.createdAt.getTime() - a.createdAt.getTime();
-  });
-  return [...new Set(sorted.map((r) => r.ip))].slice(0, max);
+type RenderRow = { ip: string; expiresAt: Date; createdAt: Date; reason?: string; hits?: number };
+
+function renderRank(r: RenderRow): number {
+  if (isPermanent(r.expiresAt)) return 0;
+  return r.reason === "blocklist" ? 2 : 1;
 }
 
-/** Whether pruning may drop a ban. Permanent bans are kept, lifted or not. */
+/**
+ * Guard file order, one entry per address: permanent bans, then the newest local ones, then blocklist
+ * bans by confidence. Blocklist bans take at most `maxBlocklist` slots.
+ */
+export function banRenderOrder(rows: readonly RenderRow[], max: number, maxBlocklist = max): string[] {
+  const sorted = [...rows].sort((a, b) => {
+    const rank = renderRank(a) - renderRank(b);
+    if (rank !== 0) return rank;
+    if (renderRank(a) === 2 && (b.hits ?? 0) !== (a.hits ?? 0)) return (b.hits ?? 0) - (a.hits ?? 0);
+    return b.createdAt.getTime() - a.createdAt.getTime();
+  });
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let blocklist = 0;
+  for (const r of sorted) {
+    if (out.length >= max) break;
+    if (seen.has(r.ip)) continue;
+    if (renderRank(r) === 2) {
+      if (blocklist >= maxBlocklist) continue;
+      blocklist++;
+    }
+    seen.add(r.ip);
+    out.push(r.ip);
+  }
+  return out;
+}
+
+/** Whether pruning may drop a ban: temporary ones past retention. Permanent bans are kept. */
 export function isPrunable(ban: { expiresAt: Date }, now: Date): boolean {
-  return !isPermanent(ban.expiresAt) && ban.expiresAt.getTime() < now.getTime() - REPEAT_LOOKBACK_MS;
+  return !isPermanent(ban.expiresAt) && ban.expiresAt.getTime() < now.getTime() - RETENTION_MS;
 }

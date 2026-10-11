@@ -1,10 +1,21 @@
 // Builds the guard file from the database and writes it. Every writer renders the whole file from current rows.
 
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, domains, probeBans, probeCanaries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
-import { MAX_RENDERED_BANS, MAX_RENDERED_MARKERS, writeGuardFile, type GuardApp, type GuardState } from "./traefik-file";
+import { CLOUDFLARE_IPV4_RANGES, CLOUDFLARE_IPV6_RANGES, trustedProxyRanges } from "@/lib/cloudflare-ips";
+import {
+  MAX_RENDERED_BANS,
+  MAX_RENDERED_BLOCKLIST,
+  MAX_RENDERED_MARKERS,
+  MAX_RENDERED_RANGES,
+  writeGuardFile,
+  type GuardApp,
+  type GuardState,
+} from "./traefik-file";
+import { getAllowlist } from "./allowlist-store";
+import { getAbuseSettings, getDropRanges } from "./abuse-store";
 import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings";
 import { getProbeGuardSettings, guardKey } from "./instance";
 import { getInstanceConfig } from "@/lib/system-settings";
@@ -56,15 +67,39 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
   });
 }
 
-/** Permanent bans first, then the newest temporary ones. */
+/** Permanent bans first, then the newest local ones, then blocklist bans by confidence. */
 export async function activeBannedIps(now = new Date()): Promise<string[]> {
-  const rows = await db
-    .select({ ip: probeBans.ip, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt })
-    .from(probeBans)
-    .where(and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)))
-    .orderBy(desc(sql`${probeBans.expiresAt} >= ${PERMANENT_UNTIL.toISOString()}::timestamptz`), desc(probeBans.createdAt))
-    .limit(MAX_RENDERED_BANS);
-  return banRenderOrder(rows, MAX_RENDERED_BANS);
+  const columns = { ip: probeBans.ip, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt, reason: probeBans.reason, hits: probeBans.hits };
+  const active = and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now));
+  const [local, blocklist] = await Promise.all([
+    db
+      .select(columns)
+      .from(probeBans)
+      .where(and(active, ne(probeBans.reason, "blocklist")))
+      .orderBy(desc(sql`${probeBans.expiresAt} >= ${PERMANENT_UNTIL.toISOString()}::timestamptz`), desc(probeBans.createdAt))
+      .limit(MAX_RENDERED_BANS),
+    db
+      .select(columns)
+      .from(probeBans)
+      .where(and(active, eq(probeBans.reason, "blocklist")))
+      .orderBy(desc(probeBans.hits), desc(probeBans.createdAt))
+      .limit(MAX_RENDERED_BLOCKLIST),
+  ]);
+  return banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST);
+}
+
+/** Spamhaus DROP ranges while that blocklist is on. */
+export async function activeBannedRanges(): Promise<string[]> {
+  const [settings, drop] = await Promise.all([getAbuseSettings(), getDropRanges()]);
+  return settings.blocklists.spamhaus.enabled ? drop.ranges.slice(0, MAX_RENDERED_RANGES) : [];
+}
+
+// Docker networks, where a cloudflared tunnel connects from.
+const LOCAL_PEER_RANGES = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"];
+
+/** Proxies whose Cf-Connecting-Ip an allowlist skip trusts. */
+export function forwardingPeers(): string[] {
+  return [...CLOUDFLARE_IPV4_RANGES, ...CLOUDFLARE_IPV6_RANGES, ...trustedProxyRanges(), ...LOCAL_PEER_RANGES];
 }
 
 export async function activeMarkers(now = new Date()): Promise<string[]> {
@@ -89,17 +124,22 @@ export async function consoleGuardApp(): Promise<GuardApp | null> {
 export async function loadGuardState(): Promise<GuardState | null> {
   const key = guardKey();
   if (!key) return null;
-  const [settings, guardApps, consoleApp, bannedIps, markers] = await Promise.all([
+  const [settings, guardApps, consoleApp, bannedIps, bannedRanges, markers, allowlist] = await Promise.all([
     getProbeGuardSettings(),
     loadGuardApps(),
     consoleGuardApp(),
     activeBannedIps(),
+    activeBannedRanges().catch(() => []),
     activeMarkers(),
+    getAllowlist(),
   ]);
   return {
     key,
     apps: consoleApp ? [...guardApps, consoleApp] : guardApps,
     bannedIps,
+    bannedRanges,
+    skipClients: allowlist.filter((e) => e.skipGuard).map((e) => e.value),
+    forwardingPeers: forwardingPeers(),
     trapPaths: settings.traps.enabled ? settings.traps.paths : [],
     markers,
     responderUrl: process.env.VARDO_PROBE_GUARD_URL || null,

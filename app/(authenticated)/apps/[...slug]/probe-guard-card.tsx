@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BansList, type BanItem } from "@/components/probe-guard/bans-list";
 import { toast } from "@/lib/messenger";
-import { guardSummary, type GuardStatsView } from "@/lib/probe-guard/summary";
+import type { GuardStatsView } from "@/lib/probe-guard/summary";
+import { GuardHistory } from "@/components/probe-guard/guard-history";
 import type { AppProbeGuard } from "@/lib/probe-guard/settings";
 
 type GuardData = {
@@ -95,7 +96,6 @@ export function ProbeGuardCard({ orgId, appId }: { orgId: string; appId: string 
             Requests for paths like /.env, /.git/ and /wp-login.php get a short 403 or 404 at the proxy and never reach the app.
             Repeat offenders are banned for a while.
           </p>
-          <p className="text-xs text-muted-foreground">{guardSummary(data.stats)}</p>
         </div>
         <Switch
           id="probe-guard-enabled"
@@ -158,7 +158,12 @@ export function ProbeGuardCard({ orgId, appId }: { orgId: string; appId: string 
       )}
 
       <div className="grid gap-2">
-        <p className="type-label text-muted-foreground">Bans from this app&apos;s traffic</p>
+        <p className="type-label text-muted-foreground">Activity</p>
+        <GuardHistory endpoint={`${url}/history`} banUrl={(id) => `${url}/bans/${id}`} canBanPermanently={data.canBanPermanently} onChange={() => void load()} />
+      </div>
+
+      <div className="grid gap-2">
+        <p className="type-label text-muted-foreground">Active bans from this app&apos;s traffic</p>
         <BansList bans={data.bans} banUrl={(id) => `${url}/bans/${id}`} onChange={() => void load()} canBanPermanently={data.canBanPermanently} />
       </div>
     </section>

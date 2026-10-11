@@ -3,8 +3,9 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getSession } from "@/lib/auth/session";
-import { liftBan, makeBanPermanent } from "@/lib/probe-guard/bans";
+import { banAgain, liftBan, makeBanPermanent } from "@/lib/probe-guard/bans";
 import { banPatchSchema } from "@/lib/probe-guard/settings";
+import { banAgainResponse } from "@/lib/probe-guard/ban-again-response";
 
 type RouteParams = { params: Promise<{ banId: string }> };
 
@@ -21,13 +22,14 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** PATCH — makes any ban permanent. */
+/** PATCH — makes any ban permanent, or bans an old ban's address again. */
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     await requireAdminAuth(request);
     const { banId } = await params;
     const parsed = banPatchSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return apiError.validation(parsed.error);
+    if ("again" in parsed.data) return banAgainResponse(await banAgain(banId));
     const session = await getSession().catch(() => null);
     if (!(await makeBanPermanent(banId, session?.user?.id ?? null))) return apiError.notFound("ban");
     return NextResponse.json({ ok: true });

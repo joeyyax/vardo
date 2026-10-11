@@ -4,7 +4,8 @@ import { meshPeers } from "./mesh";
 
 // Probe guard records. Only addresses, paths, marker ids and times; never what a client sent.
 
-export const PROBE_BAN_REASONS = ["threshold", "trap", "canary", "mesh"] as const;
+// Text columns: adding a value needs no migration.
+export const PROBE_BAN_REASONS = ["threshold", "trap", "canary", "mesh", "blocklist"] as const;
 export type ProbeBanReason = (typeof PROBE_BAN_REASONS)[number];
 
 /** Instance-wide bans, rendered into Traefik's guard file while active. */
@@ -16,6 +17,7 @@ export const probeBans = pgTable(
     reason: text("reason", { enum: PROBE_BAN_REASONS }).notNull(),
     /** The app whose traffic tripped the ban. Null for bans from a linked instance. */
     appId: text("app_id").references(() => apps.id, { onDelete: "set null" }),
+    /** Probe hits; for blocklist bans, the source's confidence score. */
     hits: integer("hits").notNull().default(0),
     /** The linked instance that sent this ban. Received bans are never sent on. */
     originPeerId: text("origin_peer_id").references(() => meshPeers.id, { onDelete: "set null" }),
@@ -47,7 +49,7 @@ export const probeCanaries = pgTable(
   (t) => [index("probe_canary_ip_idx").on(t.ip)],
 );
 
-export const PROBE_EVENT_KINDS = ["trap", "canary_fetch", "canary_used", "probe"] as const;
+export const PROBE_EVENT_KINDS = ["trap", "canary_fetch", "canary_used", "probe", "reported"] as const;
 export type ProbeEventKind = (typeof PROBE_EVENT_KINDS)[number];
 
 /** Trap hits, canary use and capped probe hits, kept for 30 days. */
@@ -57,6 +59,7 @@ export const probeEvents = pgTable(
     id: text("id").primaryKey(),
     kind: text("kind", { enum: PROBE_EVENT_KINDS }).notNull(),
     ip: text("ip").notNull(),
+    /** The request path; for reported events, the reporter id. */
     path: text("path"),
     canaryId: text("canary_id").references(() => probeCanaries.id, { onDelete: "set null" }),
     appId: text("app_id").references(() => apps.id, { onDelete: "set null" }),

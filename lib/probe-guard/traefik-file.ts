@@ -8,7 +8,7 @@ import { isHostname } from "@/lib/security/hostname";
 import { parseRule } from "@/lib/docker/traefik-rule";
 import { activeRules, exceptionClause, exceptionProblem, probePathRegexp } from "./rules";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, MARKER_RE, canaryRegexp } from "./canary";
-import { normalizeIp } from "./ban-policy";
+import { normalizeIp, parseCidr } from "./ban-policy";
 
 // .yaml so no app's <name>.yml can replace it.
 export const GUARD_FILE = "vardo-probe-guard.yaml";
@@ -34,6 +34,10 @@ export const PRIORITY: Record<GuardKind, number> = {
 
 // Keeps the rule well under what Traefik parses quickly.
 export const MAX_RENDERED_BANS = 1000;
+/** Blocklist bans' share of MAX_RENDERED_BANS. */
+export const MAX_RENDERED_BLOCKLIST = 500;
+/** Blocklist ranges, each its own ClientIP matcher. */
+export const MAX_RENDERED_RANGES = 2000;
 export const MAX_RENDERED_MARKERS = 50;
 
 const APP_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -55,6 +59,12 @@ export type GuardState = {
   bannedIps: string[];
   trapPaths: string[];
   markers: string[];
+  /** Blocklist CIDRs, matched on the TCP peer only. */
+  bannedRanges?: string[];
+  /** Allowlist entries the probe, trap and canary routers skip. */
+  skipClients?: string[];
+  /** Peers whose Cf-Connecting-Ip a skip entry trusts: Cloudflare, trusted proxies, local networks. */
+  forwardingPeers?: string[];
   /** Points the responder at a URL instead of the console's docker service. */
   responderUrl?: string | null;
 };
@@ -82,17 +92,85 @@ function escapeIp(ip: string): string {
   return ip.replace(/\./g, "\\.");
 }
 
-/** Matches a banned address directly, in X-Forwarded-For from a trusted proxy, or in CF-Connecting-IP. */
-export function banClause(ips: readonly string[]): string | null {
+/** A bare address or `addr/prefix`, or null. */
+function cidrText(range: string): string | null {
+  const parsed = parseCidr(range);
+  if (!parsed) return null;
+  return parsed.prefix === (parsed.family === 4 ? 32 : 128) ? parsed.addr : `${parsed.addr}/${parsed.prefix}`;
+}
+
+/**
+ * Matches a banned address directly, in X-Forwarded-For from a trusted proxy, or in CF-Connecting-IP.
+ * Ranges match the TCP peer only; the responder checks forwarded clients against them.
+ */
+export function banClause(ips: readonly string[], ranges: readonly string[] = []): string | null {
   const list = [...new Set(ips.map(normalizeIp).filter((ip): ip is string => !!ip))].slice(0, MAX_RENDERED_BANS);
-  if (list.length === 0) return null;
-  const alt = list.map(escapeIp).join("|");
-  const direct = list.map((ip) => `ClientIP(\`${ip}\`)`);
-  return `(${[
-    ...direct,
-    `HeaderRegexp(\`X-Forwarded-For\`, \`(?:^|[\\s,])(?:${alt})(?:$|[\\s,])\`)`,
-    `HeaderRegexp(\`Cf-Connecting-Ip\`, \`^\\s*(?:${alt})\\s*$\`)`,
-  ].join(" || ")})`;
+  const cidrs = [...new Set(ranges.map(cidrText).filter((r): r is string => !!r))].slice(0, MAX_RENDERED_RANGES);
+  if (list.length === 0 && cidrs.length === 0) return null;
+  const parts = [...list, ...cidrs].map((ip) => `ClientIP(\`${ip}\`)`);
+  if (list.length > 0) {
+    const alt = list.map(escapeIp).join("|");
+    parts.push(
+      `HeaderRegexp(\`X-Forwarded-For\`, \`(?:^|[\\s,])(?:${alt})(?:$|[\\s,])\`)`,
+      `HeaderRegexp(\`Cf-Connecting-Ip\`, \`^\\s*(?:${alt})\\s*$\`)`,
+    );
+  }
+  return `(${parts.join(" || ")})`;
+}
+
+function numberAlternation(from: number, to: number): string {
+  return from === to ? String(from) : `(?:${Array.from({ length: to - from + 1 }, (_, i) => from + i).join("|")})`;
+}
+
+/** A regex for an allowlist entry as it appears in a header, or null when it can't be written as one. */
+export function addressPattern(entry: string): string | null {
+  const parsed = parseCidr(entry);
+  if (!parsed) return null;
+  const { addr, prefix, family } = parsed;
+  if (family === 4) {
+    if (prefix === 32) return escapeIp(addr);
+    const octets = addr.split(".").map(Number);
+    const whole = Math.floor(prefix / 8);
+    const parts = octets.slice(0, whole).map(String);
+    if (whole < 4) {
+      const bits = prefix - whole * 8;
+      if (bits > 0) {
+        const span = 2 ** (8 - bits);
+        const base = octets[whole] - (octets[whole] % span);
+        parts.push(numberAlternation(base, base + span - 1));
+      } else {
+        parts.push("\\d{1,3}");
+      }
+      while (parts.length < 4) parts.push("\\d{1,3}");
+    }
+    return parts.join("\\.");
+  }
+  if (prefix === 128) return addr.replace(/\./g, "\\.");
+  // Canonical forms keep leading non-zero groups as written, so only those prefixes are safe to match.
+  if (prefix % 16 !== 0) return null;
+  const groups = addr.split("::")[0].split(":").filter(Boolean).slice(0, prefix / 16);
+  if (groups.length < prefix / 16 || groups.some((g) => /^0+$/.test(g))) return null;
+  return `${groups.map((g) => g.replace(/^0+(?=.)/, "")).join(":")}:[0-9a-f:.]*`;
+}
+
+/**
+ * Leaves allowlisted clients alone: the TCP peer, the last X-Forwarded-For hop (the one Traefik's trusted
+ * proxy added) or Cf-Connecting-Ip when the peer is a forwarding proxy. Null when there's nothing to skip.
+ */
+export function skipClause(entries: readonly string[], peers: readonly string[] = []): string | null {
+  const valid = [...new Set(entries.map(cidrText).filter((e): e is string => !!e))];
+  if (valid.length === 0) return null;
+  const parts = valid.map((e) => `ClientIP(\`${e}\`)`);
+  const patterns = valid.map(addressPattern).filter((p): p is string => !!p);
+  if (patterns.length > 0) {
+    const alt = patterns.join("|");
+    parts.push(`HeaderRegexp(\`X-Forwarded-For\`, \`(?i)(?:^|[\\s,])(?:${alt})\\s*$\`)`);
+    const trusted = [...new Set(peers.map(cidrText).filter((p): p is string => !!p))];
+    if (trusted.length > 0) {
+      parts.push(`((${trusted.map((p) => `ClientIP(\`${p}\`)`).join(" || ")}) && HeaderRegexp(\`Cf-Connecting-Ip\`, \`(?i)^\\s*(?:${alt})\\s*$\`))`);
+    }
+  }
+  return `!(${parts.join(" || ")})`;
 }
 
 /** Matches a request that carries a canary marker in a credential header or query parameter. */
@@ -152,12 +230,14 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
   };
 
   const apps = state.apps.filter((a) => APP_ID_RE.test(a.id));
+  const skip = skipClause(state.skipClients ?? [], state.forwardingPeers ?? []);
+  const unlessSkipped = (rule: string) => (skip ? `${rule} && ${skip}` : rule);
   const allHosts = hostClause(apps.filter((a) => !a.console).flatMap((a) => a.hosts));
   if (allHosts) {
-    const bans = banClause(state.bannedIps);
+    const bans = banClause(state.bannedIps, state.bannedRanges ?? []);
     if (bans) add(`${GUARD_PREFIX}banned`, "banned", `${allHosts} && ${bans}`, `${GUARD_PREFIX}tag`);
     const canary = canaryClause(state.markers);
-    if (canary) add(`${GUARD_PREFIX}canary`, "canary", `${allHosts} && ${canary}`, `${GUARD_PREFIX}tag`);
+    if (canary) add(`${GUARD_PREFIX}canary`, "canary", unlessSkipped(`${allHosts} && ${canary}`), `${GUARD_PREFIX}tag`);
   }
 
   const traps = trapClause(state.trapPaths);
@@ -166,9 +246,9 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
     if (!hosts) continue;
     const tag = app.console ? `${GUARD_PREFIX}tag` : `${GUARD_PREFIX}${app.id}-tag`;
     if (!app.console) middlewares[tag] = { headers: { customRequestHeaders: { [KEY_HEADER]: state.key, [APP_HEADER]: app.id } } };
-    if (traps) add(`${GUARD_PREFIX}${app.id}-trap`, "trap", withExceptions(`${hosts} && ${traps}`, app.exceptions), tag);
+    if (traps) add(`${GUARD_PREFIX}${app.id}-trap`, "trap", unlessSkipped(withExceptions(`${hosts} && ${traps}`, app.exceptions)), tag);
     const probe = `${hosts} && PathRegexp(\`${probePathRegexp(activeRules({ wordpress: app.wordpress }))}\`)`;
-    add(`${GUARD_PREFIX}${app.id}-probe`, "probe", withExceptions(probe, app.exceptions), tag);
+    add(`${GUARD_PREFIX}${app.id}-probe`, "probe", unlessSkipped(withExceptions(probe, app.exceptions)), tag);
     if (app.robotsTxt) add(`${GUARD_PREFIX}${app.id}-robots`, "robots", `${hosts} && Path(\`/robots.txt\`)`, tag);
   }
 
