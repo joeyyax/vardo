@@ -1,7 +1,7 @@
 import { fetchAllMetrics } from "./provider";
 import type { ContainerMetrics } from "./types";
 import { isMetricsEnabled } from "./config";
-import { getGpuSnapshot } from "@/lib/gpu/collector";
+import { readGpuSnapshot } from "@/lib/gpu/snapshot-store";
 
 // Shared cAdvisor broadcast: one poll serves all SSE subscribers.
 
@@ -68,7 +68,7 @@ async function poll() {
     const metrics = await fetchAllMetrics();
 
     // Merge the cached GPU snapshot from the collector tick.
-    const gpuSnapshot = getGpuSnapshot();
+    const gpuSnapshot = await readGpuSnapshot();
     if (gpuSnapshot.length > 0) {
       const containersWithGpu = new Set(
         metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),

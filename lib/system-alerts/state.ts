@@ -70,10 +70,7 @@ export async function loadAlertState(): Promise<void> {
       where: (t, { eq }) => eq(t.key, DB_KEY),
     });
     if (!row) return;
-    const parsed = JSON.parse(row.value) as PersistedState;
-    for (const [k, v] of Object.entries(parsed)) {
-      state.set(k, { lastFired: new Date(v.lastFired), count: v.count });
-    }
+    for (const [k, v] of parsePersisted(row.value)) state.set(k, v);
     log.info(`Loaded ${state.size} alert state entries from DB`);
   } catch (err) {
     log.error("Failed to load alert state from DB:", err);
@@ -106,13 +103,35 @@ export function clearFired(type: AlertType, key: string): boolean {
   return true;
 }
 
-export function getAlertState(): Array<{
+export type AlertEntry = {
   type: AlertType;
   key: string;
   lastFired: Date;
   count: number;
-}> {
-  return Array.from(state.entries()).map(([mapKey, entry]) => {
+};
+
+/** Persisted state as map entries. */
+export function parsePersisted(value: string): Map<string, AlertState> {
+  const parsed = JSON.parse(value) as PersistedState;
+  return new Map(
+    Object.entries(parsed).map(([k, v]) => [k, { lastFired: new Date(v.lastFired), count: v.count }]),
+  );
+}
+
+export function getAlertState(): AlertEntry[] {
+  return toEntries(state);
+}
+
+/** The state as the process running the system-alerts loop last persisted it. */
+export async function readAlertState(): Promise<AlertEntry[]> {
+  const row = await db.query.systemSettings.findFirst({
+    where: (t, { eq }) => eq(t.key, DB_KEY),
+  });
+  return row ? toEntries(parsePersisted(row.value)) : [];
+}
+
+function toEntries(source: Map<string, AlertState>): AlertEntry[] {
+  return Array.from(source.entries()).map(([mapKey, entry]) => {
     const colonIdx = mapKey.indexOf(":");
     return {
       type: mapKey.slice(0, colonIdx) as AlertType,

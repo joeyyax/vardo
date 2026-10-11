@@ -7,6 +7,7 @@ import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getDiskSnapshot } from "@/lib/docker/disk-snapshot";
 import { collectBusinessMetrics } from "./collect-business-metrics";
 import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
+import { publishGpuSnapshot } from "@/lib/gpu/snapshot-store";
 import { setLatestSnapshot } from "./broadcast";
 import { IntervalLoop, type LoopRole } from "@/lib/worker/interval-loop";
 
@@ -156,6 +157,7 @@ async function collect() {
           ),
         ]);
         setGpuSnapshot(gpuMetrics);
+        await publishGpuSnapshot(gpuMetrics).catch((err) => log.warn("GPU snapshot publish failed:", (err as Error).message));
         const ts = Date.now();
 
         // The GPU resolver doesn't read labels; take the service from cAdvisor.

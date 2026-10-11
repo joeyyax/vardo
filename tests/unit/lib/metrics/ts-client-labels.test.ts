@@ -18,7 +18,7 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { ensureTimeSeries, touchRetention, forgetKey, RETENTION_MS } from "@/lib/metrics/ts-client";
+import { ensureTimeSeries, touchRetention, forgetKey, RETENTION_MS, CREATED_KEY_TTL_MS } from "@/lib/metrics/ts-client";
 
 describe("ensureTimeSeries", () => {
   beforeEach(() => {
@@ -39,7 +39,9 @@ describe("ensureTimeSeries", () => {
     await ensureTimeSeries("metrics:a:cpu:c2", { project: "a", service: "web" });
 
     const alter = calls.recorded.find((c) => c[0] === "TS.ALTER");
-    expect(alter).toEqual(["TS.ALTER", "metrics:a:cpu:c2", "LABELS", "project", "a", "service", "web"]);
+    expect(alter).toEqual([
+      "TS.ALTER", "metrics:a:cpu:c2", "RETENTION", RETENTION_MS.toString(), "LABELS", "project", "a", "service", "web",
+    ]);
   });
 });
 
@@ -64,5 +66,24 @@ describe("forgetKey", () => {
     await ensureTimeSeries("metrics:a:cpu:c3", { project: "a" });
 
     expect(calls.recorded.some((c) => c[0] === "TS.CREATE")).toBe(true);
+  });
+});
+
+describe("the created-keys cache", () => {
+  it("re-checks a key after the TTL, so a delete in another process heals", async () => {
+    vi.useFakeTimers();
+    try {
+      await ensureTimeSeries("metrics:a:cpu:c4", { project: "a" });
+      calls.recorded.length = 0;
+
+      await ensureTimeSeries("metrics:a:cpu:c4", { project: "a" });
+      expect(calls.recorded).toHaveLength(0);
+
+      vi.advanceTimersByTime(CREATED_KEY_TTL_MS);
+      await ensureTimeSeries("metrics:a:cpu:c4", { project: "a" });
+      expect(calls.recorded.some((c) => c[0] === "TS.CREATE")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

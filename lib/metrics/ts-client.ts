@@ -38,15 +38,19 @@ export function tsKey(project: string, metric: string, container?: string) {
     : `metrics:${project}:${metric}`;
 }
 
-// Keys already created in this process.
-const createdKeys = new Set<string>();
+/** Re-checks a cached key this often; another process may have deleted it. */
+export const CREATED_KEY_TTL_MS = 10 * 60_000;
+
+// Keys this process created, with when.
+const createdKeys = new Map<string, number>();
 
 /** Ensures a time-series key exists with retention and labels, adding labels to older keys. */
 export async function ensureTimeSeries(
   key: string,
   labels: Record<string, string>
 ) {
-  if (createdKeys.has(key)) return;
+  const createdAt = createdKeys.get(key);
+  if (createdAt !== undefined && Date.now() - createdAt < CREATED_KEY_TTL_MS) return;
 
   const labelArgs = Object.entries(labels).flat();
 
@@ -66,13 +70,13 @@ export async function ensureTimeSeries(
       throw err;
     }
     try {
-      await tsRedis.call("TS.ALTER", key, "LABELS", ...labelArgs);
+      await tsRedis.call("TS.ALTER", key, "RETENTION", RETENTION_MS.toString(), "LABELS", ...labelArgs);
     } catch {
       // Best-effort; a stale label set still serves existing queries.
     }
   }
 
-  createdKeys.add(key);
+  createdKeys.set(key, Date.now());
 }
 
 /** Refreshes a series' key TTL to the retention window. Call after every write. */

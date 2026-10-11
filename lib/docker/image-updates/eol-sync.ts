@@ -145,17 +145,20 @@ export async function syncEolTable(
   return failed > 0 ? "partial" : "updated";
 }
 
+/** Loads the stored table into this process's memory. */
+export async function loadStoredEolTable(): Promise<void> {
+  await settingStore
+    .read()
+    .then((raw) => setActiveEolTable(tableFrom(parseStored(raw))))
+    .catch(() => {});
+}
+
 /** Per process: the active table lives in memory. Loads the stored table, then refreshes it daily. */
 export const eolSyncLoop = new IntervalLoop({
   name: "image-eol-sync",
   intervalMs: REFRESH_MS,
   firstRunMs: 0,
   log,
-  prepare: async () => {
-    await settingStore
-      .read()
-      .then((raw) => setActiveEolTable(tableFrom(parseStored(raw))))
-      .catch(() => {});
-  },
+  prepare: loadStoredEolTable,
   run: () => syncEolTable(),
 });
