@@ -14,6 +14,7 @@ import { notifyObservations, type Observation } from "@/lib/notifications/observ
 import type { AlertType } from "@/lib/notifications/registry";
 import { APP_ALERT_TYPES, conditionObservations, type ConditionApp } from "./apps";
 import { autotuneHaltObservation } from "./autotune";
+import { CoreMemoryBuffer, coreMemoryObservations } from "./core-memory";
 import { HostSampleBuffer, hostObservations, readHostSample, type HostSample } from "./host";
 import { markOomSent, oomObservation, OOM_SETTLE_MS, sharedOomKills, type OomRecord } from "./oom";
 
@@ -25,6 +26,7 @@ const OOM_CONFIRMS_MS = 5 * 60_000;
 const TOP_CONTAINERS = 3;
 
 const buffer = new HostSampleBuffer();
+const coreBuffer = new CoreMemoryBuffer();
 
 /** How often auto-adjust sweeps for pressure, settling and lowering. */
 const AUTOTUNE_SWEEP_MS = 60 * 60_000;
@@ -122,6 +124,8 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   const host = hostObservations(buffer, now, { topMemory: topMemory() }, {
     memoryConfirmed: kills.some((k) => k.hostKill && now - k.lastAt <= OOM_CONFIRMS_MS),
   });
+  coreBuffer.record(getLatestSnapshot());
+  const core = coreMemoryObservations(coreBuffer, now);
 
   const byOrg = new Map<string, Observation[]>();
   const add = (orgId: string, o: Observation) => byOrg.set(orgId, [...(byOrg.get(orgId) ?? []), o]);
@@ -146,8 +150,12 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   const at = new Date(now);
   for (const { id } of orgs) {
     const isHostOrg = hostOrgs.has(id);
-    const evaluated: AlertType[] = [...(isHostOrg ? host.evaluated : []), ...APP_ALERT_TYPES, ...(anomalies ? ANOMALY_ALERT_TYPES : [])];
-    const observations = [...(isHostOrg ? host.observations : []), ...(byOrg.get(id) ?? [])];
+    const evaluated: AlertType[] = [
+      ...(isHostOrg ? [...host.evaluated, ...core.evaluated] : []),
+      ...APP_ALERT_TYPES,
+      ...(anomalies ? ANOMALY_ALERT_TYPES : []),
+    ];
+    const observations = [...(isHostOrg ? [...host.observations, ...core.observations] : []), ...(byOrg.get(id) ?? [])];
     try {
       const { fired } = await notifyObservations(id, evaluated, observations, at);
       for (const item of fired) {

@@ -25,7 +25,7 @@ export const NOTIFICATION_CATEGORIES = {
   },
   host: {
     label: "Host alerts",
-    description: "Memory, swap, CPU, load and disk on the server.",
+    description: "Memory, swap, CPU, load and disk on the server, and Vardo's own services near their memory limit.",
     default: true,
   },
   apps: {
@@ -67,6 +67,7 @@ export const ALERTS = {
   "host.cpu": define({ category: "host", label: "Host CPU", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
   "host.load": define({ category: "host", label: "Host load", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
   "host.disk": define({ category: "host", label: "Host disk", throttle: { kind: "until_clear", minHours: 6 }, resolves: true }),
+  "host.core-memory": define({ category: "host", label: "Vardo service memory", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
   "app.oom": define({ category: "apps", label: "Killed for memory", throttle: { kind: "until_clear", minHours: 1 }, resolves: false }),
   "app.restart-loop": define({ category: "apps", label: "Restart loop", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
   "app.memory-limit": define({ category: "apps", label: "Memory near limit", throttle: { kind: "until_clear", minHours: 6 }, resolves: true }),
