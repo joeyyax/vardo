@@ -87,6 +87,7 @@ export function AppSettingsPanel({
   const [buildCommand, setBuildCommand] = useState(app.buildCommand || "");
   const [startCommand, setStartCommand] = useState(app.startCommand || "");
   const [buildProvider, setBuildProvider] = useState<"auto" | "railpack" | "nixpacks">(app.buildProvider ?? "auto");
+  const [buildCache, setBuildCache] = useState<"use" | "skip-reuse" | "never">(app.buildCache ?? "use");
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
@@ -172,6 +173,7 @@ export function AppSettingsPanel({
         body.startCommand = startCommand.trim() || null;
       }
       if (fields.buildProvider) body.buildProvider = buildProvider === "auto" ? null : buildProvider;
+      if (fields.buildCache && buildCache !== (app.buildCache ?? "use")) body.buildCache = buildCache;
       if (fields.gitSource) {
         body.gitBranch = gitBranch;
         body.rootDirectory = rootDirectory.trim() || null;
@@ -409,6 +411,25 @@ export function AppSettingsPanel({
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {fields.buildCache && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label htmlFor="edit-build-cache"><Term id="build-cache">Build cache</Term></Label>
+          <Select value={buildCache} onValueChange={(v) => setBuildCache(v as typeof buildCache)}>
+            <SelectTrigger id="edit-build-cache">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="use">Use cache</SelectItem>
+              <SelectItem value="skip-reuse">Skip image reuse</SelectItem>
+              <SelectItem value="never">Never use cache</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Applies to every deploy. Skip image reuse always rebuilds but keeps unchanged steps; Never use cache rebuilds everything and is slower.
+          </p>
         </div>
       )}
 

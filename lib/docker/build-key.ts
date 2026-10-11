@@ -14,6 +14,35 @@ export const GIT_SHA_ARG = "VARDO_GIT_SHA";
 /** How a deploy treats an earlier image: reuse it, rebuild with the layer cache, or rebuild without it. */
 export type RebuildMode = "force" | "no-cache";
 
+/** The app's standing choice: reuse and cache, skip image reuse only, or skip both. */
+export const BUILD_CACHE_MODES = ["use", "skip-reuse", "never"] as const;
+export type BuildCacheMode = (typeof BUILD_CACHE_MODES)[number];
+
+const BUILD_CACHE_REBUILD: Record<BuildCacheMode, RebuildMode | undefined> = {
+  use: undefined,
+  "skip-reuse": "force",
+  never: "no-cache",
+};
+
+/** A deploy asked for a rebuild wins; otherwise the app's setting applies. Rollbacks keep the earlier build. */
+export function resolveRebuild(
+  requested: RebuildMode | undefined,
+  setting: BuildCacheMode | null | undefined,
+  isRollback = false,
+): RebuildMode | undefined {
+  if (requested) return requested;
+  if (isRollback) return undefined;
+  return BUILD_CACHE_REBUILD[setting ?? "use"];
+}
+
+/** The deploy log line for a mode, or null when nothing special applies. */
+export function buildCacheLogLine(rebuild: RebuildMode | undefined, setting: BuildCacheMode | null | undefined, requested: RebuildMode | undefined): string | null {
+  if (!rebuild) return null;
+  const source = requested ? "this deploy asked for it" : "the app's Build cache setting";
+  const what = rebuild === "no-cache" ? "Never use cache: rebuilding without image reuse or the layer cache" : "Skip image reuse: rebuilding with the layer cache";
+  return `[deploy] Build cache: ${what} (${source})`;
+}
+
 export type BuildKeyInput = {
   appId: string;
   gitSha: string;

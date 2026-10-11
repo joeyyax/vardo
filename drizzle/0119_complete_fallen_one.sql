@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "build_cache" text DEFAULT 'use' NOT NULL;

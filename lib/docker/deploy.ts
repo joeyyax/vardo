@@ -50,6 +50,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
 import type { RebuildMode } from "./build-key";
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
+import { resolveRebuild, buildCacheLogLine } from "./build-key";
 import { repoWebUrl } from "@/lib/email/format";
 import { recordSelfDeploy, type MarkerOutcome } from "@/lib/lifecycle/self-deploy";
 import { deployIncident } from "@/lib/incidents/deploy";
@@ -463,6 +464,9 @@ export async function runDeployment(
       envMap.PORT = String(app.containerPort);
     }
     log(`[deploy] ${totalEnvVarCount} env var(s), ${app.domains.length} domain(s)`);
+    const rebuild = resolveRebuild(opts.rebuild, app.buildCache, Boolean(rollbackTarget));
+    const cacheLine = buildCacheLogLine(rebuild, app.buildCache, opts.rebuild);
+    if (cacheLine) log(cacheLine);
 
     ctx = {
       deploymentId,
@@ -477,7 +481,7 @@ export async function runDeployment(
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
       pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
-      rebuild: opts.rebuild,
+      rebuild,
 
       app: app as DeployContext["app"],
       projectName: projectRow?.name,

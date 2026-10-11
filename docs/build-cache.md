@@ -81,6 +81,18 @@ Every app env var is a build arg today (`--build-arg` for Dockerfiles, `--env` f
 
 "Rebuild without cache" in the app's menu (`rebuild: "no-cache"` on the deploy API and the MCP tool) skips reuse and passes `--no-cache`. `rebuild: "force"` skips reuse but keeps the layer cache.
 
+### Build cache setting
+
+Each app has a Build cache setting (Settings → Build, stored in `apps.build_cache`) that applies to every deploy except rollbacks:
+
+| Setting | Behavior |
+| --- | --- |
+| Use cache (default) | Reuse a matching image, keep the layer cache |
+| Skip image reuse | Same as `rebuild: "force"` |
+| Never use cache | Same as `rebuild: "no-cache"` |
+
+A deploy that asks for a rebuild (`rebuild` on the API or MCP, or the app menu) overrides the setting. The deploy log states the mode that applied: `[deploy] Build cache: ...`.
+
 ### Compose builds
 
 Each compose service with a `build:` gets its own key (`lib/docker/compose-build-reuse.ts`), from `docker compose config` for the slot:

@@ -57,6 +57,8 @@ export const apps = pgTable(
     buildCommand: text("build_command"),
     startCommand: text("start_command"),
     buildProvider: text("build_provider", { enum: ["railpack", "nixpacks"] }),
+    // How deploys treat earlier images and the layer cache.
+    buildCache: text("build_cache", { enum: ["use", "skip-reuse", "never"] }).notNull().default("use"),
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),

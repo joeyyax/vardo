@@ -143,6 +143,7 @@ export type App = {
   buildCommand: string | null;
   startCommand: string | null;
   buildProvider: "railpack" | "nixpacks" | null;
+  buildCache: "use" | "skip-reuse" | "never";
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
   autoDeploy: boolean | null;
