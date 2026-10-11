@@ -1,7 +1,7 @@
 // Creating, lifting and listing bans. Each change rewrites the guard file.
 
 import { isIP } from "net";
-import { and, count, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, meshPeers, probeBans, type ProbeBanReason } from "@/lib/db/schema";
@@ -13,6 +13,7 @@ import { REPEAT_LOOKBACK_MS, banDurationMs, neverBanReason, normalizeIp, remoteB
 import { getProbeGuardSettings } from "./instance";
 import { syncGuardFile } from "./sync";
 import { clearWindow } from "./hits";
+import { PERMANENT_UNTIL } from "./permanent";
 
 const log = logger.child("probe-guard");
 
@@ -149,6 +150,36 @@ export async function liftBan(id: string, userId: string | null, scope?: { appId
   return true;
 }
 
+/** Makes an active ban permanent. Returns null when there was nothing active to change. */
+export async function makeBanPermanent(id: string, userId: string | null, scope?: { appId: string }, now = new Date()): Promise<BanRow | null> {
+  const filters = [eq(probeBans.id, id), isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)];
+  if (scope) filters.push(eq(probeBans.appId, scope.appId));
+  const [row] = await db.update(probeBans).set({ expiresAt: PERMANENT_UNTIL }).where(and(...filters)).returning();
+  if (!row) return null;
+  await syncGuardFile().catch((err) => log.warn("Couldn't write the probe guard file:", err));
+  log.info(`Banned ${row.ip} permanently`);
+
+  if (row.appId) {
+    const app = await db.query.apps.findFirst({ where: eq(apps.id, row.appId), columns: { organizationId: true } });
+    if (app) {
+      await recordActivity({
+        organizationId: app.organizationId,
+        action: "security.probe_ban_permanent",
+        appId: row.appId,
+        userId: userId ?? undefined,
+        metadata: { ip: row.ip, reason: row.reason },
+      }).catch(() => {});
+    }
+  }
+
+  // Linked instances cap it at their own maximum.
+  if (!row.originPeerId && (await getProbeGuardSettings()).shareBans) {
+    const { shareBan } = await import("./mesh-share");
+    void shareBan(row).catch((err) => log.warn("Couldn't share a ban with linked instances:", err));
+  }
+  return row;
+}
+
 export type BanView = {
   id: string;
   ip: string;
@@ -189,7 +220,22 @@ export async function bansSince(since: Date, appId?: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Drops lifted and expired bans older than the repeat lookback. */
+/** Active permanent bans, for one app or all. */
+export async function permanentBanCount(appId?: string): Promise<number> {
+  const filters = [isNull(probeBans.liftedAt), gte(probeBans.expiresAt, PERMANENT_UNTIL)];
+  if (appId) filters.push(eq(probeBans.appId, appId));
+  const [row] = await db.select({ n: count() }).from(probeBans).where(and(...filters));
+  return row?.n ?? 0;
+}
+
+/** Drops bans that expired before the repeat lookback. Mirrors isPrunable, so permanent bans stay. */
 export async function pruneBans(now = new Date()): Promise<void> {
-  await db.delete(probeBans).where(lt(probeBans.expiresAt, new Date(now.getTime() - REPEAT_LOOKBACK_MS)));
+  const cutoff = new Date(now.getTime() - REPEAT_LOOKBACK_MS);
+  await db
+    .delete(probeBans)
+    // Expired temporary bans, and any ban lifted that long ago, permanent ones included.
+    .where(or(
+      and(lt(probeBans.expiresAt, cutoff), lt(probeBans.expiresAt, PERMANENT_UNTIL)),
+      lt(probeBans.liftedAt, cutoff),
+    ));
 }

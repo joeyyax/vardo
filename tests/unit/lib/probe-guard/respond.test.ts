@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) } }));
 
-import { carriedMarker, handleGuardRequest, originalPath, type GuardDeps } from "@/lib/probe-guard/respond";
+import {
+  PROBE_EVENTS_PER_WINDOW,
+  carriedMarker,
+  handleGuardRequest,
+  originalPath,
+  recordsProbeEvent,
+  type GuardDeps,
+} from "@/lib/probe-guard/respond";
 import { DEFAULT_INSTANCE_PROBE_GUARD, type InstanceProbeGuard } from "@/lib/probe-guard/settings";
 import { canaryValues } from "@/lib/probe-guard/canary";
 import { renderAppRobots } from "@/lib/probe-guard/robots";
@@ -174,5 +181,33 @@ describe("helpers", () => {
   it("ignores query keys it doesn't watch", () => {
     const url = new URL("http://x/?comment=abcdefghjk23");
     expect(carriedMarker(new Headers(), url, ["abcdefghjk23"])).toBeNull();
+  });
+});
+
+describe("probe events", () => {
+  it("records each probe hit with its path, up to the per-window cap", async () => {
+    const { deps, events } = setup({ threshold: 1000 });
+    for (let i = 0; i < PROBE_EVENTS_PER_WINDOW + 10; i++) await handleGuardRequest("probe", req("/.env", { app: "app1" }), deps);
+    const probes = events.filter((e) => e.kind === "probe");
+    expect(probes).toHaveLength(PROBE_EVENTS_PER_WINDOW);
+    expect(probes[0]).toEqual({ kind: "probe", ip: IP, path: "/.env", appId: "app1" });
+  });
+
+  it("records nothing when the hit counter fails", async () => {
+    const { deps, events } = setup({}, { recordHit: async () => { throw new Error("redis down"); } });
+    await handleGuardRequest("probe", req("/.env"), deps);
+    expect(events).toHaveLength(0);
+  });
+
+  it("still answers when recording fails", async () => {
+    const { deps } = setup({}, { recordEvent: async () => { throw new Error("db down"); } });
+    expect((await handleGuardRequest("probe", req("/.env"), deps)).status).toBe(404);
+  });
+
+  it("caps at the window count", () => {
+    expect(recordsProbeEvent(0)).toBe(false);
+    expect(recordsProbeEvent(1)).toBe(true);
+    expect(recordsProbeEvent(PROBE_EVENTS_PER_WINDOW)).toBe(true);
+    expect(recordsProbeEvent(PROBE_EVENTS_PER_WINDOW + 1)).toBe(false);
   });
 });

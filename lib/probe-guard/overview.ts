@@ -4,30 +4,36 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, domains } from "@/lib/db/schema";
 import { safeFetch } from "@/lib/security/safe-fetch";
-import { bansSince, listActiveBans, type BanView } from "./bans";
+import { bansSince, listActiveBans, permanentBanCount, type BanView } from "./bans";
+import { banDetails } from "./ban-detail";
+import { getProbeGuardSettings } from "./instance";
+import type { BanDetail } from "./summary";
 import { hitsThisWeek } from "./hits";
 import { trapsSince } from "./events";
 import { detectWordPress } from "./settings";
 
 const WEEK_MS = 7 * 86_400_000;
 
-export type GuardStats = { probes: number; bans: number; traps: number };
+export type GuardStats = { probes: number; bans: number; traps: number; permanent: number };
 
 export async function weekStats(appId?: string, now = new Date()): Promise<GuardStats> {
   const since = new Date(now.getTime() - WEEK_MS);
-  const [probes, bans, traps] = await Promise.all([
+  const [probes, bans, traps, permanent] = await Promise.all([
     hitsThisWeek(appId ?? null, now).catch(() => 0),
     bansSince(since, appId),
     trapsSince(since, appId),
+    permanentBanCount(appId),
   ]);
-  return { probes, bans, traps };
+  return { probes, bans, traps, permanent };
 }
 
-export type GuardOverview = { stats: GuardStats; bans: BanView[] };
+export type BanWithDetail = BanView & { detail: BanDetail | null };
+export type GuardOverview = { stats: GuardStats; bans: BanWithDetail[] };
 
 export async function guardOverview(appId?: string): Promise<GuardOverview> {
-  const [stats, bans] = await Promise.all([weekStats(appId), listActiveBans({ appId })]);
-  return { stats, bans };
+  const [stats, bans, settings] = await Promise.all([weekStats(appId), listActiveBans({ appId }), getProbeGuardSettings()]);
+  const details = await banDetails(bans, settings.windowMinutes * 60_000).catch(() => new Map<string, BanDetail>());
+  return { stats, bans: bans.map((b) => ({ ...b, detail: details.get(b.id) ?? null })) };
 }
 
 /** Whether the app looks like WordPress to auto-detection. */

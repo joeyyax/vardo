@@ -3,6 +3,7 @@
 import { isIP } from "net";
 import { CLOUDFLARE_IPV4_RANGES, CLOUDFLARE_IPV6_RANGES, cidrMatcher } from "@/lib/cloudflare-ips";
 import type { InstanceProbeGuard } from "./settings";
+import { isPermanent } from "./permanent";
 
 // Private, loopback, link-local, CGNAT (Tailscale), multicast and unspecified ranges. The mesh sits in 10/8.
 export const NEVER_BAN_RANGES = [
@@ -75,4 +76,18 @@ export function remoteBanExpiry(remote: Date, now: Date, settings: Pick<Instance
   const cap = now.getTime() + settings.maxBanHours * 3_600_000;
   const at = Math.min(remote.getTime(), cap);
   return at > now.getTime() ? new Date(at) : null;
+}
+
+/** Guard file order: permanent bans first, then the newest temporary ones, one entry per address. */
+export function banRenderOrder(rows: readonly { ip: string; expiresAt: Date; createdAt: Date }[], max: number): string[] {
+  const sorted = [...rows].sort((a, b) => {
+    const p = Number(isPermanent(b.expiresAt)) - Number(isPermanent(a.expiresAt));
+    return p !== 0 ? p : b.createdAt.getTime() - a.createdAt.getTime();
+  });
+  return [...new Set(sorted.map((r) => r.ip))].slice(0, max);
+}
+
+/** Whether pruning may drop a ban. Permanent bans are kept, lifted or not. */
+export function isPrunable(ban: { expiresAt: Date }, now: Date): boolean {
+  return !isPermanent(ban.expiresAt) && ban.expiresAt.getTime() < now.getTime() - REPEAT_LOOKBACK_MS;
 }

@@ -3,7 +3,9 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { recordActivity } from "@/lib/activity";
-import { liftBan } from "@/lib/probe-guard/bans";
+import { isAppAdmin } from "@/lib/auth/admin";
+import { liftBan, makeBanPermanent } from "@/lib/probe-guard/bans";
+import { banPatchSchema } from "@/lib/probe-guard/settings";
 
 type RouteParams = { params: Promise<{ orgId: string; appId: string; banId: string }> };
 
@@ -23,4 +25,22 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
+/** PATCH — makes one of this app's bans permanent. Instance admins only. */
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId, appId, banId } = await params;
+    const org = await verifyOrgAccess(orgId, "app.config");
+    if (!org) return apiError.forbidden();
+    const app = await verifyAppAccess(orgId, appId, "app.config");
+    if (!app || !(await isAppAdmin())) return apiError.forbidden();
+    const parsed = banPatchSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return apiError.validation(parsed.error);
+    if (!(await makeBanPermanent(banId, org.session.user.id, { appId }))) return apiError.notFound("ban");
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleRouteError(error, "Error changing a ban");
+  }
+}
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "patch:v1/organizations/*/apps/*/probe-guard/bans/*" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "delete:v1/organizations/*/apps/*/probe-guard/bans/*" });
