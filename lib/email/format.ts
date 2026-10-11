@@ -80,6 +80,16 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** A backup job's name without the "Auto: " prefix auto-created jobs carry. */
+export function backupJobLabel(name: string): string {
+  return name.replace(/^Auto:\s*/, "");
+}
+
+/** Backups in a run, counting each job that didn't finish as one. */
+export function backupRunTotal(event: { succeeded: number; failed: number; skipped: number; run: { unfinished?: string[] } }): number {
+  return event.succeeded + event.failed + event.skipped + (event.run.unfinished?.length ?? 0);
+}
+
 /** A stack child's name after its stack's: "Site Audit Runner". Unchanged when it already starts with the stack's. */
 export function stackedName(name: string, stack: string | null | undefined): string {
   if (!stack || name.toLowerCase().startsWith(stack.toLowerCase())) return name;

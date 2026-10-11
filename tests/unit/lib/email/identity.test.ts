@@ -75,7 +75,7 @@ describe("deploy emails", () => {
     const visual = phaseVisual(timings, "build", { totalMs: 2_000 })!;
     if (visual.kind !== "stacked") throw new Error("stacked");
     expect(visual.segments.map((s) => [s.label, s.tone])).toEqual([
-      ["Clone", 0],
+      ["Clone", 4],
       ["Build", "fail"],
     ]);
     expect(visual.segments[1].value).toBe(1_000);
@@ -86,7 +86,7 @@ describe("deploy emails", () => {
     const visual = phaseVisual(timings, "build")!;
     if (visual.kind !== "stacked") throw new Error("stacked");
     expect(visual.segments.map((s) => [s.label, s.tone])).toEqual([
-      ["Clone", 0],
+      ["Clone", 4],
       ["Build", "fail"],
     ]);
   });

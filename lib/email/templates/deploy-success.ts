@@ -27,7 +27,6 @@ export function deploySuccessMail(event: DeploySuccessEvent, ctx: MailContext): 
     links: [
       { label: "Deployment log", href: appPage(ctx, event.appId, "deployments") },
       ...(primary ? [{ label: "App", href: appPage(ctx, event.appId) }] : []),
-      { label: "Roll back", href: appPage(ctx, event.appId, "deployments") },
     ],
     footer: footerFor(ctx),
   };

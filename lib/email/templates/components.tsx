@@ -111,7 +111,8 @@ export type NotificationMailBody = {
 };
 
 /** Neutral shades by index, or a status color. */
-export type ChartTone = 0 | 1 | 2 | 3 | "success" | "warn" | "fail";
+export type ChartTone = NeutralTone | "success" | "warn" | "fail";
+export type NeutralTone = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export type ChartSegment = { label: string; value: number; tone?: ChartTone; detail?: string };
 
@@ -148,9 +149,18 @@ function badgeText(tone: MailTone, status: string, mark?: string): string {
   return glyph ? `${glyph} ${status}` : status;
 }
 
-/** Neutral chart shades, darkest first; dark mode runs lightest first. */
-const CHART_LIGHT = ["#3f3f46", "#71717a", "#a1a1aa", "#d4d4d8"] as const;
-const CHART_DARK = ["#e4e4e7", "#a1a1aa", "#71717a", "#52525b"] as const;
+/** Neutral chart shades; dark mode inverts them. 4 to 6 fill the gaps for longer sequences. */
+const CHART_LIGHT = ["#3f3f46", "#71717a", "#a1a1aa", "#d4d4d8", "#27272a", "#58585f", "#8b8b93"] as const;
+const CHART_DARK = ["#e4e4e7", "#a1a1aa", "#71717a", "#52525b", "#fafafa", "#c4c4ca", "#8b8b93"] as const;
+
+/** Neutral tones from strongest to faintest. */
+export const NEUTRAL_RAMP: readonly NeutralTone[] = [4, 0, 5, 1, 6, 2, 3];
+
+/** `count` neutral tones spread across the ramp, strongest first. */
+export function rampTones(count: number): NeutralTone[] {
+  const last = NEUTRAL_RAMP.length - 1;
+  return Array.from({ length: count }, (_, i) => NEUTRAL_RAMP[count > 1 ? Math.round((i * last) / (count - 1)) : 0]);
+}
 
 function chartFill(tone: ChartTone = 0): { color: string; className: string } {
   if (typeof tone === "number") return { color: CHART_LIGHT[tone], className: `vd-fill-${tone}` };
@@ -180,6 +190,9 @@ body{margin:0;padding:0;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .vd-fill-1{background:${CHART_DARK[1]} !important}
 .vd-fill-2{background:${CHART_DARK[2]} !important}
 .vd-fill-3{background:${CHART_DARK[3]} !important}
+.vd-fill-4{background:${CHART_DARK[4]} !important}
+.vd-fill-5{background:${CHART_DARK[5]} !important}
+.vd-fill-6{background:${CHART_DARK[6]} !important}
 .vd-fill-success{background:${dark.success} !important}
 .vd-fill-warn{background:${dark.warn} !important}
 .vd-fill-fail{background:${dark.fail} !important}
@@ -249,8 +262,48 @@ export function StatusBadge({ tone, mark, children }: { tone: MailTone; mark?: s
   );
 }
 
+/** Labels longer than this stack over their value so the value keeps the full width. */
+export const STACK_LABEL_CHARS = 24;
+
+function FactValue({ fact }: { fact: MailFact }) {
+  return fact.href ? (
+    <Link className="vd-link" href={fact.href} style={{ color: light.foreground, textDecoration: "underline" }}>
+      {fact.value}
+    </Link>
+  ) : (
+    <>{fact.value}</>
+  );
+}
+
 export function FactsTable({ facts }: { facts: MailFact[] }) {
   const rule = `1px solid ${light.border}`;
+  const valueStyle = (fact: MailFact, padding: string) =>
+    text(14, light.foreground, {
+      padding,
+      wordBreak: "break-word",
+      overflowWrap: "anywhere",
+      ...(fact.mono ? { fontFamily: MONO, fontSize: "13px" } : {}),
+    });
+  if (facts.some((f) => f.label.length > STACK_LABEL_CHARS)) {
+    return (
+      <Table width="100%" style={{ margin: "0 0 20px", tableLayout: "fixed" }}>
+        {facts.map((fact, index) => (
+          <tr key={index}>
+            <td className="vd-rule" style={{ padding: "8px 0", borderTop: rule }}>
+              {fact.label ? (
+                <p className="vd-muted" style={text(13, light.muted, { wordBreak: "break-word", overflowWrap: "anywhere" })}>
+                  {fact.label}
+                </p>
+              ) : null}
+              <p className="vd-fg" style={valueStyle(fact, "0")}>
+                <FactValue fact={fact} />
+              </p>
+            </td>
+          </tr>
+        ))}
+      </Table>
+    );
+  }
   return (
     <Table width="100%" style={{ margin: "0 0 20px" }}>
       {facts.map((fact, index) => (
@@ -262,22 +315,8 @@ export function FactsTable({ facts }: { facts: MailFact[] }) {
           >
             {fact.label}
           </td>
-          <td
-            className="vd-fg vd-rule"
-            style={text(14, light.foreground, {
-              padding: "8px 0",
-              borderTop: rule,
-              wordBreak: "break-word",
-              ...(fact.mono ? { fontFamily: MONO, fontSize: "13px" } : {}),
-            })}
-          >
-            {fact.href ? (
-              <Link className="vd-link" href={fact.href} style={{ color: light.foreground, textDecoration: "underline" }}>
-                {fact.value}
-              </Link>
-            ) : (
-              fact.value
-            )}
+          <td className="vd-fg vd-rule" style={{ ...valueStyle(fact, "8px 0"), borderTop: rule }}>
+            <FactValue fact={fact} />
           </td>
         </tr>
       ))}
@@ -460,7 +499,7 @@ export function StackedBar({ title, segments, caption }: { title: string; segmen
           })}
         </tr>
       </Table>
-      <Table style={{ margin: "8px 0 0" }}>
+      <Table width="100%" style={{ margin: "8px 0 0" }}>
         {shown.map((s, i) => {
           const fill = chartFill(s.tone ?? ((i % 4) as ChartTone));
           return (
@@ -474,7 +513,7 @@ export function StackedBar({ title, segments, caption }: { title: string; segmen
                   </tr>
                 </Table>
               </td>
-              <td className="vd-soft" style={text(13, light.soft, { padding: "2px 12px 2px 0" })}>
+              <td className="vd-soft" width="100%" style={text(13, light.soft, { padding: "2px 12px 2px 0", width: "100%" })}>
                 {s.label}
               </td>
               <td className="vd-muted" align="right" style={text(13, light.muted, { padding: "2px 0", whiteSpace: "nowrap" })}>
@@ -497,8 +536,13 @@ function gaugeTone(percent: number, warn: number, critical: number): ChartTone {
 export function GaugeBar({ title, percent, warn, critical, caption }: { title: string; percent: number; warn: number; critical: number; caption?: string }) {
   const value = Math.max(0, Math.min(100, Math.round(percent)));
   const fill = chartFill(gaugeTone(percent, warn, critical));
-  const ticks = [warn, critical].filter((t) => t > 0 && t < 100).sort((a, b) => a - b);
-  const spans = ticks.map((t, i) => t - (i === 0 ? 0 : ticks[i - 1]));
+  const ticks = [
+    { at: warn, label: "Warn" },
+    { at: critical, label: "Critical" },
+  ]
+    .filter((t) => t.at > 0 && t.at < 100)
+    .sort((a, b) => a.at - b.at);
+  const tickLine = `1px solid ${light.muted}`;
   return (
     <div style={{ margin: "0 0 20px" }}>
       <ChartTitle title={`${title}: ${value}%`} />
@@ -516,22 +560,31 @@ export function GaugeBar({ title, percent, warn, critical, caption }: { title: s
           ) : null}
         </tr>
       </Table>
-      <Table width="100%" style={{ tableLayout: "fixed" }}>
-        <tr>
-          {spans.map((span, i) => (
+      {ticks.map((tick, k) => (
+        <Table key={k} width="100%" style={{ tableLayout: "fixed" }}>
+          <tr>
             <td
-              key={i}
-              width={`${span}%`}
+              width={`${tick.at}%`}
               align="right"
               className="vd-tick vd-muted"
-              style={text(11, light.muted, { width: `${span}%`, padding: "3px 4px 0 0", borderRight: `1px solid ${light.muted}`, textAlign: "right" })}
+              style={text(11, light.muted, { width: `${tick.at}%`, padding: "3px 4px 0 0", borderRight: tickLine, textAlign: "right", whiteSpace: "nowrap" })}
             >
-              {`${ticks[i]}%`}
+              {`${tick.label} ${tick.at}%`}
             </td>
-          ))}
-          <td style={{ ...CELL_RESET }}>{NBSP}</td>
-        </tr>
-      </Table>
+            {ticks.slice(k + 1).map((later, j) => (
+              <td
+                key={j}
+                width={`${later.at - ticks[k + j].at}%`}
+                className="vd-tick"
+                style={{ ...CELL_RESET, width: `${later.at - ticks[k + j].at}%`, borderRight: tickLine }}
+              >
+                {NBSP}
+              </td>
+            ))}
+            <td style={{ ...CELL_RESET }}>{NBSP}</td>
+          </tr>
+        </Table>
+      ))}
       <ChartCaption caption={caption} />
     </div>
   );

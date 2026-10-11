@@ -37,7 +37,6 @@ export function deployFailedMail(event: DeployFailedEvent, ctx: MailContext): No
     action: { label: "Open deployment log", href: appPage(ctx, event.appId, "deployments") },
     links: [
       { label: "Redeploy", href: appPage(ctx, event.appId) },
-      { label: "Roll back", href: appPage(ctx, event.appId, "deployments") },
       { label: "App logs", href: appPage(ctx, event.appId, "logs") },
     ],
     footer: footerFor(ctx),

@@ -1,7 +1,7 @@
 import { isProblemRow, summarizeApps } from "@/lib/backups/run-rules";
 import type { BackupSummaryApp, BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { formatDuration, plural } from "../format";
+import { backupJobLabel, backupRunTotal, formatDuration, plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 import { backupColumns } from "./visuals";
@@ -100,13 +100,15 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   const problemsOnly = event.run.problemsOnly === true;
   const stale = event.staleVolumes ?? [];
   const apps = event.apps ?? summarizeApps(event.rows);
-  const total = event.succeeded + event.failed + event.skipped;
+  const unfinished = (event.run.unfinished ?? []).map(backupJobLabel);
+  const total = backupRunTotal(event);
 
-  const unfinished = event.run.unfinished ?? [];
   const tone: MailTone = failed.length ? "fail" : shrunk.length || grew.length || skipped.length || stale.length || unfinished.length ? "warn" : "success";
   const heading = failed.length
     ? `${event.run.label}: ${failedHeading(failed)}`
-    : `${event.run.label} finished`;
+    : unfinished.length
+      ? `${event.run.label} timed out`
+      : `${event.run.label} finished`;
 
   const paragraphs: string[] = [];
   if (failed.length) paragraphs.push("Each failure was emailed as it happened. The last good backup for each is still there.");
@@ -128,6 +130,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
         { label: "Succeeded", value: event.succeeded, tone: "success", detail: String(event.succeeded) },
         { label: "Failed", value: event.failed, tone: "fail", detail: String(event.failed) },
         { label: "Skipped", value: event.skipped, tone: 2, detail: String(event.skipped) },
+        { label: "Didn't finish", value: unfinished.length, tone: "warn", detail: String(unfinished.length) },
       ],
     });
   }
@@ -138,9 +141,12 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
 
   const facts: MailFact[] = [];
   if (total) facts.push({ label: "Backed up", value: `${event.succeeded} of ${total}, ${formatBytesIec(event.totalSize)}` });
+  const estimate = event.run.estimatedMs ? formatDuration(event.run.estimatedMs) : undefined;
   facts.push({
     label: "Took",
-    value: `${formatDuration(event.run.actualMs)}${event.run.estimatedMs ? `, estimated ${formatDuration(event.run.estimatedMs)}` : ""}`,
+    value: unfinished.length
+      ? `${formatDuration(event.run.actualMs)}, then timed out${estimate ? ` (estimated ${estimate})` : ""}`
+      : `${formatDuration(event.run.actualMs)}${estimate ? `, estimated ${estimate}` : ""}`,
   });
   facts.push({ label: "Ran", value: formatClockRange(new Date(event.windowStart), new Date(event.windowEnd), ctx.timeZone ?? UTC) });
 
@@ -168,7 +174,11 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     tone,
     status: failed.length ? "Backup failed" : tone === "warn" ? "Check backups" : "Backed up",
     heading,
-    preheader: failed[0] ? `${rowLabel(failed[0])}: ${failed[0].error ?? "failed"}` : event.message,
+    preheader: failed[0]
+      ? `${rowLabel(failed[0])}: ${failed[0].error ?? "failed"}`
+      : unfinished.length
+        ? `${event.succeeded} of ${total} backed up. ${unfinished.length} didn't finish before the timeout.`
+        : event.message,
     paragraphs,
     visuals,
     sections,

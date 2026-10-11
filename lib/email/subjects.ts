@@ -2,7 +2,7 @@
 
 import type { AlertResolvedEvent, BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { formatDuration, formatDurationRough, plural, shortSha, stackedName, truncate, versionShort } from "./format";
+import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, truncate, versionShort } from "./format";
 import type { MailSeries } from "./templates/context";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
@@ -67,12 +67,12 @@ export function subjectLine(event: BusEvent): string {
       const label = event.run.label;
       const failed = event.rows.filter((r) => r.outcome === "failed");
       if (failed.length) {
-        const total = event.succeeded + event.failed + event.skipped;
+        const total = backupRunTotal(event);
         return event.failed === failed.length && total > 0
           ? `✗ ${label} · ${event.failed} of ${total} failed`
           : `✗ ${label} · ${failed.length} failed`;
       }
-      if (event.run.unfinished?.length) return `⚠ ${label} · ${event.run.unfinished.length} didn't finish`;
+      if (event.run.unfinished?.length) return `⚠ ${label} · timed out, ${event.run.unfinished.length} didn't finish`;
       const shrunk = event.rows.filter((r) => r.shrunk);
       if (shrunk.length) return `⚠ ${label} · ${shrunk[0].appName} much smaller than usual`;
       const grew = event.rows.filter((r) => r.grew);
