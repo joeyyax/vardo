@@ -215,9 +215,34 @@ describe("notification emails", () => {
 
   it("shows commits, not the package version, when Vardo updated", async () => {
     const email = (await renderNotificationEmail(fixture("system-updated"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Version: e36c2e3 → 4f1a9b2 fix(email): one instance name in every subject");
+    expect(email.text).toContain("Version: e36c2e3 → 4f1a9b2\n");
     expect(email.text).not.toContain("0.1.0");
     expect(email.text).toContain("What's new\n4f1a9b2");
+  });
+
+  it("leaves out a zero console downtime", async () => {
+    const email = (await renderNotificationEmail({ ...fixture<"system.updated">("system-updated"), downSeconds: 0 }, FIXTURE_CONTEXT))!;
+    expect(email.text).not.toContain("Console down");
+  });
+
+  it("counts jobs that timed out as part of the run", async () => {
+    const event = fixture<"backup.summary">("backup-summary-timed-out");
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.subject).toBe("node-a · ⚠ Nightly backups · timed out, 8 didn't finish");
+    expect(email.text).toContain("Nightly backups timed out");
+    expect(email.text).toContain("Backed up: 27 of 35,");
+    expect(email.text).toContain("Succeeded 77% · Didn't finish 23%");
+    expect(email.text).toContain("Took: 1 h 1 min, then timed out (estimated 8 min 13 s)");
+    expect(email.text).toContain("timed out: Shop Staging, Search Data,");
+    expect(email.text).not.toContain("Auto: ");
+    expect(email.html).toContain("27 of 35 backed up. 8 didn&#x27;t finish before the timeout.");
+  });
+
+  it("links no rollback that only repeats the deployment log", async () => {
+    for (const name of ["deploy-success", "deploy-failed"]) {
+      const email = (await renderNotificationEmail(fixture(name), FIXTURE_CONTEXT))!;
+      expect(email.text).not.toContain("Roll back:");
+    }
   });
 
   it("puts big growth up top and rolls the rest up per app", async () => {

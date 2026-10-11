@@ -31,11 +31,15 @@ function fact(label: string, value: string | undefined, mono = false): MailFact[
   return value ? [{ label, value, mono }] : [];
 }
 
-/** "bc2083d → 559e5b2 fix(x): the head commit", the commits in place of the package version. */
-function versionChange(from: string, to: string | undefined, changes: UpdateChanges): string {
+/** "bc2083d → 559e5b2", the commits in place of the package version. */
+function versionChange(from: string, to: string | undefined): string {
+  return to ? `${versionShort(from)} → ${versionShort(to)}` : versionShort(from);
+}
+
+/** The version change and the head commit's subject, for the inbox preview. */
+function versionPreheader(from: string, to: string | undefined, changes: UpdateChanges): string {
   const head = changes.commits?.[0]?.subject;
-  const target = to ? `${versionShort(to)}${head ? ` ${truncate(head, 80)}` : ""}` : undefined;
-  return target ? `${versionShort(from)} → ${target}` : versionShort(from);
+  return `${versionChange(from, to)}${head ? ` ${truncate(head, 80)}` : ""}`;
 }
 
 function restartSource(source: "maintenance" | "console" | "watchdog"): string {
@@ -129,12 +133,12 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         tone: "success",
         status: "Updated",
         heading: `Vardo updated on ${host}`,
-        preheader: versionChange(event.fromVersion, event.toVersion, event),
+        preheader: versionPreheader(event.fromVersion, event.toVersion, event),
         facts: [
-          { label: "Version", value: versionChange(event.fromVersion, event.toVersion, event) },
+          { label: "Version", value: versionChange(event.fromVersion, event.toVersion), mono: true },
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
           ...fact("Took", seconds(event.durationSeconds)),
-          ...fact("Console down", seconds(event.downSeconds)),
+          ...fact("Console down", event.downSeconds ? seconds(event.downSeconds) : undefined),
         ],
         sections: changes.sections,
         action: admin,
@@ -155,7 +159,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         facts: [
           { label: "Failed at", value: event.step },
           ...fact("Error", event.error),
-          { label: "Version", value: versionChange(event.fromVersion, event.toVersion, event) },
+          { label: "Version", value: versionChange(event.fromVersion, event.toVersion), mono: true },
           ...fact("Slot", slots(event.fromSlot, event.toSlot)),
           ...fact("Ran for", seconds(event.durationSeconds)),
         ],

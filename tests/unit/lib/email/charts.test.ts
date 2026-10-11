@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { percentages, sparkline, visualText } from "@/lib/email/templates/components";
+import { percentages, rampTones, sparkline, visualText } from "@/lib/email/templates/components";
 import { backupColumns, backupDrop } from "@/lib/email/templates/visuals";
 import { phaseVisual } from "@/lib/email/templates/deploy-facts";
 import { hourlyDeltas, loadMailSeries } from "@/lib/email/series";
@@ -13,6 +13,7 @@ vi.mock("@/lib/metrics/store-disk", () => ({ queryDiskHistory: () => Promise.rej
 vi.mock("@/lib/metrics/store-container", () => ({ queryDiskWriteRange: () => new Promise(() => {}) }));
 
 const t = (ms: number) => ({ startedAt: "", endedAt: "", ms });
+const fixtureEvent = (name: string) => EMAIL_FIXTURES.find((f) => f.name === name)!.event;
 
 describe("chart math", () => {
   it("rounds segments to whole percents that add to 100", () => {
@@ -41,6 +42,35 @@ describe("phase bar", () => {
   it("skips a single untimed phase on success", () => {
     expect(phaseVisual({ build: t(1000) })).toBeUndefined();
     expect(phaseVisual(undefined)).toBeUndefined();
+  });
+
+  it("gives every phase its own shade", () => {
+    const visual = phaseVisual({ clone: t(1), build: t(1), export: t(1), pull: t(1), up: t(1), healthWait: t(1), cleanup: t(1) })!;
+    if (visual.kind !== "stacked") throw new Error("stacked");
+    const tones = visual.segments.map((s) => s.tone);
+    expect(new Set(tones).size).toBe(7);
+    expect(new Set(rampTones(6)).size).toBe(6);
+  });
+
+  it("stretches the legend across the card", async () => {
+    const email = (await renderNotificationEmail(fixtureEvent("deploy-success"), FIXTURE_CONTEXT))!;
+    expect(email.html).toMatch(/<table[^>]*width="100%"[^>]*style="margin:8px 0 0/);
+  });
+});
+
+describe("gauge", () => {
+  it("names the threshold ticks", async () => {
+    const email = (await renderNotificationEmail(fixtureEvent("alert-host-disk"), FIXTURE_CONTEXT))!;
+    expect(email.html).toContain("Warn 85%");
+    expect(email.html).toContain("Critical 95%");
+  });
+});
+
+describe("fact table", () => {
+  it("stacks long labels over their values", async () => {
+    const email = (await renderNotificationEmail(fixtureEvent("backup-summary-timed-out"), FIXTURE_CONTEXT))!;
+    expect(email.html).toContain("agents / home-worker-.claude-.credentials.json</p>");
+    expect(email.html).toContain("white-space:nowrap;width:1%");
   });
 });
 

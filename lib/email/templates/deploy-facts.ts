@@ -1,7 +1,7 @@
 import type { DeployDetails } from "@/lib/bus/events";
 import { TIMED_PHASES, type StageTimings, type TimedPhase } from "@/lib/docker/stage-timings";
 import { commitUrl, formatDuration, shortSha, triggerLabel } from "../format";
-import type { MailFact, MailVisual } from "./components";
+import { rampTones, type MailFact, type MailVisual } from "./components";
 
 type DeployFactInput = DeployDetails & {
   domain?: string;
@@ -85,11 +85,12 @@ export function phaseVisual(
     }
   }
 
+  const tones = rampTones(failedAt >= 0 && failedAt < phases.length ? phases.length - 1 : phases.length);
   const segments = phases.map((p, i) => ({
     label: PHASE_LABEL[p],
     value: ms(p),
     detail: formatDuration(ms(p)),
-    tone: i === failedAt ? ("fail" as const) : ((i % 4) as 0 | 1 | 2 | 3),
+    tone: i === failedAt ? ("fail" as const) : tones[i],
   }));
   if (untimed) {
     segments.push({

@@ -110,8 +110,43 @@ const HISTORY = new Map([
   ]),
 ]);
 
-function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
-  const rows = summarizeResults(items, HISTORY);
+/** Bind mounts with long paths for names, each much larger than last run. */
+const AGENT_PATHS = [
+  "home-worker-.claude-.credentials.json",
+  "home-worker-.claude-projects",
+  "home-worker-.claude-settings.json",
+  "home-worker-.config-gh-hosts.yml",
+  "home-worker-.config-git-credentials",
+  "home-worker-.ssh-known_hosts",
+  "home-worker-.cache-pnpm-store-v10",
+  "home-worker-.cache-ms-playwright",
+  "home-worker-.local-share-pnpm-global",
+  "home-worker-.npm-_cacache-content-v2",
+  "srv-agents-workspaces-shared-checkouts",
+  "srv-agents-workspaces-scratch-tmp",
+  "srv-agents-logs-transcripts-archive",
+  "var-lib-agents-sqlite-state.db",
+  "var-lib-agents-vector-index-shards",
+  "etc-agents-runtime-overrides.d",
+  "opt-agents-toolchains-node-22.11.0",
+];
+
+const AGENTS: BackupResultItem[] = AGENT_PATHS.map((volumeName, i) => ({
+  kind: "backup" as const,
+  appId: "app_agents",
+  appName: "agents",
+  volumeName,
+  jobName: "Auto: agents",
+  outcome: "success" as const,
+  sizeBytes: (96 + i * 7) * MiB,
+  durationMs: 4_000 + i * 500,
+  at: `2026-10-09T02:${String(10 + i).padStart(2, "0")}:00.000Z`,
+}));
+
+const AGENTS_HISTORY = new Map(AGENTS.map((i): [string, number[]] => [volumeKey(i.appId, i.volumeName), [12 * MiB, 12 * MiB, 13 * MiB]]));
+
+function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>, history = HISTORY): BackupSummaryEvent {
+  const rows = summarizeResults(items, history);
   const backups = rows.filter((r) => r.kind === "backup");
   return {
     type: "backup.summary",
@@ -305,6 +340,24 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     event: backupSummary([...NIGHTLY, ...OBSERVABILITY], {
       run: { kind: "nightly", label: "Nightly backups", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000, problemsOnly: true },
     }),
+  },
+  {
+    name: "backup-summary-timed-out",
+    event: backupSummary(
+      [...NIGHTLY, ...OBSERVABILITY, ...AGENTS],
+      {
+        run: {
+          kind: "nightly",
+          label: "Nightly backups",
+          estimatedMs: 493_000,
+          actualMs: 3_660_000,
+          problemsOnly: true,
+          unfinished: ["Shop Staging", "Search Data", "Uptime Kuma", "Mailpit", "Plausible", "Gitea", "Umami", "n8n"].map((app) => `Auto: ${app}`),
+        },
+        windowEnd: "2026-10-09T03:01:00.000Z",
+      },
+      new Map([...HISTORY, ...AGENTS_HISTORY]),
+    ),
   },
   {
     name: "backup-summary-failed",
