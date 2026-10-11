@@ -60,13 +60,13 @@ describe.skipIf(!conn)("permanent probe bans on Postgres", { timeout: MIGRATE_TI
     expect(ips.slice(2)).toEqual(["203.0.113.3", "203.0.113.2"]);
   });
 
-  it("prunes old temporary bans and keeps permanent ones, lifted or not", async () => {
+  it("prunes old temporary bans and long-lifted ones, keeping active permanent bans", async () => {
     const now = new Date();
     await insert("old", "203.0.113.5", new Date(now.getTime() - 90 * DAY), new Date(now.getTime() - 60 * DAY));
     await insert("p3", "203.0.113.6", new Date(now.getTime() - 90 * DAY), permanent.PERMANENT_UNTIL);
     await sql`update probe_ban set lifted_at = ${new Date(now.getTime() - 60 * DAY)} where id = 'p3'`;
     await bans.pruneBans(now);
     const ids = (await sql`select id from probe_ban order by id`).map((r) => r.id);
-    expect(ids).toEqual(["p1", "p2", "p3", "t1", "t2"]);
+    expect(ids).toEqual(["p1", "p2", "t1", "t2"]);
   });
 });
