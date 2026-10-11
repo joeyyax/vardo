@@ -197,6 +197,7 @@ body{margin:0;padding:0;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .vd-fill-warn{background:${dark.warn} !important}
 .vd-fill-fail{background:${dark.fail} !important}
 .vd-tick{border-color:${dark.muted} !important}
+.vd-gap{border-color:${dark.card} !important}
 }
 [data-ogsc] .vd-fg{color:${dark.foreground} !important}
 [data-ogsc] .vd-soft{color:${dark.soft} !important}
@@ -487,7 +488,7 @@ export function StackedBar({ title, segments, caption }: { title: string; segmen
             return (
               <td
                 key={i}
-                className={fill.className}
+                className={`${fill.className} vd-gap`}
                 width={`${pct[i]}%`}
                 height="10"
                 bgcolor={fill.color}
@@ -513,7 +514,7 @@ export function StackedBar({ title, segments, caption }: { title: string; segmen
                   </tr>
                 </Table>
               </td>
-              <td className="vd-soft" width="100%" style={text(13, light.soft, { padding: "2px 12px 2px 0", width: "100%" })}>
+              <td className="vd-soft" style={text(13, light.soft, { padding: "2px 12px 2px 0" })}>
                 {s.label}
               </td>
               <td className="vd-muted" align="right" style={text(13, light.muted, { padding: "2px 0", whiteSpace: "nowrap" })}>
@@ -560,31 +561,33 @@ export function GaugeBar({ title, percent, warn, critical, caption }: { title: s
           ) : null}
         </tr>
       </Table>
-      {ticks.map((tick, k) => (
-        <Table key={k} width="100%" style={{ tableLayout: "fixed" }}>
-          <tr>
+      {/* One row per tick, each label ending at its tick; the first row sets the column widths. */}
+      <Table width="100%" style={{ tableLayout: "fixed" }}>
+        {ticks.map((tick, k) => (
+          <tr key={k}>
             <td
-              width={`${tick.at}%`}
+              colSpan={k + 1}
+              width={k === 0 ? `${tick.at}%` : undefined}
               align="right"
               className="vd-tick vd-muted"
-              style={text(11, light.muted, { width: `${tick.at}%`, padding: "3px 4px 0 0", borderRight: tickLine, textAlign: "right", whiteSpace: "nowrap" })}
+              style={text(11, light.muted, { ...(k === 0 ? { width: `${tick.at}%` } : {}), padding: "3px 0 0", borderRight: tickLine, textAlign: "right", whiteSpace: "nowrap" })}
             >
-              {`${tick.label} ${tick.at}%`}
+              <span style={{ paddingRight: "4px" }}>{`${tick.label} ${tick.at}%`}</span>
             </td>
             {ticks.slice(k + 1).map((later, j) => (
               <td
                 key={j}
-                width={`${later.at - ticks[k + j].at}%`}
+                width={k === 0 ? `${later.at - ticks[j].at}%` : undefined}
                 className="vd-tick"
-                style={{ ...CELL_RESET, width: `${later.at - ticks[k + j].at}%`, borderRight: tickLine }}
+                style={{ ...CELL_RESET, ...(k === 0 ? { width: `${later.at - ticks[j].at}%` } : {}), borderRight: tickLine }}
               >
                 {NBSP}
               </td>
             ))}
             <td style={{ ...CELL_RESET }}>{NBSP}</td>
           </tr>
-        </Table>
-      ))}
+        ))}
+      </Table>
       <ChartCaption caption={caption} />
     </div>
   );
