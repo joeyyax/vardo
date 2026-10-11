@@ -208,7 +208,7 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
     }
     state.tracker.prune(snapshot);
   }
-  const quiet = quietApps([...work, ...activityWindows(now)], now);
+  const quiet = quietApps([...work, ...(await activityWindows(now))], now);
   const isQuiet = (app: WatchedApp) => quiet.has(app.id) || (!!app.parentAppId && quiet.has(app.parentAppId));
 
   const budget = { left: BASELINE_REFRESH_PER_PASS };

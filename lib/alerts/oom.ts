@@ -1,7 +1,9 @@
-// Recent OOM kills per app, fed by every `app.oom-killed` emit in this process, and the alert they raise.
+// Recent OOM kills per app, fed by every `app.oom-killed` emit in any process through Redis, and the alert they raise.
 
 import type { AlertItem } from "@/lib/bus/events";
 import { onEmit } from "@/lib/bus";
+import { logger } from "@/lib/logger";
+import { redis } from "@/lib/redis";
 import { formatBytesIec } from "@/lib/metrics/format";
 import type { Observation } from "@/lib/notifications/observations";
 import { formatClock, zoneAbbreviation } from "@/lib/time-zone";
@@ -47,9 +49,20 @@ export type OomKill = {
   restartCount?: number | null;
 };
 
-const recent = new Map<string, OomRecord>();
+const log = logger.child("alerts");
 
-export function recordOomKill(organizationId: string, kill: OomKill, at: number): void {
+// This process's kills: the fallback when Redis can't be read.
+const g = globalThis as unknown as { __vardo_oom_recent?: Map<string, OomRecord> };
+const recent: Map<string, OomRecord> = (g.__vardo_oom_recent ??= new Map());
+
+const INDEX_KEY = "alerts:oom:index";
+export const oomRecordKey = (organizationId: string, appId: string) => `alerts:oom:rec:${organizationId}:${appId}`;
+
+/** Retries of a kill Redis refused, 10 seconds apart. */
+const WRITE_RETRIES = 6;
+const WRITE_RETRY_MS = 10_000;
+
+function mergeKill(organizationId: string, kill: OomKill, at: number): void {
   const key = `${organizationId}:${kill.appId}`;
   const record = recent.get(key) ?? {
     organizationId,
@@ -76,12 +89,145 @@ export function recordOomKill(organizationId: string, kill: OomKill, at: number)
   recent.set(key, record);
 }
 
-/** Kills inside the hold window. Older records are dropped. */
+async function execAll(multi: ReturnType<typeof redis.multi>): Promise<void> {
+  const results = await multi.exec();
+  if (!results) throw new Error("Redis transaction aborted");
+  const failed = results.find(([err]) => err);
+  if (failed) throw failed[0];
+}
+
+/** Adds one kill to the app's shared record. Each field is its own atomic update, so writers don't race. */
+export async function writeOomKill(organizationId: string, kill: OomKill, at: number): Promise<void> {
+  const key = oomRecordKey(organizationId, kill.appId);
+  const multi = redis
+    .multi()
+    .hset(key, "organizationId", organizationId, "appId", kill.appId, "appName", kill.appName)
+    .hsetnx(key, "firstAt", at)
+    .hset(key, "lastAt", at)
+    .hincrby(key, "kills", 1)
+    .hincrby(key, `c:${kill.containerName}`, 1);
+  if (kill.containerId) multi.hset(key, `i:${kill.containerId}`, 1);
+  if (kill.kind === "oom-host") multi.hset(key, "hostKill", 1);
+  if ((kill.path ?? "exit") === "exit") {
+    multi.hset(key, "path", "exit");
+    if (typeof kill.restartCount === "number") multi.hsetnx(key, "restartBaseline", kill.restartCount);
+  } else {
+    multi.hsetnx(key, "path", "process");
+  }
+  multi.pexpire(key, OOM_HOLD_MS).sadd(INDEX_KEY, key).pexpire(INDEX_KEY, OOM_HOLD_MS * 2);
+  await execAll(multi);
+}
+
+function writeWithRetry(organizationId: string, kill: OomKill, at: number, attempt = 0): void {
+  writeOomKill(organizationId, kill, at).catch((err) => {
+    if (attempt >= WRITE_RETRIES) {
+      log.warn(`Gave up sharing the OOM kill of ${kill.appId}; only this process's alert pass sees it:`, err);
+      return;
+    }
+    setTimeout(() => writeWithRetry(organizationId, kill, at, attempt + 1), WRITE_RETRY_MS).unref?.();
+  });
+}
+
+/** Records a kill here and in Redis, where the alert pass in any process reads it. */
+export function recordOomKill(organizationId: string, kill: OomKill, at: number): void {
+  mergeKill(organizationId, kill, at);
+  writeWithRetry(organizationId, kill, at);
+}
+
+/** This process's kills inside the hold window. Older records are dropped. */
 export function recentOomKills(now: number): OomRecord[] {
   for (const [key, record] of recent) {
     if (now - record.lastAt > OOM_HOLD_MS) recent.delete(key);
   }
   return [...recent.values()];
+}
+
+/** A shared record from its Redis hash; null when the hash is partial. */
+export function parseOomRecord(h: Record<string, string>): OomRecord | null {
+  if (!h.organizationId || !h.appId || !h.appName || !h.lastAt) return null;
+  const containers = new Map<string, number>();
+  const containerIds = new Set<string>();
+  let autotune: AutotuneNote | null | undefined;
+  for (const [field, value] of Object.entries(h)) {
+    if (field.startsWith("c:")) containers.set(field.slice(2), Number(value));
+    else if (field.startsWith("i:")) containerIds.add(field.slice(2));
+  }
+  if (h.autotune !== undefined) {
+    try {
+      autotune = JSON.parse(h.autotune) as AutotuneNote | null;
+    } catch {
+      autotune = null;
+    }
+  }
+  const lastAt = Number(h.lastAt);
+  return {
+    organizationId: h.organizationId,
+    appId: h.appId,
+    appName: h.appName,
+    containers,
+    containerIds,
+    kills: Number(h.kills ?? 0),
+    hostKill: h.hostKill === "1",
+    path: h.path === "exit" ? "exit" : "process",
+    restartBaseline: h.restartBaseline !== undefined ? Number(h.restartBaseline) : null,
+    firstAt: Math.min(Number(h.firstAt ?? lastAt), lastAt),
+    lastAt,
+    ...(autotune !== undefined ? { autotune } : {}),
+    ...(h.sent === "1" ? { sent: true } : {}),
+  };
+}
+
+/** Kills from every process inside the hold window. Falls back to this process's when Redis can't be read. */
+export async function sharedOomKills(now: number): Promise<OomRecord[]> {
+  try {
+    const keys = await redis.smembers(INDEX_KEY);
+    if (keys.length === 0) return [];
+    const multi = redis.multi();
+    for (const key of keys) multi.hgetall(key);
+    const results = await multi.exec();
+    if (!results) throw new Error("Redis transaction aborted");
+    const records: OomRecord[] = [];
+    const gone: string[] = [];
+    keys.forEach((key, i) => {
+      const [err, hash] = results[i];
+      if (err) throw err;
+      const record = parseOomRecord((hash ?? {}) as Record<string, string>);
+      if (!record || now - record.lastAt > OOM_HOLD_MS) gone.push(key);
+      else records.push(record);
+    });
+    if (gone.length > 0) redis.srem(INDEX_KEY, ...gone).catch(() => {});
+    return records;
+  } catch (err) {
+    log.warn("Couldn't read shared OOM kills, using this process's:", err instanceof Error ? err.message : err);
+    return recentOomKills(now);
+  }
+}
+
+/** Sets fields on a shared record that still exists; a lapsed one gets a TTL, never lingers. */
+async function updateShared(record: OomRecord, fields: Record<string, string>): Promise<void> {
+  const key = oomRecordKey(record.organizationId, record.appId);
+  await execAll(redis.multi().hset(key, fields).pexpire(key, OOM_HOLD_MS, "NX"));
+}
+
+function localRecord(record: OomRecord): OomRecord | undefined {
+  return recent.get(`${record.organizationId}:${record.appId}`);
+}
+
+/** The alert went out: later passes in any process only hold it. */
+export async function markOomSent(record: OomRecord): Promise<void> {
+  record.sent = true;
+  const local = localRecord(record);
+  if (local) local.sent = true;
+  await updateShared(record, { sent: "1" }).catch((err) => log.warn(`Couldn't share the OOM alert state of ${record.appId}:`, err));
+}
+
+/** Keeps what the Auto profile did, so no process decides it twice. */
+export async function saveOomAutotune(record: OomRecord): Promise<void> {
+  const local = localRecord(record);
+  if (local) local.autotune = record.autotune;
+  await updateShared(record, { autotune: JSON.stringify(record.autotune ?? null) }).catch((err) =>
+    log.warn(`Couldn't share the auto-adjust note of ${record.appId}:`, err),
+  );
 }
 
 export function resetOomKills(): void {

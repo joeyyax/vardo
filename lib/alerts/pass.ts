@@ -15,7 +15,7 @@ import type { AlertType } from "@/lib/notifications/registry";
 import { APP_ALERT_TYPES, conditionObservations, type ConditionApp } from "./apps";
 import { autotuneHaltObservation } from "./autotune";
 import { HostSampleBuffer, hostObservations, readHostSample, type HostSample } from "./host";
-import { oomObservation, OOM_SETTLE_MS, recentOomKills, type OomRecord } from "./oom";
+import { markOomSent, oomObservation, OOM_SETTLE_MS, sharedOomKills, type OomRecord } from "./oom";
 
 const log = logger.child("alerts");
 
@@ -118,7 +118,7 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
     disk: sample.disk?.percent,
   }).catch(() => {});
 
-  const kills = recentOomKills(now);
+  const kills = await sharedOomKills(now);
   const host = hostObservations(buffer, now, { topMemory: topMemory() }, {
     memoryConfirmed: kills.some((k) => k.hostKill && now - k.lastAt <= OOM_CONFIRMS_MS),
   });
@@ -152,7 +152,7 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
       const { fired } = await notifyObservations(id, evaluated, observations, at);
       for (const item of fired) {
         const record = item.type === "app.oom" ? kills.find((k) => k.organizationId === id && k.appId === item.about) : undefined;
-        if (record) record.sent = true;
+        if (record) await markOomSent(record);
       }
     } catch (err) {
       log.error(`Alert pass failed for org ${id}:`, err);
