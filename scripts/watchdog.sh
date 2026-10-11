@@ -102,6 +102,7 @@ restart_worker() {
     return
   fi
   log "restart $name: unhealthy for $fails checks"
+  record worker "$name" restarting "$fails"
   (
     if docker stop "$name" > /dev/null 2>&1 && docker start "$name" > /dev/null 2>&1; then
       now >> "$STATE_DIR/worker.restarts"
@@ -170,6 +171,7 @@ check() {
         return
       fi
       log "restart $name: unhealthy for $((fails + 1)) checks"
+      record "$role" "$name" restarting "$((fails + 1))"
       if docker restart -t 30 "$name" > /dev/null 2>&1; then
         now >> "$STATE_DIR/$role.restarts"
         record "$role" "$name" restart "$((fails + 1))"
