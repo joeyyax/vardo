@@ -137,15 +137,6 @@ export function SecuritySettings() {
               <NumberField id="pg-window" label="Within minutes" value={settings.windowMinutes} min={1} max={1440} onChange={(windowMinutes) => set({ windowMinutes })} />
               <NumberField id="pg-ban" label="First ban, minutes" hint="Doubles for each repeat." value={settings.banMinutes} min={5} max={1440} onChange={(banMinutes) => set({ banMinutes })} />
               <NumberField id="pg-max" label="Longest ban, hours" value={settings.maxBanHours} min={1} max={168} onChange={(maxBanHours) => set({ maxBanHours })} />
-              <NumberField
-                id="pg-tarpit"
-                label="Delay before answering a probe, ms"
-                hint="0 answers at once, like any other 403."
-                value={settings.tarpitMs}
-                min={0}
-                max={10000}
-                onChange={(tarpitMs) => set({ tarpitMs })}
-              />
             </div>
             <SwitchRow
               id="pg-share"

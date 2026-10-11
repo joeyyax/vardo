@@ -1,7 +1,7 @@
 // The console's answer to a request Traefik's guard routers sent over: count, ban when due, then a short plain-text reply.
 
 import { logger } from "@/lib/logger";
-import { matchProbe } from "./rules";
+import { OTHER_RULE_ID, matchProbe } from "./rules";
 import { RESPONSE_HEADERS, responseBody, type ResponseKind } from "./responses";
 import { reachesThreshold } from "./ban-policy";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from "./canary";
@@ -26,7 +26,7 @@ export type GuardDeps = {
   hasKey: (value: string | null) => boolean;
   settings: () => Promise<InstanceProbeGuard>;
   clientIp: (headers: Headers) => Promise<string>;
-  recordHit: (ip: string, appId: string | null, windowMs: number) => Promise<number>;
+  recordHit: (ip: string, appId: string | null, windowMs: number, ruleId: string) => Promise<number>;
   ban: (req: BanRequest) => Promise<BanOutcome>;
   recordEvent: (e: { kind: ProbeEventKind; ip: string; path?: string | null; canaryId?: string | null; appId?: string | null }) => Promise<void>;
   markerFor: (ip: string, appId: string | null) => Promise<{ id: string; marker: string }>;
@@ -34,7 +34,6 @@ export type GuardDeps = {
   markUsed: (canaryId: string) => Promise<void>;
   appForHost: (host: string) => Promise<{ id: string } | null>;
   robotsFor: (settings: InstanceProbeGuard) => string;
-  sleep: (ms: number) => Promise<void>;
   /** On the never-ban list: answered, never counted. */
   allowed?: (ip: string) => Promise<boolean>;
   /** In a blocklist range, for forwarded clients the guard file's ClientIP matchers can't see. */
@@ -81,7 +80,6 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const appHeader = request.headers.get(APP_HEADER);
     const appId = appHeader && APP_ID_RE.test(appHeader) ? appHeader : null;
     const path = originalPath(request.headers);
-    const tarpit = () => (settings.tarpitMs > 0 ? deps.sleep(settings.tarpitMs) : Promise.resolve());
 
     if (kind === "banned") return reply(403, responseBody("banned", 403, humor), method);
 
@@ -101,7 +99,6 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
       if (allowed) return reply(404, responseBody("trap", 404, humor), method);
       await deps.recordEvent({ kind: "trap", ip, path, appId });
       await deps.ban({ ip, reason: "trap", appId, hits: 1 });
-      await tarpit();
       if (path === decoyPath(settings)) {
         const { id, marker } = await deps.markerFor(ip, appId);
         await deps.recordEvent({ kind: "canary_fetch", ip, path, canaryId: id, appId });
@@ -129,10 +126,9 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const category: ResponseKind = match?.rule.category ?? "framework";
     if (allowed) return reply(status, responseBody(category, status, humor), method);
     if (match?.rule.report === "exploit") void deps.queueReport?.(ip)?.catch(() => {});
-    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000).catch(() => 0);
+    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000, match?.rule.id ?? OTHER_RULE_ID).catch(() => 0);
     if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });
-    await tarpit();
     return reply(status, responseBody(category, status, humor), method);
   } catch (err) {
     log.warn("Probe guard request failed:", err);

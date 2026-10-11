@@ -1,16 +1,16 @@
 // The Security page's range view: counts, recent bans, what was probed and top sources, for one app or all.
 
-import { and, count, desc, eq, gt, gte, inArray, isNull, min, ne, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, lt, isNull, min, ne, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { probeBans, probeEvents, user } from "@/lib/db/schema";
 import { bansSince, permanentBanCount } from "./bans";
 import { banDetails } from "./ban-detail";
 import { trapsSince } from "./events";
-import { dailyHits, hourlyHits, type DayCount } from "./hits";
+import { dailyHits, hourlyHits, ruleHits, type DayCount, type RuleHitCounts } from "./hits";
 import { getProbeGuardSettings } from "./instance";
 import { banReports } from "./overview";
 import { rangeBuckets, rangeLabel, rangePhrase, rangeStart, type GuardRange } from "./range";
-import { banStatus, detailsStartNote, probeCategories, type AppCategories, type BanStatus } from "./history-view";
+import { approximateNote, banStatus, detailsStartNote, fallbackUntil, probeCategories, ruleHitRows, type AppCategories, type BanStatus, type RuleHit } from "./history-view";
 import type { BanDetail, ProbeCount } from "./summary";
 import type { GuardStats } from "./overview";
 
@@ -45,6 +45,9 @@ export type GuardHistory = {
   stats: GuardStats;
   bans: HistoryBan[];
   categories: ProbeCount[];
+  rules: RuleHit[];
+  /** Set when events stood in for counters. */
+  probedNote: string | null;
   byApp: AppCategories[];
   sources: TopSource[];
   note: string | null;
@@ -82,7 +85,10 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
       ? await hourlyHits(appId ?? null, buckets.count, now).catch(() => 0)
       : days.slice(0, range === "all" ? COUNTED_DAYS : buckets.count).reduce((s, d) => s + d.count, 0);
 
-  const [bans, traps, permanent, banRows, pathRows, sourceRows, settings] = await Promise.all([
+  const counted: RuleHitCounts = await ruleHits(appId ?? null, buckets.unit, buckets.count, now).catch(() => ({ counts: {}, since: null }));
+  const until = fallbackUntil(since, counted.since, now);
+
+  const [bans, traps, permanent, banRows, pathRows, earlierRows, sourceRows, settings] = await Promise.all([
     bansSince(since, appId),
     trapsSince(since, appId),
     permanentBanCount(appId),
@@ -109,6 +115,13 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
       .from(probeEvents)
       .where(scoped(probeEvents, appId, [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since)]))
       .groupBy(probeEvents.path, probeEvents.appId),
+    until
+      ? db
+          .select({ path: probeEvents.path, appId: probeEvents.appId, count: count() })
+          .from(probeEvents)
+          .where(scoped(probeEvents, appId, [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since), lt(probeEvents.createdAt, until)]))
+          .groupBy(probeEvents.path, probeEvents.appId)
+      : Promise.resolve([] as { path: string | null; appId: string | null; count: number }[]),
     db
       .select({ ip: probeEvents.ip, count: count() })
       .from(probeEvents)
@@ -131,7 +144,9 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
       : Promise.resolve([] as { ip: string }[]),
   ]);
   const banned = new Set(activeIps.map((r) => r.ip));
-  const { categories, byApp } = probeCategories(pathRows);
+  const { byApp } = probeCategories(pathRows);
+  const rules = ruleHitRows({ counts: counted.counts, events: earlierRows, details: details.values() });
+  const eventHits = earlierRows.reduce((s, r) => s + r.count, 0);
   const recorded = pathRows.reduce((s, r) => s + r.count, 0);
 
   return {
@@ -146,7 +161,9 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
       detail: details.get(b.id) ?? null,
       reportedTo: reports.get(b.id) ?? null,
     })),
-    categories,
+    categories: rules.map((r) => ({ label: r.label, count: r.hits })),
+    rules,
+    probedNote: approximateNote(until, eventHits),
     byApp: appId ? [] : byApp,
     sources: sourceRows.map((s) => ({ ...s, banned: banned.has(s.ip) })),
     note: detailsStartNote({ start: since, earliestEvent: first.event, ...(buckets.unit === "day" ? { days } : { probes, recorded }) }),

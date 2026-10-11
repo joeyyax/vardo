@@ -44,7 +44,6 @@ function setup(over: Partial<InstanceProbeGuard> = {}, depsOver: Partial<GuardDe
     markUsed: vi.fn(async () => {}),
     appForHost: async () => ({ id: "app1" }),
     robotsFor: renderAppRobots,
-    sleep: vi.fn(async () => {}),
     ...depsOver,
   };
   return { deps, bans, events, hits };
@@ -96,15 +95,6 @@ describe("handleGuardRequest", () => {
     const { deps } = setup({ humor: false });
     expect(await (await handleGuardRequest("probe", req("/.env"), deps)).text()).toBe("Not Found\n");
     expect(await (await handleGuardRequest("probe", req("/HNAP1"), deps)).text()).toBe("Forbidden\n");
-  });
-
-  it("waits only when a tarpit is set", async () => {
-    const off = setup();
-    await handleGuardRequest("probe", req("/.env"), off.deps);
-    expect(off.deps.sleep).not.toHaveBeenCalled();
-    const on = setup({ tarpitMs: 2000 });
-    await handleGuardRequest("probe", req("/.env"), on.deps);
-    expect(on.deps.sleep).toHaveBeenCalledWith(2000);
   });
 
   it("bans on the first trap hit and records only the address and path", async () => {

@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "timers/promises";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -36,7 +35,7 @@ const deps: GuardDeps = {
   hasKey: (value) => hasGuardKey(value),
   settings: getProbeGuardSettings,
   clientIp: clientIpFor,
-  recordHit: async (ip, appId, windowMs) => recordHit(ip, await existingApp(appId), windowMs),
+  recordHit: async (ip, appId, windowMs, ruleId) => recordHit(ip, await existingApp(appId), windowMs, ruleId),
   ban: async (req) => createBan({ ...req, appId: await existingApp(req.appId ?? null) }),
   recordEvent: async (e) => recordEvent({ ...e, appId: await existingApp(e.appId ?? null) }),
   markerFor: async (ip, appId) => markerFor(ip, await existingApp(appId)),
@@ -44,7 +43,6 @@ const deps: GuardDeps = {
   markUsed,
   appForHost,
   robotsFor: renderAppRobots,
-  sleep: (ms) => sleep(ms),
   allowed: isAllowlisted,
   blockedRange: inBlockedRange,
   queueReport: queueAbuseReport,

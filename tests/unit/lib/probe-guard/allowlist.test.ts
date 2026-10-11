@@ -123,7 +123,6 @@ describe("allowlisted addresses", () => {
       markUsed: async () => {},
       appForHost: async () => null,
       robotsFor: renderAppRobots,
-      sleep: async () => {},
       allowed: async () => true,
     };
     for (const [kind, path] of [["probe", "/.env"], ["trap", "/admin-backup/x"], ["canary", "/"]] as const) {

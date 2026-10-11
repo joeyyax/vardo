@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { RangePicker } from "@/components/range-picker";
 import { BansList, type BanItem } from "@/components/probe-guard/bans-list";
 import { GUARD_RANGES, parseGuardRange, rangeLabel, type GuardRange } from "@/lib/probe-guard/range";
-import { categoryLine, type AppCategories } from "@/lib/probe-guard/history-view";
+import { categoryLine, type AppCategories, type RuleHit } from "@/lib/probe-guard/history-view";
 import { guardSummaryParts, type GuardStatsView, type ProbeCount } from "@/lib/probe-guard/summary";
 
 const PAGE = 50;
@@ -19,6 +19,8 @@ type HistoryData = {
   stats: GuardStatsView;
   bans: (BanItem & { appId: string | null })[];
   categories: ProbeCount[];
+  rules: RuleHit[];
+  probedNote: string | null;
   byApp: AppCategories[];
   sources: { ip: string; count: number; banned: boolean }[];
   note: string | null;
@@ -135,11 +137,26 @@ function HistoryView({ endpoint, banUrl, allowUrl, canBanPermanently = false, sh
           </Section>
 
           <Section id="probed" title="What was probed">
+            {data.probedNote && <p className="text-xs text-muted-foreground">{data.probedNote}</p>}
             {data.categories.length === 0 ? (
               <p className="text-xs text-muted-foreground">No probe details {data.phrase}.</p>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground">{categoryLine(data.categories)}</p>
+                {showApps ? (
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {data.rules.map((r) => (
+                      <li key={r.label}>
+                        <span className="font-medium text-foreground">{r.label}</span>
+                        {" · "}
+                        {r.hits.toLocaleString("en-US")} hit{r.hits === 1 ? "" : "s"}
+                        {" · "}
+                        {r.bans.toLocaleString("en-US")} ban{r.bans === 1 ? "" : "s"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">{categoryLine(data.categories)}</p>
+                )}
                 {showApps && data.byApp.length > 0 && (
                   <ul className="space-y-0.5 text-xs text-muted-foreground">
                     {data.byApp.map((a) => (
