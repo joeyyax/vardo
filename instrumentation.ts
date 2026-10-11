@@ -91,18 +91,21 @@ export async function register() {
     const { checkKeyEscrowAtStartup } = await import("./lib/crypto/key-escrow");
     const escrow = await checkKeyEscrowAtStartup();
 
-    // Encrypts legacy plaintext credentials. Must run before the backup scheduler.
+    // Encrypts legacy plaintext credentials. Must run before the backup scheduler, here and in the worker.
+    let credentialStep: "encrypted" | "skipped" | "failed" = "skipped";
     try {
       const { canEncryptStoredCredentials, encryptStoredCredentials } = await import(
         "./lib/crypto/encrypt-stored-credentials"
       );
       if (canEncryptStoredCredentials(escrow)) {
         await encryptStoredCredentials();
+        credentialStep = "encrypted";
       } else if (keyCheck.ok) {
         log.warn("Left stored credentials unencrypted — the running key isn't confirmed for this database");
       }
     } catch (err) {
       log.error("Credential encryption failed:", err);
+      credentialStep = "failed";
     }
 
     // Encrypts legacy OAuth tokens with Better Auth's secret, not the master key.
@@ -154,7 +157,8 @@ export async function register() {
     // Fails backups a stopped process left running. Skipped whole when Redis can't vouch for leases.
     try {
       const { reapInterruptedBackups, sweepOrphanedStaging } = await import("./lib/backups/reap");
-      await reapInterruptedBackups();
+      // Spares rows younger than a minute: a worker's new run takes its lease just after the insert.
+      await reapInterruptedBackups(new Date(), { minAgeMs: 60_000 });
       await sweepOrphanedStaging();
     } catch (err) {
       log.error("Interrupted backup cleanup failed:", err);
@@ -190,6 +194,12 @@ export async function register() {
     } catch (err) {
       log.error("Failed to import backup modules:", err);
     }
+
+    // The worker's backup loops wait for this record.
+    void (backupTargetReady ?? Promise.resolve())
+      .then(() => import("./lib/backups/boot-gate"))
+      .then(({ recordBackupBootInBackground }) => recordBackupBootInBackground(credentialStep))
+      .catch((err) => log.error("Failed to record backup boot steps:", err));
 
     // Provisions cAdvisor, Loki and Promtail before feature registration so collectors find them.
     try {

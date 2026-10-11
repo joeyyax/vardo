@@ -1,6 +1,6 @@
 // vardo-worker: the background loops from lib/worker/registry.ts, outside the web process.
 
-import { hostname } from "os";
+import { ownSlot } from "@/lib/docker/own-slot";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown, configureShutdown } from "@/lib/shutdown";
 import { instanceId } from "@/lib/worker/instance";
@@ -24,19 +24,6 @@ function crash(kind: string, err: unknown): void {
 }
 process.on("uncaughtException", (err) => crash("Uncaught exception", err));
 process.on("unhandledRejection", (err) => crash("Unhandled rejection", err));
-
-/** This container's blue or green slot, from its compose project label. */
-async function ownSlot(): Promise<string | null> {
-  try {
-    const { inspectContainer } = await import("@/lib/docker/client");
-    const { projectSlot } = await import("@/lib/docker/desired-state");
-    const info = await inspectContainer(process.env.CONTAINER_ID ?? hostname());
-    const slot = projectSlot(info.labels["com.docker.compose.project"]);
-    return slot === "shared" ? null : slot;
-  } catch {
-    return null;
-  }
-}
 
 function inFlight(): string[] {
   return [...startedLoops()].filter(([, loop]) => loop.busy).map(([name]) => name);
@@ -102,7 +89,11 @@ async function main(): Promise<void> {
   if (!registered) return;
   setInterval(() => void beat(), WORKER_BEAT_MS).unref();
 
-  await startLoops({ role: "worker" });
+  // Backup loops start once web has encrypted stored credentials and set up the backup target for this release.
+  const { waitForBackupBoot } = await import("@/lib/backups/boot-gate");
+  const backupBoot = waitForBackupBoot({ stopped: () => bootState().stopping });
+  backupBoot.catch(() => {});
+  await startLoops({ role: "worker", ready: { "backup-target": backupBoot } });
   if (bootState().stopping) return;
   markBooted();
   await beat();

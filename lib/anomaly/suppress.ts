@@ -4,6 +4,7 @@ import { and, gt, isNotNull, isNull, or } from "drizzle-orm";
 import { onEmit } from "@/lib/bus";
 import { db } from "@/lib/db";
 import { backups, deployments } from "@/lib/db/schema";
+import { redis } from "@/lib/redis";
 
 /** Quiet this long after the work ends. */
 export const QUIET_GRACE_MS = 30 * 60_000;
@@ -24,26 +25,47 @@ export function quietApps(windows: Window[], now: number, graceMs = QUIET_GRACE_
   return new Set([...byApp].filter(([, ws]) => inQuietWindow(ws, now, graceMs)).map(([id]) => id));
 }
 
-// Restarts and state changes this process saw, by app.
+// Restarts and state changes this process saw, by app: the fallback when Redis can't be read.
 const globalForActivity = globalThis as unknown as { __vardo_anomaly_activity?: Map<string, number> };
 const activity: Map<string, number> = (globalForActivity.__vardo_anomaly_activity ??= new Map());
 
+/** Latest activity per app from every process, as a sorted set scored by time. */
+export const QUIET_ACTIVITY_KEY = "vardo:anomaly-quiet";
+
+function pruneLocal(now: number): void {
+  for (const [appId, at] of activity) if (now - at >= QUIET_GRACE_MS) activity.delete(appId);
+}
+
+/** Records activity here and in Redis, where the anomaly pass in any process reads it. */
 export function markActivity(appId: string, at: number): void {
   activity.set(appId, Math.max(activity.get(appId) ?? 0, at));
+  pruneLocal(at);
+  redis
+    .multi()
+    .zadd(QUIET_ACTIVITY_KEY, "GT", at, appId)
+    .pexpire(QUIET_ACTIVITY_KEY, QUIET_GRACE_MS)
+    .exec()
+    .catch(() => {});
 }
 
 export function resetActivity(): void {
   activity.clear();
 }
 
-/** In-process activity as windows, dropping what's past the grace period. */
-export function activityWindows(now: number): Window[] {
-  const out: Window[] = [];
-  for (const [appId, at] of activity) {
-    if (now - at >= QUIET_GRACE_MS) activity.delete(appId);
-    else out.push({ appId, start: at, end: at });
-  }
-  return out;
+/** Activity from every process as windows, past the grace period dropped. This process's alone when Redis can't be read. */
+export async function activityWindows(now: number): Promise<Window[]> {
+  pruneLocal(now);
+  const latest = new Map(activity);
+  try {
+    const since = now - QUIET_GRACE_MS;
+    const flat = await redis.zrangebyscore(QUIET_ACTIVITY_KEY, `(${since}`, "+inf", "WITHSCORES");
+    for (let i = 0; i < flat.length; i += 2) {
+      const at = Number(flat[i + 1]);
+      if (at > (latest.get(flat[i]) ?? 0)) latest.set(flat[i], at);
+    }
+    redis.zremrangebyscore(QUIET_ACTIVITY_KEY, "-inf", since).catch(() => {});
+  } catch { /* this process's activity stands */ }
+  return [...latest].map(([appId, at]) => ({ appId, start: at, end: at }));
 }
 
 onEmit("anomaly-quiet", (_orgId, event) => {

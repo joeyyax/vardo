@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/redis", async () => ({ redis: (await import("@/tests/unit/helpers/fake-redis")).createFakeRedis() }));
 import { judgeThreshold, type Point } from "@/lib/alerts/threshold";
 import { HOST_RULES, HostSampleBuffer, hostObservations, parseMeminfo, type HostSample } from "@/lib/alerts/host";
 import { conditionObservations, UNHEALTHY_ALERT_MS } from "@/lib/alerts/apps";

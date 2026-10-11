@@ -12,7 +12,7 @@ import { logger } from "@/lib/logger";
 import { detectHost, loadResourceSettings, tierMemoryMb } from "@/lib/resources/host";
 import { learnedDefault } from "@/lib/resources/learned";
 import { getOrgTimeZone } from "@/lib/time-zone-settings";
-import type { OomFollowup, OomRecord } from "./oom";
+import { saveOomAutotune, type OomFollowup, type OomRecord } from "./oom";
 
 const log = logger.child("alerts");
 
@@ -100,6 +100,7 @@ export async function oomFollowup(record: OomRecord, now: number): Promise<OomFo
       log.error(`Auto-adjust failed for ${app.id}:`, err);
       return null;
     });
+    await saveOomAutotune(record);
   }
   return followup;
 }

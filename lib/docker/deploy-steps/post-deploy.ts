@@ -589,7 +589,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
     const [cutOff, backupsCutOff] = await Promise.all([
       drainForSelfStop(ctx.appId, log).catch(() => [] as string[]),
-      drainBackupsForStop(log).catch(() => [] as string[]),
+      // Waits on and pauses the old slot's worker too.
+      drainBackupsForStop(log, backupDrainTimeoutMs(), 1000, { slot: activeSlot }).catch(() => [] as string[]),
     ]);
     if (cutOff.length > 0) {
       await unfinishedWork(
