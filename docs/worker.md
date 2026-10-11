@@ -58,3 +58,32 @@ Set these in `/opt/vardo/.env` and redeploy.
 ## Development
 
 `pnpm dev` runs every loop itself. For the production split, set `VARDO_WORKER=external` in `.env` and run `pnpm dev:worker` next to `pnpm dev`.
+
+## What web still needs from the loops
+
+A loop that moves to the worker takes its in-process side effects with it. Stage 2 lost the metrics provider this way: only the collector set it, so web's live stats had none. Audit of every loop that can run in the worker:
+
+| Loop | Side effect | Status |
+| --- | --- | --- |
+| `metrics-collector` | Sets the metrics provider web's stats streams poll | Fixed: `instrumentation.ts` sets it |
+| `metrics-collector` | GPU snapshot merged into live stats frames | Fixed: published to Redis (`metrics:gpu:snapshot`) |
+| `metrics-collector` | Latest container snapshot | Safe: only the alert pass reads it, and it moves with the collector |
+| `metrics-collector`, `error-rate` | Time series, disk usage, error rates | Safe: Redis |
+| `metrics-orphan-sweep` | Web deletes an app's series, but the worker's created-keys cache still lists them | Fixed: the cache expires after 10 minutes and re-applies labels and retention |
+| `system-alerts` | Fired-alert state the settings page shows | Fixed: the route reads the persisted row |
+| `system-alerts` | OOM and anomaly-quiet hooks fill per-process maps, so OOMs web emits during deploys never reach the worker's alert pass | Needs decision |
+| `image-update-*`, `digest` | EOL table, refreshed by `image-eol-sync` in web | Fixed: the worker loads the stored table at boot; refreshes reach it on its next restart |
+| `rollback-watch` | GitHub PR feedback rows live in the memory of the process that tracked the deploy, so a worker rollback rewrites the comment from an empty map | Needs decision |
+| `backup-*`, `restore-drill` | Self-deploy drain reads web's in-flight backups, so it doesn't see or pause the worker's | Needs decision |
+| `backup-*` | Boot steps only web runs (credential encryption, interrupted-backup reap, backup target) and `after: "backup-target"`, which the worker never waits on | Needs decision |
+| `container-health`, `status-reconcile` | Self-heal and OOM state | Safe: the readers run in the same loops; self-heal is mirrored to Postgres |
+| `cert-export` | Written-cert maps | Safe: web's deploy path keeps its own; a race on one volume rewrites the same files |
+| `probe-guard`, `cloudflare-only-sync` | Traefik files on the shared volume | Safe: each write renders the whole file from Postgres |
+| Every loop | `emit()` events, loop heartbeats, leases, settings | Safe: Redis streams and Postgres |
+| The rest | Postgres, Redis, Docker or files only | Safe |
+
+The event, notification, deploy, log and terminal streams read Redis or Docker directly, so they don't depend on a loop's process.
+
+### Post-deploy stream check
+
+After a deploy of Vardo itself, the old console opens the new console's org, project and app stats streams and waits up to 20 seconds for a `point` event on each. It signs in with a read-only API token that lasts 2 minutes and is deleted afterward. A stream that sends nothing marks the deploy's post-deploy work unfinished and notifies, with `[smoke]` lines in the deploy log. It skips when metrics or API tokens are off.
