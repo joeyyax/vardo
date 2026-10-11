@@ -42,6 +42,7 @@ type ServiceStatus = {
   status: string;
   state: string;
   image: string;
+  role?: "service" | "standby";
 };
 
 type MaintenanceStatus = {
@@ -511,25 +512,32 @@ export function MaintenanceSettings() {
             </div>
           ) : (
             <ul className="divide-y">
-              {status.services.map((svc) => (
+              {status.services.map((svc) => {
+                const standby = svc.role === "standby";
+                return (
                 <li
                   key={svc.containerId}
                   className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
                 >
                   <div className="space-y-0.5 min-w-0">
-                    <p className="text-sm font-mono">{svc.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{svc.status}</p>
+                    <p className={standby ? "text-sm font-mono text-muted-foreground" : "text-sm font-mono"}>{svc.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {standby ? "Idle slot, kept for instant rollback" : svc.status}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
-                    <Badge variant={containerStateVariant(svc.state)} className="text-xs">
-                      {stateLabel(svc.state)}
+                    <Badge variant={standby ? "neutral" : containerStateVariant(svc.state)} className="text-xs">
+                      {standby ? "Standby" : stateLabel(svc.state)}
                     </Badge>
+                    {/* Starting the idle slot would run a second console. */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2"
+                      className={standby ? "invisible h-7 px-2" : "h-7 px-2"}
                       onClick={() => void handleRestart(svc.name)}
-                      disabled={restarting !== null}
+                      disabled={standby || restarting !== null}
+                      aria-hidden={standby || undefined}
+                      tabIndex={standby ? -1 : undefined}
                       aria-label={`Restart ${svc.name}`}
                     >
                       {restarting === svc.name ? (
@@ -540,7 +548,8 @@ export function MaintenanceSettings() {
                     </Button>
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </CardContent>
