@@ -1,9 +1,33 @@
-// The attention row for an available Vardo update, with Update now on a self-deploy instance.
+// The attention row for an available Vardo update, with Update now on a self-deploy instance, or the one running.
 
 import type { AttentionRow } from "@/lib/ui/attention";
 import type { ChannelUpdate } from "@/lib/version";
+import type { ActiveUpdate } from "@/lib/self-update/lifecycle";
+import { versionShort } from "@/lib/email/format";
 
 export const UPDATES_HREF = "/admin/settings/maintenance#updates";
+
+/** The row the "updating" banner reads. */
+export const VARDO_UPDATING_ROW_KEY = "vardo-updating";
+
+/** "Updating Vardo to 4f1a9b2…" while an update runs. */
+export function vardoUpdatingRow(active: Pick<ActiveUpdate, "id" | "toVersion" | "startedAt"> | null): AttentionRow {
+  return {
+    key: VARDO_UPDATING_ROW_KEY,
+    label: "Vardo updating",
+    tone: "activity",
+    items: [
+      {
+        id: active?.id ?? "vardo-updating",
+        name: `Updating Vardo${active?.toVersion ? ` to ${versionShort(active.toVersion)}` : ""}…`,
+        detail: "In progress",
+        href: UPDATES_HREF,
+        ...(active ? { since: new Date(active.startedAt).toISOString() } : {}),
+      },
+    ],
+    footer: "Deployed apps keep running. This clears when the update finishes or fails.",
+  };
+}
 
 export function vardoUpdateRow(input: {
   update: ChannelUpdate | null;
@@ -12,14 +36,7 @@ export function vardoUpdateRow(input: {
   runActive: boolean;
 }): AttentionRow | null {
   const { update } = input;
-  if (input.runActive) {
-    return {
-      key: "vardo-update",
-      label: "Vardo updating",
-      tone: "activity",
-      items: [{ id: "vardo-update", name: "Vardo", detail: "Update in progress", href: UPDATES_HREF }],
-    };
-  }
+  if (input.runActive) return vardoUpdatingRow(null);
   if (!update?.hasUpdate) return null;
 
   const n = update.commitsBehind;

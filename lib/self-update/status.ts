@@ -8,6 +8,7 @@ import { getBuildSha, getChannelUpdate, type ChannelUpdate } from "@/lib/version
 import type { CanaryVerdict } from "./canary";
 import { effectiveChannel, type UpdateChannel, type UpdatePolicy } from "./policy";
 import { isRunActive } from "./decide";
+import { activeUpdate, type ActiveUpdate } from "./lifecycle";
 import { canaryStatus } from "./runner";
 import { getUpdatePolicy, getUpdateRun, getUpdateState, type UpdateRun, type UpdateState } from "./store";
 import { getInstanceTimezone } from "./timezone";
@@ -30,6 +31,8 @@ export type UpdateStatus = {
   update: ChannelUpdate | null;
   run: UpdateRun | null;
   runActive: boolean;
+  /** An update running now, from the CLI or Update now. */
+  active: ActiveUpdate | null;
   approval: UpdateState["approval"];
   instanceTimezone: string | null;
   zone: string;
@@ -61,12 +64,13 @@ async function listPeers(): Promise<UpdatePeer[]> {
 
 export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<UpdateStatus> {
   const now = new Date();
-  const [policy, state, run, instanceTimezone, peers] = await Promise.all([
+  const [policy, state, run, instanceTimezone, peers, active] = await Promise.all([
     getUpdatePolicy(),
     getUpdateState(),
     getUpdateRun(),
     getInstanceTimezone(),
     listPeers(),
+    activeUpdate().catch(() => null),
   ]);
   const channel = effectiveChannel(policy);
   const update = await getChannelUpdate(channel, opts);
@@ -80,6 +84,7 @@ export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<U
     update,
     run,
     runActive: isRunActive(run),
+    active,
     approval: state.approval,
     instanceTimezone,
     zone,

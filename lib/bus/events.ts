@@ -514,6 +514,7 @@ export type SystemUpdateStartedEvent = UpdateChanges & {
   title: string;
   message: string;
   fromVersion: string;
+  toVersion?: string;
   branch?: string;
   fromSlot?: string;
   toSlot?: string;

@@ -142,8 +142,8 @@ export async function writeUpdateMarker(marker: UpdateMarker, dir = LIFECYCLE_DI
   await rename(tmp, file);
 }
 
-/** Records a self-deploy's state and announces what this console should. Never throws. */
-export async function recordSelfDeploy(run: SelfDeployRun, outcome: MarkerOutcome): Promise<void> {
+/** Records a self-deploy's state and reports it to the update lifecycle. `marker: false` skips update.json. Never throws. */
+export async function recordSelfDeploy(run: SelfDeployRun, outcome: MarkerOutcome, opts: { marker?: boolean } = {}): Promise<void> {
   if (!isSelfUpdate(run)) return;
   try {
     const { checkUpdateMarker, selfHost } = await import("./monitor");
@@ -152,8 +152,9 @@ export async function recordSelfDeploy(run: SelfDeployRun, outcome: MarkerOutcom
     const toVersion = targetVersion(await readPackageJson(run), run.gitSha);
     const buildSha = getBuildSha();
     const fromVersion = fromVersionLabel(pkg.version, buildSha, hasCommitSha(buildSha) ? null : await lastDeployedSha(run));
-    await writeUpdateMarker(selfDeployMarker(run, outcome, { fromVersion, toVersion, fromHost: selfHost() }));
-    await checkUpdateMarker();
+    const marker = selfDeployMarker(run, outcome, { fromVersion, toVersion, fromHost: selfHost() });
+    if (opts.marker !== false) await writeUpdateMarker(marker);
+    await checkUpdateMarker(marker);
   } catch (err) {
     log.warn(`Couldn't record self-deploy ${run.deploymentId} as ${outcome.state}:`, err);
   }

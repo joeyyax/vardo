@@ -1,7 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useRef, type ReactNode } from "react";
-import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { AttentionRowList } from "@/components/attention-panel";
 import { AttentionIssueGroup } from "@/components/attention-issues";
@@ -9,6 +10,7 @@ import { useAttention, useAttentionTarget } from "@/components/attention-provide
 import { DetailPanel } from "@/components/detail-panel";
 import { Term, TermNote } from "@/components/term";
 import { attentionGroupTerm } from "@/lib/ui/glossary";
+import { VARDO_UPDATING_ROW_KEY } from "@/lib/attention/vardo-update-row";
 import { AllClear } from "@/components/issue-group";
 import { announceAttention, sameTarget, showsBar, type AttentionGroup, type AttentionTarget } from "@/lib/ui/attention";
 import { cn } from "@/lib/utils";
@@ -29,12 +31,14 @@ const triggerKey = (t: AttentionTarget) => (typeof t === "string" ? t : t.group)
  */
 export function AttentionBar() {
   const { rows, summary } = useAttention();
+  const updating = rows.find((r) => r.key === VARDO_UPDATING_ROW_KEY)?.items[0];
   return (
     <div>
       {/* Always mounted: a live region added with its content isn't announced. */}
       <span role="status" aria-live="polite" className="sr-only">
         {announceAttention(rows)}
       </span>
+      {updating && <UpdatingStrip name={updating.name} href={updating.href} />}
       {showsBar(summary) && (
         <Suspense fallback={<BarStrip groups={summary.urgent} count={summary.urgentFaults} />}>
           <LinkedBar />
@@ -43,6 +47,30 @@ export function AttentionBar() {
       <Suspense fallback={null}>
         <AttentionTriagePanel />
       </Suspense>
+    </div>
+  );
+}
+
+/** "Updating Vardo to …" on every page while an update runs. Admins only: the row comes from the admin update check. */
+function UpdatingStrip({ name, href }: { name: string; href?: string }) {
+  const label = (
+    <>
+      <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin text-muted-foreground" />
+      <span className="truncate">{name}</span>
+      <span className="hidden text-muted-foreground sm:inline">Deployed apps keep running.</span>
+    </>
+  );
+  return (
+    <div className="border-b bg-card text-sm" data-testid="vardo-updating">
+      <div className="container flex h-9 min-w-0 items-center gap-2.5">
+        {href ? (
+          <Link href={href} className="flex min-w-0 items-center gap-2.5 hover:underline">
+            {label}
+          </Link>
+        ) : (
+          label
+        )}
+      </div>
     </div>
   );
 }

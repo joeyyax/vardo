@@ -1,14 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyBoot,
-  markSeen,
   missingContainers,
   parseBtime,
   parseUpdateMarker,
-  updateAnnouncement,
-  UPDATE_SLOW_MS,
   type Heartbeat,
-  type UpdateMarker,
 } from "@/lib/lifecycle/classify";
 
 const HOST_BOOT = Date.parse("2026-09-01T00:00:00Z");
@@ -81,18 +77,6 @@ describe("parseBtime", () => {
 });
 
 describe("update markers", () => {
-  const started: UpdateMarker = {
-    id: "20261009170000-1234",
-    state: "started",
-    startedAt: NOW - 200_000,
-    fromVersion: "e36c2e3",
-    branch: "main",
-    fromSlot: "blue",
-    toSlot: "green",
-  };
-  const updated: UpdateMarker = { ...started, state: "updated", toVersion: "4f1a9b2", finishedAt: NOW - 5_000 };
-  const failed: UpdateMarker = { ...started, state: "failed", step: "Health check", rolledBack: true, finishedAt: NOW - 5_000 };
-
   it("parses what install.sh writes, in epoch seconds", () => {
     const marker = parseUpdateMarker(
       JSON.stringify({
@@ -111,33 +95,6 @@ describe("update markers", () => {
     expect(marker).toMatchObject({ state: "failed", startedAt: 1791565200_000, finishedAt: 1791565501_000, rolledBack: true, logTail: ["a", "b"] });
     expect(parseUpdateMarker("{not json")).toBeNull();
     expect(parseUpdateMarker(JSON.stringify({ id: "x", state: "weird", startedAt: 1 }))).toBeNull();
-  });
-
-  it("holds the start back until the update has run 10 minutes", () => {
-    expect(updateAnnouncement(started, null, NOW)).toBeNull();
-    expect(updateAnnouncement(started, null, started.startedAt + UPDATE_SLOW_MS)).toBe("started");
-  });
-
-  it("announces each state once", () => {
-    const late = started.startedAt + UPDATE_SLOW_MS;
-    expect(updateAnnouncement(started, null, late)).toBe("started");
-    const seen = markSeen(null, started, "started");
-    expect(updateAnnouncement(started, seen, late)).toBeNull();
-    expect(updateAnnouncement(updated, seen, NOW)).toBe("updated");
-    expect(updateAnnouncement(updated, markSeen(seen, updated, "updated"), NOW)).toBeNull();
-  });
-
-  it("announces a failure after the start", () => {
-    expect(updateAnnouncement(failed, markSeen(null, started, "started"), NOW)).toBe("failed");
-  });
-
-  it("treats a new run as new", () => {
-    const next = { ...started, id: "20261010090000-99" };
-    expect(updateAnnouncement(next, markSeen(null, updated, "updated"), next.startedAt + UPDATE_SLOW_MS)).toBe("started");
-  });
-
-  it("ignores stale markers", () => {
-    expect(updateAnnouncement(updated, null, NOW + 2 * 24 * 60 * 60 * 1000)).toBeNull();
   });
 });
 
