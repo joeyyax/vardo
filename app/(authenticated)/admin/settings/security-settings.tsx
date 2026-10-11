@@ -106,19 +106,6 @@ export function SecuritySettings() {
         )}
       </div>
 
-      <GuardHistory
-        endpoint={`${ENDPOINT}/history`}
-        banUrl={(id) => `${ENDPOINT}/bans/${id}`}
-        allowUrl={ALLOWLIST_ENDPOINT}
-        canBanPermanently
-        showApps
-        version={allowVersion}
-        onChange={() => {
-          void refetch();
-          setAllowVersion((v) => v + 1);
-        }}
-      />
-
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
@@ -204,6 +191,10 @@ export function SecuritySettings() {
         </Button>
       </form>
 
+      <AllowlistCard version={allowVersion} onChange={() => void refetch()} />
+
+      <AbuseReportingCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Active bans</CardTitle>
@@ -222,9 +213,18 @@ export function SecuritySettings() {
         </CardContent>
       </Card>
 
-      <AllowlistCard version={allowVersion} onChange={() => void refetch()} />
-
-      <AbuseReportingCard />
+      <GuardHistory
+        endpoint={`${ENDPOINT}/history`}
+        banUrl={(id) => `${ENDPOINT}/bans/${id}`}
+        allowUrl={ALLOWLIST_ENDPOINT}
+        canBanPermanently
+        showApps
+        version={allowVersion}
+        onChange={() => {
+          void refetch();
+          setAllowVersion((v) => v + 1);
+        }}
+      />
     </div>
   );
 }
