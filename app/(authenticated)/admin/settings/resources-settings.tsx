@@ -66,6 +66,11 @@ const RESTART_TARGET: Partial<Record<ResourceDefault["key"], string>> = {
   buildkitMem: "vardo-buildkit",
   redisMem: "vardo-redis",
   redisMaxmemory: "vardo-redis",
+  traefikMem: "vardo-traefik",
+};
+
+const RESTART_NOTE: Partial<Record<ResourceDefault["key"], string>> = {
+  traefikMem: " Every site drops for a few seconds while it restarts.",
 };
 
 /** Input, reset and save for a default an admin can set. */
@@ -242,7 +247,7 @@ export function ResourcesSettings() {
                   <div className="text-xs text-status-warning">
                     Running with {formatValue(row, row.running ?? null)}; the rule suggests{" "}
                     {formatValue(row, row.rule)}. Set <code>{row.envVar}={envValue(row)}</code> in .env and
-                    recreate {RESTART_TARGET[row.key]}.
+                    recreate {RESTART_TARGET[row.key]}.{RESTART_NOTE[row.key]}
                   </div>
                 )}
               </div>

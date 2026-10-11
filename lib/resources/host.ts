@@ -134,12 +134,13 @@ async function redisMaxmemoryMb(): Promise<number | null> {
 export async function runningLimits(): Promise<RunningLimits> {
   const { buildKitContainerName, DEFAULT_BUILDKIT_HOST } = await import("@/lib/docker/buildkit");
   const buildkit = buildKitContainerName(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST) ?? "vardo-buildkit";
-  const [buildkitMemMb, redisMemMb, redisMax] = await Promise.all([
+  const [buildkitMemMb, redisMemMb, redisMax, traefikMemMb] = await Promise.all([
     containerMemoryMb(buildkit),
     containerMemoryMb("vardo-redis"),
     redisMaxmemoryMb(),
+    containerMemoryMb("vardo-traefik"),
   ]);
-  return { buildkitMemMb, redisMemMb, redisMaxmemoryMb: redisMax };
+  return { buildkitMemMb, redisMemMb, redisMaxmemoryMb: redisMax, traefikMemMb };
 }
 
 /** Size of the disk behind the console's root filesystem, which on an overlay is the host's. Null when unreadable. */

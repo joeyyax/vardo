@@ -15,6 +15,7 @@ import {
   redisMemMb,
   roundMiB,
   tierMemoryRuleMb,
+  traefikMemMb,
   validateAdminValue,
   type HostSize,
 } from "@/lib/resources/defaults";
@@ -225,7 +226,7 @@ describe("failed detection", () => {
 describe("installer values", () => {
   const h = HOSTS["32 GB"];
   const row = (env: Record<string, string>, running?: { redisMemMb: number | null }) =>
-    describeDefaults(h, 8, env, { buildkitMemMb: null, redisMaxmemoryMb: null, redisMemMb: running?.redisMemMb ?? null }).find(
+    describeDefaults(h, 8, env, { buildkitMemMb: null, redisMaxmemoryMb: null, redisMemMb: running?.redisMemMb ?? null, traefikMemMb: null }).find(
       (d) => d.key === "redisMem",
     )!;
 
@@ -250,6 +251,44 @@ describe("installer values", () => {
 
   it("carries the running limit", () => {
     expect(row({}, { redisMemMb: 512 }).running).toBe(512);
+  });
+});
+
+describe("Traefik memory", () => {
+  const mt = (gib: number) => Math.floor(gib * 1024 * 0.96);
+  const traefik = (h: HostSize | null, env: Record<string, string> = {}, running: number | null = null) =>
+    describeDefaults(h, 8, env, { buildkitMemMb: null, redisMemMb: null, redisMaxmemoryMb: null, traefikMemMb: running }).find(
+      (d) => d.key === "traefikMem",
+    );
+
+  it.each([
+    [2, 512],
+    [8, 512],
+    [16, 512],
+    [17, 576],
+    [24, 768],
+    [32, 1024],
+    [64, 2048],
+    [256, 2048],
+  ])("sizes %i GiB of RAM to %i MiB", (gib, mb) => {
+    expect(traefikMemMb(mt(gib))).toBe(mb);
+  });
+
+  it("is an installer row with the running limit, read from VARDO_TRAEFIK_MEM", () => {
+    expect(traefik(HOSTS["32 GB"], { VARDO_TRAEFIK_MEM: "1024m" }, 256)).toMatchObject({
+      envVar: "VARDO_TRAEFIK_MEM",
+      installer: true,
+      editable: false,
+      source: "detected",
+      value: 1024,
+      rule: 1024,
+      running: 256,
+    });
+  });
+
+  it("falls back to compose's 512m when unset", () => {
+    expect(traefik(HOSTS["32 GB"])).toMatchObject({ source: "fallback", value: 512, rule: 1024 });
+    expect(traefik(null)).toMatchObject({ source: "fallback", value: 512, rule: 512 });
   });
 });
 

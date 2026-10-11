@@ -1,4 +1,4 @@
-// Sizing defaults from the host's CPU count and memory. install.sh mirrors the Redis and BuildKit rules.
+// Sizing defaults from the host's CPU count and memory. install.sh mirrors the Redis, Traefik and BuildKit rules.
 
 export type QosTier = "critical" | "standard" | "disposable";
 
@@ -28,11 +28,14 @@ export const DEPLOYS_FORMULA = { coresPer: 2, gibPer: 4, min: 1, max: 6 } as con
 
 export const REDIS_FORMULA = { divisor: 32, minMb: 512, maxMb: 2048 } as const;
 
+export const TRAEFIK_FORMULA = { divisor: 32, minMb: 512, maxMb: 2048 } as const;
+
 /** The values used when the host can't be read: Vardo's fixed defaults before sizing. */
 export const FALLBACK = {
   memoryMb: { critical: 2048, standard: 1024, disposable: 512 } as Record<QosTier, number>,
   deploys: 2,
   redisMb: 512,
+  traefikMb: 512,
   buildkitGb: 4,
   buildkitCacheGb: 10,
 };
@@ -61,6 +64,12 @@ export function tierMemoryRuleMb(tier: QosTier, memoryMb: number): number {
 /** vardo-redis's container limit in MiB, from the host's MemTotal in MiB. */
 export function redisMemMb(memoryMb: number): number {
   return clamp(roundMiB((installedGiB(memoryMb) * 1024) / REDIS_FORMULA.divisor), REDIS_FORMULA.minMb, REDIS_FORMULA.maxMb);
+}
+
+/** vardo-traefik's container limit in MiB, from the host's MemTotal in MiB. install.sh mirrors it. */
+export function traefikMemMb(memoryMb: number): number {
+  const { divisor, minMb, maxMb } = TRAEFIK_FORMULA;
+  return clamp(roundMiB((installedGiB(memoryMb) * 1024) / divisor), minMb, maxMb);
 }
 
 /** Standard leaves one core free, disposable gets half, critical is uncapped. */
@@ -162,7 +171,14 @@ function resolveInstallerMb(raw: string | undefined, host: HostSize | null, rule
 }
 
 /** Limits read from the running containers, in MiB. Null when unreadable or unlimited. */
-export type RunningLimits = { buildkitMemMb: number | null; redisMemMb: number | null; redisMaxmemoryMb: number | null };
+export type RunningLimits = {
+  buildkitMemMb: number | null;
+  redisMemMb: number | null;
+  redisMaxmemoryMb: number | null;
+  traefikMemMb: number | null;
+};
+
+const NO_RUNNING: RunningLimits = { buildkitMemMb: null, redisMemMb: null, redisMaxmemoryMb: null, traefikMemMb: null };
 
 export type ResourceDefaultKey =
   | "memoryCritical"
@@ -175,7 +191,8 @@ export type ResourceDefaultKey =
   | "buildkitMem"
   | "buildkitCache"
   | "redisMem"
-  | "redisMaxmemory";
+  | "redisMaxmemory"
+  | "traefikMem";
 
 /** Defaults an admin can set in System settings. */
 export const ADMIN_RESOURCE_KEYS = [
@@ -261,7 +278,7 @@ export function describeDefaults(
   host: HostSize | null,
   fallbackCpus: number,
   env: Env = process.env,
-  running: RunningLimits = { buildkitMemMb: null, redisMemMb: null, redisMaxmemoryMb: null },
+  running: RunningLimits = NO_RUNNING,
   admin: AdminResourceSettings = {},
   diskBytes: number | null = null,
 ): ResourceDefault[] {
@@ -349,6 +366,16 @@ export function describeDefaults(
         maxmemoryOf(redisRule),
         maxmemoryOf(FALLBACK.redisMb),
       ),
+    },
+    {
+      key: "traefikMem",
+      label: "Traefik memory",
+      envVar: "VARDO_TRAEFIK_MEM",
+      unit: "mb",
+      installer: true,
+      editable: false,
+      running: running.traefikMemMb,
+      ...resolveInstallerMb(env.VARDO_TRAEFIK_MEM, host, memMb !== null ? traefikMemMb(memMb) : FALLBACK.traefikMb, FALLBACK.traefikMb),
     },
   ];
 }
