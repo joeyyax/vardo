@@ -15,6 +15,9 @@ const configuredCacheGb = Number(process.env.VARDO_BUILD_CACHE_MAX_GB);
 export const BUILD_CACHE_MAX_BYTES =
   (Number.isFinite(configuredCacheGb) && configuredCacheGb > 0 ? configuredCacheGb : 10) * 1024 ** 3;
 
+/** Newest successful deployments per app whose images stay on the host. Older rollbacks re-pull or rebuild. */
+export const ROLLBACK_IMAGES_RETAINED = 3;
+
 // Timeouts (ms).
 
 /** Time allowed for a git clone operation. */
