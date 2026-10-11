@@ -46,6 +46,8 @@ import {
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
+import { CONSOLE_PORT, CONSOLE_SERVICE } from "@/lib/mesh/constants";
+import { describeSmoke, smokeStreams } from "../stream-smoke";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { inferServiceKind } from "@/lib/ui/service-kind";
@@ -415,6 +417,22 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
     }
     if (isSelfApp(app.name)) await pointConsoleForwardAt(ctx.newProjectName, log);
+  }
+
+  // The new console's live stats, while the old slot's worker holds the loops.
+  if (!isLocalEnv && !ctx.envIsolated && isSelfApp(app.name)) {
+    try {
+      const outcome = await smokeStreams(`http://${ctx.newProjectName}-${CONSOLE_SERVICE}-1:${CONSOLE_PORT}`, {
+        orgId: ctx.organizationId,
+        appId: ctx.appId,
+        projectId: app.projectId,
+      });
+      const { lines, failure } = describeSmoke(outcome, newSlot);
+      for (const line of lines) log(line);
+      if (failure) await unfinishedWork(failure);
+    } catch (err) {
+      log(`[smoke] Live stats streams not checked: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   if (ctx.stopOldSlot && !ctx.stopOldSlotEndsDeploy) {
