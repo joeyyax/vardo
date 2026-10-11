@@ -69,7 +69,7 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
 }
 
 /** Permanent bans first, then the newest local ones, then blocklist bans by confidence. */
-export async function activeBannedIps(now = new Date()): Promise<string[]> {
+async function renderedBans(now: Date): Promise<{ ips: string[]; blocklist: Set<string>; local: Set<string> }> {
   const columns = { ip: probeBans.ip, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt, reason: probeBans.reason, hits: probeBans.hits };
   const active = and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now));
   const [local, blocklist] = await Promise.all([
@@ -86,7 +86,21 @@ export async function activeBannedIps(now = new Date()): Promise<string[]> {
       .orderBy(desc(probeBans.hits), desc(probeBans.createdAt))
       .limit(MAX_RENDERED_BLOCKLIST),
   ]);
-  return banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST);
+  return {
+    ips: banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST),
+    blocklist: new Set(blocklist.map((r) => r.ip)),
+    local: new Set(local.map((r) => r.ip)),
+  };
+}
+
+export async function activeBannedIps(now = new Date()): Promise<string[]> {
+  return (await renderedBans(now)).ips;
+}
+
+/** Blocklist bans that make it into the guard file. */
+export async function enforcedBlocklistBans(now = new Date()): Promise<number> {
+  const { ips, blocklist, local } = await renderedBans(now);
+  return ips.filter((ip) => blocklist.has(ip) && !local.has(ip)).length;
 }
 
 /** Spamhaus DROP ranges while that blocklist is on, less any overlapping the current allowlist. */

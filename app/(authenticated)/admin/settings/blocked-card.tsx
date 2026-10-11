@@ -8,7 +8,8 @@ const ENDPOINT = "/api/v1/admin/probe-guard/blocked";
 
 type BlockedData = BlockedSummary & {
   enabled: { abuseipdb: boolean; spamhaus: boolean };
-  listed: { abuseipdb: number; spamhaus: number };
+  imported: { abuseipdb: number; spamhaus: number };
+  enforced: { abuseipdb: number; spamhaus: number };
 };
 
 const LABELS: Record<string, string> = { local: "Your bans", abuseipdb: "AbuseIPDB", spamhaus: "Spamhaus DROP" };
@@ -32,9 +33,11 @@ function DailyBars({ daily, days }: { daily: number[]; days: string[] }) {
 }
 
 function coverage(s: SourceBlocks, data: BlockedData): string | null {
-  if (s.source === "abuseipdb" && data.listed.abuseipdb > 0) return `${n(s.uniqueIps)} of ${n(data.listed.abuseipdb)} listed addresses seen`;
-  if (s.source === "spamhaus" && data.listed.spamhaus > 0) return `${n(data.rangesHit)} of ${n(data.listed.spamhaus)} ranges hit`;
-  return null;
+  if (s.source !== "abuseipdb" && s.source !== "spamhaus") return null;
+  const imported = data.imported[s.source];
+  if (imported === 0) return null;
+  const seen = s.source === "abuseipdb" ? `${n(s.uniqueIps)} addresses seen` : `${n(data.rangesHit)} ranges hit`;
+  return `${seen} in 30 days · ${n(data.enforced[s.source])} enforced of ${n(imported)} imported`;
 }
 
 function SourceRow({ s, data }: { s: SourceBlocks; data: BlockedData }) {
@@ -52,7 +55,7 @@ function SourceRow({ s, data }: { s: SourceBlocks; data: BlockedData }) {
         </p>
       </div>
       <DailyBars daily={s.daily} days={data.days} />
-      {extra && <p className="text-xs text-muted-foreground">{extra}, last 30 days</p>}
+      {extra && <p className="text-xs text-muted-foreground">{extra}</p>}
     </li>
   );
 }
