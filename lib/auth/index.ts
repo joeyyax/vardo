@@ -12,6 +12,7 @@ import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 import { sendVerificationEmail } from "@/lib/auth/email-verification";
 import { ACCOUNT_LINKING, secondFactorEverywhere } from "@/lib/auth/second-factor";
+import { instanceTicket } from "@/lib/auth/instance-ticket";
 
 // GitHub OAuth credentials from system_settings, cached because Better Auth reads them at init.
 let _cachedGitHubClientId = process.env.GITHUB_CLIENT_ID ?? "";
@@ -102,7 +103,8 @@ function buildAuth() {
     ...(isAuthMethodEnabled("passkey") ? [passkey()] : []),
     ...(isAuthMethodEnabled("totp") ? [twoFactor({ issuer: "Vardo" }), secondFactorEverywhere()] : []),
     ...(isAuthMethodEnabled("magic-link") ? [magicLinkPlugin()] : []),
-  ] as [ReturnType<typeof passkey>, ReturnType<typeof twoFactor>, ReturnType<typeof magicLinkPlugin>];
+    instanceTicket(),
+  ] as [ReturnType<typeof passkey>, ReturnType<typeof twoFactor>, ReturnType<typeof magicLinkPlugin>, ReturnType<typeof instanceTicket>];
 
   return betterAuth({
   database: drizzleAdapter(db, {
