@@ -26,6 +26,10 @@ export type ContainerInfo = {
   status: string;
   ports: { internal: number; external?: number; protocol: string }[];
   labels: Record<string, string>;
+  /** Image ID the container was created from. */
+  imageId?: string;
+  /** Creation time, Unix seconds. */
+  created?: number;
 };
 
 /** Fields shared by ContainerInspect, ContainerDetail and ContainerConfig. */
@@ -269,6 +273,8 @@ type RawContainer = {
   Status: string;
   Ports: { PrivatePort: number; PublicPort?: number; Type: string }[];
   Labels: Record<string, string>;
+  ImageID?: string;
+  Created?: number;
 };
 
 function mapRawContainer(c: RawContainer): ContainerInfo {
@@ -280,6 +286,8 @@ function mapRawContainer(c: RawContainer): ContainerInfo {
     status: c.Status,
     ports: parseListPorts(c.Ports),
     labels: c.Labels ?? {},
+    imageId: c.ImageID,
+    created: c.Created,
   };
 }
 
@@ -893,6 +901,10 @@ export type ImageInfo = {
   size: number;
   /** Image labels. Compose stamps its project and service onto what it builds. */
   labels: Record<string, string>;
+  /** `repo@sha256:...` digests the image was pulled by. */
+  repoDigests?: string[];
+  /** Build time, Unix seconds. */
+  created?: number;
 };
 
 export async function listImages(filters?: Record<string, string[]>): Promise<ImageInfo[]> {
@@ -900,14 +912,39 @@ export async function listImages(filters?: Record<string, string[]>): Promise<Im
     ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
     : "";
   const images = await dockerRequest<
-    { Id: string; RepoTags: string[] | null; Size: number; Labels: Record<string, string> | null }[]
+    {
+      Id: string;
+      RepoTags: string[] | null;
+      RepoDigests?: string[] | null;
+      Created?: number;
+      Size: number;
+      Labels: Record<string, string> | null;
+    }[]
   >("GET", `/images/json${query}`);
   return images.map((img) => ({
     id: img.Id,
     repoTags: img.RepoTags ?? [],
     size: img.Size,
     labels: img.Labels ?? {},
+    repoDigests: (img.RepoDigests ?? []).filter((d) => !d.startsWith("<none>@")),
+    created: img.Created,
   }));
+}
+
+/** Latest of build and last tag time, in ms. Null when unreadable. */
+export async function imageTaggedAt(id: string): Promise<number | null> {
+  try {
+    const image = await dockerRequest<{ Created?: string; Metadata?: { LastTagTime?: string } }>(
+      "GET",
+      `/images/${encodeURIComponent(id)}/json`,
+    );
+    const times = [image.Created, image.Metadata?.LastTagTime]
+      .map((t) => (t ? Date.parse(t) : NaN))
+      .filter((t) => Number.isFinite(t) && t > 0);
+    return times.length ? Math.max(...times) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Resolve an image ref to its registry digest (`repo@sha256:...`). Null for local builds and uninspectable images. */
@@ -985,6 +1022,8 @@ export type VolumeInfo = {
   name: string;
   labels: Record<string, string>;
   mountpoint: string;
+  /** ISO time Docker created it. */
+  createdAt?: string;
 };
 
 /** List volumes, optionally filtered, e.g. `{ label: ["com.docker.compose.project=myapp"] }`. */
@@ -995,12 +1034,13 @@ export async function listVolumes(
     ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
     : "";
   const result = await dockerRequest<{
-    Volumes: { Name: string; Labels: Record<string, string> | null; Mountpoint: string }[] | null;
+    Volumes: { Name: string; Labels: Record<string, string> | null; Mountpoint: string; CreatedAt?: string }[] | null;
   }>("GET", `/volumes${query}`);
   return (result.Volumes ?? []).map((v) => ({
     name: v.Name,
     labels: v.Labels ?? {},
     mountpoint: v.Mountpoint,
+    createdAt: v.CreatedAt,
   }));
 }
 

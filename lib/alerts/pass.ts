@@ -14,6 +14,7 @@ import { notifyObservations, type Observation } from "@/lib/notifications/observ
 import type { AlertType } from "@/lib/notifications/registry";
 import { APP_ALERT_TYPES, conditionObservations, type ConditionApp } from "./apps";
 import { autotuneHaltObservation } from "./autotune";
+import { settleDisk } from "./disk-reclaim";
 import { HostSampleBuffer, hostObservations, readHostSample, type HostSample } from "./host";
 import { markOomSent, oomObservation, OOM_SETTLE_MS, sharedOomKills, type OomRecord } from "./oom";
 
@@ -109,7 +110,11 @@ function topMemory(): { name: string; bytes: number }[] {
 
 export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Date.now()): Promise<void> {
   const sample = await readHostSample(input.disk, now);
-  buffer.push(sample);
+  const settled = await settleDisk(input.disk, now).catch((err) => {
+    log.error("Disk reclaim check failed:", err);
+    return { disk: input.disk, followup: undefined };
+  });
+  buffer.push({ ...sample, disk: settled.disk });
   storeHostSample(now, {
     memory: sample.memory?.percent,
     swap: sample.swap?.percent,
@@ -119,7 +124,7 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   }).catch(() => {});
 
   const kills = await sharedOomKills(now);
-  const host = hostObservations(buffer, now, { topMemory: topMemory() }, {
+  const host = hostObservations(buffer, now, { topMemory: topMemory(), disk: settled.followup }, {
     memoryConfirmed: kills.some((k) => k.hostKill && now - k.lastAt <= OOM_CONFIRMS_MS),
   });
 

@@ -110,9 +110,18 @@ export class HostSampleBuffer {
   }
 }
 
+/** Swap counts only while memory is this full. In an LXC, /proc/meminfo can report the hypervisor's swap. */
+export const SWAP_MEMORY_GATE = HOST_RULES["host.memory"].clearBelow;
+
+/** Swap use under memory pressure; 0 with memory to spare, so the alert clears. */
+export function pressuredSwap(s: HostSample): number | null | undefined {
+  if (!s.swap || !s.memory) return null;
+  return s.memory.percent >= SWAP_MEMORY_GATE ? s.swap.percent : 0;
+}
+
 const READ: Record<keyof typeof HOST_RULES, (s: HostSample) => number | null | undefined> = {
   "host.memory": (s) => s.memory?.percent,
-  "host.swap": (s) => s.swap?.percent,
+  "host.swap": pressuredSwap,
   "host.cpu": (s) => s.cpuPercent,
   "host.load": (s) => s.load?.ratio,
   "host.disk": (s) => s.disk?.percent,
@@ -130,10 +139,42 @@ export function downsample(values: number[], max = 30): number[] {
 
 const pct = (n: number) => `${Math.round(n)}%`;
 
+/** What the disk alert says about cleanup: what already ran and what's left for a person. */
+export type DiskFollowup = {
+  /** The last automatic reclaim, or null when none has run. */
+  reclaim: { finishedAt: string; freedBytes: number; skipped?: string } | null;
+  /** Images and build cache a reclaim could still take. Null when unknown. */
+  reclaimableBytes: number | null;
+  /** Volumes nothing mounts or claims, including those left by deleted apps. */
+  unusedVolumes: { count: number; bytes: number | null } | null;
+  /** Biggest apps by disk: containers plus volumes. */
+  topApps: { name: string; bytes: number }[];
+};
+
 export type HostContext = {
   /** Biggest containers by memory, for the memory alert. */
   topMemory?: { name: string; bytes: number }[];
+  disk?: DiskFollowup;
 };
+
+function diskFacts(f: DiskFollowup | undefined): { label: string; value: string }[] {
+  if (!f) return [];
+  const facts: { label: string; value: string }[] = [];
+  if (!f.reclaim) facts.push({ label: "Cleanup", value: "Hasn't run yet" });
+  else if (f.reclaim.skipped) facts.push({ label: "Cleanup", value: f.reclaim.skipped });
+  else facts.push({ label: "Already reclaimed", value: `${formatBytesIec(f.reclaim.freedBytes)} of old images and build cache` });
+  if (f.reclaimableBytes !== null && f.reclaimableBytes > 0) {
+    facts.push({ label: "Unused but kept", value: `Up to ${formatBytesIec(f.reclaimableBytes)} of images and build cache, for rollbacks or too recent` });
+  }
+  if (f.unusedVolumes && f.unusedVolumes.count > 0) {
+    const size = f.unusedVolumes.bytes !== null ? `, ${formatBytesIec(f.unusedVolumes.bytes)}` : "";
+    facts.push({ label: "Unused volumes", value: `${f.unusedVolumes.count}${size}. Review in Admin > Maintenance` });
+  }
+  if (f.topApps.length > 0) {
+    facts.push({ label: "Largest apps", value: f.topApps.map((a) => `${a.name} ${formatBytesIec(a.bytes)}`).join(", ") });
+  }
+  return facts;
+}
 
 function hostItem(type: keyof typeof HOST_RULES, verdict: Verdict, s: HostSample, hour: number[], ctx: HostContext): AlertItem {
   const rule = HOST_RULES[type];
@@ -165,7 +206,10 @@ function hostItem(type: keyof typeof HOST_RULES, verdict: Verdict, s: HostSample
         detail: "The host is paging memory to disk, which slows every app on it. Free memory or add RAM.",
         gauge: { title: "Swap used", percent: w.percent, warn: rule.warn, critical: rule.critical },
         series: { title: "Swap, last hour", values: hour },
-        facts: [{ label: "Used", value: `${formatBytesIec(w.used)} of ${formatBytesIec(w.total)}` }],
+        facts: [
+          { label: "Used", value: `${formatBytesIec(w.used)} of ${formatBytesIec(w.total)}` },
+          ...(s.memory ? [{ label: "Memory available", value: formatBytesIec(s.memory.total - s.memory.used) }] : []),
+        ],
       };
     }
     case "host.cpu":
@@ -194,11 +238,14 @@ function hostItem(type: keyof typeof HOST_RULES, verdict: Verdict, s: HostSample
       return {
         ...base,
         title: `Disk ${pct(d.percent)} full`,
-        detail: "Deploys and backups fail once the disk is full. Prune old images and build cache or grow the disk.",
+        detail: ctx.disk?.reclaim && !ctx.disk.reclaim.skipped
+          ? "Still full after Vardo removed old images and build cache. What's left needs a look: unused volumes, app data or a bigger disk."
+          : "Deploys and backups fail once the disk is full. Remove unused volumes and app data or grow the disk.",
         gauge: { title: "Disk used", percent: d.percent, warn: rule.warn, critical: rule.critical },
         facts: [
           { label: "Used", value: `${formatBytesIec(d.used)} of ${formatBytesIec(d.total)}` },
           { label: "Free", value: formatBytesIec(Math.max(0, d.total - d.used)) },
+          ...diskFacts(ctx.disk),
         ],
       };
     }
@@ -229,7 +276,8 @@ export function hostObservations(
     if (!verdict) continue;
     evaluated.push(type);
     if (!verdict.holds) continue;
-    const hour = downsample(buffer.points(READ[type], now - 60 * 60_000).map((p) => p.value));
+    const series = type === "host.swap" ? (s: HostSample) => s.swap?.percent : READ[type];
+    const hour = downsample(buffer.points(series, now - 60 * 60_000).map((p) => p.value));
     observations.push({ type, about: "host", severity: verdict.severity, fires: verdict.fires, item: hostItem(type, verdict, latest, hour, ctx) });
   }
   return { evaluated, observations };

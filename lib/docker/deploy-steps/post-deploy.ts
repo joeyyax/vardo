@@ -36,6 +36,8 @@ import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { BUILD_CACHE_MAX_BYTES } from "../constants";
+import { PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS } from "../prune-lock";
+import { markDeployForReclaim } from "../host-reclaim/state";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, recordSelfUpdate, sendDeployNotification } from "../deploy";
 import {
@@ -62,9 +64,6 @@ import {
 
 const POST_DEPLOY_SCAN_DELAY_MS = 30_000;
 
-/** Serializes the host-global prune across deploys. */
-const PRUNE_LOCK_KEY = "deploy:prune:lock";
-const PRUNE_LOCK_TTL_MS = 5 * 60_000;
 
 
 export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
@@ -524,6 +523,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   } catch {
     // Best-effort.
   }
+  await markDeployForReclaim().catch(() => {});
 
   ctx.stage("cleanup", "success");
 
