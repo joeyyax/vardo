@@ -1,6 +1,6 @@
 // Plain-language sizing formulas and what they give on this host, for the Resources settings and app tabs.
 
-import { DEPLOYS_FORMULA, REDIS_FORMULA, TIER_MEMORY_FORMULA, type HostSize, type ResourceDefaultKey } from "@/lib/resources/defaults";
+import { DEPLOYS_FORMULA, REDIS_FORMULA, TIER_MEMORY_FORMULA, TRAEFIK_FORMULA, type HostSize, type ResourceDefaultKey } from "@/lib/resources/defaults";
 import { LEARN_HEADROOM, LEARN_MIN_DAYS, formatMb, type LearnedStatus } from "@/lib/resources/learned";
 
 export { formatMb };
@@ -20,6 +20,7 @@ export const FORMULA_ROWS: readonly FormulaRow[] = [
     formula: `One per ${DEPLOYS_FORMULA.coresPer} cores or per ${DEPLOYS_FORMULA.gibPer} GB of RAM, whichever is fewer, from ${DEPLOYS_FORMULA.min} to ${DEPLOYS_FORMULA.max}`,
   },
   { key: "redisMem", label: "Redis", formula: `RAM ÷ ${REDIS_FORMULA.divisor}, between ${formatMb(REDIS_FORMULA.minMb)} and ${formatMb(REDIS_FORMULA.maxMb)}` },
+  { key: "traefikMem", label: "Traefik", formula: `RAM ÷ ${TRAEFIK_FORMULA.divisor}, between ${formatMb(TRAEFIK_FORMULA.minMb)} and ${formatMb(TRAEFIK_FORMULA.maxMb)}` },
 ];
 
 export const FORMULA_NOTES = [

@@ -760,6 +760,24 @@ default_redis_mem_mb() {
   echo "$mb"
 }
 
+# vardo-traefik's limit in MB: installed RAM/32 to the nearest 64, between 512 and 2048. Mirrors lib/resources/defaults.ts.
+default_traefik_mem_mb() {
+  local mb
+  mb=$(( ($(installed_ram_gib) * 1024 / 32 + 32) / 64 * 64 ))
+  (( mb < 512 )) && mb=512
+  (( mb > 2048 )) && mb=2048
+  echo "$mb"
+}
+
+ensure_traefik_mem() {
+  local env_file="$1"
+  grep -q "^VARDO_TRAEFIK_MEM=" "$env_file" 2>/dev/null && return
+  local mem
+  mem="$(default_traefik_mem_mb)m"
+  printf '\n# Memory limit for the proxy (vardo-traefik)\nVARDO_TRAEFIK_MEM=%s\n' "$mem" >> "$env_file"
+  log "Set VARDO_TRAEFIK_MEM=$mem"
+}
+
 REDIS_DERIVED_MARK="# derived:"
 
 # Writes Redis sizing with a marker of the derived values. Later runs update it only while the values still match the marker.
@@ -1782,6 +1800,7 @@ EOF
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
   ensure_worker_mem "$env_file"
+  ensure_traefik_mem "$env_file"
   ensure_redis_mem "$env_file"
   apply_install_options "$env_file"
 
@@ -2445,6 +2464,7 @@ run_env_migrations() {
   ensure_buildkit_cache_max "$env_file"
   is_dev || ensure_buildkit_profile "$env_file"
   ensure_worker_mem "$env_file"
+  ensure_traefik_mem "$env_file"
   ensure_redis_mem "$env_file"
   ensure_redis_password "$env_file"
   apply_install_options "$env_file"
@@ -2792,6 +2812,7 @@ do_self_update() {
   ensure_buildkit_mem "$VARDO_DIR/.env"
   ensure_buildkit_cache_max "$VARDO_DIR/.env"
   ensure_worker_mem "$VARDO_DIR/.env"
+  ensure_traefik_mem "$VARDO_DIR/.env"
   ensure_buildkit_profile "$VARDO_DIR/.env"
 
   step "Redeploying Vardo"

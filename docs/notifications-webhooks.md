@@ -9,6 +9,7 @@ An incident covers one subject and one kind of problem. Its `key` is determinist
 | Kind | Subject | Opens | Resolves |
 | --- | --- | --- | --- |
 | `host.memory`, `host.swap`, `host.cpu`, `host.load`, `host.disk` | `host:local` | Threshold held | Back under the clear margin |
+| `host.core-memory` | `host:<container>`, e.g. `host:vardo-traefik` | A Vardo service held over 85% of its memory limit for 5 minutes | Back under 80% |
 | `app.restart-loop`, `app.unhealthy`, `app.memory-limit` | `app:<appId>` | Condition held | Condition cleared |
 | `app.oom` | `app:<appId>` | Kernel killed it for memory | The kill ages out |
 | `app.anomaly`, `app.new-port`, `app.new-process` | `app:<appId>` | Far outside its baseline | Back inside it |

@@ -16,12 +16,13 @@ describe("Resources settings", () => {
       ["Disposable", "Half of standard, at least 512 MB"],
       ["Deploys at once", "One per 2 cores or per 4 GB of RAM, whichever is fewer, from 1 to 6"],
       ["Redis", "RAM ÷ 32, between 512 MB and 2 GB"],
+      ["Traefik", "RAM ÷ 32, between 512 MB and 2 GB"],
     ]);
   });
 
   it("sums up this server", () => {
     expect(hostSummary(host, rules)).toBe(
-      "On this server (15.6 GB, 8 cores): critical 2 GB, standard 1 GB, disposable 512 MB, 4 deploys at once, Redis 512 MB.",
+      "On this server (15.6 GB, 8 cores): critical 2 GB, standard 1 GB, disposable 512 MB, 4 deploys at once, Redis 512 MB, Traefik 512 MB.",
     );
     expect(hostSummary(null, rules)).toBeNull();
   });

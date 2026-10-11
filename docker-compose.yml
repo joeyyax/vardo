@@ -289,7 +289,8 @@ services:
     x-vardo-shared: true
     image: traefik:v3.7
     restart: unless-stopped
-    mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
+    # install.sh sets it to RAM/32, between 512m and 2g. If it's killed, every site goes down.
+    mem_limit: ${VARDO_TRAEFIK_MEM:-512m}
     command:
       # The API answers only through the console's basic-auth router (vardo-api.yaml) on this entrypoint.
       - "--api=true"

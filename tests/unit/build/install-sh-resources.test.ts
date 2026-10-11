@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
-import { buildkitCacheMaxBytes, buildkitMemGb, installedGiB, redisMemory } from "@/lib/resources/defaults";
+import { buildkitCacheMaxBytes, buildkitMemGb, installedGiB, redisMemory, traefikMemMb } from "@/lib/resources/defaults";
 
 // install.sh's sizing must match lib/resources/defaults.ts.
 
@@ -39,11 +39,15 @@ describe("install.sh sizing matches lib/resources/defaults.ts", () => {
   it.each(RAM_MB)("%i MB of RAM", (mb) => {
     const file = join(dir, `env-${mb}`);
     writeFileSync(file, "");
-    const out = sh(`ensure_redis_mem "${file}" >/dev/null\ncat "${file}"\necho "BUILDKIT=$(default_buildkit_mem)"`, mb);
+    const out = sh(
+      `ensure_redis_mem "${file}" >/dev/null\nensure_traefik_mem "${file}" >/dev/null\ncat "${file}"\necho "BUILDKIT=$(default_buildkit_mem)"`,
+      mb,
+    );
     const env = envOf(out);
     const { mem, maxmemory } = redisMemory(mb);
     expect(env.VARDO_REDIS_MEM).toBe(mem);
     expect(env.VARDO_REDIS_MAXMEMORY).toBe(maxmemory);
+    expect(env.VARDO_TRAEFIK_MEM).toBe(`${traefikMemMb(mb)}m`);
     expect(env.BUILDKIT).toBe(`${buildkitMemGb(mb)}g`);
     expect(sh(`installed_ram_gib`, mb).trim()).toBe(String(installedGiB(mb)));
   });
@@ -76,6 +80,39 @@ describe("ensure_redis_mem", () => {
   it("leaves values set without a marker", () => {
     const manual = "VARDO_REDIS_MEM=256m\n";
     expect(run(manual, 64000)).toBe(manual);
+  });
+});
+
+describe("ensure_traefik_mem", () => {
+  const run = (initial: string, mb: number) => {
+    const file = join(dir, `env-traefik-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(file, initial);
+    sh(`ensure_traefik_mem "${file}" >/dev/null`, mb);
+    return readFileSync(file, "utf8");
+  };
+
+  it("pins the same table as lib/resources/defaults.ts", () => {
+    const table = [
+      [7864, "512m"],
+      [15700, "512m"],
+      [31500, "1024m"],
+      [62000, "2048m"],
+    ] as const;
+    for (const [mb, mem] of table) {
+      expect(envOf(run("", mb)).VARDO_TRAEFIK_MEM).toBe(mem);
+      expect(`${traefikMemMb(mb)}m`).toBe(mem);
+    }
+  });
+
+  it("leaves a value the owner set", () => {
+    expect(run("VARDO_TRAEFIK_MEM=384m\n", 64000)).toBe("VARDO_TRAEFIK_MEM=384m\n");
+  });
+
+  it("runs wherever ensure_worker_mem does, so updates pick it up", () => {
+    const src = readFileSync(join(__dirname, "../../../install.sh"), "utf8");
+    const calls = (fn: string) => src.split("\n").filter((l) => l.trim().startsWith(`${fn} "`)).map((l) => l.trim().split(" ")[1]);
+    expect(calls("ensure_traefik_mem")).toEqual(calls("ensure_worker_mem"));
+    expect(calls("ensure_traefik_mem").length).toBeGreaterThanOrEqual(3);
   });
 });
 
