@@ -62,6 +62,20 @@ const LINES: Record<ResponseKind, readonly string[]> = {
   ],
 };
 
+/** Lines for the console's own 404, revealed when the ghost is clicked. */
+export const NOT_FOUND_LINES = [
+  "there's nothing here",
+  "this page went out haunting",
+  "not even a ghost of a page",
+  "boo. also, 404.",
+] as const;
+export const PLAIN_NOT_FOUND = "there's nothing here";
+
+export function notFoundLine(humor: boolean, pick: () => number = Math.random): string {
+  if (!humor) return PLAIN_NOT_FOUND;
+  return NOT_FOUND_LINES[Math.min(NOT_FOUND_LINES.length - 1, Math.floor(pick() * NOT_FOUND_LINES.length))];
+}
+
 const PLAIN: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
 
 export const RESPONSE_HEADERS = {
