@@ -1,6 +1,7 @@
 // Deploy feedback on GitHub: a sticky PR comment, deployments and commit statuses. Never blocks or fails a deploy.
 
 import { logger } from "@/lib/logger";
+import { redis } from "@/lib/redis";
 import {
   commitStatusPayload,
   deployPageUrl,
@@ -18,6 +19,7 @@ import {
   type PreviewRow,
   type ProductionRow,
 } from "./github-feedback-render";
+import { redisFeedbackStore, type FeedbackRedis, type FeedbackStore } from "./github-feedback-store";
 
 const log = logger.child("github-feedback");
 
@@ -300,6 +302,8 @@ export type FeedbackDeps = {
   permissionDenied?: (permission: Permission) => void;
   now?: () => number;
   intervalMs?: number;
+  /** Shares comment state across processes; without one it lives in this process only. */
+  store?: FeedbackStore;
 };
 
 const GIT_TRIGGERS = new Set(["webhook", "relay", "poll"]);
@@ -336,6 +340,22 @@ export function createFeedback(deps: FeedbackDeps) {
   const defer = (until: number, fn: () => Promise<unknown>) => {
     const t = setTimeout(() => void fn().catch(() => {}), Math.max(0, until - now()));
     t.unref?.();
+  };
+
+  const store = deps.store ?? null;
+  // A store that fails leaves this process's copy as the record.
+  const persist = async (label: string, fn: (s: FeedbackStore) => Promise<void>) => {
+    if (!store) return;
+    await fn(store).catch((err) => log.warn(`Couldn't save ${label}: ${err instanceof Error ? err.message : err}`));
+  };
+  const stored = async <T>(label: string, fn: (s: FeedbackStore) => Promise<T | null>): Promise<T | null> => {
+    if (!store) return null;
+    try {
+      return await fn(store);
+    } catch (err) {
+      log.warn(`Couldn't read ${label}: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
   };
 
   const prune = () => {
@@ -436,11 +456,13 @@ export function createFeedback(deps: FeedbackDeps) {
           commentId: state.commentId,
           create: !opts.removed,
         });
+        if (!opts.removed) await persist(`the comment on ${repo}#${number}`, (s) => s.savePr(key, { commentId: state.commentId }));
       }, { propagate: true });
     }, { final, blockedUntil: () => backedOffUntil(gh.installationId) });
   }
 
-  function prState(repo: string, number: number): [string, PrState] {
+  /** This process's state for the PR, with what other processes stored over it. */
+  async function prState(repo: string, number: number): Promise<[string, PrState]> {
     const key = prKey(repo, number);
     let state = prs.get(key);
     if (!state) {
@@ -448,24 +470,44 @@ export function createFeedback(deps: FeedbackDeps) {
       prs.set(key, state);
     }
     state.touchedAt = now();
+    const saved = await stored(`the PR comment state of ${repo}#${number}`, (s) => s.loadPr(key));
+    if (saved) {
+      if (saved.sha) state.sha = saved.sha;
+      if (saved.commentId) state.commentId = saved.commentId;
+      for (const [app, row] of saved.rows) state.rows.set(app, row);
+      for (const id of saved.appIds) state.appIds.add(id);
+      for (const id of saved.orgIds) state.orgIds.add(id);
+    }
     return [key, state];
   }
 
   /** Records an app's row on its PR comment and schedules an edit. */
-  function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null) {
-    if (!info.pr || isBlocked(info.appId)) return Promise.resolve();
-    const [key, state] = prState(info.pr.repo, info.pr.number);
+  async function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null) {
+    if (!info.pr || isBlocked(info.appId)) return;
+    const [key, state] = await prState(info.pr.repo, info.pr.number);
     state.appIds.add(info.appId);
     state.orgIds.add(info.organizationId);
+    const changed: PreviewRow[] = [];
+    let newSha = false;
     const sameRepo = info.repo?.toLowerCase() === info.pr.repo.toLowerCase();
     if (sha && sameRepo && sha !== state.sha) {
       // New push: apps not yet rebuilt are queued behind it.
       state.sha = sha;
+      newSha = true;
       for (const [app, r] of state.rows) {
-        if (app !== info.appName && (r.state === "live" || r.state === "failed")) state.rows.set(app, { app, state: "queued" });
+        if (app !== info.appName && (r.state === "live" || r.state === "failed")) {
+          const queued: PreviewRow = { app, state: "queued" };
+          state.rows.set(app, queued);
+          changed.push(queued);
+        }
       }
     }
-    state.rows.set(info.appName, { app: info.appName, ...row });
+    const mine: PreviewRow = { app: info.appName, ...row };
+    state.rows.set(info.appName, mine);
+    changed.push(mine);
+    await persist(`the PR comment state of ${info.pr.repo}#${info.pr.number}`, (s) =>
+      s.savePr(key, { ...(newSha ? { sha: state.sha } : {}), rows: changed, appIds: [info.appId], orgIds: [info.organizationId] }),
+    );
     return pushPrComment(key, state, info.pr.repo, info.pr.number);
   }
 
@@ -513,7 +555,15 @@ export function createFeedback(deps: FeedbackDeps) {
       merges.set(key, state);
     }
     state.touchedAt = now();
-    state.rows.set(info.appName, { app: info.appName, sha, ...row });
+    const saved = await stored(`the merged comment state of ${key}`, (s) => s.loadMerged(key));
+    if (saved) {
+      if (state.pr === undefined && saved.pr !== undefined) state.pr = saved.pr;
+      if (saved.commentId) state.commentId = saved.commentId;
+      for (const [app, r] of saved.rows) state.rows.set(app, r);
+    }
+    const mine: ProductionRow = { app: info.appName, sha, ...row };
+    state.rows.set(info.appName, mine);
+    await persist(`the merged comment state of ${key}`, (s) => s.saveMerged(key, { rows: [mine] }));
     const gh = await withClient(info.repo, [info.organizationId]);
     if (!gh) return;
     const merged = state;
@@ -529,6 +579,7 @@ export function createFeedback(deps: FeedbackDeps) {
         return;
       }
       if (!ok || merged.pr === undefined) return;
+      await persist(`the merged comment state of ${key}`, (s) => s.saveMerged(key, { pr: merged.pr }));
     }
     if (!merged.pr) return;
     const instance = await deps.instance();
@@ -538,6 +589,7 @@ export function createFeedback(deps: FeedbackDeps) {
     coalescer.push(`merged:${key}`, body, async (latest) => {
       await guarded([info.appId], info.organizationId, `Merged PR comment on ${repo}#${pr}`, async () => {
         merged.commentId = await upsertComment(gh, { repo, issue: pr, marker: mergedMarker(instance.id), body: latest, commentId: merged.commentId });
+        await persist(`the merged comment on ${repo}#${pr}`, (s) => s.saveMerged(key, { commentId: merged.commentId }));
       }, { propagate: true });
     }, { final: true, blockedUntil: () => backedOffUntil(gh.installationId) });
   }
@@ -707,10 +759,11 @@ export function createFeedback(deps: FeedbackDeps) {
   /** A PR's preview was torn down: the comment says so and its deployments go inactive. */
   async function previewRemoved(repo: string, number: number, organizationIds: string[] | null): Promise<void> {
     try {
-      const [key, state] = prState(repo, number);
+      const [key, state] = await prState(repo, number);
       for (const id of organizationIds ?? []) state.orgIds.add(id);
       await pushPrComment(key, state, repo, number, { removed: true });
       prs.delete(key);
+      await persist(`the PR comment state of ${repo}#${number}`, (s) => s.removePr(key));
 
       const gh = await withClient(repo, organizationIds);
       if (!gh) return;
@@ -737,8 +790,10 @@ export function createFeedback(deps: FeedbackDeps) {
   /** A preview deployed outside the deploy engine, such as the console's own. */
   async function previewLive(repo: string, number: number, rows: { appName: string; domain: string }[]): Promise<void> {
     try {
-      const [key, state] = prState(repo, number);
-      for (const r of rows) state.rows.set(r.appName, { app: r.appName, state: "live", url: `https://${r.domain}` });
+      const [key, state] = await prState(repo, number);
+      const live: PreviewRow[] = rows.map((r) => ({ app: r.appName, state: "live", url: `https://${r.domain}` }));
+      for (const r of live) state.rows.set(r.app, r);
+      await persist(`the PR comment state of ${repo}#${number}`, (s) => s.savePr(key, { rows: live }));
       await pushPrComment(key, state, repo, number);
     } catch (err) {
       log.warn(`Preview feedback for ${repo}#${number} failed: ${err instanceof Error ? err.message : err}`);
@@ -945,6 +1000,7 @@ async function markBlocked(appIds: string[], organizationId: string | null, perm
 }
 
 const feedback = createFeedback({
+  store: redisFeedbackStore(redis as unknown as FeedbackRedis),
   loadInfo,
   readSha,
   instance: loadInstance,
