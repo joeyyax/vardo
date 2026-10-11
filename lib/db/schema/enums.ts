@@ -181,3 +181,10 @@ export type ServiceKind = (typeof SERVICE_KINDS)[number];
 
 export const UI_DENSITIES = ["comfortable", "dense"] as const;
 export type UiDensity = (typeof UI_DENSITIES)[number];
+
+/** Orders for the Projects list. `attention` is the original order. */
+export const PROJECT_SORTS = ["attention", "name", "deployed", "created"] as const;
+export type ProjectSort = (typeof PROJECT_SORTS)[number];
+
+export const STAR_KINDS = ["project", "app"] as const;
+export type StarKind = (typeof STAR_KINDS)[number];
