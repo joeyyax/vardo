@@ -91,6 +91,13 @@ export function matchProbe(
 }
 
 export const OTHER_PROBE_LABEL = "other paths";
+/** Rule id counted for hits no rule matches. */
+export const OTHER_RULE_ID = "other";
+
+/** The label a rule id counts under; unknown ids count as other paths. */
+export function ruleLabel(id: string): string {
+  return PROBE_RULES.find((r) => r.id === id)?.label ?? OTHER_PROBE_LABEL;
+}
 
 /** What a probed path was after, from the same rules the guard matches. */
 export function probeLabel(path: string): string {

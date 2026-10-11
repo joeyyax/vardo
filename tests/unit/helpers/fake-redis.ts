@@ -52,6 +52,25 @@ export function createFakeRedis(clock: () => number = Date.now) {
         return e?.kind === "string" ? (e.value as string) : null;
       });
     },
+    async incr(key: string) {
+      guard();
+      const e = live(key);
+      const next = Number(e?.kind === "string" ? e.value : 0) + 1;
+      data.set(key, { value: String(next), kind: "string", expiresAt: e?.expiresAt ?? null });
+      return next;
+    },
+    async expire(key: string, seconds: number) {
+      guard();
+      const e = live(key);
+      if (!e) return 0;
+      e.expiresAt = clock() + seconds * 1000;
+      return 1;
+    },
+    async zcard(key: string) {
+      guard();
+      const e = live(key);
+      return e?.kind === "zset" ? (e.value as Map<string, number>).size : 0;
+    },
     async del(...keys: string[]) {
       guard();
       let n = 0;

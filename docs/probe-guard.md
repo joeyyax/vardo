@@ -69,4 +69,4 @@ With **Share bans with linked instances** on, new local bans go to every directl
 
 Bans, trap hits and canary use leave quiet activity rows on the app. Counts show on the app's Security tab and the admin Security page. Nothing sends alerts or email.
 
-Both pages take a range (1h, 24h, 7d, 30d, 90d or all time, in `?range=`, default 7d) for the summary, recent bans, what was probed and top sources. Ban rows and probe events are kept for 90 days, so all time means everything retained. Probe events are capped per address per window; Redis keeps the full counts.
+Both pages take a range (1h, 24h, 7d, 30d, 90d or all time, in `?range=`, default 7d) for the summary, recent bans, what was probed and top sources. Ban rows and probe events are kept for 90 days, so all time means everything retained. Probe events are capped per address per window; Redis keeps exact hit counts per rule, per hour (50 hours) and per day (92 days), for the instance and each app. What was probed reads those counts, and falls back to events, marked "approximate before <date>", for the stretch before counting began. The admin page adds each rule hits and the bans that tried it.

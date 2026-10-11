@@ -1,8 +1,8 @@
 // Pure pieces of the Security page's range view: ban status, probe categories and the details-start note. Client-safe.
 
 import { isPermanent } from "./permanent";
-import { probeLabel } from "./rules";
-import type { ProbeCount } from "./summary";
+import { probeLabel, ruleLabel } from "./rules";
+import type { BanDetail, ProbeCount } from "./summary";
 
 export type BanStatusKind = "active" | "expired" | "lifted" | "permanent";
 export type BanStatus = { kind: BanStatusKind; label: string };
@@ -43,6 +43,39 @@ export function probeCategories(rows: readonly PathAppCount[]): { categories: Pr
   });
   byApp.sort((a, b) => b.total - a.total);
   return { categories: sorted(all), byApp };
+}
+
+export type RuleHit = { label: string; hits: number; bans: number };
+
+/** Where recorded events stand in for counters: from the range start to when counting began, or null. */
+export function fallbackUntil(since: Date, countingSince: Date | null, now: Date): Date | null {
+  const until = countingSince ?? now;
+  return until.getTime() > since.getTime() ? until : null;
+}
+
+/**
+ * Hits by rule label: counter totals by rule id, plus event counts for the stretch before counting.
+ * `bans` is how many of the given bans tried that label.
+ */
+export function ruleHitRows(opts: {
+  counts: Readonly<Record<string, number>>;
+  events: readonly PathAppCount[];
+  details: Iterable<BanDetail | null | undefined>;
+}): RuleHit[] {
+  const hits = new Map<string, number>();
+  const add = (label: string, n: number) => hits.set(label, (hits.get(label) ?? 0) + n);
+  for (const [id, n] of Object.entries(opts.counts)) if (n > 0) add(ruleLabel(id), n);
+  for (const e of opts.events) if (e.path && e.count > 0) add(probeLabel(e.path), e.count);
+  const bans = new Map<string, number>();
+  for (const d of opts.details) for (const label of new Set(d?.categories.map((c) => c.label))) bans.set(label, (bans.get(label) ?? 0) + 1);
+  return [...hits]
+    .map(([label, n]) => ({ label, hits: n, bans: bans.get(label) ?? 0 }))
+    .sort((a, b) => b.hits - a.hits || a.label.localeCompare(b.label));
+}
+
+/** "approximate before Oct 10", only when events stood in for counters. */
+export function approximateNote(until: Date | null, eventHits: number): string | null {
+  return until && eventHits > 0 ? `approximate before ${shortDate(until)}` : null;
 }
 
 /** "env files 41 · Laravel Ignition exploit (RCE) 28". */

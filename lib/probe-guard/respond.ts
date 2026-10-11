@@ -1,7 +1,7 @@
 // The console's answer to a request Traefik's guard routers sent over: count, ban when due, then a short plain-text reply.
 
 import { logger } from "@/lib/logger";
-import { matchProbe } from "./rules";
+import { OTHER_RULE_ID, matchProbe } from "./rules";
 import { RESPONSE_HEADERS, responseBody, type ResponseKind } from "./responses";
 import { reachesThreshold } from "./ban-policy";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from "./canary";
@@ -26,7 +26,7 @@ export type GuardDeps = {
   hasKey: (value: string | null) => boolean;
   settings: () => Promise<InstanceProbeGuard>;
   clientIp: (headers: Headers) => Promise<string>;
-  recordHit: (ip: string, appId: string | null, windowMs: number) => Promise<number>;
+  recordHit: (ip: string, appId: string | null, windowMs: number, ruleId: string) => Promise<number>;
   ban: (req: BanRequest) => Promise<BanOutcome>;
   recordEvent: (e: { kind: ProbeEventKind; ip: string; path?: string | null; canaryId?: string | null; appId?: string | null }) => Promise<void>;
   markerFor: (ip: string, appId: string | null) => Promise<{ id: string; marker: string }>;
@@ -126,7 +126,7 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const category: ResponseKind = match?.rule.category ?? "framework";
     if (allowed) return reply(status, responseBody(category, status, humor), method);
     if (match?.rule.report === "exploit") void deps.queueReport?.(ip)?.catch(() => {});
-    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000).catch(() => 0);
+    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000, match?.rule.id ?? OTHER_RULE_ID).catch(() => 0);
     if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });
     return reply(status, responseBody(category, status, humor), method);
