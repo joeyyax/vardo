@@ -39,7 +39,8 @@ import { getUpdatePolicy, getUpdateRun } from "@/lib/self-update/store";
 import { isRunActive } from "@/lib/self-update/decide";
 import pkg from "@/package.json";
 import { activeUpdate } from "@/lib/self-update/lifecycle";
-import { vardoUpdateRow, vardoUpdatingRow } from "./vardo-update-row";
+import { activeRestart } from "@/lib/lifecycle/notices";
+import { vardoRestartingRow, vardoUpdateRow, vardoUpdatingRow } from "./vardo-update-row";
 import { integrationRows } from "./integration-rows";
 import { ISSUE_TYPE, type StoredIssue } from "@/lib/integrations/sync";
 import { getElevatedApps } from "@/lib/logging/error-rate";
@@ -77,6 +78,8 @@ function formatMb(mb: number): string {
 async function loadVardoUpdateRow(): Promise<AttentionRow | null> {
   const updating = await activeUpdate().catch(() => null);
   if (updating) return vardoUpdatingRow(updating);
+  const restarting = await activeRestart().catch(() => null);
+  if (restarting) return vardoRestartingRow(restarting);
   const policy = await getUpdatePolicy();
   if (policy.mode === "off") return null;
   const [update, run] = await Promise.all([getChannelUpdate(effectiveChannel(policy)), getUpdateRun()]);

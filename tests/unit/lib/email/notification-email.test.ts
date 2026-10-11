@@ -51,7 +51,7 @@ describe("notification subjects", () => {
   });
 
   it("covers the lifecycle with commits, not package versions", () => {
-    expect(subjectLine(fixture("system-started"))).toBe("✓ Vardo back after 2 min 29 s");
+    expect(subjectLine(fixture("system-started"))).toBe("✓ Vardo back up after 2 min 29 s");
     expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo updated · e36c2e3 → 4f1a9b2 fix(email): one instance name in every subject");
     expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at Health check");
     expect(subjectLine(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped · v0.2.0");

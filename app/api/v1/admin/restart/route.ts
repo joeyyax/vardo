@@ -4,6 +4,7 @@ import { hostname } from "os";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
+import { restartStarted } from "@/lib/lifecycle/notices";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { dockerEnv } from "@/lib/docker/docker-env";
@@ -18,6 +19,10 @@ async function handlePost() {
 
     // CONTAINER_ID overrides the hostname-based lookup.
     const containerId = process.env.CONTAINER_ID ?? hostname();
+
+    await restartStarted({ target: "console", label: "Vardo", source: "console" }).catch((err) =>
+      log.warn("Couldn't send the restart notice:", err),
+    );
 
     setTimeout(() => {
       log.info(`restarting container: ${containerId}`);

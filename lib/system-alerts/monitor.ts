@@ -272,7 +272,11 @@ export async function checkWatchdogEvents(): Promise<void> {
       .values({ key: WATCHDOG_CURSOR_KEY, value: cursor })
       .onConflictDoUpdate({ target: systemSettings.key, set: { value: cursor, updatedAt: new Date() } });
 
+    const { watchdogEvent } = await import("@/lib/lifecycle/notices");
     for (const event of events) {
+      // The console and worker get Vardo's restart pair; the rest stay alerts.
+      if (await watchdogEvent(event)) continue;
+      if (event.action === "restarting") continue;
       const { title, message } = describeWatchdogEvent(event);
       log.warn(title);
       await emitAll({

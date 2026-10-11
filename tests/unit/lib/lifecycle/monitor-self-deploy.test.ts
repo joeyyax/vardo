@@ -38,6 +38,7 @@ vi.mock("@/lib/db/schema", () => ({ memberships: {}, systemSettings: { key: "key
 vi.mock("drizzle-orm", () => ({ eq: () => ({}) }));
 vi.mock("@/lib/notifications/dispatch", () => ({
   emit: (orgId: string, event: { type: string }) => emitted.push({ orgId, event }),
+  emitConfirmed: async (orgId: string, event: { type: string }) => void emitted.push({ orgId, event }),
 }));
 vi.mock("@/lib/docker/client", () => ({ listContainers: async () => running, listAllContainers: async () => [] }));
 vi.mock("@/lib/shutdown", () => ({
@@ -53,13 +54,30 @@ vi.mock("@/lib/version", () => ({
   fetchCompare: compare.fetch,
   moreCommits: (total: number, listed: number) => (listed > 0 && total > listed ? { moreCommits: total - listed } : {}),
 }));
-vi.mock("fs/promises", () => ({
-  readFile: async (path: string) => {
-    const text = files.get(path);
-    if (text === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-    return text;
-  },
-}));
+vi.mock("fs/promises", () => {
+  const missing = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  return {
+    mkdir: async () => {},
+    writeFile: async (path: string, text: string) => void files.set(path, text),
+    rename: async (from: string, to: string) => {
+      const text = files.get(from);
+      if (text === undefined) throw missing();
+      files.delete(from);
+      files.set(to, text);
+    },
+    rm: async (path: string) => void files.delete(path),
+    readFile: async (path: string) => {
+      const text = files.get(path);
+      if (text === undefined) throw missing();
+      return text;
+    },
+    readdir: async (dir: string) => {
+      const names = [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1));
+      if (names.length === 0) throw missing();
+      return names;
+    },
+  };
+});
 
 vi.mock("@/lib/redis-lock", () => ({
   acquireLock: async (key: string) => {
@@ -67,6 +85,7 @@ vi.mock("@/lib/redis-lock", () => ({
     claims.add(key);
     return "token";
   },
+  releaseLock: async (key: string) => claims.delete(key),
 }));
 vi.mock("@/lib/incidents/store", () => ({
   safely: async <T,>(_what: string, fn: () => Promise<T>, fallback: T) => fn().catch(() => fallback),
@@ -184,6 +203,6 @@ describe("the console a self-deploy starts", () => {
   it("still reports an unclean stop when no other console is running", async () => {
     settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 10_000, hostBootAt: null, version: "x", host: NEW }));
     await startLifecycleMonitor();
-    expect(emitted.map((e) => e.event.type)).toEqual(["system.recovered-unclean"]);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.recovered-unclean", "system.started"]);
   });
 });

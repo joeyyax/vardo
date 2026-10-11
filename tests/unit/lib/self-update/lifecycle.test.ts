@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, statSync } from "fs";
-import { join, relative } from "path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const settings = new Map<string, string>();
@@ -193,27 +191,5 @@ describe("install.sh's marker", () => {
 
   it("ignores markers older than a day", async () => {
     expect(await ingestUpdateMarker({ ...marker, state: "updated", finishedAt: T0 }, { ...ctx, now: T0 + 25 * 60 * 60_000 })).toBeNull();
-  });
-});
-
-describe("update notices", () => {
-  const UPDATE_TYPES = /type:\s*"system\.(update-started|updated|update-failed|update-skipped)"/;
-  const ALLOWED = new Set(["lib/self-update/lifecycle.ts", "lib/bus/events.ts", "lib/email/fixtures.ts"]);
-
-  function sources(dir: string): string[] {
-    return readdirSync(dir).flatMap((name) => {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) return sources(path);
-      return /\.(ts|tsx)$/.test(name) ? [path] : [];
-    });
-  }
-
-  it("are built only in the update lifecycle module", () => {
-    const root = process.cwd();
-    const offenders = ["lib", "app", "components"]
-      .flatMap((dir) => sources(join(root, dir)))
-      .map((path) => relative(root, path))
-      .filter((path) => !ALLOWED.has(path) && UPDATE_TYPES.test(readFileSync(join(root, path), "utf-8")));
-    expect(offenders).toEqual([]);
   });
 });

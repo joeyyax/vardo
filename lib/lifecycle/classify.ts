@@ -15,7 +15,14 @@ export type Heartbeat = {
 };
 
 /** Written on SIGTERM. Its absence on boot means the last stop was unclean. */
-export type ShutdownMarker = { at: number; reason: string; version: string };
+export type ShutdownMarker = {
+  at: number;
+  reason: string;
+  version: string;
+  /** The stop or restart thread this stop belongs to. */
+  id?: string;
+  kind?: "stop" | "restart";
+};
 
 export type BootClassification =
   | { kind: "first-boot" }

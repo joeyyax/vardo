@@ -138,11 +138,11 @@ export function subjectLine(event: BusEvent): string {
     case "app.auto-restarted":
       return event.gaveUp ? `✗ ${event.appName} keeps failing, restarts stopped` : `⚠ ${event.appName} restarted`;
     case "system.shutdown":
-      return "↓ Vardo shutting down";
+      return "↓ Vardo stopping";
     case "system.started":
-      return event.downSeconds !== undefined ? `✓ Vardo back after ${formatDuration(event.downSeconds * 1000)}` : "✓ Vardo started";
+      return event.downSeconds !== undefined ? `✓ Vardo back up after ${formatDuration(event.downSeconds * 1000)}` : "✓ Vardo back up";
     case "system.recovered-unclean":
-      return "⚠ Vardo recovered after an unclean stop";
+      return "⚠ Vardo stopped unexpectedly";
     case "system.update-started":
       return `↑ Vardo updating · ${versionShort(event.fromVersion)}${event.toVersion ? ` → ${versionShort(event.toVersion)}` : ""}`;
     case "system.updated":
@@ -153,6 +153,12 @@ export function subjectLine(event: BusEvent): string {
       return `✗ Vardo update failed at ${event.step}`;
     case "system.update-skipped":
       return `⚠ Vardo update skipped · ${event.target}`;
+    case "system.restarting":
+      return `↻ Restarting ${event.label}`;
+    case "system.restarted":
+      return `✓ Restarted ${event.label}`;
+    case "system.restart-failed":
+      return `✗ ${event.label} didn't come back`;
     case "system.containers-missing":
       return `⚠ ${plural(event.containers.length, "container")} didn't come back`;
     case "digest.health":

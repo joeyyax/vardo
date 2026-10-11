@@ -14,6 +14,7 @@ const SUBJECT_BY_PREFIX: [string, IncidentSubjectType][] = [
   ["cron.", "cron-job"],
   ["system.service", "service"],
   ["system.update", "service"],
+  ["system.lifecycle", "service"],
   ["system.loop", "service"],
   ["system.cert", "domain"],
 ];

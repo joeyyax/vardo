@@ -73,8 +73,8 @@ export function NotificationListener({
       // Bring the infrastructure poll forward.
       window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
     }
-    // Shows or clears the updating banner now.
-    if (event.type.startsWith("system.update")) window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
+    // Shows or clears the updating or restarting banner now.
+    if (/^system\.(update|restart)/.test(event.type)) window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
     if (event.historical) return;
     showToast(event, canLinkToAdmin);
   }, [canLinkToAdmin]);
