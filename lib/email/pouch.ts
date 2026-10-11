@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { EmailProviderConfig } from "@/lib/system-settings";
+import { logger } from "@/lib/logger";
 import { threadHeaders, type OutboundMessage } from "./thread";
+
+const log = logger.child("email");
 
 export const POUCH_DEFAULT_BASE_URL = "https://pouch.email";
 
@@ -61,6 +64,7 @@ export async function sendViaPouch(
   let res = await postEmail(config, msg, headers);
   let error = res.ok ? null : await pouchError(res);
   if (error && res.status === 422 && error.field === "headers" && Object.keys(headers).length > 0) {
+    log.warn(`Pouch refused thread headers, sending unthreaded: ${error.message ?? "422"}`);
     res = await postEmail(config, msg, {});
     error = res.ok ? null : await pouchError(res);
   }
