@@ -1,7 +1,7 @@
 // Creating, lifting and listing bans. Each change rewrites the guard file.
 
 import { isIP } from "net";
-import { and, count, desc, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, meshPeers, probeBans, type ProbeBanReason } from "@/lib/db/schema";
@@ -63,14 +63,6 @@ export async function activeBanFor(ip: string, now = new Date()): Promise<BanRow
   return row ?? null;
 }
 
-async function priorBanCount(ip: string, now: Date): Promise<number> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(probeBans)
-    .where(and(eq(probeBans.ip, ip), gt(probeBans.createdAt, new Date(now.getTime() - REPEAT_LOOKBACK_MS))));
-  return row?.n ?? 0;
-}
-
 /** Bans an address unless it's one Vardo never bans or it's already banned. */
 export async function createBan(req: BanRequest, now = new Date()): Promise<BanOutcome> {
   const ip = normalizeIp(req.ip);
@@ -78,33 +70,49 @@ export async function createBan(req: BanRequest, now = new Date()): Promise<BanO
   const never = neverBanReason(ip, await neverBanContext());
   if (never) return { status: "refused", reason: never };
 
-  const existing = await activeBanFor(ip, now);
-  if (existing) return { status: "already", ban: existing };
-
   const settings = await getProbeGuardSettings();
-  let expiresAt: Date;
-  if (req.origin) {
-    const at = remoteBanExpiry(req.origin.expiresAt, now, settings);
-    if (!at) return { status: "refused", reason: "already expired" };
-    expiresAt = at;
-  } else {
-    expiresAt = new Date(now.getTime() + banDurationMs(await priorBanCount(ip, now), settings));
-  }
+  // One ban per address, even when two hits cross the threshold together.
+  const outcome = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"probe-ban:" + ip}))`);
+    const [existing] = await tx
+      .select()
+      .from(probeBans)
+      .where(and(eq(probeBans.ip, ip), isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)))
+      .limit(1);
+    if (existing) return { status: "already" as const, ban: existing };
 
-  const [ban] = await db
-    .insert(probeBans)
-    .values({
-      id: nanoid(),
-      ip,
-      reason: req.origin ? "mesh" : req.reason,
-      appId: req.appId ?? null,
-      hits: req.hits ?? 0,
-      originPeerId: req.origin?.peerId ?? null,
-      originName: req.origin?.name ?? null,
-      createdAt: now,
-      expiresAt,
-    })
-    .returning();
+    let expiresAt: Date;
+    if (req.origin) {
+      const at = remoteBanExpiry(req.origin.expiresAt, now, settings);
+      if (!at) return { status: "refused" as const, reason: "already expired" };
+      expiresAt = at;
+    } else {
+      const [prior] = await tx
+        .select({ n: count() })
+        .from(probeBans)
+        .where(and(eq(probeBans.ip, ip), gt(probeBans.createdAt, new Date(now.getTime() - REPEAT_LOOKBACK_MS))));
+      expiresAt = new Date(now.getTime() + banDurationMs(prior?.n ?? 0, settings));
+    }
+
+    const [inserted] = await tx
+      .insert(probeBans)
+      .values({
+        id: nanoid(),
+        ip,
+        reason: req.origin ? "mesh" : req.reason,
+        appId: req.appId ?? null,
+        hits: req.hits ?? 0,
+        originPeerId: req.origin?.peerId ?? null,
+        originName: req.origin?.name ?? null,
+        createdAt: now,
+        expiresAt,
+      })
+      .returning();
+    return { status: "banned" as const, ban: inserted };
+  });
+  if (outcome.status !== "banned") return outcome;
+  const { ban } = outcome;
+  const expiresAt = ban.expiresAt;
 
   await syncGuardFile().catch((err) => log.warn("Couldn't write the probe guard file:", err));
   await clearWindow(ip).catch(() => {});
