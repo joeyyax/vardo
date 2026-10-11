@@ -52,6 +52,10 @@ export async function register() {
       log.warn("Failed to load feature flags:", err)
     );
 
+    // Live metrics streams read cAdvisor from this process even when the worker runs the collector.
+    const { initMetricsProvider } = await import("./lib/metrics/config");
+    await initMetricsProvider().catch((err) => log.warn("Failed to set up the metrics provider:", err));
+
     // Auto-domains follow the instance base domain over VARDO_BASE_DOMAIN.
     try {
       const { getInstanceConfig } = await import("./lib/system-settings");
