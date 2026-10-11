@@ -120,5 +120,5 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 onEmit("dispatch", dispatchToChannels);
 
 // Import emit from here so the dispatch hook registers as a side effect.
-export { emit } from "@/lib/bus";
+export { emit, emitConfirmed } from "@/lib/bus";
 export type { BusEvent, BusEventType } from "@/lib/bus";

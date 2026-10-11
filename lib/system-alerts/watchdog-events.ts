@@ -18,11 +18,11 @@ export type WatchdogEvent = {
   ts: number;
   role: string;
   container: string;
-  action: "restart" | "restart-failed" | "backoff";
+  action: "restarting" | "restart" | "restart-failed" | "backoff";
   fails: number;
 };
 
-const ACTIONS = new Set(["restart", "restart-failed", "backoff"]);
+const ACTIONS = new Set(["restarting", "restart", "restart-failed", "backoff"]);
 
 /** Events newer than `since` (epoch seconds), oldest first. Malformed lines are skipped. */
 export function newWatchdogEvents(text: string, since: number): WatchdogEvent[] {
@@ -51,6 +51,11 @@ export function newWatchdogEvents(text: string, since: number): WatchdogEvent[] 
 export function describeWatchdogEvent(e: WatchdogEvent): { title: string; message: string } {
   const at = new Date(e.ts * 1000).toISOString();
   switch (e.action) {
+    case "restarting":
+      return {
+        title: `Watchdog restarting ${e.container}`,
+        message: `${e.container} was unhealthy for ${e.fails} checks in a row, so the watchdog is restarting it (${at}).`,
+      };
     case "restart":
       return {
         title: `Watchdog restarted ${e.container}`,

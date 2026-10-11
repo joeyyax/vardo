@@ -5,6 +5,7 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { restartSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
+import { restartStarted } from "@/lib/lifecycle/notices";
 import { resolveVardoComposeFile } from "@/lib/paths";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { FRONTEND_SERVICE, SHARED_PROJECT, composeIdentity, restartArgs, sharedServices } from "./plan";
@@ -43,6 +44,13 @@ async function handlePost(request: NextRequest) {
     const args = restartArgs(composeFile, services);
 
     log.info(`restarting ${service ?? "all services"} in project ${SHARED_PROJECT}`);
+
+    await restartStarted({
+      target: "services",
+      label: service ?? "Vardo's shared services",
+      source: "maintenance",
+      services: services.filter((s) => s !== FRONTEND_SERVICE),
+    }).catch((err) => log.warn("Couldn't send the restart notice:", err));
 
     setTimeout(() => {
       spawn("docker", args, {

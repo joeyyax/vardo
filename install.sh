@@ -2041,6 +2041,11 @@ console_exec() {
   fi
 }
 
+# Tells the console why it's stopping. Best effort.
+stop_reason() {
+  printf '{"reason":"%s","at":%s}\n' "$1" "$(date +%s)" > "$VARDO_DIR/lifecycle/stop-reason.json" 2>/dev/null || true
+}
+
 # Applies a changed .env: self-deploy seeds each slot from it, so redeploy.
 apply_env() {
   if $SELF_DEPLOY; then
@@ -2064,8 +2069,8 @@ case "${1:-}" in
       docker compose -f "$COMPOSE_PATH" logs -f "$@"
     fi
     ;;
-  restart)  if $SELF_DEPLOY; then docker restart $(stack); else docker compose -f "$COMPOSE_PATH" restart; fi ;;
-  stop)     if $SELF_DEPLOY; then docker stop $(stack); else docker compose -f "$COMPOSE_PATH" stop; fi ;;
+  restart)  stop_reason "vardo restart"; if $SELF_DEPLOY; then docker restart $(stack); else docker compose -f "$COMPOSE_PATH" restart; fi ;;
+  stop)     stop_reason "vardo stop"; if $SELF_DEPLOY; then docker stop $(stack); else docker compose -f "$COMPOSE_PATH" stop; fi ;;
   # docker start, not compose up: up would create a second console in project vardo.
   start)    if $SELF_DEPLOY; then docker start $(stack -a); else docker compose -f "$COMPOSE_PATH" up -d; fi ;;
   ps)       if $SELF_DEPLOY; then docker ps -a --filter "name=^vardo-"; else docker compose -f "$COMPOSE_PATH" ps; fi ;;

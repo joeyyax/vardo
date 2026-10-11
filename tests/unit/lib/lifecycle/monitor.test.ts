@@ -36,22 +36,47 @@ vi.mock("@/lib/db/schema", () => ({ memberships: {}, systemSettings: { key: "key
 vi.mock("drizzle-orm", () => ({ eq: () => ({}) }));
 vi.mock("@/lib/notifications/dispatch", () => ({
   emit: (orgId: string, event: { type: string }) => emitted.push({ orgId, event }),
+  emitConfirmed: async (orgId: string, event: { type: string }) => void emitted.push({ orgId, event }),
 }));
 vi.mock("@/lib/docker/client", () => ({ listContainers: async () => [], listAllContainers: async () => [] }));
-vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: () => () => {}, shutdownSignal: () => "SIGTERM" }));
+const shutdownHooks = vi.hoisted(() => ({ current: null as ((closer: () => unknown) => void) | null }));
+vi.mock("@/lib/shutdown", () => ({
+  closeOnShutdown: (closer: () => unknown) => {
+    shutdownHooks.current?.(closer);
+    return () => {};
+  },
+  shutdownSignal: () => "SIGTERM",
+}));
 const compare = vi.hoisted(() => ({ fetch: vi.fn(async (): Promise<unknown> => null) }));
 vi.mock("@/lib/version", () => ({
   getBuildSha: () => "4f1a9b2c",
   fetchCompare: compare.fetch,
   moreCommits: (total: number, listed: number) => (listed > 0 && total > listed ? { moreCommits: total - listed } : {}),
 }));
-vi.mock("fs/promises", () => ({
-  readFile: async (path: string) => {
-    const text = files.get(path);
-    if (text === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-    return text;
-  },
-}));
+vi.mock("fs/promises", () => {
+  const missing = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  return {
+    mkdir: async () => {},
+    writeFile: async (path: string, text: string) => void files.set(path, text),
+    rename: async (from: string, to: string) => {
+      const text = files.get(from);
+      if (text === undefined) throw missing();
+      files.delete(from);
+      files.set(to, text);
+    },
+    rm: async (path: string) => void files.delete(path),
+    readFile: async (path: string) => {
+      const text = files.get(path);
+      if (text === undefined) throw missing();
+      return text;
+    },
+    readdir: async (dir: string) => {
+      const names = [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1));
+      if (names.length === 0) throw missing();
+      return names;
+    },
+  };
+});
 
 vi.mock("@/lib/redis-lock", () => ({
   acquireLock: async (key: string) => {
@@ -59,6 +84,7 @@ vi.mock("@/lib/redis-lock", () => ({
     claims.add(key);
     return "token";
   },
+  releaseLock: async (key: string) => claims.delete(key),
 }));
 vi.mock("@/lib/incidents/store", () => ({
   safely: async <T,>(_what: string, fn: () => Promise<T>, fallback: T) => fn().catch(() => fallback),
@@ -168,17 +194,32 @@ describe("update event flow", () => {
     expect(settings.has("lifecycle_heartbeat")).toBe(true);
   });
 
-  it("boots after a clean stop with one started message", async () => {
+  it("boots after a clean stop with back up in the stop's thread", async () => {
     settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 60_000, hostBootAt: null, version: "x" }));
-    settings.set("lifecycle_shutdown", JSON.stringify({ at: Date.now() - 20_000, reason: "Stop signal", version: "x" }));
+    settings.set("lifecycle_shutdown", JSON.stringify({ at: Date.now() - 20_000, reason: "Stop signal", version: "x", id: "stop-1", kind: "stop" }));
     await startLifecycleMonitor();
     expect(emitted.map((e) => e.event.type)).toEqual(["system.started"]);
+    expect(emitted[0].event).toMatchObject({ title: "Vardo is back up", incident: { id: "inc_stop-1" } });
   });
 
-  it("boots without a shutdown marker as an unclean recovery", async () => {
+  it("boots without a shutdown marker as stopped unexpectedly, then back up", async () => {
     settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 60_000, hostBootAt: null, version: "x" }));
     await startLifecycleMonitor();
-    expect(emitted.map((e) => e.event.type)).toEqual(["system.recovered-unclean"]);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.recovered-unclean", "system.started"]);
+  });
+
+  it("sends stopping on SIGTERM outside an update, with the marker written first", async () => {
+    const closers: (() => unknown)[] = [];
+    shutdownHooks.current = (closer) => closers.push(closer);
+    try {
+      await startLifecycleMonitor();
+      emitted.length = 0;
+      for (const close of closers) await close();
+      expect(emitted.map((e) => e.event.type)).toEqual(["system.shutdown"]);
+      expect(JSON.parse(settings.get("lifecycle_shutdown") ?? "{}")).toMatchObject({ kind: "stop" });
+    } finally {
+      shutdownHooks.current = null;
+    }
   });
 });
 

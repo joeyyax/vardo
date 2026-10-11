@@ -141,7 +141,7 @@ describe("tick", { timeout: 30_000 }, () => {
     expect(restarts()).toEqual([]);
     ticks(1);
     expect(restarts()).toEqual(["vardo-traefik"]);
-    expect(events()).toMatchObject([{ role: "traefik", container: "vardo-traefik", action: "restart", fails: 3 }]);
+    expect(events()).toMatchObject([{ role: "traefik", action: "restarting", fails: 3 }, { role: "traefik", container: "vardo-traefik", action: "restart", fails: 3 }]);
   });
 
   it("finds the console through the current symlink", () => {
@@ -217,7 +217,7 @@ describe("tick", { timeout: 30_000 }, () => {
     setState("vardo-traefik", "running unhealthy");
     ticks(15);
     expect(restarts()).toEqual(["vardo-traefik", "vardo-traefik", "vardo-traefik"]);
-    expect(events().map((e) => e.action)).toEqual(["restart", "restart", "restart", "backoff"]);
+    expect(events().map((e) => e.action)).toEqual(["restarting", "restart", "restarting", "restart", "restarting", "restart", "backoff"]);
   });
 
   it("restarts again once the window has passed", () => {
@@ -258,7 +258,7 @@ describe("worker", { timeout: 30_000 }, () => {
     expect(restarts()).toEqual([]);
     workerTicks(1);
     expect(restarts()).toEqual([`stop ${WORKER}`, `start ${WORKER}`]);
-    expect(events()).toMatchObject([{ role: "worker", container: WORKER, action: "restart", fails: 3 }]);
+    expect(events()).toMatchObject([{ role: "worker", action: "restarting", fails: 3 }, { role: "worker", container: WORKER, action: "restart", fails: 3 }]);
   });
 
   it("never restarts a draining worker", () => {
@@ -272,7 +272,7 @@ describe("worker", { timeout: 30_000 }, () => {
     withWorker("unhealthy");
     workerTicks(15);
     expect(restarts().filter((r) => r.startsWith("stop"))).toHaveLength(3);
-    expect(events().map((e) => e.action)).toEqual(["restart", "restart", "restart", "backoff"]);
+    expect(events().map((e) => e.action)).toEqual(["restarting", "restart", "restarting", "restart", "restarting", "restart", "backoff"]);
   });
 
   it("holds the worker while it runs backup work", () => {

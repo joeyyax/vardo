@@ -30,6 +30,9 @@ export const EVENT_CATEGORIES = {
     "system.updated",
     "system.update-failed",
     "system.update-skipped",
+    "system.restarting",
+    "system.restarted",
+    "system.restart-failed",
     "system.containers-missing",
   ],
   digest: ["digest.health"],
@@ -558,6 +561,39 @@ export type SystemUpdateSkippedEvent = {
   reasons: string[];
 };
 
+/** What a restart of Vardo covers and who asked for it. */
+export type VardoRestartScope = {
+  target: "console" | "worker" | "services";
+  /** "the console", "vardo-postgres", "the shared services". */
+  label: string;
+  source: "maintenance" | "console" | "watchdog";
+  reason?: string;
+};
+
+/** A restart of Vardo's own containers started. */
+export type SystemRestartingEvent = VardoRestartScope & {
+  type: "system.restarting";
+  title: string;
+  message: string;
+};
+
+/** The restart finished and everything it covered is back. */
+export type SystemRestartedEvent = VardoRestartScope & {
+  type: "system.restarted";
+  title: string;
+  message: string;
+  durationSeconds?: number;
+};
+
+/** The restart didn't bring everything back. */
+export type SystemRestartFailedEvent = VardoRestartScope & {
+  type: "system.restart-failed";
+  title: string;
+  message: string;
+  error: string;
+  durationSeconds?: number;
+};
+
 /** Containers running before a host restart that didn't come back. */
 export type SystemContainersMissingEvent = {
   type: "system.containers-missing";
@@ -728,6 +764,9 @@ export type BusEvent = EventEnvelope & (
   | SystemUpdatedEvent
   | SystemUpdateFailedEvent
   | SystemUpdateSkippedEvent
+  | SystemRestartingEvent
+  | SystemRestartedEvent
+  | SystemRestartFailedEvent
   | SystemContainersMissingEvent
   | BackupProgressEvent
   | DeployStatusEvent

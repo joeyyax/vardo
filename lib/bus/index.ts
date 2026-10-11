@@ -27,7 +27,17 @@ export function emit(orgId: string, input: BusEvent): void {
   addEvent(orgId, event).catch((err) => {
     log.error("stream emit failed:", err);
   });
+  runHooks(orgId, event);
+}
 
+/** emit(), resolved once the event is in the org's stream. Throws when that write fails. */
+export async function emitConfirmed(orgId: string, input: BusEvent): Promise<void> {
+  const event: BusEvent = input.id ? input : { ...input, id: `evt_${nanoid(20)}` };
+  await addEvent(orgId, event);
+  runHooks(orgId, event);
+}
+
+function runHooks(orgId: string, event: BusEvent): void {
   for (const hook of emitHooks.values()) {
     try {
       hook(orgId, event);

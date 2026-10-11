@@ -16,6 +16,9 @@ export type LifecycleEvent = Extract<
       | "system.updated"
       | "system.update-failed"
       | "system.update-skipped"
+      | "system.restarting"
+      | "system.restarted"
+      | "system.restart-failed"
       | "system.containers-missing";
   }
 >;
@@ -35,6 +38,14 @@ function versionChange(from: string, to: string | undefined, changes: UpdateChan
   return target ? `${versionShort(from)} → ${target}` : versionShort(from);
 }
 
+function restartSource(source: "maintenance" | "console" | "watchdog"): string {
+  if (source === "watchdog") return "The watchdog";
+  if (source === "maintenance") return "Maintenance";
+  return "An admin";
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function slots(from?: string, to?: string): string | undefined {
   return from && to ? `${from} → ${to}` : to ?? from;
 }
@@ -48,10 +59,10 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
     case "system.shutdown":
       return {
         tone: "info",
-        status: "Shutting down",
+        status: "Stopping",
         mark: "↓",
-        heading: `Vardo is shutting down on ${host}`,
-        paragraphs: ["Deployed apps keep running. You'll get another email when the console is back."],
+        heading: `Vardo is stopping on ${host}`,
+        paragraphs: ["Deployed apps keep running. You'll get another email when Vardo is back up."],
         facts: [
           { label: "Reason", value: event.reason },
           { label: "Version", value: event.version, mono: true },
@@ -64,7 +75,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
       return {
         tone: "success",
         status: "Back up",
-        heading: down ? `Vardo is back on ${host} after ${down}` : `Vardo started on ${host}`,
+        heading: down ? `Vardo is back up on ${host} after ${down}` : `Vardo is back up on ${host}`,
         paragraphs: [event.hostRebooted ? "The host rebooted. Apps with a restart policy come back on their own; you'll hear about any that don't." : "The console restarted. Deployed apps weren't affected."],
         facts: [
           ...fact("Down for", down),
@@ -80,10 +91,10 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
       const down = seconds(event.downSeconds);
       return {
         tone: "warn",
-        status: "Unclean stop",
-        heading: `Vardo recovered on ${host} after an unclean stop`,
+        status: "Stopped unexpectedly",
+        heading: `Vardo stopped unexpectedly on ${host}`,
         paragraphs: [
-          "The console stopped without shutting down cleanly, as with a power loss, a forced power-off or a crash.",
+          "The console stopped without shutting down cleanly, as with a power loss, a forced power-off or a crash. It's running again.",
           "Deploys and backups that were running were cut off. Check them before relying on them.",
         ],
         facts: [
@@ -166,6 +177,36 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         ],
         sections: [{ title: "Checks that failed", facts: event.reasons.map((r, i) => ({ label: String(i + 1), value: r })) }],
         action: { label: "Open updates", href: consolePage(ctx, "/admin/settings/maintenance#updates") },
+        footer,
+      };
+    case "system.restarting":
+      return {
+        tone: "info",
+        status: "Restarting",
+        mark: "↻",
+        heading: `Restarting ${event.label} on ${host}`,
+        paragraphs: ["Deployed apps keep running. You'll get one more email when it's back or if it doesn't come back."],
+        facts: [{ label: "Requested by", value: restartSource(event.source) }, ...fact("Reason", event.reason)],
+        footer,
+      };
+    case "system.restarted":
+      return {
+        tone: "success",
+        status: "Restarted",
+        heading: `${capitalize(event.label)} restarted on ${host}`,
+        facts: [{ label: "Requested by", value: restartSource(event.source) }, ...fact("Took", seconds(event.durationSeconds))],
+        action: admin,
+        footer,
+      };
+    case "system.restart-failed":
+      return {
+        tone: "fail",
+        status: "Didn't come back",
+        heading: `${capitalize(event.label)} didn't come back on ${host}`,
+        preheader: event.error,
+        paragraphs: [event.error],
+        facts: [{ label: "Requested by", value: restartSource(event.source) }, ...fact("Waited", seconds(event.durationSeconds))],
+        action: { label: "Open maintenance", href: consolePage(ctx, "/admin/settings/maintenance") },
         footer,
       };
     case "system.containers-missing":

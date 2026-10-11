@@ -16,6 +16,8 @@ vi.mock("@/lib/logger", () => ({
 }));
 vi.mock("@/lib/paths", () => ({ resolveVardoComposeFile: () => "/opt/vardo/docker-compose.yml" }));
 vi.mock("@/lib/docker/docker-env", () => ({ dockerEnv: () => ({ PATH: "/bin" }) }));
+const { restartStarted } = vi.hoisted(() => ({ restartStarted: vi.fn(async (_req: unknown) => "restart-1") }));
+vi.mock("@/lib/lifecycle/notices", () => ({ restartStarted }));
 
 const POST = (await import("@/app/api/v1/admin/maintenance/restart/route")).POST as unknown as (
   r: NextRequest,
@@ -55,6 +57,14 @@ describe("restart all", () => {
     expect(args.slice(0, 5)).toEqual(["compose", "-p", "vardo", "-f", "/opt/vardo/docker-compose.yml"]);
     expect(args).not.toContain("frontend");
     expect(args.slice(args.indexOf("up"))).toEqual(["up", "-d", "--no-deps", "postgres", "redis", "traefik"]);
+  });
+
+  it("sends Restarting through the lifecycle notices, without the frontend", async () => {
+    restartStarted.mockClear();
+    await POST(post({}));
+    expect(restartStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "services", source: "maintenance", services: ["postgres", "redis", "traefik"] }),
+    );
   });
 
   it("keeps the scrubbed docker env", async () => {

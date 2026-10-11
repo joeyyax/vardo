@@ -29,6 +29,25 @@ export function vardoUpdatingRow(active: Pick<ActiveUpdate, "id" | "toVersion" |
   };
 }
 
+/** "Restarting Vardo's shared services…" while a restart runs. Same strip as an update. */
+export function vardoRestartingRow(active: { id: string; label: string; startedAt: number }): AttentionRow {
+  return {
+    key: VARDO_UPDATING_ROW_KEY,
+    label: "Vardo restarting",
+    tone: "activity",
+    items: [
+      {
+        id: active.id,
+        name: `Restarting ${active.label}…`,
+        detail: "In progress",
+        href: "/admin/settings/maintenance",
+        since: new Date(active.startedAt).toISOString(),
+      },
+    ],
+    footer: "Deployed apps keep running. This clears when the restart finishes or fails.",
+  };
+}
+
 export function vardoUpdateRow(input: {
   update: ChannelUpdate | null;
   currentVersion: string;
