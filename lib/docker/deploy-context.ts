@@ -7,7 +7,7 @@ import type { HostConfig } from "@/lib/config/host-config";
 import type { DeployStage } from "./deploy-logger";
 
 import type { StageTimer } from "./stage-timings";
-import type { RebuildMode } from "./build-key";
+import type { BuildCacheMode, RebuildMode } from "./build-key";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
 
@@ -35,6 +35,7 @@ export type DeployApp = {
   buildCommand?: string | null;
   startCommand?: string | null;
   buildProvider?: "railpack" | "nixpacks" | null;
+  buildCache?: BuildCacheMode | null;
   autoTraefikLabels: boolean | null;
   containerPort: number | null;
   autoDeploy: boolean | null;

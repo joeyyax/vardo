@@ -486,6 +486,10 @@ const entries = {
     label: "Proxy",
     what: "Receives web traffic and routes each domain to the right app. It also handles TLS certificates.",
   },
+  "build-cache": {
+    term: "Build cache",
+    what: "Vardo reuses an earlier image when nothing about the build changed, and reuses unchanged build steps otherwise. Turn this off for an app when a build keeps picking up stale results.",
+  },
   "core-buildkit": {
     term: "BuildKit",
     label: "Builder",

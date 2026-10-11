@@ -22,6 +22,7 @@ import { applyAppHeaders } from "@/lib/docker/headers-sync";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 import { gitUrlUpdateColumns } from "@/lib/api/git-credentials";
+import { BUILD_CACHE_MODES } from "@/lib/docker/build-key";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -52,6 +53,7 @@ const updateAppSchema = z.object({
   buildCommand: buildOverrideSchema,
   startCommand: buildOverrideSchema,
   buildProvider: z.enum(["railpack", "nixpacks"]).nullable().optional(),
+  buildCache: z.enum(BUILD_CACHE_MODES).optional(),
   gitUrl: gitUrlUpdateSchema.nullable().optional(),
   imageName: imageRefSchema.nullable().optional(),
   restartPolicy: z.string().nullable().optional(),

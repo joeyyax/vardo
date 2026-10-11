@@ -159,6 +159,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
     expect(shown("build", context({ storedDeployType: "image" })).sort()).toEqual([
       "autoDeploy",
       "autoRollback",
+      "buildCache",
       "buildOverrides",
       "buildProvider",
       "composeFilePath",
@@ -174,6 +175,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
       expect(appSettingsFields(context({ deployType: type })).buildOverrides).toBe(true);
     }
     expect(appSettingsFields(context({ deployType: "compose" })).buildProvider).toBe(true);
+    expect(appSettingsFields(context({ deployType: "compose" })).buildCache).toBe(true);
     expect(appSettingsFields(context({ deployType: "nixpacks" })).buildProvider).toBe(false);
     expect(appSettingsFields(context({ deployType: "dockerfile" })).buildOverrides).toBe(false);
   });

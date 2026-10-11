@@ -22,6 +22,7 @@ export type AppSettingsFields = {
   buildOverrides: boolean;
   /** Railpack or Nixpacks when the repo has no compose file or Dockerfile. */
   buildProvider: boolean;
+  buildCache: boolean;
   containerPort: boolean;
   backendProtocol: boolean;
   securityHeaders: boolean;
@@ -63,6 +64,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     dockerfilePath: ownsBuild && !isComposeParent && ctx.deployType === "dockerfile",
     buildOverrides: buildpack,
     buildProvider: buildpack && ctx.deployType === "compose",
+    buildCache: ownsBuild && ctx.source === "git",
     containerPort: ownsBuild,
     backendProtocol: ownsBuild,
     securityHeaders: ownsBuild,
@@ -106,6 +108,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   dockerfilePath: "build",
   buildOverrides: "build",
   buildProvider: "build",
+  buildCache: "build",
   autoDeploy: "build",
   githubFeedback: "build",
   autoRollback: "build",
