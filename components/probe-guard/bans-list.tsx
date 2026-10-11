@@ -20,6 +20,7 @@ import { toast } from "@/lib/messenger";
 import { banReasonLine, type BanDetail } from "@/lib/probe-guard/summary";
 import { isPermanent } from "@/lib/probe-guard/permanent";
 import { reporterLink } from "@/lib/probe-guard/reporting/links";
+import type { BanStatus } from "@/lib/probe-guard/history-view";
 
 export type BanItem = {
   id: string;
@@ -33,13 +34,15 @@ export type BanItem = {
   detail?: BanDetail | null;
   /** The reporter that took a report on this address. */
   reportedTo?: string | null;
+  /** Set for bans that may have ended; missing means active. */
+  status?: BanStatus;
 };
 
 export const ALLOWED_FROM_BAN_NOTE = "Allowed from a ban";
 
 /**
- * Active bans with unban and, for admins, ban permanently and allow. `banUrl` maps a ban id to its
- * endpoint; `allowUrl` is the allowlist endpoint.
+ * Bans with unban and, for admins, ban permanently and allow. Ended bans offer ban again and allow.
+ * `banUrl` maps a ban id to its endpoint; `allowUrl` is the allowlist endpoint.
  */
 export function BansList({
   bans,
@@ -48,6 +51,9 @@ export function BansList({
   canUnban = true,
   canBanPermanently = false,
   allowUrl,
+  canBanAgain = false,
+  showCreated = false,
+  emptyText = "No active bans.",
 }: {
   bans: BanItem[];
   banUrl: (id: string) => string;
@@ -55,6 +61,9 @@ export function BansList({
   canUnban?: boolean;
   canBanPermanently?: boolean;
   allowUrl?: string;
+  canBanAgain?: boolean;
+  showCreated?: boolean;
+  emptyText?: string;
 }) {
   const [pending, setPending] = useState<string | null>(null);
 
@@ -94,44 +103,42 @@ export function BansList({
           allowUrl,
         )
       : Promise.resolve();
+  const banAgain = (ban: BanItem) =>
+    send(
+      ban,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ again: true }) },
+      `Banned ${ban.ip} again`,
+      "Couldn't ban the address",
+    );
 
-  if (bans.length === 0) return <p className="text-xs text-muted-foreground">No active bans.</p>;
+  if (bans.length === 0) return <p className="text-xs text-muted-foreground">{emptyText}</p>;
 
   return (
     <ul className="divide-y rounded-lg border">
       {bans.map((ban) => {
         const permanent = isPermanent(ban.expiresAt);
         const busy = pending === ban.id;
+        const ended = ban.status?.kind === "expired" || ban.status?.kind === "lifted";
         return (
           <li key={ban.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="font-mono text-sm">{ban.ip}</p>
-              <BanReason ban={ban} permanent={permanent} />
+              <BanReason ban={ban} permanent={permanent} ended={ended} showCreated={showCreated} />
               <ReportedLink ban={ban} />
             </div>
-            {(canUnban || allowUrl || (canBanPermanently && !permanent)) && (
+            {ended && (canBanAgain || allowUrl) && (
               <div className="flex shrink-0 items-center gap-2">
-                {allowUrl && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" disabled={busy}>
-                        Allow
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent size="sm">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Allow {ban.ip}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Lifts the ban and adds the address to the never-ban list. It won&apos;t be banned or reported again.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => void allow(ban)}>Allow</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                {canBanAgain && (
+                  <Button size="sm" variant="outline" onClick={() => void banAgain(ban)} disabled={busy}>
+                    {busy ? <Loader2 className="size-4 animate-spin" /> : "Ban again"}
+                  </Button>
                 )}
+                {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
+              </div>
+            )}
+            {!ended && (canUnban || allowUrl || (canBanPermanently && !permanent)) && (
+              <div className="flex shrink-0 items-center gap-2">
+                {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
                 {canBanPermanently && !permanent && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -167,6 +174,30 @@ export function BansList({
   );
 }
 
+function AllowButton({ ip, busy, onConfirm }: { ip: string; busy: boolean; onConfirm: () => void }) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={busy}>
+          Allow
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent size="sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Allow {ip}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Lifts any ban and adds the address to the never-ban list. It won&apos;t be banned or reported again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>Allow</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function ReportedLink({ ban }: { ban: BanItem }) {
   const link = ban.reportedTo ? reporterLink(ban.reportedTo, ban.ip) : null;
   if (!link) return null;
@@ -180,16 +211,25 @@ function ReportedLink({ ban }: { ban: BanItem }) {
 }
 
 /** Why the address is banned and until when. Expands to the paths it probed. */
-function BanReason({ ban, permanent }: { ban: BanItem; permanent: boolean }) {
+function BanReason({ ban, permanent, ended, showCreated }: { ban: BanItem; permanent: boolean; ended: boolean; showCreated: boolean }) {
   const [open, setOpen] = useState(false);
   const paths = ban.detail?.paths ?? [];
   const reason = banReasonLine(ban);
-  const until = permanent ? (
+  const status = ended ? (
+    <span>{ban.status?.label}</span>
+  ) : permanent ? (
     <span className="font-medium text-foreground">Permanent</span>
   ) : (
     <>
       ends <RelativeTime date={ban.expiresAt} />
     </>
+  );
+  const until = showCreated ? (
+    <>
+      {status} · banned <RelativeTime date={ban.createdAt} />
+    </>
+  ) : (
+    status
   );
 
   if (paths.length === 0) {

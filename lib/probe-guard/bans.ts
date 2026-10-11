@@ -9,7 +9,7 @@ import { recordActivity } from "@/lib/activity";
 import { trustedProxyRanges } from "@/lib/cloudflare-ips";
 import { getServerIP } from "@/lib/server-ip";
 import { logger } from "@/lib/logger";
-import { REPEAT_LOOKBACK_MS, banDurationMs, neverBanReason, normalizeIp, remoteBanExpiry, type NeverBanContext } from "./ban-policy";
+import { REPEAT_LOOKBACK_MS, RETENTION_MS, banDurationMs, neverBanReason, normalizeIp, remoteBanExpiry, type NeverBanContext } from "./ban-policy";
 import { getProbeGuardSettings } from "./instance";
 import { syncGuardFile } from "./sync";
 import { clearWindow } from "./hits";
@@ -51,6 +51,8 @@ export type BanRequest = {
   hits?: number;
   /** A ban received from a linked instance. */
   origin?: { peerId: string; name: string; expiresAt: Date };
+  /** An admin's ban: never reported. */
+  manual?: boolean;
 };
 
 export type BanOutcome =
@@ -145,7 +147,7 @@ export async function createBan(req: BanRequest, now = new Date()): Promise<BanO
     void shareBan(ban).catch((err) => log.warn("Couldn't share a ban with linked instances:", err));
   }
 
-  if (!req.origin) {
+  if (!req.origin && !req.manual) {
     const { queueAbuseReport } = await import("./reporting/queue");
     void queueAbuseReport(ip).catch((err) => log.warn("Couldn't queue an abuse report:", err));
   }
@@ -192,6 +194,15 @@ export async function makeBanPermanent(id: string, userId: string | null, scope?
     void shareBan(row).catch((err) => log.warn("Couldn't share a ban with linked instances:", err));
   }
   return row;
+}
+
+/** Bans an expired or lifted ban's address again, for the same reason. */
+export async function banAgain(id: string, scope?: { appId: string }): Promise<BanOutcome | null> {
+  const where = scope ? and(eq(probeBans.id, id), eq(probeBans.appId, scope.appId)) : eq(probeBans.id, id);
+  const [row] = await db.select().from(probeBans).where(where).limit(1);
+  if (!row || row.reason === "blocklist") return null;
+  const reason = row.reason === "mesh" ? "threshold" : row.reason;
+  return createBan({ ip: row.ip, reason, appId: row.appId, hits: row.hits, manual: true });
 }
 
 export type BanView = {
@@ -242,9 +253,9 @@ export async function permanentBanCount(appId?: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Drops bans that expired before the repeat lookback. Mirrors isPrunable, so permanent bans stay. */
+/** Drops bans that expired before the retention window. Mirrors isPrunable, so active permanent bans stay. */
 export async function pruneBans(now = new Date()): Promise<void> {
-  const cutoff = new Date(now.getTime() - REPEAT_LOOKBACK_MS);
+  const cutoff = new Date(now.getTime() - RETENTION_MS);
   await db
     .delete(probeBans)
     // Expired temporary bans, and any ban lifted that long ago, permanent ones included. Expired blocklist bans go at once.

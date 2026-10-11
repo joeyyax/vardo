@@ -6,16 +6,26 @@ function count(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 }
 
-/** "142 probes turned away this week, 3 IPs banned". */
-export function guardSummary(stats: GuardStatsView): string {
-  const permanent = stats.permanent ? count(stats.permanent, "permanent ban") : null;
+/** A piece of the summary line; `target` names the section it leads to. */
+export type SummaryPart = { text: string; target?: "probed" | "recent-bans" };
+
+/** "142 probes turned away this week, 3 IPs banned", in parts the page can link. */
+export function guardSummaryParts(stats: GuardStatsView, phrase = "this week"): SummaryPart[] {
+  const permanent: SummaryPart | null = stats.permanent ? { text: count(stats.permanent, "permanent ban") } : null;
   if (stats.probes === 0 && stats.bans === 0 && stats.traps === 0) {
-    return ["No probes turned away this week", permanent].filter(Boolean).join(", ");
+    return [{ text: `No probes turned away ${phrase}` }, ...(permanent ? [permanent] : [])];
   }
-  const parts = [`${count(stats.probes, "probe")} turned away this week`, `${count(stats.bans, "IP")} banned`];
-  if (stats.traps > 0) parts.push(`${count(stats.traps, "trap")} triggered`);
+  const parts: SummaryPart[] = [
+    { text: `${count(stats.probes, "probe")} turned away ${phrase}`, target: "probed" },
+    { text: `${count(stats.bans, "IP")} banned`, target: "recent-bans" },
+  ];
+  if (stats.traps > 0) parts.push({ text: `${count(stats.traps, "trap")} triggered` });
   if (permanent) parts.push(permanent);
-  return parts.join(", ");
+  return parts;
+}
+
+export function guardSummary(stats: GuardStatsView, phrase = "this week"): string {
+  return guardSummaryParts(stats, phrase).map((p) => p.text).join(", ");
 }
 
 export type ProbeCount = { label: string; count: number };
@@ -50,6 +60,8 @@ function reasonText(ban: BanReasonInput): string {
       return "Used a decoy credential";
     case "mesh":
       return ban.originName ? `Shared by ${ban.originName}` : "Shared by a linked instance";
+    case "blocklist":
+      return "On a blocklist";
     default:
       return ban.reason;
   }

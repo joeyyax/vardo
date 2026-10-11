@@ -113,6 +113,9 @@ export function banDurationMs(priorBans: number, settings: Pick<InstanceProbeGua
 /** How far back earlier bans count toward doubling. */
 export const REPEAT_LOOKBACK_MS = 30 * 24 * 3_600_000;
 
+/** How long ban rows and probe events are kept, for the Security page's ranges. */
+export const RETENTION_MS = 90 * 24 * 3_600_000;
+
 /** Sliding-window check: hit timestamps within the window, threshold reached. */
 export function windowHits(timestamps: readonly number[], now: number, windowMs: number): number {
   return timestamps.filter((t) => t > now - windowMs && t <= now).length;
@@ -163,7 +166,7 @@ export function banRenderOrder(rows: readonly RenderRow[], max: number, maxBlock
   return out;
 }
 
-/** Whether pruning may drop a ban. Permanent bans are kept, lifted or not. */
+/** Whether pruning may drop a ban: temporary ones past retention. Permanent bans are kept. */
 export function isPrunable(ban: { expiresAt: Date }, now: Date): boolean {
-  return !isPermanent(ban.expiresAt) && ban.expiresAt.getTime() < now.getTime() - REPEAT_LOOKBACK_MS;
+  return !isPermanent(ban.expiresAt) && ban.expiresAt.getTime() < now.getTime() - RETENTION_MS;
 }

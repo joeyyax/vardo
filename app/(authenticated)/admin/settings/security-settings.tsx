@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { BansList, type BanItem } from "@/components/probe-guard/bans-list";
-import { guardSummary, type GuardStatsView } from "@/lib/probe-guard/summary";
+import type { GuardStatsView } from "@/lib/probe-guard/summary";
+import { GuardHistory } from "@/components/probe-guard/guard-history";
 import { DEFAULT_INSTANCE_PROBE_GUARD, type InstanceProbeGuard } from "@/lib/probe-guard/settings";
 import { useSystemSetting } from "./use-system-setting";
 import { AbuseReportingCard } from "./abuse-reporting-card";
@@ -99,13 +100,24 @@ export function SecuritySettings() {
     <div className="space-y-6">
       <div className="space-y-1">
         <h2 className="type-h2">Security</h2>
-        <p className="text-sm text-muted-foreground">
-          {view ? guardSummary(view.stats) : "Exploit probes turned away at the proxy, and the addresses banned for them."}
-        </p>
+        <p className="text-sm text-muted-foreground">Exploit probes turned away at the proxy, and the addresses banned for them.</p>
         {view && !view.available && (
           <p className="text-xs text-status-warning">Set ENCRYPTION_MASTER_KEY to turn the probe guard on.</p>
         )}
       </div>
+
+      <GuardHistory
+        endpoint={`${ENDPOINT}/history`}
+        banUrl={(id) => `${ENDPOINT}/bans/${id}`}
+        allowUrl={ALLOWLIST_ENDPOINT}
+        canBanPermanently
+        showApps
+        version={allowVersion}
+        onChange={() => {
+          void refetch();
+          setAllowVersion((v) => v + 1);
+        }}
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>

@@ -135,5 +135,8 @@ export function isWordPress(guard: AppProbeGuard, detected: boolean): boolean {
   return guard.wordpress === "on" || (guard.wordpress === "auto" && detected);
 }
 
-/** Body for making a ban permanent. */
-export const banPatchSchema = z.object({ permanent: z.literal(true) }).strict();
+/** Body for making a ban permanent or banning its address again. */
+export const banPatchSchema = z.union([
+  z.object({ permanent: z.literal(true) }).strict(),
+  z.object({ again: z.literal(true) }).strict(),
+]);

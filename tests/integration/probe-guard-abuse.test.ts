@@ -99,6 +99,45 @@ describe.skipIf(!conn)("blocklist and allowlist on Postgres", { timeout: MIGRATE
     await expect(actions.addAllowEntry({ value: "203.0.113.0/30" }, null)).rejects.toThrow(/already/);
   });
 
+  it("reads a range for all apps or one, with ended bans and their status", async () => {
+    const { guardHistory } = await import("@/lib/probe-guard/history");
+    await sql`insert into organization (id, name, slug) values ('org1', 'Org', 'org')`;
+    await sql`insert into project (id, organization_id, name, display_name) values ('p1', 'org1', 'proj', 'Proj')`;
+    await sql`insert into app (id, organization_id, project_id, name, display_name) values ('a1', 'org1', 'p1', 'one', 'One'), ('a2', 'org1', 'p1', 'two', 'Two')`;
+    const now = new Date();
+    const at = (h: number) => new Date(now.getTime() - h * HOUR);
+    for (const [ip, path, app, h] of [
+      ["198.51.100.1", "/.env", "a1", 2],
+      ["198.51.100.1", "/.env", "a1", 2],
+      ["198.51.100.1", "/_ignition/execute-solution", "a1", 3],
+      ["198.51.100.2", "/.ssh/id_rsa", "a2", 4],
+      ["198.51.100.3", "/.env", "a2", 24 * 20],
+    ] as const) {
+      await sql`insert into probe_event (id, kind, ip, path, app_id, created_at) values (${`${ip}-${path}-${h}-${Math.random()}`}, 'probe', ${ip}, ${path}, ${app}, ${at(h)})`;
+    }
+    await sql`insert into probe_ban (id, ip, reason, app_id, created_at, expires_at) values ('h1', '198.51.100.1', 'threshold', 'a1', ${at(2)}, ${at(1)})`;
+    await sql`insert into probe_ban (id, ip, reason, app_id, created_at, expires_at, lifted_at) values ('h2', '198.51.100.2', 'trap', 'a2', ${at(4)}, ${new Date(now.getTime() + HOUR)}, ${at(3)})`;
+
+    const week = await guardHistory({ range: "7d", now });
+    expect(week.categories).toEqual([
+      { label: "env files", count: 2 },
+      { label: "Laravel Ignition exploit (RCE)", count: 1 },
+      { label: "SSH keys", count: 1 },
+    ]);
+    expect(week.byApp.map((a) => a.appId)).toEqual(["a1", "a2"]);
+    expect(week.sources[0]).toEqual({ ip: "198.51.100.1", count: 3, banned: false });
+    const statuses = Object.fromEntries(week.bans.filter((b) => b.id.startsWith("h")).map((b) => [b.id, b.status.kind]));
+    expect(statuses).toEqual({ h1: "expired", h2: "lifted" });
+
+    const one = await guardHistory({ range: "7d", appId: "a2", now });
+    expect(one.categories).toEqual([{ label: "SSH keys", count: 1 }]);
+    expect(one.bans.map((b) => b.id)).toEqual(["h2"]);
+    expect(one.byApp).toEqual([]);
+
+    const month = await guardHistory({ range: "30d", appId: "a2", now });
+    expect(month.categories.find((c) => c.label === "env files")?.count).toBe(1);
+  });
+
   it("refuses bans shared by a linked instance for allowlisted addresses", async () => {
     const outcome = await bans.createBan({
       ip: "203.0.113.3",

@@ -34,7 +34,7 @@ export type GuardOverview = { stats: GuardStats; bans: BanWithDetail[] };
 const REPORT_SLACK_MS = 5 * 60_000;
 
 /** The reporter each ban's address went to after the ban began, keyed by ban id. */
-async function banReports(bans: readonly BanView[]): Promise<Map<string, string>> {
+export async function banReports(bans: readonly { id: string; ip: string; createdAt: Date }[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (bans.length === 0) return out;
   const since = new Date(Math.min(...bans.map((b) => b.createdAt.getTime())) - REPORT_SLACK_MS);

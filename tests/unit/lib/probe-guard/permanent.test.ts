@@ -4,7 +4,7 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) } }));
 
 import { PERMANENT_UNTIL, isPermanent } from "@/lib/probe-guard/permanent";
-import { REPEAT_LOOKBACK_MS, banRenderOrder, isPrunable, remoteBanExpiry } from "@/lib/probe-guard/ban-policy";
+import { RETENTION_MS, banRenderOrder, isPrunable, remoteBanExpiry } from "@/lib/probe-guard/ban-policy";
 import { receiveSharedBan, sharePayload } from "@/lib/probe-guard/mesh-share";
 import { DEFAULT_INSTANCE_PROBE_GUARD } from "@/lib/probe-guard/settings";
 import type { BanRequest } from "@/lib/probe-guard/bans";
@@ -57,8 +57,10 @@ describe("isPrunable", () => {
     expect(isPrunable({ expiresAt: PERMANENT_UNTIL }, new Date("9999-12-30T00:00:00Z"))).toBe(false);
   });
 
-  it("drops temporary bans once past the repeat lookback", () => {
-    expect(isPrunable({ expiresAt: new Date(now.getTime() - REPEAT_LOOKBACK_MS - 1) }, now)).toBe(true);
+  it("drops temporary bans once past the 90-day retention", () => {
+    expect(RETENTION_MS).toBe(90 * 24 * HOUR);
+    expect(isPrunable({ expiresAt: new Date(now.getTime() - RETENTION_MS - 1) }, now)).toBe(true);
+    expect(isPrunable({ expiresAt: new Date(now.getTime() - 60 * 24 * HOUR) }, now)).toBe(false);
     expect(isPrunable({ expiresAt: new Date(now.getTime() - HOUR) }, now)).toBe(false);
   });
 });
