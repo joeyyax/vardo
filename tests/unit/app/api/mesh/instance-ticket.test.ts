@@ -42,7 +42,7 @@ const { POST } = await import("@/app/api/v1/mesh/instance-ticket/route");
 
 function request(payload: unknown, headers?: Record<string, string>) {
   const body = JSON.stringify(payload);
-  return new NextRequest(`http://192.0.2.10:3000${PATH}`, {
+  return new NextRequest(`http://localhost:3000${PATH}`, {
     method: "POST",
     body,
     headers: headers ?? signMeshRequest({ token: TOKEN, method: "POST", path: PATH, body }),

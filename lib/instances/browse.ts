@@ -132,7 +132,7 @@ function visibleOrgs(rows: MembershipRow[], peer: BrowsePeer): RemoteOrg[] {
   return rows
     .filter((m) => !m.organization.isSystemManaged)
     .filter((m) => !peer.organizationId || m.organization.id === peer.organizationId)
-    .filter((m) => can(m.role, "app.view"))
+    .filter((m) => can(m, "app.view"))
     .map((m) => ({ id: m.organization.id, name: m.organization.name, role: m.role }));
 }
 

@@ -1,7 +1,7 @@
 // GET /api/v1/instances: an unreachable peer shows as unreachable and the rest still load.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const state = vi.hoisted(() => ({
   who: { user: { id: "u1", email: "owner@example.com", emailVerified: true, twoFactorEnabled: false } } as unknown,
@@ -25,6 +25,8 @@ vi.mock("@/lib/instances/mesh-directory", () => ({
 
 const { GET } = await import("@/app/api/v1/instances/route");
 
+const req = () => new NextRequest("http://localhost/api/v1/instances");
+
 beforeEach(() => {
   organizations.mockReset();
   organizations.mockImplementation(async (id: string) =>
@@ -35,7 +37,7 @@ beforeEach(() => {
 
 describe("GET /api/v1/instances", () => {
   it("returns every opted-in peer, with an unreachable one marked and nothing else affected", async () => {
-    const res = await GET();
+    const res = await GET(req());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.local).toEqual({ name: "home" });
@@ -48,13 +50,13 @@ describe("GET /api/v1/instances", () => {
 
   it("doesn't ask peers about an unverified email", async () => {
     state.who = { user: { id: "u1", email: "owner@example.com", emailVerified: false, twoFactorEnabled: false } };
-    const body = await (await GET()).json();
+    const body = await (await GET(req())).json();
     expect(organizations).not.toHaveBeenCalled();
     expect(body.instances[0].organizations.state).toBe("refused");
   });
 
   it("refuses without a browser session", async () => {
     state.who = { response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-    expect((await GET()).status).toBe(401);
+    expect((await GET(req())).status).toBe(401);
   });
 });
