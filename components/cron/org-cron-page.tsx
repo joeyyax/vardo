@@ -14,6 +14,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { CronJobSheet, type CronJobBody } from "./cron-job-sheet";
 import { CronRuns } from "./cron-runs";
+import { PublicStatusSettings } from "./public-status-settings";
 import { CronCommand, cronAnchor, cronMark, scheduleWithZone, urlOptionsSummary, type CronJob } from "./cron-shared";
 import { DetailPanel, DETAIL_PANEL_GUTTER, PanelSection } from "@/components/detail-panel";
 import { ListRow } from "@/components/list-row";
@@ -317,6 +318,8 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
             </Card>
           )}
         </section>
+
+        {can("org.settings") && <PublicStatusSettings orgId={orgId} />}
       </div>
 
       <DetailPanel
