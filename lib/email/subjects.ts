@@ -75,8 +75,6 @@ export function subjectLine(event: BusEvent): string {
       if (event.run.unfinished?.length) return `⚠ ${label} · timed out, ${event.run.unfinished.length} didn't finish`;
       const shrunk = event.rows.filter((r) => r.shrunk);
       if (shrunk.length) return `⚠ ${label} · ${shrunk[0].appName} much smaller than usual`;
-      const grew = event.rows.filter((r) => r.grew);
-      if (grew.length) return `⚠ ${label} · ${grew[0].appName} much larger than last run`;
       const skipped = event.rows.filter((r) => r.outcome === "skipped" && !r.expected);
       if (skipped.length) return `⚠ ${label} · ${plural(skipped.length, "volume")} skipped`;
       if (event.staleVolumes?.length) return `⚠ ${label} · ${event.staleVolumes.length} with no success in 48 h`;

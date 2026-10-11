@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  backupGrowth,
   estimateRunMs,
   JOB_OVERHEAD_MS,
   failureSubject,
@@ -137,40 +136,12 @@ describe("summarizeResults", () => {
     expect(needsAttention(ok, 1)).toBe(true);
   });
 
-  it("needs a look for big growth and unexpected skips, not routine ones", () => {
+  it("never flags growth, only unexpected skips", () => {
     const MiB = 1024 ** 2;
     const grew = summarizeResults([item({ volumeName: "loki", sizeBytes: 532.6 * MiB })], new Map([[volumeKey("a1", "loki"), [1.71 * MiB]]]));
-    expect(grew[0].grew?.pct).toBe(31046);
-    expect(needsAttention(grew, 0)).toBe(true);
+    expect(needsAttention(grew, 0)).toBe(false);
     expect(needsAttention(summarizeResults([item({ outcome: "skipped", error: "app stopped", expected: true })], new Map()), 0)).toBe(false);
     expect(needsAttention(summarizeResults([item({ outcome: "skipped", error: "odd" })], new Map()), 0)).toBe(true);
-  });
-
-  it("flags big growth, not small volumes doubling", () => {
-    const MiB = 1024 ** 2;
-    expect(backupGrowth(1.71 * MiB, 532.6 * MiB)?.pct).toBe(31046);
-    expect(backupGrowth(21.06 * MiB, 71.8 * MiB)?.pct).toBe(241);
-    expect(backupGrowth(0.44 * MiB, 0.82 * MiB)).toBeNull();
-    expect(backupGrowth(4096 * MiB, 4200 * MiB)).toBeNull();
-    expect(backupGrowth(0, 100 * MiB)).toBeNull();
-  });
-
-  it("ranks growth after shrinks and before the rest", () => {
-    const MiB = 1024 ** 2;
-    const history = new Map([
-      [volumeKey("a1", "loki"), [MiB, MiB, MiB]],
-      [volumeKey("a2", "db"), [1000, 1000, 1000]],
-    ]);
-    const rows = summarizeResults(
-      [
-        item({ appId: "a3", appName: "Apple", volumeName: "x" }),
-        item({ appId: "a1", appName: "Obs", volumeName: "loki", sizeBytes: 500 * MiB }),
-        item({ appId: "a2", appName: "Zed", volumeName: "db", sizeBytes: 100 }),
-      ],
-      history,
-    );
-    expect(rows.map((r) => r.volumeName)).toEqual(["db", "loki", "x"]);
-    expect(rows[1].grew?.pct).toBe(49900);
   });
 
   it("rolls rows up per app with the change against last run", () => {

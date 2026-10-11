@@ -167,7 +167,6 @@ export type BackupSummaryRow = {
   /** Well below its usual size. */
   shrunk?: { median: number; drop: number };
   /** Much larger than last run, as a percentage. */
-  grew?: { pct: number };
   /** A routine skip: a stopped app or a source that can't be captured. */
   expected?: boolean;
 };
