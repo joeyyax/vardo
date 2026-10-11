@@ -1,7 +1,7 @@
 // Creating, lifting and listing bans. Each change rewrites the guard file.
 
 import { isIP } from "net";
-import { and, count, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, meshPeers, probeBans, type ProbeBanReason } from "@/lib/db/schema";
@@ -230,7 +230,12 @@ export async function permanentBanCount(appId?: string): Promise<number> {
 
 /** Drops bans that expired before the repeat lookback. Mirrors isPrunable, so permanent bans stay. */
 export async function pruneBans(now = new Date()): Promise<void> {
+  const cutoff = new Date(now.getTime() - REPEAT_LOOKBACK_MS);
   await db
     .delete(probeBans)
-    .where(and(lt(probeBans.expiresAt, new Date(now.getTime() - REPEAT_LOOKBACK_MS)), lt(probeBans.expiresAt, PERMANENT_UNTIL)));
+    // Expired temporary bans, and any ban lifted that long ago, permanent ones included.
+    .where(or(
+      and(lt(probeBans.expiresAt, cutoff), lt(probeBans.expiresAt, PERMANENT_UNTIL)),
+      lt(probeBans.liftedAt, cutoff),
+    ));
 }
