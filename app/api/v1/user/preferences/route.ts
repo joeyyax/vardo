@@ -3,10 +3,12 @@ import { z } from "zod";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireSession, isScopedToken } from "@/lib/auth/session";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { UI_DENSITIES } from "@/lib/db/schema";
+import { PROJECT_SORTS, UI_DENSITIES } from "@/lib/db/schema";
 import { getUserPreferences, setUserPreferences } from "@/lib/user/preferences";
 
-const putSchema = z.object({ density: z.enum(UI_DENSITIES).optional() }).strict();
+const putSchema = z
+  .object({ density: z.enum(UI_DENSITIES).optional(), projectSort: z.enum(PROJECT_SORTS).optional() })
+  .strict();
 
 /** GET — the signed-in user's interface preferences. */
 async function handleGet() {

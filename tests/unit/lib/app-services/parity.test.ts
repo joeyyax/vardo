@@ -24,7 +24,7 @@ vi.mock("@/lib/activity/query", async (importOriginal) => ({
 vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: vi.fn(async () => false) }));
 vi.mock("@/lib/system-settings", () => ({ getEmailProviderConfig: vi.fn(async () => null) }));
 vi.mock("@/lib/db/app-restarts", () => ({ restartCountsByApp: vi.fn(async () => new Map()), restartReading: vi.fn(() => null) }));
-vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable" })) }));
+vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable", projectSort: "attention" })) }));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: vi.fn(async () => false) }));
 vi.mock("@/lib/docker/stability-history", () => ({ loadStabilityHistory: vi.fn(async () => []) }));
 vi.mock("@/lib/activity/lifecycle", () => ({ loadLifecycleHistory: vi.fn(async () => []) }));

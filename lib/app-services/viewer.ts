@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { session as sessionTable } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { getUserPreferences } from "@/lib/user/preferences";
-import type { UiDensity } from "@/lib/db/schema/enums";
+import type { ProjectSort, UiDensity } from "@/lib/db/schema/enums";
 import type { Actor } from "./actor";
 
 /** Instance admin only: container discovery reads every host container's env. */
@@ -14,6 +14,12 @@ export async function canImportContainers(actor: Actor): Promise<boolean> {
 /** The actor's list density preference. */
 export async function userDensity(actor: Actor): Promise<UiDensity> {
   return (await getUserPreferences(actor.userId)).density;
+}
+
+/** The actor's list density and Projects order. */
+export async function listPreferences(actor: Actor): Promise<{ density: UiDensity; sort: ProjectSort }> {
+  const prefs = await getUserPreferences(actor.userId);
+  return { density: prefs.density, sort: prefs.projectSort };
 }
 
 /** How many unexpired sessions the actor's user has. */

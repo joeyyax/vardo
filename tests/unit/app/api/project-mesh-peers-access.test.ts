@@ -28,7 +28,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: mockIsFeatureEnabledAsync }));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin }));
 vi.mock("@/lib/db/app-restarts", () => ({ restartCountsByApp: vi.fn(async () => new Map()) }));
-vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable" })) }));
+vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable", projectSort: "attention" })) }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => { throw new Error("REDIRECT"); }),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
@@ -43,6 +43,7 @@ vi.mock("@/lib/db", () => ({
       apps: { findMany: vi.fn(async () => []) },
       meshPeers: { findMany: meshPeersFindMany },
       projectInstances: { findMany: projectInstancesFindMany },
+      userStars: { findMany: vi.fn(async () => []) },
     },
   },
 }));

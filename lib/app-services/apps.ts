@@ -14,6 +14,7 @@ import { DEPLOY_WINDOW_DAYS } from "@/lib/ui/deploy-list";
 import { allows, authorize, type Actor } from "./actor";
 import { NotFoundError } from "./errors";
 import { canImportContainers, userDensity } from "./viewer";
+import { isStarred } from "./stars";
 
 /** A page of the org's apps, newest first, with the latest deployment, tags and project. */
 export async function listApps(actor: Actor, { limit = 50, offset = 0 }: { limit?: number; offset?: number } = {}) {
@@ -202,7 +203,7 @@ export async function loadAppDetail(actor: Actor, ref: string, opts: { deploymen
   const created = await ensureProductionEnvironment(app);
   if (created) app.environments.unshift(created);
 
-  const [featureFlags, siblingList, projectList, parentApp, stabilityIncidents, lifecycleEvents, density, restarts] =
+  const [featureFlags, siblingList, projectList, parentApp, stabilityIncidents, lifecycleEvents, density, restarts, starred] =
     await Promise.all([
       getFeatureFlags(),
       // Sibling apps, with dependsOn for circular dependency checks.
@@ -229,6 +230,7 @@ export async function loadAppDetail(actor: Actor, ref: string, opts: { deploymen
       loadLifecycleHistory(app.id),
       userDensity(actor),
       restartCountsByApp((app.childApps ?? []).map((c) => c.id)),
+      isStarred(actor, "app", app.id),
     ]);
 
   // Which services a deploy leaves running, for the Services tab to mark.
@@ -257,6 +259,7 @@ export async function loadAppDetail(actor: Actor, ref: string, opts: { deploymen
     stabilityIncidents,
     lifecycleEvents,
     density,
+    starred,
   };
 }
 

@@ -34,6 +34,7 @@ function app(name: string, o: Partial<ProjectsApp> = {}): ProjectsApp {
     lastRunningAt: null,
     statusChangedAt: null,
     restartCount: null,
+    createdAt: null,
     domains: [],
     tags: [],
     deployments: [],
@@ -158,7 +159,7 @@ describe("sortNodes", () => {
 describe("issueGroups", () => {
   it("groups open problems worst group first and counts them for the page", () => {
     const sections = buildSections(
-      [{ id: "p1", name: "one", displayName: "One", isSystemManaged: false }],
+      [{ id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null }],
       [
         app("a", { conditions: [cond("backup-missing", "warning")] }),
         app("b", { status: "error" }),

@@ -60,6 +60,8 @@ export default async function ProjectDetailPage({
       projectInstances={data.projectInstances}
       listApps={data.listApps}
       density={data.density}
+      sort={data.sort}
+      stars={data.stars}
     />
   );
 }

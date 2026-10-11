@@ -2,8 +2,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects, orgEnvVars } from "@/lib/db/schema";
-import { eq, asc, desc } from "drizzle-orm";
+import { apps, projects, orgEnvVars, userStars } from "@/lib/db/schema";
+import { and, eq, asc, desc } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -18,7 +18,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return apiError.forbidden();
 
-    const [orgApps, orgProjects, sharedEnvVars] = await Promise.all([
+    const [orgApps, orgProjects, sharedEnvVars, stars] = await Promise.all([
       db.query.apps.findMany({
         where: eq(apps.organizationId, orgId),
         orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -45,13 +45,22 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         where: eq(orgEnvVars.organizationId, orgId),
         columns: { key: true },
       }),
+      db.query.userStars.findMany({
+        where: and(eq(userStars.userId, org.session.user.id), eq(userStars.organizationId, orgId)),
+        columns: { projectId: true, appId: true },
+      }),
     ]);
+
+    const starred = new Set(stars.flatMap((s) => [s.projectId, s.appId]).filter((id): id is string => !!id));
+    // Starred first; sort is stable, so the rest keep their order.
+    const starredFirst = <T extends { id: string }>(items: T[]) =>
+      items.map((item) => ({ ...item, starred: starred.has(item.id) })).sort((a, b) => Number(b.starred) - Number(a.starred));
 
     // Compose children share names across stacks, so each carries its parent.
     const byId = new Map(orgApps.map((app) => [app.id, app]));
 
     const response = NextResponse.json({
-      apps: orgApps.map((app) => ({
+      apps: starredFirst(orgApps).map((app) => ({
         id: app.id,
         name: app.name,
         displayName: app.displayName,
@@ -62,8 +71,9 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         parentName: app.parentAppId ? byId.get(app.parentAppId)?.displayName ?? null : null,
         projectName: app.project?.displayName || null,
         domains: app.domains?.map((d) => d.domain) || [],
+        starred: app.starred,
       })),
-      projects: orgProjects,
+      projects: starredFirst(orgProjects),
       orgEnvKeys: sharedEnvVars.map((e) => e.key),
     });
 

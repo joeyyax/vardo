@@ -22,7 +22,7 @@ vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: mockInstanceAdmin
 vi.mock("@/lib/auth/session", () => ({ getSession: mockGetSession, getCurrentOrg: mockGetCurrentOrg }));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin }));
 vi.mock("@/lib/db/app-restarts", () => ({ restartCountsByApp: vi.fn(async () => new Map()), restartReading: vi.fn() }));
-vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable" })) }));
+vi.mock("@/lib/user/preferences", () => ({ getUserPreferences: vi.fn(async () => ({ density: "comfortable", projectSort: "attention" })) }));
 vi.mock("@/lib/system-settings", () => ({
   getEmailProviderConfig: vi.fn(async () => null),
   getInstanceConfig: vi.fn(async () => ({ baseDomain: "example.test" })),

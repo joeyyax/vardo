@@ -24,7 +24,9 @@ import type { Problem } from "@/lib/ui/conditions";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
-import { markSubject, problemOf, walk, type Section, type TreeNode } from "@/lib/ui/projects";
+import { markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
+import type { StarKind } from "@/lib/db/schema/enums";
+import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
 import { Term } from "@/components/term";
 import { cn } from "@/lib/utils";
@@ -52,7 +54,27 @@ export type ListContext = {
   history: Map<string, MetricsHistory>;
   updatesByApp: Map<string, number>;
   matches: (node: TreeNode, section: Section) => boolean;
+  starred: Starred;
+  toggleStar: (kind: StarKind, id: string, name: string) => void;
 };
+
+/** A row's star: always shown when starred, else on hover or focus. */
+function RowStar({ kind, id, name, ctx }: { kind: StarKind; id: string; name: string; ctx: Pick<ListContext, "starred" | "toggleStar"> }) {
+  const on = (kind === "project" ? ctx.starred.projects : ctx.starred.apps).has(id);
+  return (
+    <StarToggle
+      starred={on}
+      label={name}
+      tabIndex={-1}
+      onToggle={() => ctx.toggleStar(kind, id, name)}
+      className={cn(
+        "size-5",
+        !on &&
+          "opacity-0 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-data-[selected=true]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+      )}
+    />
+  );
+}
 
 export type Usage = { cpu: number; memory: number; memoryLimit: number; series: number[] } | null;
 
@@ -224,6 +246,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
               name={app.displayName}
               nameTitle={app.name}
               href={appHref(app.name)}
+              star={<RowStar kind="app" id={app.id} name={app.displayName} ctx={ctx} />}
               signal={signalOf(node, expanded)}
               status={status}
               action={
@@ -273,7 +296,7 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
         const expanded = kids.length ? ctx.isAppOpen(node, section) : false;
         const app = node.app;
         return (
-          <div key={app.id} role="none" className={cn("rounded-md", depth > 1 && "pl-5", ctx.flash === app.name && "animate-row-flash")}>
+          <div key={app.id} role="none" className={cn("group/row rounded-md", depth > 1 && "pl-5", ctx.flash === app.name && "animate-row-flash")}>
             <AppRow
               app={{ ...app, domains: app.domains.map((d) => ({ domain: d })) }}
               href={`/apps/${app.name}`}
@@ -293,7 +316,9 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
                 ctx.open(app.name);
               }}
               trailing={
-                kids.length ? (
+                <span className="flex items-center">
+                <RowStar kind="app" id={app.id} name={app.displayName} ctx={ctx} />
+                {kids.length ? (
                   <button
                     type="button"
                     tabIndex={-1}
@@ -302,7 +327,8 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
                   >
                     {expanded ? "Hide" : app.services.length ? `${app.services.length} services` : `${kids.length} linked`}
                   </button>
-                ) : undefined
+                ) : null}
+                </span>
               }
             />
             {expanded && <DenseRows section={section} nodes={kids} depth={depth + 1} ctx={ctx} />}
@@ -389,6 +415,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
               title={project.displayName}
               href={projectHref(project.name)}
               badge={project.isSystemManaged ? <SystemBadge compact className="shrink-0" /> : undefined}
+              star={<RowStar kind="project" id={project.id} name={project.displayName} ctx={ctx} />}
               expanded={open}
               onToggle={() => ctx.toggleProject(project.id)}
             >
