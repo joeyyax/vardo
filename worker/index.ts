@@ -89,7 +89,11 @@ async function main(): Promise<void> {
   if (!registered) return;
   setInterval(() => void beat(), WORKER_BEAT_MS).unref();
 
-  await startLoops({ role: "worker" });
+  // Backup loops start once web has encrypted stored credentials and set up the backup target for this release.
+  const { waitForBackupBoot } = await import("@/lib/backups/boot-gate");
+  const backupBoot = waitForBackupBoot({ stopped: () => bootState().stopping });
+  backupBoot.catch(() => {});
+  await startLoops({ role: "worker", ready: { "backup-target": backupBoot } });
   if (bootState().stopping) return;
   markBooted();
   await beat();

@@ -25,7 +25,14 @@ export function isDeferrable(entry: LoopEntry): boolean {
 
 async function startEntry(entry: LoopEntry, role: LoopRole, ready: StartLoopsOptions["ready"]): Promise<boolean> {
   if (started.has(entry.name)) return false;
-  if (entry.after) await ready?.[entry.after]?.catch(() => {});
+  if (entry.after) {
+    try {
+      await ready?.[entry.after];
+    } catch (err) {
+      log.info(`${entry.name}: not started, ${err instanceof Error ? err.message : err}`);
+      return false;
+    }
+  }
   if (entry.feature && !isFeatureEnabled(entry.feature)) {
     log.info(`${entry.name}: ${entry.feature} is off, not started`);
     return false;
