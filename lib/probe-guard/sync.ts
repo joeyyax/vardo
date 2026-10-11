@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { MAX_RENDERED_BANS, MAX_RENDERED_MARKERS, writeGuardFile, type GuardApp, type GuardState } from "./traefik-file";
 import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings";
 import { getProbeGuardSettings, guardKey } from "./instance";
+import { getInstanceConfig } from "@/lib/system-settings";
 
 const log = logger.child("probe-guard");
 
@@ -73,18 +74,28 @@ export async function activeMarkers(now = new Date()): Promise<string[]> {
   return rows.map((r) => r.marker);
 }
 
+export const CONSOLE_GUARD_ID = "vardo-console";
+
+/** The console's own host, guarded for traps and probes. */
+export async function consoleGuardApp(): Promise<GuardApp | null> {
+  const domain = (await getInstanceConfig().catch(() => null))?.domain || process.env.VARDO_DOMAIN || "";
+  if (!domain || domain === "localhost") return null;
+  return { id: CONSOLE_GUARD_ID, hosts: [domain], exceptions: [], wordpress: false, robotsTxt: false, console: true };
+}
+
 export async function loadGuardState(): Promise<GuardState | null> {
   const key = guardKey();
   if (!key) return null;
-  const [settings, guardApps, bannedIps, markers] = await Promise.all([
+  const [settings, guardApps, consoleApp, bannedIps, markers] = await Promise.all([
     getProbeGuardSettings(),
     loadGuardApps(),
+    consoleGuardApp(),
     activeBannedIps(),
     activeMarkers(),
   ]);
   return {
     key,
-    apps: guardApps,
+    apps: consoleApp ? [...guardApps, consoleApp] : guardApps,
     bannedIps,
     trapPaths: settings.traps.enabled ? settings.traps.paths : [],
     markers,

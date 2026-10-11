@@ -45,6 +45,8 @@ export type GuardApp = {
   exceptions: string[];
   wordpress: boolean;
   robotsTxt: boolean;
+  /** The console's own host: traps and probes only, never the ban router. */
+  console?: boolean;
 };
 
 export type GuardState = {
@@ -150,7 +152,7 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
   };
 
   const apps = state.apps.filter((a) => APP_ID_RE.test(a.id));
-  const allHosts = hostClause(apps.flatMap((a) => a.hosts));
+  const allHosts = hostClause(apps.filter((a) => !a.console).flatMap((a) => a.hosts));
   if (allHosts) {
     const bans = banClause(state.bannedIps);
     if (bans) add(`${GUARD_PREFIX}banned`, "banned", `${allHosts} && ${bans}`, `${GUARD_PREFIX}tag`);
@@ -162,8 +164,8 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
   for (const app of apps) {
     const hosts = hostClause(app.hosts);
     if (!hosts) continue;
-    const tag = `${GUARD_PREFIX}${app.id}-tag`;
-    middlewares[tag] = { headers: { customRequestHeaders: { [KEY_HEADER]: state.key, [APP_HEADER]: app.id } } };
+    const tag = app.console ? `${GUARD_PREFIX}tag` : `${GUARD_PREFIX}${app.id}-tag`;
+    if (!app.console) middlewares[tag] = { headers: { customRequestHeaders: { [KEY_HEADER]: state.key, [APP_HEADER]: app.id } } };
     if (traps) add(`${GUARD_PREFIX}${app.id}-trap`, "trap", withExceptions(`${hosts} && ${traps}`, app.exceptions), tag);
     const probe = `${hosts} && PathRegexp(\`${probePathRegexp(activeRules({ wordpress: app.wordpress }))}\`)`;
     add(`${GUARD_PREFIX}${app.id}-probe`, "probe", withExceptions(probe, app.exceptions), tag);

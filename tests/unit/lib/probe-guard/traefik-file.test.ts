@@ -103,6 +103,20 @@ describe("renderGuardConfig", () => {
     expect(http.routers!["vardo-guard-app1-probe-web"].service).toBe(RESPONDER_SERVICE);
   });
 
+  it("guards the console's host for traps and probes but never bans there", () => {
+    const { http } = parse(state({
+      bannedIps: ["203.0.113.9"],
+      apps: [
+        { id: "app1", hosts: ["a.example.com"], exceptions: [], wordpress: false, robotsTxt: false },
+        { id: "vardo-console", hosts: ["console.example.com"], exceptions: [], wordpress: false, robotsTxt: false, console: true },
+      ],
+    }));
+    expect(http.routers!["vardo-guard-banned-web"].rule).not.toContain("console.example.com");
+    expect(http.routers!["vardo-guard-vardo-console-trap-web"].middlewares[0]).toBe("vardo-guard-tag");
+    expect(http.routers!["vardo-guard-vardo-console-probe-web"].rule).toContain("console.example.com");
+    expect(http.middlewares["vardo-guard-vardo-console-tag"]).toBeUndefined();
+  });
+
   it("refuses a malformed key", () => {
     expect(() => renderGuardConfig(state({ key: "short" }))).toThrow();
   });
