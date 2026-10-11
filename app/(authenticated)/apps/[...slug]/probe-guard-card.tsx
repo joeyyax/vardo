@@ -25,6 +25,11 @@ function parseLines(text: string): string[] {
   return text.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
+async function requestGuard(url: string): Promise<GuardData | null> {
+  const res = await fetch(url).catch(() => null);
+  return res?.ok ? ((await res.json()) as GuardData) : null;
+}
+
 /** The app's probe guard: on/off, WordPress handling, exceptions, robots.txt and active bans. */
 export function ProbeGuardCard({ orgId, appId }: { orgId: string; appId: string }) {
   const url = `/api/v1/organizations/${orgId}/apps/${appId}/probe-guard`;
@@ -33,18 +38,24 @@ export function ProbeGuardCard({ orgId, appId }: { orgId: string; appId: string 
   const [exceptionsText, setExceptionsText] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    const res = await fetch(url).catch(() => null);
-    if (!res?.ok) return;
-    const next = (await res.json()) as GuardData;
+  const apply = useCallback((next: GuardData | null) => {
+    if (!next) return;
     setData(next);
     setDraft(next.settings);
     setExceptionsText(next.settings.exceptions.join("\n"));
-  }, [url]);
+  }, []);
+
+  const load = useCallback(async () => apply(await requestGuard(url)), [url, apply]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    requestGuard(url).then((next) => {
+      if (!cancelled) apply(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url, apply]);
 
   if (!data || !draft) {
     return (
