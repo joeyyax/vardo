@@ -39,6 +39,9 @@ export async function register() {
     // Routers reference each app's headers middleware by name; Traefik disables a router whose middleware is missing.
     const { syncAllHeadersFiles } = await import("./lib/docker/headers-sync");
     await syncAllHeadersFiles().catch((err) => log.warn("Failed to write security headers files:", err));
+    // Probe guard routers. The probe-guard loop keeps them current.
+    const { syncGuardFile } = await import("./lib/probe-guard/sync");
+    await syncGuardFile().catch((err) => log.warn("Failed to write the probe guard file:", err));
     const { regenerateExternalRoutesConfig } = await import("./lib/ssl/generate-external-routes-config");
     await regenerateExternalRoutesConfig().catch((err) => log.warn("Failed to write external routes:", err));
 
