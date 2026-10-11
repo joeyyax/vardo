@@ -15,6 +15,7 @@ export * from "./backups";
 export * from "./notifications";
 export * from "./incidents";
 export * from "./cron";
+export * from "./cron-status";
 export * from "./mesh";
 export * from "./monitoring";
 export * from "./templates";
