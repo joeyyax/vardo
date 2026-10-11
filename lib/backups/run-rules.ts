@@ -150,7 +150,6 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
         row.previousSize = past.at(-1);
         if (row.outcome === "success") {
           row.shrunk = backupDrop(past, row.sizeBytes) ?? undefined;
-          row.grew = row.shrunk ? undefined : (backupGrowth(row.previousSize!, row.sizeBytes) ?? undefined);
         }
       }
     }
@@ -158,22 +157,10 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
   }
 
   const rank = (r: BackupSummaryRow) =>
-    r.outcome === "failed" ? 0 : r.shrunk ? 1 : r.grew || (r.outcome === "skipped" && !r.expected) ? 2 : OUTCOME_ORDER[r.outcome];
+    r.outcome === "failed" ? 0 : r.shrunk ? 1 : (r.outcome === "skipped" && !r.expected) ? 2 : OUTCOME_ORDER[r.outcome];
   return out.sort(
     (a, b) => rank(a) - rank(b) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.appName.localeCompare(b.appName) || a.volumeName.localeCompare(b.volumeName),
   );
-}
-
-/** Growth worth a look: half again as large and at least this much bigger. */
-export const GROWTH_MIN_RATIO = 0.5;
-export const GROWTH_MIN_BYTES = 32 * 1024 ** 2;
-
-/** How much larger `current` is than `previous`, when it's big growth. */
-export function backupGrowth(previous: number, current: number): { pct: number } | null {
-  if (previous <= 0) return null;
-  const delta = current - previous;
-  if (delta < GROWTH_MIN_BYTES || delta / previous < GROWTH_MIN_RATIO) return null;
-  return { pct: Math.round((delta / previous) * 100) };
 }
 
 /** Backup rows rolled up per app, by name. */
@@ -199,9 +186,9 @@ export function summarizeApps(rows: BackupSummaryRow[]): BackupSummaryApp[] {
     .sort((a, b) => a.appName.localeCompare(b.appName));
 }
 
-/** A row a person should look at: failed, skipped unexpectedly, or much smaller or larger than usual. */
+/** A row a person should look at: failed, skipped unexpectedly, or much smaller than usual. */
 export function isProblemRow(row: BackupSummaryRow): boolean {
-  return row.outcome === "failed" || (row.outcome === "skipped" && !row.expected) || Boolean(row.shrunk || row.grew);
+  return row.outcome === "failed" || (row.outcome === "skipped" && !row.expected) || Boolean(row.shrunk);
 }
 
 /** Whether the summary has something that needs a person: a problem row, a stale volume or a job that never finished. */

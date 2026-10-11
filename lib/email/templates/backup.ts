@@ -75,12 +75,6 @@ function attentionFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
       value: `${formatBytesIec(row.sizeBytes)}, ${Math.round(row.shrunk.drop * 100)}% below its usual ${formatBytesIec(row.shrunk.median)}`,
     };
   }
-  if (row.grew) {
-    return {
-      label: rowLabel(row),
-      value: `${formatBytesIec(row.sizeBytes)}, +${row.grew.pct.toLocaleString("en-US")}% vs last run's ${formatBytesIec(row.previousSize ?? 0)}`,
-    };
-  }
   return rowFact(row, ctx);
 }
 
@@ -95,7 +89,6 @@ function appFact(app: BackupSummaryApp, ctx: MailContext): MailFact {
 export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): NotificationMailBody {
   const failed = event.rows.filter((r) => r.outcome === "failed");
   const shrunk = event.rows.filter((r) => r.shrunk);
-  const grew = event.rows.filter((r) => r.grew);
   const skipped = event.rows.filter((r) => r.outcome === "skipped" && !r.expected);
   const problemsOnly = event.run.problemsOnly === true;
   const stale = event.staleVolumes ?? [];
@@ -103,7 +96,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   const unfinished = (event.run.unfinished ?? []).map(backupJobLabel);
   const total = backupRunTotal(event);
 
-  const tone: MailTone = failed.length ? "fail" : shrunk.length || grew.length || skipped.length || stale.length || unfinished.length ? "warn" : "success";
+  const tone: MailTone = failed.length ? "fail" : shrunk.length || skipped.length || stale.length || unfinished.length ? "warn" : "success";
   const heading = failed.length
     ? `${event.run.label}: ${failedHeading(failed)}`
     : unfinished.length
@@ -116,7 +109,6 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     paragraphs.push(`${plural(unfinished.length, "job")} hadn't finished when this run timed out: ${unfinished.join(", ")}. They may still be running.`);
   }
   if (shrunk.length) paragraphs.push("Some backups came out much smaller than usual. That can mean the data they copy went missing.");
-  if (grew.length) paragraphs.push("Some backups came out much larger than last run. Check for runaway logs or data that belongs elsewhere.");
   if (skipped.length) paragraphs.push(`${plural(skipped.length, "volume")} ${skipped.length === 1 ? "was" : "were"} skipped without a routine reason.`);
   if (problemsOnly) paragraphs.push("Only what needs a look is listed. Everything else backed up as usual.");
   if (stale.length) paragraphs.push(`${plural(stale.length, "volume")} ${stale.length === 1 ? "hasn't" : "haven't"} had a successful backup in 48 hours.`);
@@ -134,7 +126,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
       ],
     });
   }
-  for (const row of [...failed, ...shrunk, ...grew].filter((r) => r.kind === "backup").slice(0, CHARTED_ROWS)) {
+  for (const row of [...failed, ...shrunk].filter((r) => r.kind === "backup").slice(0, CHARTED_ROWS)) {
     const chart = backupColumns(rowLabel(row), row.history, row.outcome === "failed" ? null : row.sizeBytes);
     if (chart) visuals.push(chart.visual);
   }

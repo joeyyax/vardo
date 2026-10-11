@@ -82,7 +82,7 @@ const NIGHTLY_HISTORY = new Map(
   NIGHTLY.map((i) => [volumeKey(i.appId, i.volumeName), [0.94, 0.95, 0.96, 0.97, 0.98, 0.99].map((f) => Math.round(i.sizeBytes! * f))]),
 );
 
-/** Observability's volumes: Loki and Prometheus jumped, Redis grew a little. [volume, tonight, last run]. */
+/** Observability's volumes; Loki and Prometheus grew a lot, which isn't flagged. [volume, tonight, last run]. */
 const OBSERVABILITY_SIZES: [string, number, number][] = [
   ["loki-data", 532.6 * MiB, 1.71 * MiB],
   ["prometheus-data", 71.8 * MiB, 21.06 * MiB],
@@ -110,7 +110,7 @@ const HISTORY = new Map([
   ]),
 ]);
 
-/** Bind mounts with long paths for names, each much larger than last run. */
+/** Bind mounts with long paths for names, none backed up in 48 hours. */
 const AGENT_PATHS = [
   "home-worker-.claude-.credentials.json",
   "home-worker-.claude-projects",
@@ -131,19 +131,11 @@ const AGENT_PATHS = [
   "opt-agents-toolchains-node-22.11.0",
 ];
 
-const AGENTS: BackupResultItem[] = AGENT_PATHS.map((volumeName, i) => ({
-  kind: "backup" as const,
-  appId: "app_agents",
+const AGENTS_STALE = AGENT_PATHS.map((volumeName, i) => ({
   appName: "agents",
   volumeName,
-  jobName: "Auto: agents",
-  outcome: "success" as const,
-  sizeBytes: (96 + i * 7) * MiB,
-  durationMs: 4_000 + i * 500,
-  at: `2026-10-09T02:${String(10 + i).padStart(2, "0")}:00.000Z`,
+  lastSuccessAt: i % 3 ? "2026-10-07T09:00:00.000Z" : null,
 }));
-
-const AGENTS_HISTORY = new Map(AGENTS.map((i): [string, number[]] => [volumeKey(i.appId, i.volumeName), [12 * MiB, 12 * MiB, 13 * MiB]]));
 
 function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>, history = HISTORY): BackupSummaryEvent {
   const rows = summarizeResults(items, history);
@@ -325,10 +317,6 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     event: backupSummary(NIGHTLY, {}),
   },
   {
-    name: "backup-summary-grew",
-    event: backupSummary([...NIGHTLY, ...OBSERVABILITY], {}),
-  },
-  {
     name: "backup-summary-shrunk",
     event: backupSummary(
       NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)),
@@ -337,14 +325,14 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
   },
   {
     name: "backup-summary-problems",
-    event: backupSummary([...NIGHTLY, ...OBSERVABILITY], {
+    event: backupSummary([...NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)), ...OBSERVABILITY], {
       run: { kind: "nightly", label: "Nightly backups", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000, problemsOnly: true },
     }),
   },
   {
     name: "backup-summary-timed-out",
     event: backupSummary(
-      [...NIGHTLY, ...OBSERVABILITY, ...AGENTS],
+      [...NIGHTLY, ...OBSERVABILITY],
       {
         run: {
           kind: "nightly",
@@ -355,8 +343,8 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
           unfinished: ["Shop Staging", "Search Data", "Uptime Kuma", "Mailpit", "Plausible", "Gitea", "Umami", "n8n"].map((app) => `Auto: ${app}`),
         },
         windowEnd: "2026-10-09T03:01:00.000Z",
+        staleVolumes: AGENTS_STALE,
       },
-      new Map([...HISTORY, ...AGENTS_HISTORY]),
     ),
   },
   {

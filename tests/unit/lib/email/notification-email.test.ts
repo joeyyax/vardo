@@ -39,7 +39,6 @@ describe("notification subjects", () => {
     expect(subjectLine(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in 1h");
     expect(subjectLine(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
     expect(subjectLine(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
-    expect(subjectLine(fixture("backup-summary-grew"))).toBe("⚠ Nightly backups · Observability much larger than last run");
     expect(subjectLine(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
   });
 
@@ -187,7 +186,7 @@ describe("notification emails", () => {
 
   it("lists only the problem rows when a quiet run emails, with a link to the full run", async () => {
     const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Observability / loki-data: 532.6 MiB, +31,046% vs last run's 1.7 MiB");
+    expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual 1.8 GiB");
     expect(email.text).not.toContain("By app");
     expect(email.text).not.toContain("Shop: ");
     expect(email.text).toContain("View the full run: https://vardo.example.com/backups");
@@ -230,12 +229,12 @@ describe("notification emails", () => {
     const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
     expect(email.subject).toBe("node-a · ⚠ Nightly backups · timed out, 8 didn't finish");
     expect(email.text).toContain("Nightly backups timed out");
-    expect(email.text).toContain("Backed up: 27 of 35,");
-    expect(email.text).toContain("Succeeded 77% · Didn't finish 23%");
+    expect(email.text).toContain("Backed up: 10 of 18,");
+    expect(email.text).toContain("Succeeded 56% · Didn't finish 44%");
     expect(email.text).toContain("Took: 1 h 1 min, then timed out (estimated 8 min 13 s)");
     expect(email.text).toContain("timed out: Shop Staging, Search Data,");
     expect(email.text).not.toContain("Auto: ");
-    expect(email.html).toContain("27 of 35 backed up. 8 didn&#x27;t finish before the timeout.");
+    expect(email.html).toContain("10 of 18 backed up. 8 didn&#x27;t finish before the timeout.");
   });
 
   it("links no rollback that only repeats the deployment log", async () => {
@@ -245,17 +244,11 @@ describe("notification emails", () => {
     }
   });
 
-  it("puts big growth up top and rolls the rest up per app", async () => {
-    const email = (await renderNotificationEmail(fixture("backup-summary-grew"), FIXTURE_CONTEXT))!;
-    const look = email.text.indexOf("Needs a look");
-    const byApp = email.text.indexOf("By app");
-    expect(look).toBeGreaterThan(-1);
-    expect(byApp).toBeGreaterThan(look);
-    expect(email.text).toContain("Observability / loki-data: 532.6 MiB, +31,046% vs last run's 1.7 MiB");
-    expect(email.text).toContain("Observability / prometheus-data: 71.8 MiB, +241% vs last run's 21.1 MiB");
-    expect(email.text).not.toContain("redis-data");
-    expect(email.text).toContain("Observability: 617.6 MiB · 4 volumes · +1,639% vs last run");
-    expect(email.text).not.toContain("same as last run");
+  it("leaves big growth out of Needs a look and rolls it up per app", async () => {
+    const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
+    expect(email.text).not.toContain("loki-data");
+    expect(email.text).not.toContain("larger");
+    expect(email.text).toContain("much smaller");
   });
 
   it("names a stack child with its stack in a disk write alert", async () => {
