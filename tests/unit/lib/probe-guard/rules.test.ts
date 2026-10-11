@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROBE_RULES, exceptionProblem, isExcepted, matchProbe, probePathRegexp } from "@/lib/probe-guard/rules";
+import { PROBE_RULES, exceptionProblem, isExcepted, matchProbe, probeLabel, probePathRegexp } from "@/lib/probe-guard/rules";
 
 const PROBES = [
   "/.env", "/.env.local", "/.env.production", "/api/.env", "/.envrc",
@@ -92,5 +92,47 @@ describe("probePathRegexp", () => {
 
   it("keeps rule ids unique", () => {
     expect(new Set(PROBE_RULES.map((r) => r.id)).size).toBe(PROBE_RULES.length);
+  });
+});
+
+const LABELS: Record<string, [path: string, label: string]> = {
+  dotenv: ["/.env.production", "env files"],
+  aws: ["/.aws/credentials", "cloud credentials"],
+  ssh: ["/.ssh/id_rsa", "SSH keys"],
+  "editor-sftp": ["/sftp-config.json", "editor SFTP configs"],
+  htaccess: ["/.htpasswd", "Apache access files"],
+  git: ["/.git/config", "Git metadata"],
+  "svn-hg": ["/.svn/entries", "version control metadata"],
+  "ds-store": ["/.DS_Store", "macOS folder metadata"],
+  "wp-login": ["/wp-login.php", "WordPress login"],
+  "wp-admin": ["/wp-admin/", "WordPress admin"],
+  xmlrpc: ["/xmlrpc.php", "WordPress XML-RPC"],
+  phpmyadmin: ["/phpmyadmin/", "phpMyAdmin"],
+  "cgi-bin": ["/cgi-bin/luci", "CGI scripts"],
+  phpunit: ["/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php", "PHPUnit exploit (RCE)"],
+  ignition: ["/_ignition/execute-solution", "Laravel Ignition exploit (RCE)"],
+  actuator: ["/actuator/env", "Spring Boot Actuator"],
+  "server-status": ["/server-status", "Apache server status"],
+  "php-backup": ["/config.php.bak", "config backups"],
+  "wp-config": ["/wp-config.php", "WordPress config"],
+  "sql-dump": ["/dump.sql.gz", "SQL dumps"],
+  traversal: ["/static/etc/passwd", "path traversal"],
+  "router-exploits": ["/HNAP1", "router exploits"],
+};
+
+describe("probeLabel", () => {
+  it("has a sample for every rule", () => {
+    expect(Object.keys(LABELS).sort()).toEqual(PROBE_RULES.map((r) => r.id).sort());
+  });
+
+  it.each(PROBE_RULES.map((r) => [r.id, r] as const))("labels %s", (id, rule) => {
+    const [path, label] = LABELS[id];
+    expect(rule.label).toBe(label);
+    expect(matchProbe(path)?.rule.id).toBe(id);
+    expect(probeLabel(path)).toBe(label);
+  });
+
+  it("labels unmatched paths as other paths", () => {
+    expect(probeLabel("/about")).toBe("other paths");
   });
 });

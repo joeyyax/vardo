@@ -8,11 +8,19 @@ import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from ".
 import { decoyPath, type InstanceProbeGuard } from "./settings";
 import { APP_HEADER, KEY_HEADER, type GuardKind } from "./traefik-file";
 import type { BanOutcome, BanRequest } from "./bans";
+import type { ProbeEventKind } from "@/lib/db/schema";
 
 const log = logger.child("probe-guard");
 
 const APP_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_PATH = 200;
+/** Probe events kept per address per window. */
+export const PROBE_EVENTS_PER_WINDOW = 50;
+
+/** Whether a hit with this window count gets a probe event. Zero means the counter failed. */
+export function recordsProbeEvent(hits: number): boolean {
+  return hits > 0 && hits <= PROBE_EVENTS_PER_WINDOW;
+}
 
 export type GuardDeps = {
   hasKey: (value: string | null) => boolean;
@@ -20,7 +28,7 @@ export type GuardDeps = {
   clientIp: (headers: Headers) => Promise<string>;
   recordHit: (ip: string, appId: string | null, windowMs: number) => Promise<number>;
   ban: (req: BanRequest) => Promise<BanOutcome>;
-  recordEvent: (e: { kind: "trap" | "canary_fetch" | "canary_used"; ip: string; path?: string | null; canaryId?: string | null; appId?: string | null }) => Promise<void>;
+  recordEvent: (e: { kind: ProbeEventKind; ip: string; path?: string | null; canaryId?: string | null; appId?: string | null }) => Promise<void>;
   markerFor: (ip: string, appId: string | null) => Promise<{ id: string; marker: string }>;
   activeMarkers: () => Promise<{ id: string; marker: string }[]>;
   markUsed: (canaryId: string) => Promise<void>;
@@ -107,6 +115,7 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const status = match?.rule.status ?? 403;
     const category: ResponseKind = match?.rule.category ?? "framework";
     const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000).catch(() => 0);
+    if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });
     await tarpit();
     return reply(status, responseBody(category, status, humor), method);

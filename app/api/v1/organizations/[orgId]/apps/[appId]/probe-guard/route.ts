@@ -10,6 +10,7 @@ import { appProbeGuardSchema, normalizeAppProbeGuard } from "@/lib/probe-guard/s
 import { appLooksLikeWordPress, appServesOwnRobots, guardOverview } from "@/lib/probe-guard/overview";
 import { syncGuardFile } from "@/lib/probe-guard/sync";
 import { getProbeGuardSettings, guardKey } from "@/lib/probe-guard/instance";
+import { isAppAdmin } from "@/lib/auth/admin";
 
 type RouteParams = { params: Promise<{ orgId: string; appId: string }> };
 
@@ -29,16 +30,18 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     if (!app) return apiError.forbidden();
     const row = await readGuard(appId, orgId);
     if (!row) return apiError.notFound("app");
-    const [overview, wordpressDetected, instance] = await Promise.all([
+    const [overview, wordpressDetected, instance, admin] = await Promise.all([
       guardOverview(appId),
       appLooksLikeWordPress(appId),
       getProbeGuardSettings(),
+      isAppAdmin().catch(() => false),
     ]);
     return NextResponse.json({
       settings: normalizeAppProbeGuard(row.probeGuard),
       wordpressDetected,
       available: guardKey() !== null,
       traps: instance.traps.enabled ? instance.traps.paths : [],
+      canBanPermanently: admin,
       ...overview,
     });
   } catch (error) {

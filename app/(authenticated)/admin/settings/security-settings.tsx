@@ -203,7 +203,7 @@ export function SecuritySettings() {
           <CardTitle>Active bans</CardTitle>
         </CardHeader>
         <CardContent>
-          <BansList bans={view?.bans ?? []} unbanUrl={(id) => `${ENDPOINT}/bans/${id}`} onChange={() => void refetch()} />
+          <BansList bans={view?.bans ?? []} banUrl={(id) => `${ENDPOINT}/bans/${id}`} onChange={() => void refetch()} canBanPermanently />
         </CardContent>
       </Card>
     </div>

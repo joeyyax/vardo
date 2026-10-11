@@ -69,6 +69,7 @@ const PHRASES: Record<string, Phrase> = {
   "app.incident_resolved": { text: "saw an incident clear on" },
   "security.probe_ban": { text: "banned an address probing" },
   "security.probe_unban": { text: "lifted a probe ban on" },
+  "security.probe_ban_permanent": { text: "made a probe ban permanent on" },
   "security.trap_triggered": { text: "saw a trap triggered on" },
   "security.canary_used": { text: "saw a decoy credential tried on" },
   "system.incident_resolved": { text: "saw an incident clear", standalone: true },

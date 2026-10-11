@@ -17,6 +17,7 @@ type GuardData = {
   wordpressDetected: boolean;
   available: boolean;
   traps: string[];
+  canBanPermanently: boolean;
   stats: GuardStatsView;
   bans: BanItem[];
 };
@@ -158,7 +159,7 @@ export function ProbeGuardCard({ orgId, appId }: { orgId: string; appId: string 
 
       <div className="grid gap-2">
         <p className="type-label text-muted-foreground">Bans from this app&apos;s traffic</p>
-        <BansList bans={data.bans} unbanUrl={(id) => `${url}/bans/${id}`} onChange={() => void load()} />
+        <BansList bans={data.bans} banUrl={(id) => `${url}/bans/${id}`} onChange={() => void load()} canBanPermanently={data.canBanPermanently} />
       </div>
     </section>
   );

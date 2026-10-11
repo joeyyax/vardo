@@ -47,10 +47,10 @@ export const probeCanaries = pgTable(
   (t) => [index("probe_canary_ip_idx").on(t.ip)],
 );
 
-export const PROBE_EVENT_KINDS = ["trap", "canary_fetch", "canary_used"] as const;
+export const PROBE_EVENT_KINDS = ["trap", "canary_fetch", "canary_used", "probe"] as const;
 export type ProbeEventKind = (typeof PROBE_EVENT_KINDS)[number];
 
-/** Trap hits and canary use, kept for 30 days. */
+/** Trap hits, canary use and capped probe hits, kept for 30 days. */
 export const probeEvents = pgTable(
   "probe_event",
   {

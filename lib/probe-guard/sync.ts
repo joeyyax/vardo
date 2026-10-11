@@ -1,6 +1,6 @@
 // Builds the guard file from the database and writes it. Every writer renders the whole file from current rows.
 
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, domains, probeBans, probeCanaries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -8,6 +8,8 @@ import { MAX_RENDERED_BANS, MAX_RENDERED_MARKERS, writeGuardFile, type GuardApp,
 import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings";
 import { getProbeGuardSettings, guardKey } from "./instance";
 import { getInstanceConfig } from "@/lib/system-settings";
+import { banRenderOrder } from "./ban-policy";
+import { PERMANENT_UNTIL } from "./permanent";
 
 const log = logger.child("probe-guard");
 
@@ -54,14 +56,15 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
   });
 }
 
+/** Permanent bans first, then the newest temporary ones. */
 export async function activeBannedIps(now = new Date()): Promise<string[]> {
   const rows = await db
-    .select({ ip: probeBans.ip })
+    .select({ ip: probeBans.ip, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt })
     .from(probeBans)
     .where(and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)))
-    .orderBy(desc(probeBans.expiresAt))
+    .orderBy(desc(sql`${probeBans.expiresAt} >= ${PERMANENT_UNTIL.toISOString()}::timestamptz`), desc(probeBans.createdAt))
     .limit(MAX_RENDERED_BANS);
-  return [...new Set(rows.map((r) => r.ip))];
+  return banRenderOrder(rows, MAX_RENDERED_BANS);
 }
 
 export async function activeMarkers(now = new Date()): Promise<string[]> {
