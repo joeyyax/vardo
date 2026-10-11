@@ -60,7 +60,7 @@ export function matchAppVolumes(
   return matched.sort();
 }
 
-async function slotDirsOf(baseDir: string): Promise<string[]> {
+export async function slotDirsOf(baseDir: string): Promise<string[]> {
   const dirs: string[] = [];
   let entries: string[];
   try {

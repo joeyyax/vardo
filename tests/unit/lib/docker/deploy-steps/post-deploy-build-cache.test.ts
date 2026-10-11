@@ -193,3 +193,24 @@ describe("post-deploy build cache prune", () => {
     expect(pruneBuildCacheMock).not.toHaveBeenCalled();
   });
 });
+
+describe("post-deploy stale image removal", () => {
+  it("keeps the retained rollback targets' images and removes older ones", async () => {
+    const client = await import("@/lib/docker/client");
+    const tag = (id: string) => `host/app:${id.slice(0, 8)}`;
+    Object.assign(dbMock.query.deployments, {
+      findMany: vi.fn().mockResolvedValue([{ id: "dep-1" }, { id: "dep-prev" }, { id: "dep-pre2" }]),
+    });
+    vi.mocked(client.listImages).mockResolvedValue([
+      { id: "img-current", repoTags: [tag("dep-1")], size: 1, labels: {} },
+      { id: "img-prev", repoTags: [tag("dep-prev")], size: 1, labels: {} },
+      { id: "img-prev2", repoTags: [tag("dep-pre2")], size: 1, labels: {} },
+      { id: "img-old", repoTags: [tag("dep-old")], size: 1, labels: {} },
+    ]);
+    vi.mocked(client.removeImage).mockClear();
+
+    await postDeploy(makeContext({ builtLocally: true }));
+
+    expect(vi.mocked(client.removeImage).mock.calls.map((c) => c[0])).toEqual(["img-old"]);
+  });
+});

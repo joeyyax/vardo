@@ -160,6 +160,16 @@ export async function getConcurrencyState(): Promise<{
   }
 }
 
+/** No deploy running or queued, for host-global cleanup outside a deploy. Fails closed. */
+export async function isDeployQueueIdle(): Promise<boolean> {
+  try {
+    const [activeRaw, queued] = await Promise.all([redis.get(ACTIVE_KEY), redis.llen(QUEUE_KEY)]);
+    return Math.max(0, parseInt(activeRaw ?? "0", 10)) === 0 && queued === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether the caller is the last deploy running with nothing queued, so host-global cleanup is safe. */
 // Fails closed: a Redis error reports "not drained".
 export async function isDeployQueueDrained(): Promise<boolean> {

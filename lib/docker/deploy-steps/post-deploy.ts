@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { formatRoute } from "@/lib/domains/path-prefix";
 import { nanoid } from "nanoid";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -35,7 +35,9 @@ import { backupDrainTimeoutMs, drainBackupsForStop, endBackupDrain } from "@/lib
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
-import { BUILD_CACHE_MAX_BYTES } from "../constants";
+import { BUILD_CACHE_MAX_BYTES, ROLLBACK_IMAGES_RETAINED } from "../constants";
+import { PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS } from "../prune-lock";
+import { markDeployForReclaim } from "../host-reclaim/state";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, recordSelfUpdate, sendDeployNotification } from "../deploy";
 import {
@@ -62,9 +64,6 @@ import {
 
 const POST_DEPLOY_SCAN_DELAY_MS = 30_000;
 
-/** Serializes the host-global prune across deploys. */
-const PRUNE_LOCK_KEY = "deploy:prune:lock";
-const PRUNE_LOCK_TTL_MS = 5 * 60_000;
 
 
 export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
@@ -470,15 +469,21 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   try {
     const { formatBytes } = await import("@/lib/metrics/format");
 
-    // Production's older tags are its rollback targets; a preview leaves them alone.
+    // Keeps the retained rollback targets' images; a preview leaves production's alone.
     if (ctx.builtLocally && !ctx.envIsolated) {
-      const currentImageName = deploymentImageName(app.name, ctx.deploymentId);
+      const retained = await db.query.deployments.findMany({
+        where: and(eq(deployments.appId, ctx.appId), eq(deployments.status, "success")),
+        orderBy: [desc(deployments.startedAt)],
+        limit: ROLLBACK_IMAGES_RETAINED,
+        columns: { id: true },
+      });
+      const keep = new Set([ctx.deploymentId, ...retained.map((d) => d.id)].map((id) => deploymentImageName(app.name, id)));
       const appImages = await listImages({ reference: [`host/${app.name}`] });
       const imagePrefix = `host/${app.name}:`;
       const staleImages = appImages.filter(
         (img) =>
           img.repoTags.some((tag) => tag.startsWith(imagePrefix)) &&
-          !img.repoTags.includes(currentImageName),
+          !img.repoTags.some((tag) => keep.has(tag)),
       );
 
       const removeResults = await Promise.allSettled(staleImages.map((img) => removeImage(img.id)));
@@ -524,6 +529,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   } catch {
     // Best-effort.
   }
+  await markDeployForReclaim().catch(() => {});
 
   ctx.stage("cleanup", "success");
 

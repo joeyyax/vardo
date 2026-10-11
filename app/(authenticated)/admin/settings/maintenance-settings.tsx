@@ -32,6 +32,8 @@ import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
 import { containerStateVariant } from "@/lib/ui/container-state";
 import { DetachedVolumesCard } from "./detached-volumes-card";
+import { HostReclaimCard } from "./host-reclaim-card";
+import { OrphanVolumesCard } from "./orphan-volumes-card";
 import { UpdatesCard } from "./updates-card";
 import { EntityLink } from "@/components/entity-link";
 import { appHref } from "@/lib/ui/hrefs";
@@ -879,7 +881,11 @@ export function MaintenanceSettings() {
         </CardContent>
       </Card>
 
+      <HostReclaimCard />
+
       <DetachedVolumesCard />
+
+      <OrphanVolumesCard />
 
       {/* Directory ownership */}
       <Card>
