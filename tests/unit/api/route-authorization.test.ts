@@ -23,6 +23,8 @@ const GUARDS = new Set([
   "requireSession",
   "getSession",
   "requireMeshPeer",
+  "readSignedMeshCall",
+  "instanceUser",
   "authenticateRequest",
   "setupTokenRefusal",
 ]);

@@ -4,6 +4,7 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
+import { acceptsPayload, peerAcceptsColumns, type AcceptsPayload } from "./link-flags";
 import { HUB_IP, toCidr } from "./ip-allocator";
 import {
   hostStatusColumns,
@@ -52,9 +53,7 @@ type HeartbeatResponse = {
   ok: boolean;
   instance: { id: string; name: string; internalIp: string; vardo?: unknown; host?: unknown };
   peers: PeerManifestEntry[];
-  /** Whether the peer accepts webhook relays from us. Absent from older versions. */
-  acceptsWebhookRelay?: boolean;
-};
+} & Partial<AcceptsPayload>;
 
 /**
  * Heartbeat a peer and mark it online locally on success; returns false when unreachable.
@@ -64,11 +63,11 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
   let ok = false;
   let body: HeartbeatResponse | null = null;
 
-  let before: { status: string; acceptWebhookRelay: boolean } | undefined;
+  let before: { status: string; acceptWebhookRelay: boolean; acceptInstanceSignin: boolean; acceptInstanceBrowse: boolean } | undefined;
   try {
     before = await db.query.meshPeers.findFirst({
       where: eq(meshPeers.id, peerId),
-      columns: { status: true, acceptWebhookRelay: true },
+      columns: { status: true, acceptWebhookRelay: true, acceptInstanceSignin: true, acceptInstanceBrowse: true },
     });
   } catch {
     before = undefined;
@@ -81,7 +80,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
       body: JSON.stringify({
         vardo: localVardoStatus(),
         host: await localHostStatus(),
-        acceptsWebhookRelay: before?.acceptWebhookRelay ?? false,
+        ...acceptsPayload(before),
       }),
     });
 
@@ -108,7 +107,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
             ...hostStatusColumns(parseHostStatus(body?.instance?.host)),
           }
         : {}),
-      ...(ok && typeof body?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: body.acceptsWebhookRelay } : {}),
+      ...(ok ? peerAcceptsColumns(body) : {}),
       updatedAt: new Date(),
     })
     .where(eq(meshPeers.id, peerId));

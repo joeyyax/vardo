@@ -50,14 +50,21 @@ const patchSchema = z
     organizationId: z.string().min(1).nullable().optional(),
     acceptMcp: z.boolean().optional(),
     acceptWebhookRelay: z.boolean().optional(),
+    acceptInstanceSignin: z.boolean().optional(),
+    acceptInstanceBrowse: z.boolean().optional(),
   })
   .strict()
-  .refine(
-    (d) => d.organizationId !== undefined || d.acceptMcp !== undefined || d.acceptWebhookRelay !== undefined,
-    { message: "Nothing to change" },
-  );
+  .refine((d) => Object.values(d).some((v) => v !== undefined), { message: "Nothing to change" });
 
-/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org, let it forward MCP calls, or accept its webhook relays */
+/** Toggles only a signed-in instance admin may change, with the refusal for each. */
+const SESSION_ONLY = {
+  acceptMcp: "Only a signed-in instance admin can change MCP access for a peer",
+  acceptWebhookRelay: "Only a signed-in instance admin can change webhook relays for a peer",
+  acceptInstanceSignin: "Only a signed-in instance admin can change instance sign-in for a peer",
+  acceptInstanceBrowse: "Only a signed-in instance admin can change instance browsing for a peer",
+} as const;
+
+/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org or change what it may do here */
 async function handlePatch(
   request: Request,
   { params }: { params: Promise<{ peerId: string }> }
@@ -74,12 +81,13 @@ async function handlePatch(
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { organizationId, acceptMcp, acceptWebhookRelay } = parsed.data;
-    if (acceptMcp !== undefined && session.authMethod !== "session") {
-      return NextResponse.json({ error: "Only a signed-in instance admin can change MCP access for a peer" }, { status: 403 });
-    }
-    if (acceptWebhookRelay !== undefined && session.authMethod !== "session") {
-      return NextResponse.json({ error: "Only a signed-in instance admin can change webhook relays for a peer" }, { status: 403 });
+    const { organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse } = parsed.data;
+    if (session.authMethod !== "session") {
+      for (const [key, error] of Object.entries(SESSION_ONLY)) {
+        if (parsed.data[key as keyof typeof SESSION_ONLY] !== undefined) {
+          return NextResponse.json({ error }, { status: 403 });
+        }
+      }
     }
     if (organizationId) {
       const org = await db.query.organizations.findFirst({
@@ -93,13 +101,15 @@ async function handlePatch(
 
     const [peer] = await db
       .update(meshPeers)
-      .set({ organizationId, acceptMcp, acceptWebhookRelay, updatedAt: new Date() })
+      .set({ organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, updatedAt: new Date() })
       .where(eq(meshPeers.id, peerId))
       .returning({
         id: meshPeers.id,
         organizationId: meshPeers.organizationId,
         acceptMcp: meshPeers.acceptMcp,
         acceptWebhookRelay: meshPeers.acceptWebhookRelay,
+        acceptInstanceSignin: meshPeers.acceptInstanceSignin,
+        acceptInstanceBrowse: meshPeers.acceptInstanceBrowse,
       });
 
     if (!peer) {
@@ -107,7 +117,7 @@ async function handlePatch(
     }
 
     // Tells the peer now rather than at its next heartbeat.
-    if (acceptWebhookRelay !== undefined) {
+    if (acceptWebhookRelay !== undefined || acceptInstanceSignin !== undefined || acceptInstanceBrowse !== undefined) {
       import("@/lib/mesh/heartbeat")
         .then(({ sendHeartbeatToPeer }) => sendHeartbeatToPeer(peerId))
         .catch(() => {});

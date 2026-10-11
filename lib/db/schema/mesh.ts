@@ -36,6 +36,14 @@ export const meshPeers = pgTable("mesh_peer", {
   acceptWebhookRelay: boolean("accept_webhook_relay").default(false).notNull(),
   // The peer accepts our relays, as its last heartbeat said.
   peerAcceptsWebhookRelay: boolean("peer_accepts_webhook_relay").default(false).notNull(),
+  // Issue sign-in tickets to this peer for users with the same verified email.
+  acceptInstanceSignin: boolean("accept_instance_signin").default(false).notNull(),
+  // The peer issues us sign-in tickets, as its last heartbeat said.
+  peerAcceptsInstanceSignin: boolean("peer_accepts_instance_signin").default(false).notNull(),
+  // Answer this peer's read-only browse requests for users with the same verified email.
+  acceptInstanceBrowse: boolean("accept_instance_browse").default(false).notNull(),
+  // The peer answers our browse requests, as its last heartbeat said.
+  peerAcceptsInstanceBrowse: boolean("peer_accepts_instance_browse").default(false).notNull(),
   lastRelaySentAt: timestamp("last_relay_sent_at"),
   lastRelaySentStatus: text("last_relay_sent_status"),
   lastRelayReceivedAt: timestamp("last_relay_received_at"),

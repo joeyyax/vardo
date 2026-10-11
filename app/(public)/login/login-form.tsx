@@ -37,7 +37,10 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [method, setMethod] = useState<SignInMethod>(methods.password ? "password" : "magic");
-  const [error, setError] = useState<string | null>(null);
+  // A refused instance sign-in lands here with its reason.
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "instance_ticket" ? searchParams.get("error_description") : null,
+  );
 
   const emailMethod = !methods.magicLink
     ? "password"

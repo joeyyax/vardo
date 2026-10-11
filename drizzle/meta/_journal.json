@@ -841,6 +841,13 @@
       "when": 1791679301150,
       "tag": "0119_complete_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1791682278835,
+      "tag": "0120_huge_sauron",
+      "breakpoints": true
     }
   ]
 }
