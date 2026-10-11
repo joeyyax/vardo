@@ -141,6 +141,23 @@ export function createFakeRedis(clock: () => number = Date.now) {
       const e = live(key);
       return e?.kind === "set" ? [...(e.value as Set<string>)] : [];
     },
+    // HyperLogLog as an exact set.
+    async pfadd(key: string, ...members: string[]) {
+      guard();
+      const s = of(key, "set", () => new Set()) as Set<string>;
+      const before = s.size;
+      for (const m of members) s.add(m);
+      return s.size > before ? 1 : 0;
+    },
+    async pfcount(...keys: string[]) {
+      guard();
+      const union = new Set<string>();
+      for (const k of keys) {
+        const e = live(k);
+        if (e?.kind === "set") for (const m of e.value as Set<string>) union.add(m);
+      }
+      return union.size;
+    },
     async srem(key: string, ...members: string[]) {
       guard();
       const e = live(key);

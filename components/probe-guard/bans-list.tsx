@@ -34,6 +34,9 @@ export type BanItem = {
   detail?: BanDetail | null;
   /** The reporter that took a report on this address. */
   reportedTo?: string | null;
+  /** Requests turned away under this ban. */
+  blockedCount?: number;
+  lastBlockedAt?: string | null;
   /** Set for bans that may have ended; missing means active. */
   status?: BanStatus;
 };
@@ -124,6 +127,7 @@ export function BansList({
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="font-mono text-sm">{ban.ip}</p>
               <BanReason ban={ban} permanent={permanent} ended={ended} showCreated={showCreated} />
+              <BlockedLine ban={ban} />
               <ReportedLink ban={ban} />
             </div>
             {ended && (canBanAgain || allowUrl) && (
@@ -195,6 +199,17 @@ function AllowButton({ ip, busy, onConfirm }: { ip: string; busy: boolean; onCon
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function BlockedLine({ ban }: { ban: BanItem }) {
+  if (ban.blockedCount === undefined) return null;
+  if (ban.blockedCount === 0) return <p className="text-xs text-muted-foreground">Not blocked yet</p>;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Blocked {ban.blockedCount.toLocaleString("en-US")} {ban.blockedCount === 1 ? "time" : "times"}
+      {ban.lastBlockedAt && <>, last <RelativeTime date={ban.lastBlockedAt} /></>}
+    </p>
   );
 }
 
