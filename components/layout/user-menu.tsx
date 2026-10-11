@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { LogOut, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
+import { LogOut, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -19,6 +20,8 @@ import { getInitials } from "@/lib/initials";
 import { toast } from "@/lib/messenger";
 import { switchOrganization } from "@/lib/organizations/switch";
 import type { Organization } from "@/lib/types";
+import { fetchInstances, openOnInstance, type InstancesResponse, type ListedInstance } from "@/lib/instances/client";
+import { InstanceBadge } from "@/components/instances/instance-badge";
 
 type UserMenuProps = {
   collapsed?: boolean;
@@ -35,6 +38,21 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
   const isAdmin = !!session?.user?.isAppAdmin;
 
   const currentOrg = organizations?.find((o) => o.id === currentOrgId) || organizations?.[0];
+  const [linked, setLinked] = useState<InstancesResponse | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+
+  const handleOpenChange = (open: boolean) => {
+    if (open) fetchInstances().then((res) => res && setLinked(res));
+  };
+
+  const handleOpenInstance = async (peerId: string) => {
+    setOpening(peerId);
+    // On success the page navigates away.
+    if (!(await openOnInstance(peerId))) setOpening(null);
+  };
+
+  const signInPeers = linked?.instances.filter((i) => i.signIn) ?? [];
+  const browsePeers = linked?.instances.filter((i) => i.organizations) ?? [];
 
   const handleSignOut = async () => {
     await signOut({
@@ -74,7 +92,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
   const email = user?.email || "";
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -155,6 +173,44 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
           </>
         )}
 
+        {browsePeers.map((peer) => (
+          <RemoteOrgs key={peer.id} peer={peer} />
+        ))}
+
+        {/* Instances */}
+        {signInPeers.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>
+              <span className="type-label text-muted-foreground">Instances</span>
+            </DropdownMenuLabel>
+            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+              <Server className="size-4 text-muted-foreground" aria-hidden="true" />
+              <span className="truncate">{linked?.local.name}</span>
+              <Check className="ml-auto size-4 text-primary" aria-label="Current instance" />
+            </div>
+            {signInPeers.map((peer) => (
+              <DropdownMenuItem
+                key={peer.id}
+                className="gap-2 cursor-pointer"
+                disabled={opening !== null}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  handleOpenInstance(peer.id);
+                }}
+              >
+                {opening === peer.id ? <Loader2 className="size-4 animate-spin" /> : <Server className="size-4" />}
+                <span className="truncate">{peer.name}</span>
+                <span
+                  className={`ml-auto size-2 shrink-0 rounded-full ${peer.status === "online" ? "bg-status-success" : "bg-status-neutral"}`}
+                  aria-hidden="true"
+                />
+                <span className="sr-only">{peer.status === "online" ? "Online" : "Offline"}</span>
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
+
         {/* Admin */}
         {isAdmin && (
           <>
@@ -208,5 +264,36 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** A linked instance's orgs under its own heading. Picking one browses it here, read-only. */
+function RemoteOrgs({ peer }: { peer: ListedInstance }) {
+  const result = peer.organizations;
+  if (!result) return null;
+  return (
+    <>
+      <DropdownMenuLabel>
+        <InstanceBadge name={peer.name} />
+      </DropdownMenuLabel>
+      {result.state === "ok" ? (
+        result.data.length > 0 ? (
+          result.data.map((org) => (
+            <DropdownMenuItem key={org.id} asChild className="gap-2 cursor-pointer">
+              <Link href={`/instances/${encodeURIComponent(peer.id)}/${encodeURIComponent(org.id)}`}>
+                <Building2 className="size-4" />
+                <span className="truncate">{org.name}</span>
+              </Link>
+            </DropdownMenuItem>
+          ))
+        ) : (
+          <DropdownMenuItem disabled>No organizations there</DropdownMenuItem>
+        )
+      ) : (
+        <DropdownMenuItem disabled title={result.state === "refused" ? result.reason : undefined}>
+          <span className="truncate">{result.state === "unreachable" ? "Unreachable" : result.reason}</span>
+        </DropdownMenuItem>
+      )}
+    </>
   );
 }
