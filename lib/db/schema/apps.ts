@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { RECOMMENDED_HEADERS, type SecurityHeaderConfig } from "../../security/response-headers";
+import { DEFAULT_APP_PROBE_GUARD, type AppProbeGuard } from "../../probe-guard/settings";
 import {
   appPriorityEnum,
   appStatusEnum,
@@ -148,6 +149,8 @@ export const apps = pgTable(
     securityHeaders: jsonb("security_header_config").$type<SecurityHeaderConfig>().notNull().default(RECOMMENDED_HEADERS),
     // The last deploy's routers reference the headers file, so saved settings apply live.
     securityHeadersLive: boolean("security_headers_live").notNull().default(false),
+    // Turns away exploit probes at Traefik through the probe guard file.
+    probeGuard: jsonb("probe_guard").$type<AppProbeGuard>().notNull().default(DEFAULT_APP_PROBE_GUARD),
     envContent: text("env_content"), // Encrypted
     // Compose child to parent. Must cascade: set null moves children into app_top_level_name_uniq's scope.
     parentAppId: text("parent_app_id").references((): AnyPgColumn => apps.id, {

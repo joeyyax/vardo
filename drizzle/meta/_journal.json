@@ -827,6 +827,13 @@
       "when": 1791676085125,
       "tag": "0117_worker_presence",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791678947847,
+      "tag": "0118_probe_guard",
+      "breakpoints": true
     }
   ]
 }

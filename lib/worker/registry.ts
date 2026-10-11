@@ -52,6 +52,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "status-reconcile", roles: BOTH, singleton: true, feature: "monitoring", load: async () => (await import("@/lib/docker/status-reconcile")).statusReconcileLoop },
   { name: "traefik-drift", roles: BOTH, singleton: true, feature: "monitoring", load: async () => (await import("@/lib/docker/traefik-drift")).traefikDriftLoop },
   { name: "system-alerts", roles: BOTH, singleton: true, feature: "monitoring", load: async () => (await import("@/lib/system-alerts/monitor")).systemAlertsLoop },
+  { name: "probe-guard", roles: BOTH, singleton: true, load: async () => (await import("@/lib/probe-guard/loop")).probeGuardLoop },
   { name: "cloudflare-only-sync", roles: BOTH, singleton: true, load: async () => (await import("@/lib/docker/cloudflare-only")).cloudflareOnlyLoop },
   { name: "cert-export", roles: BOTH, singleton: true, load: async () => (await import("@/lib/ssl/cert-export")).certExportLoop },
   { name: "image-update-sweep", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdateSweepLoop },

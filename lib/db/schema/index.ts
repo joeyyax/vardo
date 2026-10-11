@@ -20,6 +20,7 @@ export * from "./monitoring";
 export * from "./templates";
 export * from "./external-routes";
 export * from "./security";
+export * from "./probe-guard";
 export * from "./user-notifications";
 export * from "./user-preferences";
 export * from "./image-checks";

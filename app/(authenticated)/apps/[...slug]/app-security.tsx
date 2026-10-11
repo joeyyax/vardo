@@ -11,6 +11,7 @@ import { entityLinkClass } from "@/components/entity-link";
 import { useHashTarget } from "@/hooks/use-hash-target";
 import { findingAnchors } from "@/lib/ui/security-anchor";
 import { cn } from "@/lib/utils";
+import { ProbeGuardCard } from "./probe-guard-card";
 
 type Scan = {
   id: string;
@@ -271,6 +272,8 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
 
   return (
     <div className="space-y-4">
+      <ProbeGuardCard orgId={orgId} appId={appId} />
+
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">

@@ -64,6 +64,10 @@ const PHRASES: Record<string, Phrase> = {
   "mesh.webhook_relay_received": { text: "received a relayed GitHub webhook for" },
   "app.github_feedback_failed": { text: "couldn't post deploy status to GitHub for" },
   "app.incident_resolved": { text: "saw an incident clear on" },
+  "security.probe_ban": { text: "banned an address probing" },
+  "security.probe_unban": { text: "lifted a probe ban on" },
+  "security.trap_triggered": { text: "saw a trap triggered on" },
+  "security.canary_used": { text: "saw a decoy credential tried on" },
   "system.incident_resolved": { text: "saw an incident clear", standalone: true },
 
   "volume.sync": { text: "synced volumes on" },
