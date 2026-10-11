@@ -20,6 +20,7 @@ import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings
 import { getProbeGuardSettings, guardKey } from "./instance";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { banRenderOrder } from "./ban-policy";
+import { blockableRanges } from "./blocklist/import";
 import { PERMANENT_UNTIL } from "./permanent";
 
 const log = logger.child("probe-guard");
@@ -88,10 +89,11 @@ export async function activeBannedIps(now = new Date()): Promise<string[]> {
   return banRenderOrder([...local, ...blocklist], MAX_RENDERED_BANS, MAX_RENDERED_BLOCKLIST);
 }
 
-/** Spamhaus DROP ranges while that blocklist is on. */
+/** Spamhaus DROP ranges while that blocklist is on, less any overlapping the current allowlist. */
 export async function activeBannedRanges(): Promise<string[]> {
-  const [settings, drop] = await Promise.all([getAbuseSettings(), getDropRanges()]);
-  return settings.blocklists.spamhaus.enabled ? drop.ranges.slice(0, MAX_RENDERED_RANGES) : [];
+  const [settings, drop, allowlist] = await Promise.all([getAbuseSettings(), getDropRanges(), getAllowlist()]);
+  if (!settings.blocklists.spamhaus.enabled) return [];
+  return blockableRanges(drop.ranges, { allowlist: allowlist.map((e) => e.value) }).slice(0, MAX_RENDERED_RANGES);
 }
 
 // Docker networks, where a cloudflared tunnel connects from.
@@ -139,6 +141,7 @@ export async function loadGuardState(): Promise<GuardState | null> {
     bannedIps,
     bannedRanges,
     skipClients: allowlist.filter((e) => e.skipGuard).map((e) => e.value),
+    allowedClients: allowlist.map((e) => e.value),
     forwardingPeers: forwardingPeers(),
     trapPaths: settings.traps.enabled ? settings.traps.paths : [],
     markers,

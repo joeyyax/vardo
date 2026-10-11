@@ -4,6 +4,7 @@ import { cidrMatcher } from "@/lib/cloudflare-ips";
 import { getAllowlist } from "./allowlist-store";
 import { getAbuseSettings, getDropRanges } from "./abuse-store";
 import { rangeFinder, type BanRef } from "./block-source";
+import { blockableRanges } from "./blocklist/import";
 
 const TTL_MS = 60_000;
 /** Least time between ban reloads a miss triggers. */
@@ -15,8 +16,10 @@ let loading: Promise<Lists> | null = null;
 
 async function load(): Promise<Lists> {
   const [allowlist, settings, drop] = await Promise.all([getAllowlist(), getAbuseSettings(), getDropRanges()]);
-  const range = settings.blocklists.spamhaus.enabled && drop.ranges.length > 0 ? rangeFinder(drop.ranges) : () => null;
-  return { at: Date.now(), allowed: cidrMatcher(allowlist.map((e) => e.value)), range };
+  const values = allowlist.map((e) => e.value);
+  // Same ranges the guard file renders, so a range overlapping the allowlist blocks nobody.
+  const ranges = settings.blocklists.spamhaus.enabled ? blockableRanges(drop.ranges, { allowlist: values }) : [];
+  return { at: Date.now(), allowed: cidrMatcher(values), range: ranges.length > 0 ? rangeFinder(ranges) : () => null };
 }
 
 async function lists(): Promise<Lists> {
