@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq, ne } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
+import { acceptsPayload, peerAcceptsColumns } from "@/lib/mesh/link-flags";
 import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
@@ -27,7 +28,7 @@ async function handlePost(request: NextRequest) {
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
 
-    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; host?: unknown; acceptsWebhookRelay?: unknown } | null;
+    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; host?: unknown } | null;
     await db
       .update(meshPeers)
       .set({
@@ -36,7 +37,7 @@ async function handlePost(request: NextRequest) {
         updatedAt: new Date(),
         ...vardoStatusColumns(parseVardoStatus(sent?.vardo)),
         ...hostStatusColumns(parseHostStatus(sent?.host)),
-        ...(typeof sent?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: sent.acceptsWebhookRelay } : {}),
+        ...peerAcceptsColumns(sent),
       })
       .where(eq(meshPeers.id, peer.id));
 
@@ -74,7 +75,7 @@ async function handlePost(request: NextRequest) {
         host,
       },
       peers: allPeers,
-      acceptsWebhookRelay: peer.acceptWebhookRelay,
+      ...acceptsPayload(peer),
     });
   } catch (error) {
     return handleRouteError(error, "Error processing heartbeat");

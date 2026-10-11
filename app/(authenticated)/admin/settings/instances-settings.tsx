@@ -17,6 +17,8 @@ import {
   Info,
   Bot,
   Webhook,
+  LogIn,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +58,10 @@ type MeshPeer = {
   acceptMcp: boolean;
   acceptWebhookRelay: boolean;
   peerAcceptsWebhookRelay: boolean;
+  acceptInstanceSignin: boolean;
+  peerAcceptsInstanceSignin: boolean;
+  acceptInstanceBrowse: boolean;
+  peerAcceptsInstanceBrowse: boolean;
   lastRelaySentAt: string | null;
   lastRelaySentStatus: string | null;
   lastRelayReceivedAt: string | null;
@@ -95,6 +101,39 @@ const ACCEPT_MCP_WARNING =
 
 const ACCEPT_RELAY_WARNING =
   "This peer can then start deploys of auto-deploy apps and previews here, on the branches they already track. It can't choose code, branches or commands; each deploy fetches from the git host itself. Turn it on only for an instance you trust to report pushes honestly.";
+
+const ACCEPT_SIGNIN_WARNING =
+  "Users signed in on this peer can then open this console without signing in again, as the user with the same verified email here. They get only that user's own access, and accounts with two-factor here need it on the peer too. Turn it on only for an instance you trust as much as this one.";
+
+const ACCEPT_BROWSE_WARNING =
+  "Users on this peer can then see the names, statuses, domains and last deploy times of projects they belong to here, read-only. No env values, secrets or logs leave this instance.";
+
+/** Opt-ins that share the confirm-then-save flow. */
+type LinkToggle = "acceptInstanceSignin" | "acceptInstanceBrowse";
+
+const LINK_TOGGLES: Record<
+  LinkToggle,
+  { on: string; off: string; confirm: string; title: (name: string) => string; warning: string; failed: string; badge: string }
+> = {
+  acceptInstanceSignin: {
+    on: "Accept sign-ins",
+    off: "Stop accepting sign-ins",
+    confirm: "Accept sign-ins",
+    title: (name) => `Accept sign-ins from ${name}?`,
+    warning: ACCEPT_SIGNIN_WARNING,
+    failed: "Couldn't change instance sign-in",
+    badge: "Sign-in",
+  },
+  acceptInstanceBrowse: {
+    on: "Share projects",
+    off: "Stop sharing projects",
+    confirm: "Share projects",
+    title: (name) => `Share projects with ${name}?`,
+    warning: ACCEPT_BROWSE_WARNING,
+    failed: "Couldn't change project sharing",
+    badge: "Browse",
+  },
+};
 
 /** The latest relay in each direction, newest first. */
 function relaySummary(peer: MeshPeer): string | null {
@@ -148,6 +187,8 @@ export function InstancesSettings() {
   const [savingMcp, setSavingMcp] = useState(false);
   const [relayTarget, setRelayTarget] = useState<MeshPeer | null>(null);
   const [savingRelay, setSavingRelay] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<{ peer: MeshPeer; key: LinkToggle } | null>(null);
+  const [savingLink, setSavingLink] = useState(false);
 
   function applyPeers(json: PeersResponse | null) {
     if (json) {
@@ -303,6 +344,30 @@ export function InstancesSettings() {
     } finally {
       setSavingRelay(false);
       setRelayTarget(null);
+    }
+  }
+
+  async function handleLinkToggle(peer: MeshPeer, key: LinkToggle, value: boolean) {
+    const copy = LINK_TOGGLES[key];
+    setSavingLink(true);
+    try {
+      const res = await fetch(`/api/v1/admin/mesh/peers/${peer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || copy.failed);
+        return;
+      }
+      setPeers((prev) => prev.map((p) => (p.id === peer.id ? { ...p, [key]: value } : p)));
+      toast.success(`${value ? copy.on : copy.off}: ${peer.name}`);
+    } catch {
+      toast.error(copy.failed);
+    } finally {
+      setSavingLink(false);
+      setLinkTarget(null);
     }
   }
 
@@ -504,6 +569,14 @@ export function InstancesSettings() {
                                 Relays
                               </Badge>
                             )}
+                            {(Object.keys(LINK_TOGGLES) as LinkToggle[]).map(
+                              (key) =>
+                                peer[key] && (
+                                  <Badge key={key} variant="outline" className="px-1.5 py-0 shrink-0" title={LINK_TOGGLES[key].warning}>
+                                    {LINK_TOGGLES[key].badge}
+                                  </Badge>
+                                ),
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                             <span className="font-mono">{peer.internalIp}</span>
@@ -555,6 +628,26 @@ export function InstancesSettings() {
                               >
                                 <Webhook className="size-4" />
                                 {peer.acceptWebhookRelay ? "Stop accepting relayed webhooks" : "Accept relayed webhooks"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  peer.acceptInstanceSignin
+                                    ? handleLinkToggle(peer, "acceptInstanceSignin", false)
+                                    : setLinkTarget({ peer, key: "acceptInstanceSignin" })
+                                }
+                              >
+                                <LogIn className="size-4" />
+                                {peer.acceptInstanceSignin ? LINK_TOGGLES.acceptInstanceSignin.off : LINK_TOGGLES.acceptInstanceSignin.on}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  peer.acceptInstanceBrowse
+                                    ? handleLinkToggle(peer, "acceptInstanceBrowse", false)
+                                    : setLinkTarget({ peer, key: "acceptInstanceBrowse" })
+                                }
+                              >
+                                <Eye className="size-4" />
+                                {peer.acceptInstanceBrowse ? LINK_TOGGLES.acceptInstanceBrowse.off : LINK_TOGGLES.acceptInstanceBrowse.on}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
@@ -760,6 +853,17 @@ export function InstancesSettings() {
         onConfirm={() => relayTarget && handleAcceptRelay(relayTarget, true)}
         loading={savingRelay}
         confirmLabel="Accept relayed webhooks"
+        loadingLabel="Saving..."
+      />
+
+      <ConfirmDeleteDialog
+        open={!!linkTarget}
+        onOpenChange={(open) => !open && setLinkTarget(null)}
+        title={linkTarget ? LINK_TOGGLES[linkTarget.key].title(linkTarget.peer.name) : ""}
+        description={linkTarget ? LINK_TOGGLES[linkTarget.key].warning : ""}
+        onConfirm={() => linkTarget && handleLinkToggle(linkTarget.peer, linkTarget.key, true)}
+        loading={savingLink}
+        confirmLabel={linkTarget ? LINK_TOGGLES[linkTarget.key].confirm : ""}
         loadingLabel="Saving..."
       />
 
