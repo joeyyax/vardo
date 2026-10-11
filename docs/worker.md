@@ -71,11 +71,11 @@ A loop that moves to the worker takes its in-process side effects with it. Stage
 | `metrics-collector`, `error-rate` | Time series, disk usage, error rates | Safe: Redis |
 | `metrics-orphan-sweep` | Web deletes an app's series, but the worker's created-keys cache still lists them | Fixed: the cache expires after 10 minutes and re-applies labels and retention |
 | `system-alerts` | Fired-alert state the settings page shows | Fixed: the route reads the persisted row |
-| `system-alerts` | OOM and anomaly-quiet hooks fill per-process maps, so OOMs web emits during deploys never reach the worker's alert pass | Needs decision |
+| `system-alerts` | OOM and anomaly-quiet hooks fill per-process maps, so OOMs web emits during deploys never reach the worker's alert pass | Fixed: kills go to Redis hashes for the hold window (`alerts:oom:*`) and activity to a sorted set for the quiet grace (`vardo:anomaly-quiet`); each process keeps its own copy for when Redis is down |
 | `image-update-*`, `digest` | EOL table, refreshed by `image-eol-sync` in web | Fixed: the worker loads the stored table at boot; refreshes reach it on its next restart |
-| `rollback-watch` | GitHub PR feedback rows live in the memory of the process that tracked the deploy, so a worker rollback rewrites the comment from an empty map | Needs decision |
-| `backup-*`, `restore-drill` | Self-deploy drain reads web's in-flight backups, so it doesn't see or pause the worker's | Needs decision |
-| `backup-*` | Boot steps only web runs (credential encryption, interrupted-backup reap, backup target) and `after: "backup-target"`, which the worker never waits on | Needs decision |
+| `rollback-watch` | GitHub PR feedback rows live in the memory of the process that tracked the deploy, so a worker rollback rewrites the comment from an empty map | Fixed: each comment's rows, SHA, comment id and merged PR are in a Redis hash (`github:feedback:*`) for the rollback watch window |
+| `backup-*`, `restore-drill` | Self-deploy drain reads web's in-flight backups, so it doesn't see or pause the worker's | Fixed: beacons record their slot; the drain waits on the old slot's `backup:busy:*` keys and sets `backup:drain:<slot>`, which pauses that slot's schedules |
+| `backup-*` | Boot steps only web runs (credential encryption, interrupted-backup reap, backup target) and `after: "backup-target"`, which the worker never waits on | Fixed: web records each release's boot steps in `system_settings` (`backup_boot:<sha>`) and the worker's backup loops wait for it; the boot reap spares rows under a minute old |
 | `container-health`, `status-reconcile` | Self-heal and OOM state | Safe: the readers run in the same loops; self-heal is mirrored to Postgres |
 | `cert-export` | Written-cert maps | Safe: web's deploy path keeps its own; a race on one volume rewrites the same files |
 | `probe-guard`, `cloudflare-only-sync` | Traefik files on the shared volume | Safe: each write renders the whole file from Postgres |
@@ -83,6 +83,12 @@ A loop that moves to the worker takes its in-process side effects with it. Stage
 | The rest | Postgres, Redis, Docker or files only | Safe |
 
 The event, notification, deploy, log and terminal streams read Redis or Docker directly, so they don't depend on a loop's process.
+
+### Shared backup and alert state
+
+- **Self-deploy drain.** The old console waits up to `VARDO_BACKUP_DRAIN_MINUTES` for backup work in its own process and in the old slot's worker, and the worker starts no new backups meanwhile. A busy key lapses 30 seconds after its process dies and the drain flag 30 seconds after the old console stops. With Redis down the drain waits on the old console's own work only, and the worker's SIGTERM drain covers its own.
+- **Worker boot.** The worker's backup loops wait for the console to record credential encryption and the backup target for the same release. Until then the worker reports `booting`, so the console keeps its backup loops.
+- **OOM alerts and quiet windows.** Kills and restarts any process sees reach the alert pass wherever it runs. A kill Redis refuses is retried for a minute.
 
 ### Post-deploy stream check
 
