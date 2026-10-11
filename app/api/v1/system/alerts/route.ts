@@ -1,6 +1,6 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
-import { getAlertState } from "@/lib/system-alerts/state";
+import { readAlertState } from "@/lib/system-alerts/state";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 
@@ -9,7 +9,8 @@ async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
-    const alerts = getAlertState();
+    // The system-alerts loop may run in the worker.
+    const alerts = await readAlertState();
 
     const active = alerts.filter((a) => {
       // Active means fired in the last 24h.

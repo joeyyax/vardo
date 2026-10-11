@@ -86,6 +86,9 @@ async function main(): Promise<void> {
   await loadFeatureFlags().catch((err) => log.warn("Failed to load feature flags:", err));
   const { detectHost } = await import("@/lib/resources/host");
   await detectHost();
+  // Web refreshes the EOL table; the digest and image-update loops here read it.
+  const { loadStoredEolTable } = await import("@/lib/docker/image-updates/eol-sync");
+  await loadStoredEolTable();
   // Collectors live on vardo-monitoring.
   const { ensureMonitoringNetwork } = await import("@/lib/infra/monitoring-network");
   await ensureMonitoringNetwork();
