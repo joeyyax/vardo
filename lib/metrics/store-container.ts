@@ -244,29 +244,52 @@ async function mrangeQueryImpl(
 
   if (!result || result.length === 0) return [];
 
-  // Max for limits, avg for GPU util/temp, sum otherwise.
-  const pointMap = new Map<number, number>();
+  return combineSeries(
+    metric,
+    (result as [string, string[][], [string, string][]][]).map((series) =>
+      series[2].map(([ts, val]) => [parseInt(ts), parseFloat(val)] as TimeSeriesPoint),
+    ),
+    aggregation?.bucketMs,
+  );
+}
+
+/** Gauges hold their last reading across empty buckets; counter deltas don't. */
+const GAUGES = new Set<MetricName>(["cpu", "memory", "memoryLimit", "disk", "gpuUtilization", "gpuMemoryUsed", "gpuMemoryTotal", "gpuTemperature"]);
+
+/** A carried reading older than this counts as gone. */
+const CARRY_LIMIT_MS = 90_000;
+
+/** Merges per-container series into one: max for limits, avg for GPU util/temp, sum otherwise. */
+export function combineSeries(metric: MetricName, seriesList: TimeSeriesPoint[][], bucketMs?: number): TimeSeriesPoint[] {
   const useMax = metric === "memoryLimit" || metric === "disk";
   const useAvg = metric === "gpuUtilization" || metric === "gpuTemperature";
-  const countMap = useAvg ? new Map<number, number>() : null;
+  const carry = GAUGES.has(metric) ? Math.max(CARRY_LIMIT_MS, (bucketMs ?? 0) * 3) : 0;
+  const times = [...new Set(seriesList.flatMap((points) => points.map(([t]) => t)))].sort((a, b) => a - b);
 
-  for (const series of result as [string, string[][], [string, string][]][]) {
-    const dataPoints = series[2];
-    for (const [ts, val] of dataPoints) {
-      const t = parseInt(ts);
-      const v = parseFloat(val);
-      if (useMax) {
-        pointMap.set(t, Math.max(pointMap.get(t) || 0, v));
-      } else {
-        pointMap.set(t, (pointMap.get(t) || 0) + v);
-        if (countMap) countMap.set(t, (countMap.get(t) || 0) + 1);
-      }
+  const total = new Map<number, number>();
+  const count = new Map<number, number>();
+  for (const points of seriesList) {
+    if (points.length === 0) continue;
+    const sorted = [...points].sort((a, b) => a[0] - b[0]);
+    const last = sorted[sorted.length - 1][0];
+    let k = 0;
+    let held: TimeSeriesPoint | null = null;
+    for (const t of times) {
+      if (t < sorted[0][0]) continue;
+      // A container that stopped reporting drops out after its last reading.
+      if (t > last && t - last > carry) break;
+      while (k < sorted.length && sorted[k][0] <= t) held = sorted[k++];
+      if (!held) continue;
+      if (held[0] !== t && t - held[0] > carry) continue;
+      const v = held[1];
+      total.set(t, useMax ? Math.max(total.get(t) ?? 0, v) : (total.get(t) ?? 0) + v);
+      count.set(t, (count.get(t) ?? 0) + 1);
     }
   }
 
-  return Array.from(pointMap.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([t, v]) => [t, countMap ? v / Math.max(1, countMap.get(t) ?? 1) : v] as TimeSeriesPoint);
+  return times
+    .filter((t) => total.has(t))
+    .map((t) => [t, useAvg ? total.get(t)! / Math.max(1, count.get(t) ?? 1) : total.get(t)!] as TimeSeriesPoint);
 }
 
 /** Historical metrics for a project as MetricsPoint[]. `composeService` narrows a stack to one service. */
