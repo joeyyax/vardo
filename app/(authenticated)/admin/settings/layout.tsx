@@ -29,6 +29,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: "Domain & SSL", href: "/admin/settings/domain", order: 50, gate: "ssl" },
   { label: "Traefik", href: "/admin/settings/traefik", order: 55, gate: "ssl" },
   { label: "External routes", href: "/admin/settings/external-routes", order: 60, gate: "ssl" },
+  { label: "Security", href: "/admin/settings/security", order: 65 },
   { label: "Instances", href: "/admin/settings/instances", order: 70, gate: "mesh" },
   { label: "Maintenance", href: "/admin/settings/maintenance", order: 80 },
   { label: "Config", href: "/admin/settings/config", order: 100 },

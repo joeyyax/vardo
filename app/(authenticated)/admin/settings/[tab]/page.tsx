@@ -17,6 +17,7 @@ import { ResourcesSettings } from "../resources-settings";
 import { TraefikSettings } from "@/components/ssl/traefik-settings";
 import { ExternalRoutesSettings } from "@/components/ssl/external-routes-settings";
 import { MaintenanceSettings } from "../maintenance-settings";
+import { SecuritySettings } from "../security-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 import { SystemBackupSection } from "@/components/backups/system-backup-section";
 
@@ -39,6 +40,7 @@ const TABS: Record<string, TabEntry> = {
   domain:             { component: DomainSettings, gate: "ssl" },
   traefik:            { component: TraefikSettings, gate: "ssl" },
   "external-routes":  { component: ExternalRoutesSettings, gate: "ssl" },
+  security:           { component: SecuritySettings },
   instances:          { component: InstancesSettings, gate: "mesh" },
   maintenance:        { component: MaintenanceSettings },
   config:             { component: ConfigSettings },
