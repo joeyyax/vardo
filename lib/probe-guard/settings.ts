@@ -63,6 +63,8 @@ export type InstanceProbeGuard = {
   /** Send new bans to linked instances and apply theirs. */
   shareBans: boolean;
   traps: { enabled: boolean; paths: string[]; decoy: boolean };
+  /** Contact in the console's security.txt. Empty falls back to ACME_EMAIL. */
+  securityContact: string;
 };
 
 export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
@@ -74,6 +76,7 @@ export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
   maxBanHours: 24,
   shareBans: false,
   traps: { enabled: true, paths: DEFAULT_TRAP_PATHS, decoy: true },
+  securityContact: "",
 };
 
 export const instanceProbeGuardSchema = z
@@ -92,6 +95,7 @@ export const instanceProbeGuardSchema = z
         decoy: z.boolean(),
       })
       .strict(),
+    securityContact: z.union([z.literal(""), z.string().trim().email().max(254)]),
   })
   .strict()
   .refine((s) => s.banMinutes <= s.maxBanHours * 60, { message: "The first ban can't be longer than the longest", path: ["banMinutes"] });
