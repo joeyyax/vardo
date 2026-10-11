@@ -62,7 +62,7 @@ export function ResourcesSummary() {
             </div>
           ))}
         </dl>
-        <p className="text-xs text-muted-foreground">You can change these later under System settings → Resources.</p>
+        <p className="text-xs text-muted-foreground">You can change these later under Admin → Settings → Resources.</p>
       </CardContent>
     </Card>
   );

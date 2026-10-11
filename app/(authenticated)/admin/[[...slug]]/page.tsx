@@ -1,6 +1,4 @@
 import { redirect } from "next/navigation";
-import { isAppAdmin } from "@/lib/auth/admin";
-import { getSession } from "@/lib/auth/session";
 import { AdminPanel } from "../admin-panel";
 
 const VALID_TABS = ["overview", "organizations", "users"] as const;
@@ -21,11 +19,6 @@ export default async function AdminPage({ params }: PageProps) {
   const activeTab: ValidTab = (slug?.[0] && VALID_TABS.includes(slug[0] as ValidTab))
     ? slug[0] as ValidTab
     : "overview";
-
-  const session = await getSession();
-  if (!session?.user?.id) redirect("/login");
-
-  if (!(await isAppAdmin())) redirect("/projects");
 
   return <AdminPanel activeTab={activeTab} />;
 }
