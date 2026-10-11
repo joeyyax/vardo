@@ -69,7 +69,7 @@ export function GeneralSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="type-h2">General</h2>
+        <h2 className="type-h2">This instance</h2>
         <p className="text-sm text-muted-foreground">
           Basic instance configuration like your app name.
         </p>

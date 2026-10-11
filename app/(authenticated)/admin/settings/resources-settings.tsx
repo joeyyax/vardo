@@ -197,7 +197,7 @@ export function ResourcesSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="type-h2">Resources</h2>
+        <h2 className="type-h2">Resource limits</h2>
         <p className="text-sm text-muted-foreground">
           Sizing defaults computed from the host&apos;s CPUs and memory, read from Docker each time Vardo
           starts. An env var wins over your value, and your value wins over the formula.

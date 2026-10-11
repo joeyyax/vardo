@@ -1,6 +1,6 @@
 # Probe guard
 
-Vardo turns away well-known exploit probes before they reach an app, bans addresses that keep probing and can share those bans with linked instances. It's on for every app by default. Turn it off or add exceptions in the app's **Security** tab; instance settings and every active ban are under **Admin → Settings → Security**.
+Vardo turns away well-known exploit probes before they reach an app, bans addresses that keep probing and can share those bans with linked instances. It's on for every app by default. Turn it off or add exceptions in the app's **Security** tab; instance settings and every active ban are under **Admin → Security**.
 
 ## How it works
 

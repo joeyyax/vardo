@@ -415,7 +415,7 @@ export function InstancesSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="type-h2">Instances</h2>
+          <h2 className="type-h2">Linked instances</h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Run Vardo on multiple servers and keep them in sync. Each server is
             an &quot;instance&quot; — this page lets you link them together over an encrypted

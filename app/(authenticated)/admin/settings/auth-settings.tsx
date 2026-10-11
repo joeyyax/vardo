@@ -56,7 +56,7 @@ export function AuthSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="type-h2">Authentication</h2>
+        <h2 className="type-h2">Sign-in</h2>
         <p className="text-sm text-muted-foreground">
           Control who can sign up, how they sign in and how sessions work.
         </p>

@@ -10,22 +10,47 @@ type SettingsItem = SettingsNavItem & {
   gate?: FeatureFlag;
 };
 
-const SETTINGS_ITEMS: SettingsItem[] = [
-  { label: "General", href: "/admin/settings/general" },
-  { label: "Email", href: "/admin/settings/email", gate: "notifications" },
-  { label: "Authentication", href: "/admin/settings/authentication" },
-  { label: "Feature flags", href: "/admin/settings/feature-flags" },
-  { label: "Core services", href: "/admin/settings/core-services" },
-  { label: "Resources", href: "/admin/settings/resources" },
-  { label: "Backups", href: "/admin/settings/backup", gate: "backups" },
-  { label: "GitHub App", href: "/admin/settings/github", gate: "git-integration" },
-  { label: "Domain & SSL", href: "/admin/settings/domain", gate: "ssl" },
-  { label: "Traefik", href: "/admin/settings/traefik", gate: "ssl" },
-  { label: "External routes", href: "/admin/settings/external-routes", gate: "ssl" },
-  { label: "Security", href: "/admin/settings/security" },
-  { label: "Instances", href: "/admin/settings/instances", gate: "mesh" },
-  { label: "Maintenance", href: "/admin/settings/maintenance" },
-  { label: "Config", href: "/admin/settings/config" },
+const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
+  {
+    label: "Platform",
+    items: [
+      { label: "This instance", href: "/admin/settings/general" },
+      { label: "Resource limits", href: "/admin/settings/resources" },
+      { label: "Built-in services", href: "/admin/settings/core-services" },
+      { label: "Features", href: "/admin/settings/feature-flags" },
+      { label: "Import & export", href: "/admin/settings/config" },
+    ],
+  },
+  {
+    label: "Access",
+    items: [
+      { label: "Sign-in", href: "/admin/settings/authentication" },
+      { label: "Security", href: "/admin/settings/security" },
+    ],
+  },
+  {
+    label: "Network",
+    items: [
+      { label: "Domain & certificates", href: "/admin/settings/domain", gate: "ssl" },
+      { label: "Proxy", href: "/admin/settings/traefik", gate: "ssl" },
+      { label: "External routes", href: "/admin/settings/external-routes", gate: "ssl" },
+      { label: "Linked instances", href: "/admin/settings/instances", gate: "mesh" },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      { label: "Email", href: "/admin/settings/email", gate: "notifications" },
+      { label: "Git providers", href: "/admin/settings/github", gate: "git-integration" },
+    ],
+  },
+  {
+    label: "Data",
+    items: [
+      { label: "Backups", href: "/admin/settings/backup", gate: "backups" },
+      { label: "Maintenance", href: "/admin/settings/maintenance" },
+    ],
+  },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -33,10 +58,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!session?.user?.id) redirect("/login");
   if (!(await isAppAdmin())) redirect("/projects");
 
-  const settings: SettingsNavItem[] = [];
-  for (const { gate, ...item } of SETTINGS_ITEMS) {
-    if (gate && !(await isFeatureEnabledAsync(gate))) continue;
-    settings.push(item);
+  const settingsGroups: SettingsNavGroup[] = [];
+  for (const group of SETTINGS_GROUPS) {
+    const items: SettingsNavItem[] = [];
+    for (const { gate, ...item } of group.items) {
+      if (gate && !(await isFeatureEnabledAsync(gate))) continue;
+      items.push(item);
+    }
+    settingsGroups.push({ label: group.label, items });
   }
 
   const groups: SettingsNavGroup[] = [
@@ -48,7 +77,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         { label: "Users", href: "/admin/users" },
       ],
     },
-    { label: "Settings", items: settings },
+    ...settingsGroups,
   ];
 
   return (

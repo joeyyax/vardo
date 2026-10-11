@@ -83,7 +83,7 @@ export function ConfigSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="type-h2">Configuration</h2>
+        <h2 className="type-h2">Import &amp; export</h2>
         <p className="text-sm text-muted-foreground">
           Export your system configuration for backup or migration. Import a config file to restore settings on a new instance.
         </p>
