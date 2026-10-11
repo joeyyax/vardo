@@ -13,13 +13,16 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusMark } from "@/components/ui/status-dot";
-import type { UiDensity } from "@/lib/db/schema/enums";
+import type { ProjectSort, StarKind, UiDensity } from "@/lib/db/schema/enums";
+import { useStars } from "@/components/star-toggle";
+import { toast } from "@/lib/messenger";
 import { formatBytes, formatCoresShort } from "@/lib/metrics/format";
 import {
   ancestry,
   buildSections,
   fleetCounts,
   isPanelKey,
+  isProjectSort,
   locate,
   matchesQuery,
   walk,
@@ -33,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ProjectList, usageOf, type ListContext } from "./project-list";
 import { useImageUpdates } from "./updates-banner";
+import { SortSelect } from "./sort-select";
 import { AppDetail, BackLink, OpenAppLink, PanelList, Where, type PanelContext } from "./projects-panel";
 import { EntityLink } from "@/components/entity-link";
 import { appHref } from "@/lib/ui/hrefs";
@@ -69,7 +73,7 @@ function focusRow(list: HTMLElement | null, el: HTMLElement | null) {
 
 /** A modal or menu owns the keyboard while it is open. */
 function overlayOpen(): boolean {
-  return !!document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], [role="menu"]');
+  return !!document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], [role="menu"], [role="listbox"]');
 }
 
 export function ProjectsView({
@@ -77,12 +81,17 @@ export function ProjectsView({
   apps,
   projects,
   initialDensity,
+  initialSort,
+  initialStars,
   project,
 }: {
   orgId: string;
   apps: ProjectsApp[];
   projects: ProjectsProject[];
   initialDensity: UiDensity;
+  /** The saved order; a valid ?sort= wins. */
+  initialSort: ProjectSort;
+  initialStars: { projects: string[]; apps: string[] };
   /** Scopes the view to one project's page: no section header, and its own attention list. */
   project?: ProjectsProject;
 }) {
@@ -96,7 +105,11 @@ export function ProjectsView({
   const [density, setDensity] = useDensity(initialDensity);
   const dense = density === "dense";
   const [query, setQuery] = useState("");
-  const sections = useMemo(() => buildSections(projects, apps), [projects, apps]);
+  const [savedSort, setSavedSort] = useState(initialSort);
+  const rawSort = params.get("sort");
+  const sort = isProjectSort(rawSort) ? rawSort : savedSort;
+  const [starred, toggleStar] = useStars(orgId, initialStars);
+  const sections = useMemo(() => buildSections(projects, apps, { sort, starred }), [projects, apps, sort, starred]);
   const counts = useMemo(() => fleetCounts(sections), [sections]);
 
   // Healthy projects start as one calm line.
@@ -127,7 +140,7 @@ export function ProjectsView({
   }, [router]);
 
   const setUrl = useCallback(
-    (next: { panel?: PanelKey | null; app?: string | null }) => {
+    (next: { panel?: PanelKey | null; app?: string | null; sort?: ProjectSort | null }) => {
       const sp = new URLSearchParams(params.toString());
       for (const [key, value] of Object.entries(next)) {
         if (value) sp.set(key, value);
@@ -137,6 +150,23 @@ export function ProjectsView({
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
     [params, pathname, router],
+  );
+
+  const changeSort = useCallback(
+    (next: ProjectSort) => {
+      setSavedSort(next);
+      setUrl({ sort: next });
+      fetch("/api/v1/user/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectSort: next }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(String(res.status));
+        })
+        .catch(() => toast.error("Couldn't save the sort order. It applies to this page only."));
+    },
+    [setUrl],
   );
 
   const filtering = query.trim().length > 0;
@@ -347,6 +377,14 @@ export function ProjectsView({
         if (projectId) return toggleProject(projectId);
         return openApp(key);
       }
+      if (e.key === "s") {
+        e.preventDefault();
+        const loc = projectId ? null : locate(sections, key);
+        const kind: StarKind = projectId ? "project" : "app";
+        const target = projectId ? sections.find((s) => s.project.id === projectId)?.project : loc?.node.app;
+        if (target) toggleStar(kind, target.id, target.displayName);
+        return;
+      }
       if (e.key === "." && !projectId) {
         e.preventDefault();
         const trigger = current.querySelector<HTMLElement>("[data-row-menu]");
@@ -356,7 +394,7 @@ export function ProjectsView({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, project, router, sections, selected, setDensity, toggleApp, toggleAttention, toggleProject]);
+  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, project, router, sections, selected, setDensity, toggleApp, toggleAttention, toggleProject, toggleStar]);
 
   // --- Render ---------------------------------------------------------------
 
@@ -379,6 +417,8 @@ export function ProjectsView({
     history,
     updatesByApp,
     matches,
+    starred,
+    toggleStar,
   };
 
   const panelCtx: PanelContext = { orgId, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
@@ -489,6 +529,7 @@ export function ProjectsView({
             Collapse all
           </Button>
           <div className="ml-auto flex items-center gap-1">
+            <SortSelect value={sort} onChange={changeSort} label={project ? "Sort apps" : "Sort projects"} />
             <DensityToggle value={density} onChange={setDensity} />
             <Popover open={keysOpen} onOpenChange={setKeysOpen}>
               <PopoverTrigger asChild>
@@ -574,6 +615,9 @@ function KeysHelp() {
       </span>
       <span>
         <kbd className={k}>a</kbd> for what needs attention, <kbd className={k}>d</kbd> to switch density
+      </span>
+      <span>
+        <kbd className={k}>s</kbd> to star the focused row
       </span>
       <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-1">
         <StatusMark tone="good" />

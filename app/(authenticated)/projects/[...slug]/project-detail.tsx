@@ -35,7 +35,8 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { focusRowByKey, useRowKeys } from "@/hooks/use-row-keys";
 import { deployMark, deployProblem, triggerLabel, type DeployRole } from "@/lib/ui/deploy-list";
 import type { ProjectsApp } from "@/lib/ui/projects";
-import type { UiDensity } from "@/lib/db/schema/enums";
+import type { ProjectSort, UiDensity } from "@/lib/db/schema/enums";
+import { StarButton } from "@/components/star-toggle";
 import { ProjectsView } from "../projects-view";
 import {
   DropdownMenu,
@@ -170,6 +171,7 @@ type Project = {
   allowBindMounts: boolean;
   allowDockerSocket: boolean;
   isSystemManaged: boolean;
+  createdAt: Date | string;
   apps: ProjectApp[];
   groupEnvironments: GroupEnvironment[];
 };
@@ -494,6 +496,8 @@ export function ProjectDetail({
   projectInstances = [],
   listApps,
   density,
+  sort,
+  stars,
 }: {
   project: Project;
   orgId: string;
@@ -509,6 +513,8 @@ export function ProjectDetail({
   /** The apps shaped for the Projects list rows. */
   listApps: ProjectsApp[];
   density: UiDensity;
+  sort: ProjectSort;
+  stars: { projects: string[]; apps: string[] };
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -660,8 +666,8 @@ export function ProjectDetail({
   }, [topLevelApps, orgId, project.id, router]);
 
   const listProject = useMemo(
-    () => ({ id: project.id, name: project.name, displayName: project.displayName, isSystemManaged: project.isSystemManaged }),
-    [project.id, project.name, project.displayName, project.isSystemManaged],
+    () => ({ id: project.id, name: project.name, displayName: project.displayName, isSystemManaged: project.isSystemManaged, createdAt: project.createdAt }),
+    [project.id, project.name, project.displayName, project.isSystemManaged, project.createdAt],
   );
 
   const tabPath = useCallback(
@@ -913,6 +919,7 @@ export function ProjectDetail({
           <h1 className="type-h1">
             {project.displayName}
           </h1>
+          <StarButton orgId={orgId} kind="project" id={project.id} name={project.displayName} initial={stars.projects.includes(project.id)} />
           {project.isSystemManaged && <SystemBadge />}
           {/* Environment switcher */}
           {environmentsEnabled && (
@@ -1017,6 +1024,8 @@ export function ProjectDetail({
               projects={[listProject]}
               project={listProject}
               initialDensity={density}
+              initialSort={sort}
+              initialStars={stars}
             />
           )}
         </TabsContent>

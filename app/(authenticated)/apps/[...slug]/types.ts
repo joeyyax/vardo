@@ -217,4 +217,5 @@ export type AppDetailProps = {
   featureFlags: FeatureFlags;
   parentApp?: { id: string; name: string; displayName: string } | null;
   density?: UiDensity;
+  starred?: boolean;
 };

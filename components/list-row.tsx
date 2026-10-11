@@ -22,6 +22,7 @@ export function ListRow({
   nameTitle,
   href,
   linkOpens = false,
+  star,
   signal,
   status,
   action,
@@ -47,6 +48,8 @@ export function ListRow({
   href?: string;
   /** The href is the row's own panel: a plain click on the name opens it in place. */
   linkOpens?: boolean;
+  /** A star toggle beside the name. */
+  star?: ReactNode;
   signal?: ReactNode;
   /** The problem, toned, or a quiet value such as uptime. */
   status?: ReactNode;
@@ -148,6 +151,7 @@ export function ListRow({
           {name}
         </span>
       )}
+      {star}
       {signal && (
         <span className={cn("min-w-0 shrink-[3] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
           {signal}

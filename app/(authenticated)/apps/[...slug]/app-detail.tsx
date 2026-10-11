@@ -78,6 +78,7 @@ import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
+import { StarButton } from "@/components/star-toggle";
 import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
@@ -96,7 +97,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density, starred = false }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -341,6 +342,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         lifecycleEvents={lifecycleEvents}
         allParentApps={allParentApps}
         density={density}
+        starred={starred}
       />
     );
   }
@@ -510,6 +512,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           ]}
           title={app.displayName}
         >
+          <StarButton orgId={orgId} kind="app" id={app.id} name={app.displayName} initial={starred} />
           {app.project && !isChildService && <AppSwitcher current={app} siblings={siblings} />}
           {app.isSystemManaged && <SystemBadge />}
           {!isChildService && envsEnabled && (

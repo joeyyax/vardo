@@ -44,6 +44,7 @@ import {
   Rocket,
   ScrollText,
   Undo2,
+  Star,
 } from "lucide-react";
 import { AppIcon } from "@/components/app-status";
 import { toast } from "@/lib/messenger";
@@ -92,12 +93,23 @@ type SearchableApp = {
   parentName: string | null;
   projectName: string | null;
   domains: string[];
+  starred?: boolean;
 };
+
+function StarMark() {
+  return (
+    <>
+      <Star aria-hidden="true" className="!size-3 shrink-0 fill-current text-brass" />
+      <span className="sr-only">, starred</span>
+    </>
+  );
+}
 
 type SearchableProject = {
   id: string;
   name: string;
   displayName: string;
+  starred?: boolean;
 };
 
 /** An action holding at its confirm step. */
@@ -361,6 +373,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                       <span>
                         {pendingAction ? fillApp(`${pendingAction.verb} {app}`, app.displayName) : app.displayName}
                       </span>
+                      {app.starred && <StarMark />}
                       {/* The parent tells same-named services apart. */}
                       {(app.parentName || app.projectName) && (
                         <span className="text-xs text-muted-foreground ml-auto truncate">
@@ -399,6 +412,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                   >
                     <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
                     <span>{project.displayName}</span>
+                    {project.starred && <StarMark />}
                   </NavItem>
                 ))}
               </CommandGroup>

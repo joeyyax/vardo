@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
+import { StarButton } from "@/components/star-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, cardVariants } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -663,6 +664,7 @@ export function ComposeDetail({
   lifecycleEvents = [],
   allParentApps = [],
   density,
+  starred = false,
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
@@ -680,6 +682,7 @@ export function ComposeDetail({
   lifecycleEvents?: LifecycleEvent[];
   allParentApps?: { id: string; name: string; color: string }[];
   density?: UiDensity;
+  starred?: boolean;
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -976,6 +979,7 @@ export function ComposeDetail({
           crumbs={app.project ? [{ href: `/projects/${app.project.name}`, label: app.project.displayName }] : []}
           title={app.displayName}
         >
+          <StarButton orgId={orgId} kind="app" id={app.id} name={app.displayName} initial={starred} />
           {app.project && <AppSwitcher current={app} siblings={siblings} />}
           {app.isSystemManaged && <SystemBadge />}
         </EntityTitle>

@@ -23,7 +23,14 @@ export default async function ProjectsPage() {
       {data.projects.length === 0 && data.apps.length === 0 ? (
         <FirstRun canImportContainers={data.containerImport} />
       ) : (
-        <ProjectsView orgId={orgId} apps={data.apps} projects={data.projects} initialDensity={data.density} />
+        <ProjectsView
+          orgId={orgId}
+          apps={data.apps}
+          projects={data.projects}
+          initialDensity={data.density}
+          initialSort={data.sort}
+          initialStars={data.stars}
+        />
       )}
     </div>
   );

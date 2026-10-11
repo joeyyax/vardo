@@ -14,6 +14,7 @@ export function SectionHeader({
   title,
   href,
   badge,
+  star,
   expanded,
   onToggle,
   children,
@@ -24,6 +25,8 @@ export function SectionHeader({
   href?: string;
   /** Beside the title, such as a system badge. */
   badge?: ReactNode;
+  /** A star toggle after the title. */
+  star?: ReactNode;
   expanded: boolean;
   onToggle: () => void;
   /** SectionNumber items. */
@@ -39,7 +42,7 @@ export function SectionHeader({
       tabIndex={-1}
       data-nav={navKey}
       onClick={onToggle}
-      className="squircle flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-md py-1.5 pr-3 pl-1.5 outline-none hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_2px_0_0_var(--brass)]"
+      className="group/row squircle flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-md py-1.5 pr-3 pl-1.5 outline-none hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_2px_0_0_var(--brass)]"
     >
       <span className="flex min-w-0 items-center gap-2">
         <ChevronRight
@@ -55,6 +58,7 @@ export function SectionHeader({
             title
           )}
         </h2>
+        {star}
         {badge}
       </span>
       {children && (

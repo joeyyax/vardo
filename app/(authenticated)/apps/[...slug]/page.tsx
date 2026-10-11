@@ -118,6 +118,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       featureFlags={featureFlags}
       parentApp={data.parentApp}
       density={data.density}
+      starred={data.starred}
     />
   );
 }

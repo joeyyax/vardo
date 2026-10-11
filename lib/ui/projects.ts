@@ -13,6 +13,7 @@ import {
   type ProblemSubject,
 } from "@/lib/ui/conditions";
 import { NESTED_KINDS, type ServiceKind } from "@/lib/ui/service-kind";
+import type { ProjectSort } from "@/lib/db/schema/enums";
 
 export type ProjectsDeployment = {
   id: string;
@@ -46,6 +47,7 @@ export type ProjectsApp = {
   lastRunningAt: Date | string | null;
   statusChangedAt: Date | string | null;
   restartCount: number | null;
+  createdAt: Date | string | null;
   /** Primary first. */
   domains: string[];
   tags: string[];
@@ -62,6 +64,7 @@ export type ProjectsProject = {
   name: string;
   displayName: string;
   isSystemManaged: boolean;
+  createdAt: Date | string | null;
 };
 
 /** How a nested row hangs off the row above it. */
@@ -142,14 +145,46 @@ export function worstRank(node: TreeNode): number {
   return Math.max(problemRank(problemOf(node)), node.app.status === "deploying" ? 10 : 0, ...node.children.map(worstRank));
 }
 
-/** Problems first, then deploys, then healthy; stopped on purpose last. Ties by name. */
-export function sortNodes(nodes: TreeNode[]): TreeNode[] {
+/** Sort control labels, in menu order. */
+export const SORT_LABEL: Record<ProjectSort, string> = {
+  name: "Name",
+  deployed: "Recently deployed",
+  created: "Recently created",
+  attention: "Needs attention first",
+};
+
+export function isProjectSort(value: unknown): value is ProjectSort {
+  return typeof value === "string" && Object.hasOwn(SORT_LABEL, value);
+}
+
+/** The user's starred ids. */
+export type Starred = { projects: ReadonlySet<string>; apps: ReadonlySet<string> };
+
+export const NO_STARS: Starred = { projects: new Set(), apps: new Set() };
+
+const time = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : 0);
+
+/** Newest deploy start anywhere in the subtree. */
+function deployedAt(node: TreeNode): number {
+  return Math.max(time(node.app.deployments[0]?.startedAt), ...node.children.map(deployedAt));
+}
+
+const NODE_ORDER: Record<ProjectSort, (a: TreeNode, b: TreeNode) => number> = {
+  // Problems first, then deploys, then healthy; stopped on purpose last.
+  attention: (a, b) => Number(a.app.parked) - Number(b.app.parked) || worstRank(b) - worstRank(a),
+  name: () => 0,
+  deployed: (a, b) => deployedAt(b) - deployedAt(a),
+  created: (a, b) => time(b.app.createdAt) - time(a.app.createdAt),
+};
+
+/** Starred first, then the chosen order. Ties by name. */
+export function sortNodes(nodes: TreeNode[], sort: ProjectSort = "attention", starred: ReadonlySet<string> = NO_STARS.apps): TreeNode[] {
   return [...nodes]
-    .map((n) => ({ ...n, children: sortNodes(n.children) }))
+    .map((n) => ({ ...n, children: sortNodes(n.children, sort, starred) }))
     .sort(
       (a, b) =>
-        Number(a.app.parked) - Number(b.app.parked) ||
-        worstRank(b) - worstRank(a) ||
+        Number(starred.has(b.app.id)) - Number(starred.has(a.app.id)) ||
+        NODE_ORDER[sort](a, b) ||
         a.app.displayName.localeCompare(b.app.displayName) ||
         a.app.id.localeCompare(b.app.id),
     );
@@ -174,8 +209,6 @@ export type ProjectStats = {
   backupsOverdue: number;
   lastBackupAt: Date | string | null;
 };
-
-const time = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : 0);
 
 export function projectStats(nodes: TreeNode[]): ProjectStats {
   const tops = nodes.map((n) => n.app);
@@ -206,19 +239,33 @@ export function projectStats(nodes: TreeNode[]): ProjectStats {
 
 export type Section = { project: ProjectsProject; nodes: TreeNode[]; stats: ProjectStats };
 
-/** One section per project, worst first. Projects with no apps go last. */
-export function buildSections(projects: ProjectsProject[], apps: ProjectsApp[]): Section[] {
+/** Problems, then deploys, then healthy; projects with no apps last. */
+const attentionWeight = (s: Section) =>
+  s.nodes.length === 0 ? 4 : s.stats.critical ? 0 : s.stats.issues ? 1 : s.stats.deploying ? 2 : 3;
+
+const SECTION_ORDER: Record<ProjectSort, (a: Section, b: Section) => number> = {
+  attention: (a, b) => attentionWeight(a) - attentionWeight(b) || b.stats.issues - a.stats.issues,
+  name: () => 0,
+  deployed: (a, b) => Math.max(0, ...b.nodes.map(deployedAt)) - Math.max(0, ...a.nodes.map(deployedAt)),
+  created: (a, b) => time(b.project.createdAt) - time(a.project.createdAt),
+};
+
+/** One section per project: starred first, then the chosen order. Ties by name. */
+export function buildSections(
+  projects: ProjectsProject[],
+  apps: ProjectsApp[],
+  { sort = "attention", starred = NO_STARS }: { sort?: ProjectSort; starred?: Starred } = {},
+): Section[] {
   const sections = projects.map((project) => {
-    const nodes = sortNodes(buildTree(apps.filter((a) => a.projectId === project.id)));
+    const nodes = sortNodes(buildTree(apps.filter((a) => a.projectId === project.id)), sort, starred.apps);
     return { project, nodes, stats: projectStats(nodes) };
   });
-  const weight = (s: Section) =>
-    s.nodes.length === 0 ? 4 : s.stats.critical ? 0 : s.stats.issues ? 1 : s.stats.deploying ? 2 : 3;
   return sections.sort(
     (a, b) =>
-      weight(a) - weight(b) ||
-      b.stats.issues - a.stats.issues ||
-      a.project.displayName.localeCompare(b.project.displayName),
+      Number(starred.projects.has(b.project.id)) - Number(starred.projects.has(a.project.id)) ||
+      SECTION_ORDER[sort](a, b) ||
+      a.project.displayName.localeCompare(b.project.displayName) ||
+      a.project.id.localeCompare(b.project.id),
   );
 }
 

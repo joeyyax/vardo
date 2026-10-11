@@ -13,7 +13,8 @@ import { effectiveKind } from "@/lib/ui/service-kind";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 import { allows, authorize, type Actor } from "./actor";
 import { ConflictError, InvalidInputError, NotFoundError } from "./errors";
-import { canImportContainers, userDensity } from "./viewer";
+import { canImportContainers, listPreferences } from "./viewer";
+import { listStars } from "./stars";
 
 const APP_COLUMNS = {
   id: true,
@@ -36,6 +37,7 @@ const APP_COLUMNS = {
   containerStartedAt: true,
   lastRunningAt: true,
   statusChangedAt: true,
+  createdAt: true,
 } as const;
 
 const DEPLOYMENT_COLUMNS = {
@@ -193,20 +195,22 @@ export async function listProjectsApps(actor: Actor, projectId?: string): Promis
 
 /** Everything the Projects page renders on first paint. */
 export async function loadProjectsPage(actor: Actor) {
-  const [apps, projectList, containerImport, teamsEnabled, density] = await Promise.all([
+  const [apps, projectList, containerImport, teamsEnabled, prefs, stars] = await Promise.all([
     listProjectsApps(actor),
     listProjects(actor),
     canImportContainers(actor),
     isFeatureEnabledAsync("teams"),
-    userDensity(actor),
+    listPreferences(actor),
+    listStars(actor),
   ]);
   const projectOptions: ProjectsProject[] = projectList.map((p) => ({
     id: p.id,
     name: p.name,
     displayName: p.displayName,
     isSystemManaged: p.isSystemManaged,
+    createdAt: p.createdAt,
   }));
-  return { apps, projects: projectOptions, containerImport, teamsEnabled, density };
+  return { apps, projects: projectOptions, containerImport, teamsEnabled, density: prefs.density, sort: prefs.sort, stars };
 }
 
 // Instance admins see every peer. Org admins see the peers bound to their org.
@@ -307,7 +311,7 @@ export async function loadProjectDetail(actor: Actor, ref: string) {
   });
   if (!project) throw new NotFoundError("project");
 
-  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport, listApps, density, restarts] =
+  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport, listApps, prefs, stars, restarts] =
     await Promise.all([
       isFeatureEnabledAsync("mesh"),
       isFeatureEnabledAsync("logging"),
@@ -322,7 +326,8 @@ export async function loadProjectDetail(actor: Actor, ref: string) {
         .catch(() => [] as ProjectInstanceSummary[]),
       canImportContainers(actor),
       listProjectsApps(actor, project.id),
-      userDensity(actor),
+      listPreferences(actor),
+      listStars(actor),
       // Stacks and their services both get a row, so both need a figure.
       restartCountsByApp(project.apps.flatMap((a) => [a.id, ...(a.childApps ?? []).map((c) => c.id)])),
     ]);
@@ -345,6 +350,8 @@ export async function loadProjectDetail(actor: Actor, ref: string) {
     meshPeers: meshEnabled ? meshPeers : [],
     projectInstances: meshEnabled ? meshInstances : [],
     listApps,
-    density,
+    density: prefs.density,
+    sort: prefs.sort,
+    stars,
   };
 }
