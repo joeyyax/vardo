@@ -23,12 +23,16 @@ export type ProbeRule = {
   pattern: string;
   /** Skipped for WordPress apps. */
   wordpress?: true;
+  /** Abuse reporting: "exploit" is reported on sight, "credentials" only as part of a ban. */
+  report?: ReportKind;
 };
 
+export type ReportKind = "exploit" | "credentials";
+
 export const PROBE_RULES: readonly ProbeRule[] = [
-  { id: "dotenv", category: "secrets", label: "env files", status: 404, pattern: String.raw`^.*/\.env[^/]*$` },
-  { id: "aws", category: "secrets", label: "cloud credentials", status: 404, pattern: String.raw`^.*/\.aws(?:/|$)` },
-  { id: "ssh", category: "secrets", label: "SSH keys", status: 404, pattern: String.raw`^.*/\.ssh(?:/|$)` },
+  { id: "dotenv", category: "secrets", label: "env files", status: 404, report: "credentials", pattern: String.raw`^.*/\.env[^/]*$` },
+  { id: "aws", category: "secrets", label: "cloud credentials", status: 404, report: "credentials", pattern: String.raw`^.*/\.aws(?:/|$)` },
+  { id: "ssh", category: "secrets", label: "SSH keys", status: 404, report: "credentials", pattern: String.raw`^.*/\.ssh(?:/|$)` },
   { id: "editor-sftp", category: "secrets", label: "editor SFTP configs", status: 404, pattern: String.raw`^.*/(?:\.vscode/sftp\.json|sftp-config\.json)$` },
   { id: "htaccess", category: "secrets", label: "Apache access files", status: 404, pattern: String.raw`^.*/\.ht(?:access|passwd)$` },
   { id: "git", category: "vcs", label: "Git metadata", status: 404, pattern: String.raw`^.*/\.git(?:/|$)` },
@@ -39,16 +43,17 @@ export const PROBE_RULES: readonly ProbeRule[] = [
   { id: "xmlrpc", category: "wordpress", label: "WordPress XML-RPC", status: 403, wordpress: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/xmlrpc\.php(?:/|$)` },
   { id: "phpmyadmin", category: "db-admin", label: "phpMyAdmin", status: 403, pattern: String.raw`^/(?:phpmyadmin[^/]*|pma|myadmin|mysqladmin|adminer\.php)(?:/|$)` },
   { id: "cgi-bin", category: "cgi", label: "CGI scripts", status: 403, pattern: String.raw`^/cgi-bin(?:/|$)` },
-  { id: "phpunit", category: "framework", label: "PHPUnit exploit (RCE)", status: 403, pattern: String.raw`^.*/vendor/phpunit(?:/|$)` },
-  { id: "ignition", category: "framework", label: "Laravel Ignition exploit (RCE)", status: 403, pattern: String.raw`^/_ignition/execute-solution(?:/|$)` },
+  { id: "phpunit", category: "framework", label: "PHPUnit exploit (RCE)", status: 403, report: "exploit", pattern: String.raw`^.*/vendor/phpunit(?:/|$)` },
+  { id: "ignition", category: "framework", label: "Laravel Ignition exploit (RCE)", status: 403, report: "exploit", pattern: String.raw`^/_ignition/execute-solution(?:/|$)` },
   // Leaves /actuator/health and /actuator/info alone.
-  { id: "actuator", category: "framework", label: "Spring Boot Actuator", status: 403, pattern: String.raw`^/actuator(?:/?$|/(?:env|heapdump|threaddump|configprops|mappings|beans|jolokia|gateway|logfile)(?:/|$))` },
+  { id: "actuator", category: "framework", label: "Spring Boot Actuator", status: 403, report: "exploit", pattern: String.raw`^/actuator/(?:env|heapdump|threaddump|configprops|mappings|beans|jolokia|gateway|logfile)(?:/|$)` },
+  { id: "actuator-index", category: "framework", label: "Spring Boot Actuator", status: 403, pattern: String.raw`^/actuator/?$` },
   { id: "server-status", category: "server-info", label: "Apache server status", status: 403, pattern: String.raw`^/server-(?:status|info)(?:/|$)` },
   { id: "php-backup", category: "backup", label: "config backups", status: 404, pattern: String.raw`^.*/(?:wp-config|config|configuration|settings|database|db|local)\.php(?:\.bak|\.old|\.orig|\.save|\.swp|\.txt|\.dist|~)$` },
   { id: "wp-config", category: "backup", label: "WordPress config", status: 404, pattern: String.raw`^.*/wp-config\.php$`, wordpress: true },
   { id: "sql-dump", category: "backup", label: "SQL dumps", status: 404, pattern: String.raw`^/(?:backup|dump|db|database|data|site|www|mysql)\.sql(?:\.gz|\.zip|\.bz2)?$` },
-  { id: "traversal", category: "traversal", label: "path traversal", status: 403, pattern: String.raw`^.*/(?:etc/(?:passwd|shadow)|windows/win\.ini|proc/self/environ)$` },
-  { id: "router-exploits", category: "router", label: "router exploits", status: 403, pattern: String.raw`^/(?:boaform|HNAP1|GponForm)(?:/|$)` },
+  { id: "traversal", category: "traversal", label: "path traversal", status: 403, report: "exploit", pattern: String.raw`^.*/(?:etc/(?:passwd|shadow)|windows/win\.ini|proc/self/environ)$` },
+  { id: "router-exploits", category: "router", label: "router exploits", status: 403, report: "exploit", pattern: String.raw`^/(?:boaform|HNAP1|GponForm)(?:/|$)` },
 ];
 
 export type ProbeMatch = { rule: ProbeRule };

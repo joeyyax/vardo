@@ -1,8 +1,8 @@
 // Counts and lists for the app Security tab and the admin view.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, domains } from "@/lib/db/schema";
+import { apps, domains, probeEvents } from "@/lib/db/schema";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { bansSince, listActiveBans, permanentBanCount, type BanView } from "./bans";
 import { banDetails } from "./ban-detail";
@@ -27,13 +27,35 @@ export async function weekStats(appId?: string, now = new Date()): Promise<Guard
   return { probes, bans, traps, permanent };
 }
 
-export type BanWithDetail = BanView & { detail: BanDetail | null };
+/** `reportedTo` is the reporter id that took a report since the ban began. */
+export type BanWithDetail = BanView & { detail: BanDetail | null; reportedTo: string | null };
 export type GuardOverview = { stats: GuardStats; bans: BanWithDetail[] };
+
+const REPORT_SLACK_MS = 5 * 60_000;
+
+/** The reporter each ban's address went to after the ban began, keyed by ban id. */
+async function banReports(bans: readonly BanView[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (bans.length === 0) return out;
+  const since = new Date(Math.min(...bans.map((b) => b.createdAt.getTime())) - REPORT_SLACK_MS);
+  const rows = await db
+    .select({ ip: probeEvents.ip, path: probeEvents.path, createdAt: probeEvents.createdAt })
+    .from(probeEvents)
+    .where(and(eq(probeEvents.kind, "reported"), gt(probeEvents.createdAt, since), inArray(probeEvents.ip, [...new Set(bans.map((b) => b.ip))])));
+  for (const ban of bans) {
+    const hit = rows.find((r) => r.ip === ban.ip && r.path && r.createdAt.getTime() >= ban.createdAt.getTime() - REPORT_SLACK_MS);
+    if (hit?.path) out.set(ban.id, hit.path);
+  }
+  return out;
+}
 
 export async function guardOverview(appId?: string): Promise<GuardOverview> {
   const [stats, bans, settings] = await Promise.all([weekStats(appId), listActiveBans({ appId }), getProbeGuardSettings()]);
-  const details = await banDetails(bans, settings.windowMinutes * 60_000).catch(() => new Map<string, BanDetail>());
-  return { stats, bans: bans.map((b) => ({ ...b, detail: details.get(b.id) ?? null })) };
+  const [details, reports] = await Promise.all([
+    banDetails(bans, settings.windowMinutes * 60_000).catch(() => new Map<string, BanDetail>()),
+    banReports(bans).catch(() => new Map<string, string>()),
+  ]);
+  return { stats, bans: bans.map((b) => ({ ...b, detail: details.get(b.id) ?? null, reportedTo: reports.get(b.id) ?? null })) };
 }
 
 /** Whether the app looks like WordPress to auto-detection. */

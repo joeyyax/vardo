@@ -19,6 +19,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { toast } from "@/lib/messenger";
 import { banReasonLine, type BanDetail } from "@/lib/probe-guard/summary";
 import { isPermanent } from "@/lib/probe-guard/permanent";
+import { reporterLink } from "@/lib/probe-guard/reporting/links";
 
 export type BanItem = {
   id: string;
@@ -30,28 +31,37 @@ export type BanItem = {
   expiresAt: string;
   appName?: string | null;
   detail?: BanDetail | null;
+  /** The reporter that took a report on this address. */
+  reportedTo?: string | null;
 };
 
-/** Active bans with unban and, for admins, ban permanently. `banUrl` maps a ban id to its endpoint. */
+export const ALLOWED_FROM_BAN_NOTE = "Allowed from a ban";
+
+/**
+ * Active bans with unban and, for admins, ban permanently and allow. `banUrl` maps a ban id to its
+ * endpoint; `allowUrl` is the allowlist endpoint.
+ */
 export function BansList({
   bans,
   banUrl,
   onChange,
   canUnban = true,
   canBanPermanently = false,
+  allowUrl,
 }: {
   bans: BanItem[];
   banUrl: (id: string) => string;
   onChange: () => void;
   canUnban?: boolean;
   canBanPermanently?: boolean;
+  allowUrl?: string;
 }) {
   const [pending, setPending] = useState<string | null>(null);
 
-  async function send(ban: BanItem, init: RequestInit, done: string, failed: string) {
+  async function send(ban: BanItem, init: RequestInit, done: string, failed: string, url = banUrl(ban.id)) {
     setPending(ban.id);
     try {
-      const res = await fetch(banUrl(ban.id), init);
+      const res = await fetch(url, init);
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         toast.error(data?.error ?? failed);
@@ -74,6 +84,16 @@ export function BansList({
       `Banned ${ban.ip} permanently`,
       "Couldn't make the ban permanent",
     );
+  const allow = (ban: BanItem) =>
+    allowUrl
+      ? send(
+          ban,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: ban.ip, note: ALLOWED_FROM_BAN_NOTE }) },
+          `Allowed ${ban.ip}`,
+          "Couldn't allow the address",
+          allowUrl,
+        )
+      : Promise.resolve();
 
   if (bans.length === 0) return <p className="text-xs text-muted-foreground">No active bans.</p>;
 
@@ -87,9 +107,31 @@ export function BansList({
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="font-mono text-sm">{ban.ip}</p>
               <BanReason ban={ban} permanent={permanent} />
+              <ReportedLink ban={ban} />
             </div>
-            {(canUnban || (canBanPermanently && !permanent)) && (
+            {(canUnban || allowUrl || (canBanPermanently && !permanent)) && (
               <div className="flex shrink-0 items-center gap-2">
+                {allowUrl && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="outline" disabled={busy}>
+                        Allow
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent size="sm">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Allow {ban.ip}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Lifts the ban and adds the address to the never-ban list. It won&apos;t be banned or reported again.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => void allow(ban)}>Allow</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
                 {canBanPermanently && !permanent && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -122,6 +164,18 @@ export function BansList({
         );
       })}
     </ul>
+  );
+}
+
+function ReportedLink({ ban }: { ban: BanItem }) {
+  const link = ban.reportedTo ? reporterLink(ban.reportedTo, ban.ip) : null;
+  if (!link) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      <a href={link.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:text-foreground hover:underline">
+        Reported to {link.label}
+      </a>
+    </p>
   );
 }
 

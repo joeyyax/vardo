@@ -11,6 +11,8 @@ import { createBan } from "@/lib/probe-guard/bans";
 import { activeCanaries, markUsed, markerFor, recordEvent } from "@/lib/probe-guard/events";
 import { appForHost } from "@/lib/probe-guard/sync";
 import { renderAppRobots } from "@/lib/probe-guard/robots";
+import { inBlockedRange, isAllowlisted } from "@/lib/probe-guard/client-lists";
+import { queueAbuseReport } from "@/lib/probe-guard/reporting/queue";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,9 @@ const deps: GuardDeps = {
   appForHost,
   robotsFor: renderAppRobots,
   sleep: (ms) => sleep(ms),
+  allowed: isAllowlisted,
+  blockedRange: inBlockedRange,
+  queueReport: queueAbuseReport,
 };
 
 async function handle(request: Request, { params }: { params: Promise<{ kind: string }> }): Promise<Response> {
