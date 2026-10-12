@@ -27,6 +27,7 @@ import { registerRunCronJob } from "./run-cron-job";
 import { registerCronJobTools } from "./cron-jobs";
 import { registerNotificationChannelTools } from "./notification-channels";
 import { registerEmailSettingsTools } from "./email-settings";
+import { registerDomainTools } from "./domains";
 
 /** Registers all MCP tools on the server. */
 export function registerAllTools(
@@ -60,4 +61,5 @@ export function registerAllTools(
   registerCronJobTools(server, context);
   registerNotificationChannelTools(server, context);
   registerEmailSettingsTools(server, context);
+  registerDomainTools(server, context);
 }

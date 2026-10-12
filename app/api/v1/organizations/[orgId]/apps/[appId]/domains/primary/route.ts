@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, domains } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { apps } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { setPrimaryDomain } from "@/lib/domains/manage";
+import { domainResponse } from "@/lib/domains/domain-response";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -19,24 +21,14 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
-      where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true },
+      where: eq(apps.id, appId),
+      columns: { id: true, organizationId: true, isSystemManaged: true },
     });
-    if (!app) {
-      return apiError.notFound("app");
-    }
+    if (!app || app.organizationId !== orgId) return apiError.notFound("app");
 
     const { domainId } = await request.json();
-
-    await db
-      .update(domains)
-      .set({ isPrimary: false })
-      .where(eq(domains.appId, appId));
-
-    await db
-      .update(domains)
-      .set({ isPrimary: true })
-      .where(and(eq(domains.id, domainId), eq(domains.appId, appId), eq(domains.source, "vardo")));
+    const result = await setPrimaryDomain(app, domainId);
+    if (!result.ok) return domainResponse(result);
 
     return NextResponse.json({ success: true });
   } catch (error) {
