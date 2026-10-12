@@ -3,7 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/db", () => ({ db: {} }));
 
 import type { VolumeInfo } from "@/lib/docker/client";
-import { deleteOrphanVolumes, ORPHAN_MIN_AGE_MS, resolveOrphans, type OrphanSnapshot } from "@/lib/docker/orphan-volumes";
+import {
+  deleteOrphanVolumes,
+  measureOrphans,
+  ORPHAN_MIN_AGE_MS,
+  resetVolumeSizes,
+  resolveOrphans,
+  volumeSizes,
+  type OrphanSnapshot,
+  type OrphanVolume,
+} from "@/lib/docker/orphan-volumes";
 
 const now = Date.parse("2026-10-11T12:00:00Z");
 const OLD = new Date(now - 30 * ORPHAN_MIN_AGE_MS).toISOString();
@@ -88,5 +97,42 @@ describe("deleteOrphanVolumes", () => {
       { name: HASH, ok: true },
       { name: "pgdata", ok: false, error: "No longer unused" },
     ]);
+  });
+});
+
+describe("volume sizes", () => {
+  const listed: OrphanVolume[] = [
+    { name: "a", kind: "unclaimed", project: null, createdAt: OLD, sizeBytes: null },
+    { name: "b", kind: "unclaimed", project: null, createdAt: OLD, sizeBytes: null },
+  ];
+
+  it("shares one df across callers and caches the result", async () => {
+    resetVolumeSizes();
+    const df = vi.fn(async () => new Map([["a", 10]]));
+    const [first, second] = await Promise.all([volumeSizes(df), volumeSizes(df)]);
+    expect(first).toBe(second);
+    await volumeSizes(df);
+    expect(df).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries after a failed df instead of caching the failure", async () => {
+    resetVolumeSizes();
+    await expect(volumeSizes(async () => Promise.reject(new Error("timeout")))).resolves.toBeNull();
+    await expect(volumeSizes(async () => new Map([["a", 1]]))).resolves.toEqual(new Map([["a", 1]]));
+  });
+
+  it("fills sizes and leaves unmeasured volumes unknown", async () => {
+    const result = await measureOrphans(listed, { sizes: async () => new Map([["a", 10]]) });
+    expect(result).toEqual({ measuring: false, volumes: [{ ...listed[0], sizeBytes: 10 }, listed[1]] });
+  });
+
+  it("answers measuring when df outlasts the wait", async () => {
+    const result = await measureOrphans(listed, { waitMs: 5, sizes: () => new Promise(() => {}) });
+    expect(result).toEqual({ measuring: true, volumes: listed });
+  });
+
+  it("keeps sizes unknown when df fails", async () => {
+    const result = await measureOrphans(listed, { sizes: async () => null });
+    expect(result).toEqual({ measuring: false, volumes: listed });
   });
 });

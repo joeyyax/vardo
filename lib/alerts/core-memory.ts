@@ -70,7 +70,9 @@ function item(name: string, severity: AlertItem["severity"], latest: Reading): A
       key === "proxy"
         ? "If the kernel kills it, every site on this server goes down."
         : "The kernel kills it if it reaches the limit.",
-    next: envVar
+    next: key === "proxy"
+      ? "Vardo will raise the limit if the host has room. If pressure persists, free host memory or set VARDO_TRAEFIK_MEM in .env."
+      : envVar
       ? `Raise ${envVar} in .env and recreate ${name}.`
       : `Raise its mem_limit and recreate ${name}.`,
     gauge: { title: "Memory limit used", percent: latest.value, warn: CORE_MEMORY_RULE.warn, critical: CORE_MEMORY_RULE.critical },

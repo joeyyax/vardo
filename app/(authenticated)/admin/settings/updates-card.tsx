@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, ArrowUpCircle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Term } from "@/components/term";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,11 +22,12 @@ import { toast } from "@/lib/messenger";
 import { versionShort } from "@/lib/email/format";
 import type { UpdatePolicy } from "@/lib/self-update/policy";
 import type { UpdateStatus } from "@/lib/self-update/status";
+import { RolloutStatus, type RolloutAction } from "./rollout-status";
 
 const MODE_HELP: Record<UpdatePolicy["mode"], string> = {
   off: "No update notices. Update now still works.",
   notify: "Email admins when an update is out. You apply it.",
-  auto: "Apply updates in the maintenance window after pre-flight checks, with a database dump first.",
+  auto: "Update when ready. Linked instances use priority order and wait for a safe moment.",
 };
 
 const RUN_LABEL: Record<string, string> = {
@@ -40,28 +40,8 @@ const RUN_LABEL: Record<string, string> = {
   "rollback-failed": "Rollback failed",
 };
 
-function short(sha: string | null | undefined): string {
-  return sha ? sha.slice(0, 7) : "unknown";
-}
-
 function when(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString() : "";
-}
-
-function browserZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "UTC";
-  }
-}
-
-function zones(): string[] {
-  try {
-    return (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
-  } catch {
-    return [];
-  }
 }
 
 export function UpdatesCard() {
@@ -72,7 +52,9 @@ export function UpdatesCard() {
   const [saving, setSaving] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const zoneList = useMemo(() => zones(), []);
+  const [rolloutAction, setRolloutAction] = useState<RolloutAction | null>(null);
+  const [rolloutConfirmOpen, setRolloutConfirmOpen] = useState(false);
+  const [acting, setActing] = useState(false);
   const askedFromLink = useRef(false);
 
   async function load(fresh = false) {
@@ -87,6 +69,17 @@ export function UpdatesCard() {
         askedFromLink.current = true;
         setConfirmOpen(true);
       }
+      const query = new URLSearchParams(window.location.search);
+      if (!askedFromLink.current && query.get("action") && query.get("rollout")) {
+        askedFromLink.current = true;
+        const action = query.get("action");
+        if (data.rollout?.id === query.get("rollout") && (action === "immediate" || action === "skip" || action === "retry")) {
+          setRolloutAction({ action, instanceId: query.get("instance") ?? undefined });
+          setRolloutConfirmOpen(true);
+        } else {
+          toast.error("This rollout has changed. Review the current plan.");
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -99,10 +92,10 @@ export function UpdatesCard() {
   const busy = !!status?.runActive || !!status?.active;
 
   useEffect(() => {
-    if (!busy) return;
+    if (!busy && status?.rollout?.state !== "running") return;
     const t = setInterval(() => void load(), 10_000);
     return () => clearInterval(t);
-  }, [busy]);
+  }, [busy, status?.rollout?.state]);
 
   async function check() {
     setChecking(true);
@@ -153,23 +146,30 @@ export function UpdatesCard() {
     }
   }
 
-  async function approve(sha: string) {
-    const res = await fetch("/api/v1/admin/updates/approve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sha }),
-    });
-    if (!res.ok) {
-      toast.error("Couldn't approve the update");
-      return;
+  async function applyRolloutAction() {
+    if (!rolloutAction || !status?.rollout) return;
+    setActing(true);
+    try {
+      const response = await fetch("/api/v1/admin/updates/rollout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rolloutId: status.rollout.id, ...rolloutAction }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error((body as { error?: string }).error ?? "Couldn't change the rollout");
+        return;
+      }
+      setRolloutConfirmOpen(false);
+      toast.success(rolloutAction.action === "immediate" ? "Priority queue skipped" : rolloutAction.action === "skip" ? "Instance skipped for this rollout" : "Rollout resumed");
+      await load();
+    } finally {
+      setActing(false);
     }
-    toast.success(`Approved ${short(sha)}. It applies in the next maintenance window.`);
-    await load();
   }
 
   const update = status?.update;
   const run = status?.run;
-  const zonePlaceholder = status?.instanceTimezone ?? "UTC";
 
   return (
     <Card id="updates" className="scroll-mt-20">
@@ -237,15 +237,6 @@ export function UpdatesCard() {
                 </p>
               )}
 
-              {status.canary && !status.canary.ready && update?.hasUpdate && (
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="text-status-warning">{status.canary.reason}</span>
-                  <Button variant="outline" size="sm" onClick={() => void approve(update.targetSha)}>
-                    Approve {update.targetLabel}
-                  </Button>
-                </div>
-              )}
-
               {status.selfDeploy ? (
                 <Button
                   variant="outline"
@@ -266,6 +257,16 @@ export function UpdatesCard() {
                 </div>
               )}
             </div>
+
+            {status.rolloutCoordinator && status.rollout && (
+              <RolloutStatus rollout={status.rollout} onAction={(action) => { setRolloutAction(action); setRolloutConfirmOpen(true); }} />
+            )}
+            {status.rolloutCoordinator && !status.protocolReady && !status.rollout && (
+              <p className="flex items-start gap-2 text-sm text-status-warning">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                Automatic rollouts will start when all linked instances support the rollout protocol.
+              </p>
+            )}
 
             <form onSubmit={(e) => void save(e)} className="space-y-4 border-t pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -305,103 +306,25 @@ export function UpdatesCard() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="update-priority">Instance priority</Label>
+                <Select value={policy.priority} onValueChange={(value) => setPolicy({ ...policy, priority: value as UpdatePolicy["priority"] })}>
+                  <SelectTrigger id="update-priority"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Ready instances with higher priority update first. Busy instances don&apos;t hold the others.</p>
+              </div>
+
               {policy.mode === "auto" && !status.selfDeploy && (
                 <p className="flex items-start gap-2 text-sm text-status-warning">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   Automatic updates need the self-deploy layout. Run vardo migrate-self-deploy on the host.
                 </p>
               )}
-
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Maintenance window</legend>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="window-start" className="text-xs text-muted-foreground">Start</Label>
-                    <Input id="window-start" type="time" value={policy.window.start} onChange={(e) => setPolicy({ ...policy, window: { ...policy.window, start: e.target.value } })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="window-end" className="text-xs text-muted-foreground">End</Label>
-                    <Input id="window-end" type="time" value={policy.window.end} onChange={(e) => setPolicy({ ...policy, window: { ...policy.window, end: e.target.value } })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="window-tz" className="text-xs text-muted-foreground">Time zone</Label>
-                    <Input
-                      id="window-tz"
-                      list="window-tz-list"
-                      placeholder={status.instanceTimezone ? `${zonePlaceholder} (instance)` : browserZone()}
-                      value={policy.window.timezone ?? ""}
-                      onChange={(e) => setPolicy({ ...policy, window: { ...policy.window, timezone: e.target.value || null } })}
-                    />
-                    <datalist id="window-tz-list">
-                      {zoneList.map((z) => <option key={z} value={z} />)}
-                    </datalist>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {status.windowOpen ? "The window is open now" : status.nextWindowAt ? `Next opens ${when(status.nextWindowAt)}` : ""} ({status.zone}).
-                  {" "}Auto only starts inside it.
-                </p>
-              </fieldset>
-
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">
-                  <Term id="linked-instances">Linked instances</Term>
-                </legend>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="canary-role" className="text-xs text-muted-foreground">Role</Label>
-                    <Select
-                      value={policy.canary.role}
-                      onValueChange={(v) => setPolicy({ ...policy, canary: { ...policy.canary, role: v as UpdatePolicy["canary"]["role"] } })}
-                    >
-                      <SelectTrigger id="canary-role"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Independent</SelectItem>
-                        <SelectItem value="canary">
-                          <Term id="canary" passive>Canary</Term>: updates first
-                        </SelectItem>
-                        <SelectItem value="follower">
-                          <Term id="follower" passive>Follows a canary</Term>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {policy.canary.role === "follower" && (
-                    <>
-                      <div className="space-y-1">
-                        <Label htmlFor="canary-peer" className="text-xs text-muted-foreground">Canary</Label>
-                        <Select
-                          value={policy.canary.canaryInstanceId ?? ""}
-                          onValueChange={(v) => setPolicy({ ...policy, canary: { ...policy.canary, canaryInstanceId: v || null } })}
-                        >
-                          <SelectTrigger id="canary-peer"><SelectValue placeholder="Pick an instance" /></SelectTrigger>
-                          <SelectContent>
-                            {status.peers.map((p) => (
-                              <SelectItem key={p.instanceId} value={p.instanceId}>
-                                {p.name} {p.sha ? `(${short(p.sha)})` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="canary-soak" className="text-xs text-muted-foreground">Healthy for (hours)</Label>
-                        <Input
-                          id="canary-soak"
-                          type="number"
-                          min={0}
-                          max={336}
-                          value={policy.canary.soakHours}
-                          onChange={(e) => setPolicy({ ...policy, canary: { ...policy.canary, soakHours: Number(e.target.value) || 0 } })}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  A follower takes a version once the canary has run it healthy this long, or once you approve it here.
-                </p>
-              </fieldset>
 
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
@@ -428,6 +351,28 @@ export function UpdatesCard() {
                   Update now
                 </AlertDialogAction>
               )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={rolloutConfirmOpen} onOpenChange={setRolloutConfirmOpen}>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{rolloutAction?.action === "immediate" ? "Roll out to ready instances now?" : rolloutAction?.action === "skip" ? "Skip this instance?" : "Retry the rollout?"}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {rolloutAction?.action === "immediate"
+                  ? "This skips priority order. Busy instances still wait, and health checks and concurrency limits remain in place."
+                  : rolloutAction?.action === "skip"
+                    ? "This instance stays on its current version for this rollout. It'll be included in the next one if still behind."
+                    : "Vardo will check the affected instances again before starting another update."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void applyRolloutAction()} disabled={acting}>
+                {acting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                Confirm
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

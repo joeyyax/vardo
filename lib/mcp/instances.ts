@@ -4,6 +4,7 @@ import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { localVardoStatus } from "@/lib/self-update/peer-status";
 import { getUpdatePolicy } from "@/lib/self-update/store";
+import { parseRolloutCapability } from "@/lib/self-update/rollout-capability";
 
 export type PeerRow = typeof meshPeers.$inferSelect;
 
@@ -63,7 +64,7 @@ export type InstanceSummary = {
   local: boolean;
   url: string | null;
   type: string | null;
-  role: string | null;
+  priority: string | null;
   version: string | null;
   healthy: boolean | null;
   status: string;
@@ -82,7 +83,7 @@ export async function listInstances({ includePeers }: { includePeers: boolean })
     local: true,
     url: config.domain ? `https://${config.domain}` : null,
     type: null,
-    role: policy.canary.role === "none" ? null : policy.canary.role,
+    priority: policy.priority,
     version: status?.sha ?? null,
     healthy: status?.healthy ?? null,
     status: "online",
@@ -101,6 +102,7 @@ export async function listInstances({ includePeers }: { includePeers: boolean })
       publicApiUrl: true,
       vardoSha: true,
       vardoHealthy: true,
+      vardoUpdate: true,
       lastSeenAt: true,
     },
   });
@@ -116,8 +118,7 @@ export async function listInstances({ includePeers }: { includePeers: boolean })
         local: false,
         url: p.publicApiUrl,
         type: p.type,
-        role:
-          policy.canary.role === "follower" && policy.canary.canaryInstanceId === p.instanceId ? "canary" : null,
+        priority: parseRolloutCapability(p.vardoUpdate)?.priority ?? null,
         version: p.vardoSha,
         healthy: p.vardoHealthy,
         status: p.status,

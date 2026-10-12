@@ -65,6 +65,7 @@ export const imageReclaimConfigSchema = z.object({
 
 export const imageReclaimRunSchema = z.object({
   dryRun: z.boolean().optional().default(false),
+  idle: z.boolean().optional().default(true),
   /** Also sweep superseded blue-green slot generations. */
   slots: z.boolean().optional().default(false),
 });

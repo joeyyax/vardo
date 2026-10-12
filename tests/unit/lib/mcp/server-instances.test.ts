@@ -12,7 +12,7 @@ vi.mock("@/lib/system-settings", async (orig) => ({
   getInstanceConfig: async () => ({ instanceName: "canary", domain: "canary.example.com", baseDomain: "", serverIp: "" }),
 }));
 vi.mock("@/lib/self-update/store", () => ({
-  getUpdatePolicy: async () => ({ canary: { role: "follower", canaryInstanceId: "prod-id", soakHours: 24 } }),
+  getUpdatePolicy: async () => ({ mode: "auto", priority: "standard", channel: "releases" }),
 }));
 
 const { createMcpServer } = await import("@/lib/mcp/server");
@@ -40,6 +40,7 @@ beforeEach(() => {
       publicApiUrl: "https://prod.example.com",
       vardoSha: "abc1234",
       vardoHealthy: true,
+      vardoUpdate: { protocol: 1, mode: "auto", priority: "critical", channel: "releases" },
       lastSeenAt: new Date("2026-01-01T00:00:00Z"),
     },
     { id: "peer-2", instanceId: "far-id", name: "far", connectionType: "visible" },
@@ -65,8 +66,8 @@ describe("MCP server across instances", () => {
     const result = await client.callTool({ name: "vardo_list_instances", arguments: {} });
     const { instances } = JSON.parse((result.content as { text: string }[])[0].text);
     expect(instances.map((i: { name: string }) => i.name)).toEqual(["canary", "prod"]);
-    expect(instances[0]).toMatchObject({ local: true, role: "follower", url: "https://canary.example.com" });
-    expect(instances[1]).toMatchObject({ id: "peer-1", role: "canary", version: "abc1234", status: "online" });
+    expect(instances[0]).toMatchObject({ local: true, priority: "standard", url: "https://canary.example.com" });
+    expect(instances[1]).toMatchObject({ id: "peer-1", priority: "critical", version: "abc1234", status: "online" });
     await client.close();
   });
 

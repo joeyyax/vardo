@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
-import { buildkitCacheMaxBytes, buildkitMemGb, installedGiB, redisMemory, traefikMemMb } from "@/lib/resources/defaults";
+import { buildkitCacheMaxBytes, buildkitMemGb, installedGiB, parseSizeMb, redisMemory, traefikGoMemLimit, traefikMemMb } from "@/lib/resources/defaults";
 
 // install.sh's sizing must match lib/resources/defaults.ts.
 
@@ -113,6 +113,38 @@ describe("ensure_traefik_mem", () => {
     const calls = (fn: string) => src.split("\n").filter((l) => l.trim().startsWith(`${fn} "`)).map((l) => l.trim().split(" ")[1]);
     expect(calls("ensure_traefik_mem")).toEqual(calls("ensure_worker_mem"));
     expect(calls("ensure_traefik_mem").length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("ensure_traefik_gomemlimit", () => {
+  const run = (initial: string) => {
+    const file = join(dir, `env-gomem-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(file, initial);
+    sh(`ensure_traefik_gomemlimit "${file}" >/dev/null`, 8192);
+    return readFileSync(file, "utf8");
+  };
+
+  it.each(["512m", "1536m", "1.5g", "2g", "1024MB"])("matches lib/resources/defaults.ts for %s", (mem) => {
+    expect(envOf(run(`VARDO_TRAEFIK_MEM=${mem}\n`)).VARDO_TRAEFIK_GOMEMLIMIT).toBe(traefikGoMemLimit(parseSizeMb(mem)!));
+  });
+
+  it("preserves an explicit Go heap limit when the container cap changes", () => {
+    const first = run("VARDO_TRAEFIK_MEM=512m\n");
+    const after = run(first.replace("VARDO_TRAEFIK_MEM=512m", "VARDO_TRAEFIK_MEM=2g"));
+    expect(envOf(after).VARDO_TRAEFIK_GOMEMLIMIT).toBe("460MiB");
+    expect(after.match(/VARDO_TRAEFIK_GOMEMLIMIT=/g)).toHaveLength(1);
+  });
+
+  it("writes nothing without a parseable limit", () => {
+    expect(run("A=1\n")).toBe("A=1\n");
+    expect(run("VARDO_TRAEFIK_MEM=bogus\n")).toBe("VARDO_TRAEFIK_MEM=bogus\n");
+  });
+
+  it("runs after every ensure_traefik_mem, and a self-deploy update sizes Redis too", () => {
+    const src = readFileSync(join(__dirname, "../../../install.sh"), "utf8");
+    const calls = (fn: string) => src.split("\n").filter((l) => l.trim().startsWith(`${fn} "`)).map((l) => l.trim().split(" ")[1]);
+    expect(calls("ensure_traefik_gomemlimit")).toEqual(calls("ensure_traefik_mem"));
+    expect(calls("ensure_redis_mem")).toEqual(calls("ensure_traefik_mem"));
   });
 });
 

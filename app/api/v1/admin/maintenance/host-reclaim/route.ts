@@ -6,6 +6,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { previewHostReclaim, runHostReclaim } from "@/lib/docker/host-reclaim/run";
 import { getHostReclaimConfig, getLastHostReclaim, setHostReclaimConfig } from "@/lib/docker/host-reclaim/state";
 import { logger } from "@/lib/logger";
+import { recordActivity } from "@/lib/activity";
+import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 
 const log = logger.child("admin:maintenance:host-reclaim");
 
@@ -27,8 +29,14 @@ async function handleGet() {
 // POST — runs a reclaim now. Volumes are never in scope.
 async function handlePost() {
   try {
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
     const run = await runHostReclaim("manual");
+    for (const organizationId of await adminOrgIds()) {
+      await recordActivity({ organizationId, action: "system.routine_cleanup_run", userId: session.user.id, metadata: {
+        reclaimedBytes: run.buildCacheBytes + run.danglingBytes + run.unusedBytes,
+        skipped: run.skipped ?? null,
+      } }).catch((error) => log.warn("Couldn't record cleanup activity:", error));
+    }
     return NextResponse.json({ run });
   } catch (error) {
     return handleRouteError(error, "host reclaim");

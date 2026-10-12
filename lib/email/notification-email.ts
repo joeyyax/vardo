@@ -18,6 +18,7 @@ import { volumeDriftMail } from "./templates/volume-drift";
 import { systemAlertMail } from "./templates/system-alert";
 import { healthDigestMail } from "./templates/health-digest";
 import { lifecycleMail } from "./templates/lifecycle";
+import { rolloutMail } from "./templates/rollout";
 import { alertFiredMail, alertResolvedMail } from "./templates/alerts";
 
 export type { MailContext } from "./templates/context";
@@ -88,6 +89,11 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "system.restart-failed":
     case "system.containers-missing":
       return lifecycleMail(event, ctx);
+    case "system.rollout-started":
+    case "system.rollout-busy":
+    case "system.rollout-paused":
+    case "system.rollout-finished":
+      return rolloutMail(event, ctx);
     case "digest.health":
       return healthDigestMail(event, ctx);
     default:

@@ -7,13 +7,15 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
+import { recordActivity } from "@/lib/activity";
+import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import {
   imageReclaimAppSchema,
   imageReclaimConfigSchema,
   imageReclaimRunSchema,
 } from "@/lib/api/admin/maintenance-schemas";
 import { buildReclaimPlan } from "@/lib/docker/image-reclaim/plan";
-import { buildSlotReclaimPlan } from "@/lib/docker/image-reclaim/slot-plan";
+import { buildSlotReclaimPlan, withoutRollbackTargets } from "@/lib/docker/image-reclaim/slot-plan";
 import { executeReclaimPlan } from "@/lib/docker/image-reclaim/run";
 import {
   getImageReclaimConfig,
@@ -48,7 +50,7 @@ async function handleGet() {
 
     let slotPlan = null;
     try {
-      const built = await buildSlotReclaimPlan();
+      const built = withoutRollbackTargets(await buildSlotReclaimPlan());
       slotPlan = {
         ...built,
         skipped: built.skipped.map((s) => ({ ...s, explanation: SLOT_SKIP_COPY[s.reason] })),
@@ -67,7 +69,7 @@ async function handleGet() {
 // Volumes are never in scope.
 async function handlePost(request: NextRequest) {
   try {
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
 
     const body = await request.json().catch(() => ({}));
     const parsed = imageReclaimRunSchema.safeParse(body);
@@ -76,10 +78,11 @@ async function handlePost(request: NextRequest) {
     }
 
     const config = await getImageReclaimConfig();
-    const plan = await buildReclaimPlan(config.idleDays);
-    const result = await executeReclaimPlan(plan, { dryRun: parsed.data.dryRun });
+    if (!parsed.data.idle && !parsed.data.slots) return NextResponse.json({ error: "Choose something to reclaim" }, { status: 400 });
+    const plan = parsed.data.idle ? await buildReclaimPlan(config.idleDays) : null;
+    const result = plan ? await executeReclaimPlan(plan, { dryRun: parsed.data.dryRun }) : null;
 
-    if (!parsed.data.dryRun) {
+    if (!parsed.data.dryRun && result) {
       await recordLastRun(result);
       log.info(`Manual reclaim removed ${result.reclaimed.length} image(s)`);
     }
@@ -87,10 +90,22 @@ async function handlePost(request: NextRequest) {
     // Opt-in per request so a plain run can't reach an unpreviewed generation.
     let slotResult = null;
     if (parsed.data.slots) {
-      const slotPlan = await buildSlotReclaimPlan();
+      const slotPlan = withoutRollbackTargets(await buildSlotReclaimPlan());
       slotResult = await executeReclaimPlan(slotPlan, { dryRun: parsed.data.dryRun });
       if (!parsed.data.dryRun) {
         log.info(`Manual slot reclaim removed ${slotResult.reclaimed.length} image(s)`);
+      }
+    }
+
+    if (!parsed.data.dryRun) {
+      try {
+        for (const organizationId of await adminOrgIds()) {
+          await recordActivity({ organizationId, action: "system.deep_clean_run", userId: session.user.id, metadata: {
+            idleImages: result?.reclaimed.length ?? 0, previousDeployImages: slotResult?.reclaimed.length ?? 0,
+          } });
+        }
+      } catch (error) {
+        log.warn("Couldn't record deep clean activity:", error);
       }
     }
 

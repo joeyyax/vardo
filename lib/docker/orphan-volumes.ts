@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { appBaseDir } from "@/lib/paths";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { getVolumeSizes, removeVolume } from "./client";
-import { slotDirsOf, within, VOLUME_SIZES_TIMEOUT_MS } from "./app-data";
+import { slotDirsOf, within } from "./app-data";
 import { loadSnapshot, resolveDetached, type Snapshot } from "./detached-volumes";
 
 export type OrphanKind = "anonymous" | "unclaimed";
@@ -119,10 +119,54 @@ export async function findOrphanVolumes(load: () => Promise<OrphanSnapshot> = lo
   return resolveOrphans(await load()).map((v) => ({ ...v, sizeBytes: null }));
 }
 
-/** Fills in sizes, best effort. */
-export async function measureOrphans(list: OrphanVolume[]): Promise<OrphanVolume[]> {
-  const sizes = await within(getVolumeSizes({ timeoutMs: VOLUME_SIZES_TIMEOUT_MS }), VOLUME_SIZES_TIMEOUT_MS, new Map<string, number>());
-  return list.map((v) => ({ ...v, sizeBytes: sizes.get(v.name) ?? null }));
+/** /system/df walks every volume: a minute or more on a big host. */
+export const VOLUME_DF_TIMEOUT_MS = 180_000;
+const SIZES_TTL_MS = 2 * 60_000;
+/** How long one request waits on df before answering that it's still measuring. */
+export const SIZES_WAIT_MS = 20_000;
+
+type Sizes = Map<string, number>;
+type SizesCache = { sizes: Sizes | null; at: number; pending: Promise<Sizes | null> | null };
+
+// On globalThis so every route bundle shares one df.
+const g = globalThis as unknown as { __vardo_volume_sizes?: SizesCache };
+const sizesCache = (g.__vardo_volume_sizes ??= { sizes: null, at: 0, pending: null });
+
+/** Volume sizes from one shared df, cached briefly. Null when df failed or timed out. */
+export function volumeSizes(
+  df: () => Promise<Sizes> = () => getVolumeSizes({ timeoutMs: VOLUME_DF_TIMEOUT_MS }),
+): Promise<Sizes | null> {
+  if (sizesCache.sizes && Date.now() - sizesCache.at < SIZES_TTL_MS) return Promise.resolve(sizesCache.sizes);
+  sizesCache.pending ??= df()
+    .then((sizes) => {
+      sizesCache.sizes = sizes;
+      sizesCache.at = Date.now();
+      return sizes;
+    })
+    .catch(() => null)
+    .finally(() => {
+      sizesCache.pending = null;
+    });
+  return sizesCache.pending;
+}
+
+/** Clears the size cache. For tests. */
+export function resetVolumeSizes(): void {
+  sizesCache.sizes = null;
+  sizesCache.at = 0;
+  sizesCache.pending = null;
+}
+
+const STILL_MEASURING = Symbol("measuring");
+
+/** Fills in sizes, waiting up to `waitMs` on df. `measuring` means ask again; a failed df leaves sizes null. */
+export async function measureOrphans(
+  list: OrphanVolume[],
+  { waitMs = SIZES_WAIT_MS, sizes = () => volumeSizes() }: { waitMs?: number; sizes?: () => Promise<Sizes | null> } = {},
+): Promise<{ volumes: OrphanVolume[]; measuring: boolean }> {
+  const result = await within<Sizes | null | typeof STILL_MEASURING>(sizes(), waitMs, STILL_MEASURING);
+  if (result === STILL_MEASURING) return { volumes: list, measuring: true };
+  return { volumes: list.map((v) => ({ ...v, sizeBytes: result?.get(v.name) ?? null })), measuring: false };
 }
 
 export type OrphanDeleteResult = { name: string; ok: boolean; error?: string };

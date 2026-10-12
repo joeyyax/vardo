@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { isSelfApp, mergeSelfEnv, seedSelfEnv, withBuildKitCacheMax } from "@/lib/docker/self-env";
+import { isSelfApp, mergeSelfEnv, seedSelfEnv, withBuildKitCacheMax, withHostSizing } from "@/lib/docker/self-env";
+import { buildkitMemGb, redisMemory, traefikGoMemLimit, traefikMemMb, workerMemMb } from "@/lib/resources/defaults";
 
 const noGlobal = { log: () => {}, globalEnvPath: "/nonexistent/vardo/.env" };
 
@@ -146,6 +147,8 @@ describe("seedSelfEnv with a global .env", () => {
     const source = await seedSelfEnv("vardo", appDir, join(appDir, "blue"), null, {
       log: (line) => lines.push(line),
       globalEnvPath,
+      diskBytes: async () => null,
+      hostMemoryBytes: async () => null,
     });
 
     expect(source).toContain(globalEnvPath);
@@ -172,6 +175,7 @@ describe("seedSelfEnv with a global .env", () => {
         log: (l) => lines.push(l),
         globalEnvPath,
         diskBytes: async () => null,
+        hostMemoryBytes: async () => null,
       }),
     ).resolves.toBe(globalEnvPath);
     await expect(readFile(join(appDir, "blue", ".env"), "utf-8")).resolves.toBe("A=1\n");
@@ -185,11 +189,80 @@ describe("seedSelfEnv with a global .env", () => {
       log: (l) => lines.push(l),
       globalEnvPath,
       diskBytes: async () => 400 * 1024 ** 3,
+      hostMemoryBytes: async () => null,
     });
     await expect(readFile(join(appDir, "blue", ".env"), "utf-8")).resolves.toBe(
       `A=1\n\n# Derived from the disk size\nVARDO_BUILDKIT_CACHE_MAX=${50 * 1024 ** 3}\n`,
     );
-    expect(lines.join("\n")).toContain("VARDO_BUILDKIT_CACHE_MAX is unset");
+    expect(lines.join("\n")).toContain("derived from the host: VARDO_BUILDKIT_CACHE_MAX=");
+  });
+
+  const seed = (memoryBytes: number | null) =>
+    seedSelfEnv("vardo", appDir, join(appDir, "blue"), null, {
+      log: (l) => lines.push(l),
+      globalEnvPath,
+      diskBytes: async () => null,
+      hostMemoryBytes: async () => memoryBytes,
+    });
+  const slotEnv = async () =>
+    Object.fromEntries(
+      (await readFile(join(appDir, "blue", ".env"), "utf-8"))
+        .split("\n")
+        .filter((l) => /^[A-Z_]+=/.test(l))
+        .map((l) => l.split("=", 2) as [string, string]),
+    );
+
+  it("sizes unset limits from host RAM on a host install.sh never sized", async () => {
+    await writeFile(globalEnvPath, "A=1\n");
+    await seed(48 * 1024 ** 3);
+    const mb = 48 * 1024;
+    expect(await slotEnv()).toEqual({
+      A: "1",
+      VARDO_TRAEFIK_MEM: `${traefikMemMb(mb)}m`,
+      VARDO_WORKER_MEM: `${workerMemMb(mb)}m`,
+      VARDO_BUILDKIT_MEM: `${buildkitMemGb(mb)}g`,
+      VARDO_REDIS_MEM: redisMemory(mb).mem,
+      VARDO_REDIS_MAXMEMORY: redisMemory(mb).maxmemory,
+      VARDO_TRAEFIK_GOMEMLIMIT: traefikGoMemLimit(traefikMemMb(mb)),
+    });
+    expect(lines.join("\n")).toContain(`VARDO_TRAEFIK_MEM=${traefikMemMb(mb)}m`);
+  });
+
+  it("preserves custom memory and Go heap limits", async () => {
+    await writeFile(globalEnvPath, "VARDO_TRAEFIK_MEM=1g\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MAXMEMORY=100mb\n");
+    await seed(48 * 1024 ** 3);
+    const env = await slotEnv();
+    expect(env).toMatchObject({ VARDO_TRAEFIK_MEM: "1g", VARDO_TRAEFIK_GOMEMLIMIT: "460MiB", VARDO_REDIS_MAXMEMORY: "100mb" });
+    expect(env.VARDO_REDIS_MEM).toBeUndefined();
+  });
+
+  it("re-derives instead of carrying a value an earlier slot derived", async () => {
+    await writeFile(globalEnvPath, "A=1\n");
+    await writeFile(join(appDir, "current", ".env"), "A=1\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\n");
+    await seed(64 * 1024 ** 3);
+    expect((await slotEnv()).VARDO_TRAEFIK_MEM).toBe(`${traefikMemMb(64 * 1024)}m`);
+    expect(lines.join("\n")).not.toContain("kept from the previous slot");
+  });
+
+  it("leaves limits to compose when the host can't be read", async () => {
+    await rm(join(appDir, "current"), { recursive: true });
+    await writeFile(globalEnvPath, "A=1\n");
+    await seed(null);
+    await expect(readFile(join(appDir, "blue", ".env"), "utf-8")).resolves.toBe("A=1\n");
+  });
+});
+
+describe("withHostSizing", () => {
+  it("preserves an explicit GOMEMLIMIT", () => {
+    expect(withHostSizing("VARDO_TRAEFIK_MEM=2g\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nB=2\n", null)).toEqual({
+      content: "VARDO_TRAEFIK_MEM=2g\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nB=2\n",
+      keys: [],
+    });
+  });
+
+  it("changes nothing when every value is current", () => {
+    const content = "VARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\n";
+    expect(withHostSizing(content, null)).toEqual({ content, keys: [] });
   });
 });
 

@@ -189,7 +189,7 @@ export function MaintenanceSettings() {
   const [idleDaysInput, setIdleDaysInput] = useState("30");
   const [savingImages, setSavingImages] = useState(false);
   const [reclaimingImages, setReclaimingImages] = useState(false);
-  // Previous deploys are opt-in per run, matching the API.
+  const [includeIdle, setIncludeIdle] = useState(true);
   const [includeSlots, setIncludeSlots] = useState(false);
   const [showAllSkips, setShowAllSkips] = useState(false);
   const [owners, setOwners] = useState<OwnerReport | null>(null);
@@ -282,10 +282,7 @@ export function MaintenanceSettings() {
     }
   }
 
-  async function handleSaveImageConfig(
-    enabled: boolean,
-    slotRollbackTargets = images?.config.slotRollbackTargets ?? false,
-  ) {
+  async function handleSaveImageConfig(enabled: boolean) {
     setSavingImages(true);
     try {
       const idleDays = Number(idleDaysInput);
@@ -300,7 +297,7 @@ export function MaintenanceSettings() {
           enabled,
           idleDays,
           slots: images?.config.slots ?? false,
-          slotRollbackTargets,
+          slotRollbackTargets: false,
         }),
       });
       if (!res.ok) {
@@ -323,14 +320,14 @@ export function MaintenanceSettings() {
       const res = await fetch("/api/v1/admin/maintenance/image-reclaim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun: false, slots: includeSlots }),
+        body: JSON.stringify({ dryRun: false, idle: includeIdle, slots: includeSlots }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error ?? "Couldn't reclaim images");
         return;
       }
-      const idle = data.result.reclaimed.length;
+      const idle = data.result?.reclaimed.length ?? 0;
       const slots = data.slotResult?.reclaimed.length ?? 0;
       toast.success(`Removed ${idle + slots} image${idle + slots === 1 ? "" : "s"}`, {
         description: slots
@@ -630,12 +627,12 @@ export function MaintenanceSettings() {
         </CardContent>
       </Card>
 
-      {/* Idle app images */}
+      {/* Scheduled image cleanup and manual deep clean */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <PackageX className="size-4" aria-hidden="true" />
-            Idle app images
+            Image cleanup
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -675,20 +672,6 @@ export function MaintenanceSettings() {
               onClick={() => void handleSaveImageConfig(!(images?.config.enabled ?? false))}
             >
               {images?.config.enabled ? "Daily sweep: on" : "Daily sweep: off"}
-            </Button>
-            <Button
-              variant={images?.config.slotRollbackTargets ? "secondary" : "outline"}
-              disabled={savingImages || loadingImages}
-              onClick={() =>
-                void handleSaveImageConfig(
-                  images?.config.enabled ?? false,
-                  !(images?.config.slotRollbackTargets ?? false),
-                )
-              }
-            >
-              {images?.config.slotRollbackTargets
-                ? "Daily sweep takes rollback targets: on"
-                : "Daily sweep takes rollback targets: off"}
             </Button>
           </div>
 
@@ -777,14 +760,6 @@ export function MaintenanceSettings() {
                     since images share layers.
                   </p>
                 </div>
-                <Button
-                  variant={includeSlots ? "secondary" : "outline"}
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => setIncludeSlots((v) => !v)}
-                >
-                  {includeSlots ? "Included" : "Include"}
-                </Button>
               </div>
               <ul className="divide-y rounded-md bg-muted">
                 {images.slotPlan.candidates.map((c) => (
@@ -821,6 +796,18 @@ export function MaintenanceSettings() {
             </p>
           )}
 
+          <div className="space-y-2 border-t pt-4">
+            <p className="type-h4">Deep clean</p>
+            <p className="text-xs text-muted-foreground">Choose what to remove now. Rollback targets and volumes stay protected.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant={includeIdle ? "secondary" : "outline"} size="sm" onClick={() => setIncludeIdle((value) => !value)}>
+                {includeIdle ? "Idle apps included" : "Include idle apps"}
+              </Button>
+              <Button variant={includeSlots ? "secondary" : "outline"} size="sm" onClick={() => setIncludeSlots((value) => !value)}>
+                {includeSlots ? "Previous deploys included" : "Include previous deploys"}
+              </Button>
+            </div>
+          </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -829,7 +816,7 @@ export function MaintenanceSettings() {
                   reclaimingImages ||
                   loadingImages ||
                   !(
-                    images?.plan?.candidates.length ||
+                    (includeIdle && images?.plan?.candidates.length) ||
                     (includeSlots && images?.slotPlan?.candidates.length)
                   )
                 }
@@ -850,19 +837,15 @@ export function MaintenanceSettings() {
             <AlertDialogContent size="sm">
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {includeSlots ? "Reclaim images and previous deploys?" : "Reclaim images for idle apps?"}
+                  {includeIdle && includeSlots ? "Deep clean images and previous deploys?" : includeSlots ? "Deep clean previous deploys?" : "Deep clean idle app images?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {[
-                    images?.plan?.candidates.length
+                    includeIdle && images?.plan?.candidates.length
                       ? `Removes the images of ${images.plan.candidates.length} idle app(s), which pull again on next start.`
                       : null,
                     includeSlots && images?.slotPlan?.candidates.length
-                      ? `Removes ${images.slotPlan.candidates.length} previous deploy${images.slotPlan.candidates.length === 1 ? "" : "s"}${
-                          images.slotPlan.candidates.some((c) => c.rollbackTargetFor)
-                            ? ", including one that is a live app's rollback target — that app would need a rebuild to roll back"
-                            : ""
-                        }.`
+                      ? `Removes ${images.slotPlan.candidates.length} previous deploy${images.slotPlan.candidates.length === 1 ? "" : "s"}.`
                       : null,
                     "Volumes aren't touched.",
                   ]

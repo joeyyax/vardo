@@ -151,6 +151,14 @@ export function subjectLine(event: BusEvent): string {
       return `✗ Vardo update failed at ${event.step}`;
     case "system.update-skipped":
       return `⚠ Vardo update skipped · ${event.target}`;
+    case "system.rollout-started":
+      return `↑ Vardo update rolling out · ${event.targetLabel}`;
+    case "system.rollout-busy":
+      return `⚠ Vardo update waiting · ${event.targetLabel}`;
+    case "system.rollout-paused":
+      return `✗ Vardo rollout paused · ${event.targetLabel}`;
+    case "system.rollout-finished":
+      return `✓ Vardo rollout finished · ${event.targetLabel}`;
     case "system.restarting":
       return `↻ Restarting ${event.label}`;
     case "system.restarted":

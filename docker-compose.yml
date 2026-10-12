@@ -289,7 +289,7 @@ services:
     x-vardo-shared: true
     image: traefik:v3.7
     restart: unless-stopped
-    # install.sh sets it to RAM/32, between 512m and 2g. If it's killed, every site goes down.
+    # Sized from RAM/32, between 512m and 2g. If it's killed, every site goes down.
     mem_limit: ${VARDO_TRAEFIK_MEM:-512m}
     command:
       # The API answers only through the console's basic-auth router (vardo-api.yaml) on this entrypoint.
@@ -354,6 +354,8 @@ services:
     environment:
       # Required for DNS-01 challenge with Cloudflare. Set in .env when using DNS challenge.
       CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+      # 90% of mem_limit by default; can be overridden in .env.
+      GOMEMLIMIT: ${VARDO_TRAEFIK_GOMEMLIMIT:-460MiB}
     healthcheck:
       # Distroless image — no shell and no curl, so the probe is Traefik's own subcommand.
       test: ["CMD", "traefik", "healthcheck", "--ping"]

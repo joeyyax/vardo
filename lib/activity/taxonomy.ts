@@ -57,6 +57,12 @@ const OUTCOME_OVERRIDES: Record<string, ActivityOutcome> = {
   "github_installation.permissions_approved": "success",
   "app.incident_resolved": "success",
   "system.incident_resolved": "success",
+  "system.rollout_paused": "failure",
+  "system.rollout_member_failed": "failure",
+  "system.rollout_member_unreachable": "failure",
+  "system.rollout_member_verified": "success",
+  "system.rollout_completed": "success",
+  "system.traefik_memory_adjusted": "success",
 };
 
 const FAILURE_SUFFIXES = [".failed", ".failure", ".error", ".unreachable"];

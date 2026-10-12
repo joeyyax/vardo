@@ -79,7 +79,7 @@ const lastRun = () => m.setUpdateRun.mock.calls.at(-1)?.[0] as UpdateRun | undef
 
 beforeEach(() => {
   vi.clearAllMocks();
-  m.state.current = { failedTargets: [], approval: null, lastSkip: null, versionSince: null };
+  m.state.current = { failedTargets: [], versionSince: null };
   m.unhealthy.current = [];
   m.buildSha.current = "4f1a9b2c0d";
   m.getUpdateRun.mockResolvedValue(null);

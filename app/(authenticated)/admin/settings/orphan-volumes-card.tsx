@@ -36,10 +36,15 @@ const KIND_COPY: Record<Volume["kind"], string> = {
   unclaimed: "Named, but no Vardo app claims it",
 };
 
-async function fetchVolumes(url: string): Promise<Volume[] | null> {
+type Listing = { volumes: Volume[]; measuring?: boolean };
+
+/** Asks for sizes this many times before showing them as unknown. Each ask waits on the server up to 20s. */
+const SIZE_ATTEMPTS = 10;
+
+async function fetchVolumes(url: string): Promise<Listing | null> {
   try {
     const res = await fetch(url);
-    return res.ok ? ((await res.json()).volumes as Volume[]) : null;
+    return res.ok ? ((await res.json()) as Listing) : null;
   } catch {
     return null;
   }
@@ -59,17 +64,29 @@ export function OrphanVolumesCard() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
-      const names = await fetchVolumes(ENDPOINT);
-      setFailed(names === null);
-      setVolumes(names);
-      if (!names?.length) return;
+      const listed = await fetchVolumes(ENDPOINT);
+      if (cancelled) return;
+      setFailed(listed === null);
+      setVolumes(listed?.volumes ?? null);
+      if (!listed?.volumes.length) return;
       setMeasuring(true);
-      const sized = await fetchVolumes(`${ENDPOINT}?sizes=1`);
-      if (sized) setVolumes(sized);
-      setMeasuring(false);
+      for (let i = 0; i < SIZE_ATTEMPTS && !cancelled; i++) {
+        const sized = await fetchVolumes(`${ENDPOINT}?sizes=1`);
+        if (cancelled || !sized) break;
+        if (!sized.measuring) {
+          const sizes = new Map(sized.volumes.map((v) => [v.name, v.sizeBytes]));
+          setVolumes((current) => current?.map((v) => ({ ...v, sizeBytes: sizes.get(v.name) ?? null })) ?? null);
+          break;
+        }
+      }
+      if (!cancelled) setMeasuring(false);
     }
     void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const total = useMemo(() => {

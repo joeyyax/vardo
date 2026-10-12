@@ -14,6 +14,7 @@ import {
   parseVardoStatus,
   vardoStatusColumns,
 } from "@/lib/self-update/peer-status";
+import { localRolloutCapability, parseRolloutCapability } from "@/lib/self-update/rollout-capability";
 
 const log = logger.child("mesh-heartbeat");
 
@@ -51,7 +52,7 @@ type PeerManifestEntry = {
 
 type HeartbeatResponse = {
   ok: boolean;
-  instance: { id: string; name: string; internalIp: string; vardo?: unknown; host?: unknown };
+  instance: { id: string; name: string; internalIp: string; vardo?: unknown; rollout?: unknown; host?: unknown };
   peers: PeerManifestEntry[];
 } & Partial<AcceptsPayload>;
 
@@ -79,6 +80,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vardo: localVardoStatus(),
+        rollout: await localRolloutCapability().catch(() => null),
         host: await localHostStatus(),
         ...acceptsPayload(before),
       }),
@@ -96,6 +98,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     ok = false;
   }
 
+  const rollout = parseRolloutCapability(body?.instance?.rollout);
   await db
     .update(meshPeers)
     .set({
@@ -104,6 +107,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
         ? {
             lastSeenAt: new Date(),
             ...vardoStatusColumns(parseVardoStatus(body?.instance?.vardo)),
+            vardoUpdate: rollout,
             ...hostStatusColumns(parseHostStatus(body?.instance?.host)),
           }
         : {}),
