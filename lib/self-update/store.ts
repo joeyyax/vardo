@@ -3,10 +3,12 @@
 import { getSystemSettingRaw, invalidateSettingsCache, setSystemSetting } from "@/lib/system-settings";
 import type { RunState } from "./decide";
 import { parsePolicy, type UpdatePolicy } from "./policy";
+import type { Rollout } from "./rollout-plan";
 
 const POLICY_KEY = "self_update_policy";
 const RUN_KEY = "self_update_run";
 const STATE_KEY = "self_update_state";
+const ROLLOUT_KEY = "self_update_rollout";
 
 export type UpdateRun = {
   id: string;
@@ -29,20 +31,17 @@ export type UpdateRun = {
   fails?: number;
   rollbackDeploymentId?: string;
   error?: string;
+  rolloutId?: string;
 };
 
 export type UpdateState = {
   /** Commits that failed post-update checks here. Auto skips them. */
   failedTargets: string[];
-  /** A follower's admin approval of one target. */
-  approval: { sha: string; by: string; at: string } | null;
-  /** The last skip notice, so one reason sends once per target. */
-  lastSkip: { sha: string; key: string; at: string } | null;
   /** When this instance started running its commit. */
   versionSince: { sha: string; since: string } | null;
 };
 
-const EMPTY_STATE: UpdateState = { failedTargets: [], approval: null, lastSkip: null, versionSince: null };
+const EMPTY_STATE: UpdateState = { failedTargets: [], versionSince: null };
 
 async function readJson(key: string): Promise<unknown> {
   invalidateSettingsCache(key);
@@ -81,4 +80,16 @@ export async function updateState(change: (s: UpdateState) => UpdateState): Prom
   const next = change(await getUpdateState());
   await setSystemSetting(STATE_KEY, JSON.stringify(next));
   return next;
+}
+
+export async function getRollout(): Promise<Rollout | null> {
+  const raw = await readJson(ROLLOUT_KEY);
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Partial<Rollout>;
+  if (typeof record.id !== "string" || typeof record.targetSha !== "string" || !Array.isArray(record.members)) return null;
+  return record as Rollout;
+}
+
+export async function setRollout(rollout: Rollout): Promise<void> {
+  await setSystemSetting(ROLLOUT_KEY, JSON.stringify(rollout));
 }

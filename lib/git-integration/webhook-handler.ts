@@ -38,6 +38,15 @@ export async function handlePushEvent(event: PushEvent, scope: EventScope): Prom
     return NextResponse.json({ ok: true, skipped: orgs.skipped });
   }
 
+  if (repoFullName === "joeyyax/vardo" && branch === "main") {
+    after(async () => {
+      const { invalidateChannelUpdate } = await import("@/lib/version");
+      invalidateChannelUpdate("main");
+      const { tickSelfUpdate } = await import("@/lib/self-update/runner");
+      await tickSelfUpdate();
+    });
+  }
+
   const gitUrl = `https://github.com/${repoFullName}.git`;
   const allApps = await db.query.apps.findMany({
     where: and(

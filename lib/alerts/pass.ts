@@ -131,6 +131,20 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   });
   coreBuffer.record(getLatestSnapshot());
   const core = coreMemoryObservations(coreBuffer, now);
+  let grewTraefik = false;
+  if (core.observations.some((observation) => observation.about === "vardo-traefik" && observation.fires) && sample.memory) {
+    const proxy = getLatestSnapshot()?.find((container) => container.containerName.replace(/^\//, "") === "vardo-traefik");
+    if (proxy) {
+      const { maybeGrowTraefik } = await import("@/lib/resources/traefik-auto");
+      grewTraefik = await maybeGrowTraefik({
+        usageBytes: proxy.memoryUsage, limitBytes: proxy.memoryLimit,
+        hostUsedBytes: sample.memory.used, hostTotalBytes: sample.memory.total,
+      }, now);
+    }
+  }
+  const coreObservations = grewTraefik
+    ? core.observations.filter((observation) => observation.about !== "vardo-traefik")
+    : core.observations;
 
   const byOrg = new Map<string, Observation[]>();
   const add = (orgId: string, o: Observation) => byOrg.set(orgId, [...(byOrg.get(orgId) ?? []), o]);
@@ -160,7 +174,7 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
       ...APP_ALERT_TYPES,
       ...(anomalies ? ANOMALY_ALERT_TYPES : []),
     ];
-    const observations = [...(isHostOrg ? [...host.observations, ...core.observations] : []), ...(byOrg.get(id) ?? [])];
+    const observations = [...(isHostOrg ? [...host.observations, ...coreObservations] : []), ...(byOrg.get(id) ?? [])];
     try {
       const { fired } = await notifyObservations(id, evaluated, observations, at);
       for (const item of fired) {

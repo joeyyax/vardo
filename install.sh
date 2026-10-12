@@ -778,6 +778,30 @@ ensure_traefik_mem() {
   log "Set VARDO_TRAEFIK_MEM=$mem"
 }
 
+# A Docker size (512m, 1.5g, 1536mb) in whole MiB. Empty when unparseable.
+size_to_mb() {
+  local v n unit
+  v=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  [[ "$v" =~ ^([0-9]+([.][0-9]+)?)(m|mb|g|gb)$ ]] || return 0
+  n="${BASH_REMATCH[1]}" unit="${BASH_REMATCH[3]}"
+  if [[ "$unit" == g* ]]; then
+    awk -v n="$n" 'BEGIN { printf "%d\n", n * 1024 }'
+  else
+    awk -v n="$n" 'BEGIN { printf "%d\n", n }'
+  fi
+}
+
+# Traefik's GOMEMLIMIT: 90% of VARDO_TRAEFIK_MEM unless explicitly set.
+ensure_traefik_gomemlimit() {
+  local env_file="$1" mb limit
+  [ -n "$(env_get VARDO_TRAEFIK_GOMEMLIMIT "$env_file")" ] && return 0
+  mb=$(size_to_mb "$(env_get VARDO_TRAEFIK_MEM "$env_file")")
+  [ -n "$mb" ] || return 0
+  limit="$(( mb * 9 / 10 ))MiB"
+  printf '\n# Go heap target for the proxy.\nVARDO_TRAEFIK_GOMEMLIMIT=%s\n' "$limit" >> "$env_file"
+  log "Set VARDO_TRAEFIK_GOMEMLIMIT=$limit"
+}
+
 REDIS_DERIVED_MARK="# derived:"
 
 # Writes Redis sizing with a marker of the derived values. Later runs update it only while the values still match the marker.
@@ -1801,6 +1825,7 @@ EOF
   ensure_buildkit_cache_max "$env_file"
   ensure_worker_mem "$env_file"
   ensure_traefik_mem "$env_file"
+  ensure_traefik_gomemlimit "$env_file"
   ensure_redis_mem "$env_file"
   apply_install_options "$env_file"
 
@@ -2465,6 +2490,7 @@ run_env_migrations() {
   is_dev || ensure_buildkit_profile "$env_file"
   ensure_worker_mem "$env_file"
   ensure_traefik_mem "$env_file"
+  ensure_traefik_gomemlimit "$env_file"
   ensure_redis_mem "$env_file"
   ensure_redis_password "$env_file"
   apply_install_options "$env_file"
@@ -2813,6 +2839,8 @@ do_self_update() {
   ensure_buildkit_cache_max "$VARDO_DIR/.env"
   ensure_worker_mem "$VARDO_DIR/.env"
   ensure_traefik_mem "$VARDO_DIR/.env"
+  ensure_traefik_gomemlimit "$VARDO_DIR/.env"
+  ensure_redis_mem "$VARDO_DIR/.env"
   ensure_buildkit_profile "$VARDO_DIR/.env"
 
   step "Redeploying Vardo"

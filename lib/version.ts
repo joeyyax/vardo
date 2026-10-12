@@ -227,6 +227,12 @@ export function channelHasUpdate(localSha: string, targetSha: string, compare: P
 }
 
 const channelCache = new Map<UpdateChannelName, { result: ChannelUpdate | null; checkedAt: number }>();
+const CHANNEL_CHECK_TTL_MS = 5 * 60_000;
+
+export function invalidateChannelUpdate(channel?: UpdateChannelName): void {
+  if (channel) channelCache.delete(channel);
+  else channelCache.clear();
+}
 
 const GITHUB_HEADERS = { "User-Agent": "vardo-update-check" };
 
@@ -277,7 +283,7 @@ export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh
 
   const now = Date.now();
   const cached = channelCache.get(channel);
-  if (cached && !opts.fresh && now - cached.checkedAt < COMMIT_CHECK_TTL_MS) return cached.result;
+  if (cached && !opts.fresh && now - cached.checkedAt < CHANNEL_CHECK_TTL_MS) return cached.result;
   channelCache.set(channel, { result: null, checkedAt: now });
 
   try {

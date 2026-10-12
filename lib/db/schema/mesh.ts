@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -9,6 +10,7 @@ import {
 import { appStatusEnum, meshPeerConnectionTypeEnum, meshPeerStatusEnum, meshPeerTypeEnum } from "./enums";
 import { projects } from "./projects";
 import { organizations } from "./organizations";
+import type { RolloutCapability } from "@/lib/self-update/rollout-capability";
 
 // Mesh peer registry. System-level, not org-scoped.
 
@@ -53,6 +55,7 @@ export const meshPeers = pgTable("mesh_peer", {
   vardoSha: text("vardo_sha"),
   vardoShaSince: timestamp("vardo_sha_since"),
   vardoHealthy: boolean("vardo_healthy"),
+  vardoUpdate: jsonb("vardo_update").$type<RolloutCapability>(),
   // The peer's own console, worker and watchdog heartbeats, as its last heartbeat reported them.
   consoleAt: timestamp("console_at"),
   workerAt: timestamp("worker_at"),

@@ -107,6 +107,33 @@ export function redisMemory(memoryMb: number): { mem: string; maxmemory: string 
   return { mem: `${mb}m`, maxmemory: `${Math.floor((mb * 5) / 8)}mb` };
 }
 
+/** Traefik's GOMEMLIMIT: 90% of its container limit, so Go's GC tightens before the OOM killer acts. install.sh mirrors it. */
+export function traefikGoMemLimit(memMb: number): string {
+  return `${Math.floor((memMb * 9) / 10)}MiB`;
+}
+
+/** Sizing values install.sh writes to .env, from host RAM, for the keys `current` leaves unset. */
+export function hostSizedEnv(current: (key: string) => string | undefined, memoryMb: number | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (memoryMb !== null && memoryMb > 0) {
+    if (!current("VARDO_TRAEFIK_MEM")) out.VARDO_TRAEFIK_MEM = `${traefikMemMb(memoryMb)}m`;
+    if (!current("VARDO_WORKER_MEM")) out.VARDO_WORKER_MEM = `${workerMemMb(memoryMb)}m`;
+    if (!current("VARDO_BUILDKIT_MEM")) out.VARDO_BUILDKIT_MEM = `${buildkitMemGb(memoryMb)}g`;
+    if (!current("VARDO_REDIS_MEM") && !current("VARDO_REDIS_MAXMEMORY")) {
+      const { mem, maxmemory } = redisMemory(memoryMb);
+      out.VARDO_REDIS_MEM = mem;
+      out.VARDO_REDIS_MAXMEMORY = maxmemory;
+    }
+  }
+  const traefik = out.VARDO_TRAEFIK_MEM ?? current("VARDO_TRAEFIK_MEM");
+  const traefikMb = traefik ? parseSizeMb(traefik) : null;
+  if (traefikMb) {
+    const limit = traefikGoMemLimit(traefikMb);
+    if (!current("VARDO_TRAEFIK_GOMEMLIMIT")) out.VARDO_TRAEFIK_GOMEMLIMIT = limit;
+  }
+  return out;
+}
+
 /** Docker and Redis size strings (512m, 4g, 384mb) in MiB. Null when unparseable. */
 export function parseSizeMb(value: string): number | null {
   const m = value.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(b|k|kb|m|mb|g|gb)?$/);

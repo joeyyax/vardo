@@ -37,7 +37,7 @@ export async function getImageReclaimConfig(): Promise<ImageReclaimConfig> {
       enabled: parsed.enabled === true,
       idleDays: clampIdleDays(parsed.idleDays ?? DEFAULT_IDLE_DAYS),
       slots: parsed.slots === true,
-      slotRollbackTargets: parsed.slotRollbackTargets === true,
+      slotRollbackTargets: false,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -92,7 +92,7 @@ export async function setImageReclaimConfig(config: ImageReclaimConfig): Promise
       enabled: config.enabled,
       idleDays: clampIdleDays(config.idleDays),
       slots: config.slots === true,
-      slotRollbackTargets: config.slotRollbackTargets === true,
+      slotRollbackTargets: false,
     }),
   );
   invalidateSettingsCache(KEY);

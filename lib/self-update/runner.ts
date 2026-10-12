@@ -1,43 +1,35 @@
-// Applies Vardo updates: Update now, and Auto inside the maintenance window. Each tick also verifies a finished
-// update from the new console and rolls it back through the engine when it turns unhealthy.
+// Applies local updates and advances the mesh rollout after verifying each finished update.
 
 import { and, desc, eq, gt, inArray, isNull, isNotNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pkg from "@/package.json";
 import { db } from "@/lib/db";
-import { apps, backupRuns, backups, deployments, instanceRestores, meshPeers } from "@/lib/db/schema";
+import { apps, backupRuns, backups, deployments, instanceRestores } from "@/lib/db/schema";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { logger } from "@/lib/logger";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
-import { getBuildSha, getChannelUpdate, type ChannelUpdate } from "@/lib/version";
+import { getBuildSha, type ChannelUpdate } from "@/lib/version";
 import { formatVersion } from "@/lib/lifecycle/self-deploy";
-import { canaryVerdict, sameCommit, type CanaryPeer, type CanaryVerdict } from "./canary";
-import { DEPLOY_TIMEOUT_MS, decideTick, isRunActive, verifyStep } from "./decide";
-import { evaluateGates, type GateFailure, type GateInputs } from "./gates";
-import { updateFailed, updateSkipped } from "./lifecycle";
+import { sameCommit } from "./commit";
+import { DEPLOY_TIMEOUT_MS, isRunActive, verifyStep } from "./decide";
+import type { GateInputs } from "./gates";
+import { updateFailed } from "./lifecycle";
 import { setLocalVardoStatus } from "./peer-status";
-import { effectiveChannel, type UpdatePolicy } from "./policy";
-import { getUpdatePolicy, getUpdateRun, getUpdateState, setUpdateRun, updateState, type UpdateRun, type UpdateState } from "./store";
-import { getInstanceTimezone } from "./timezone";
-import { windowZone } from "./window";
+import { getUpdateRun, getUpdateState, setUpdateRun, updateState, type UpdateRun, type UpdateState } from "./store";
 
 const log = logger.child("self-update");
 
 const TICK_MS = 60_000;
 const LOCK_KEY = "self-update:tick";
 const LOCK_MS = 10 * 60_000;
+const START_LOCK_KEY = "self-update:start";
 /** A backup row older than this is stale, not running. */
 const BACKUP_STALE_MS = 12 * 60 * 60_000;
 const HEALTH_REFRESH_MS = 5 * 60_000;
-const SKIP_RENOTIFY_MS = 24 * 60 * 60_000;
 
 export class UpdateBlockedError extends Error {}
-
-function currentVersion(): string {
-  return formatVersion(pkg.version, getBuildSha()) ?? pkg.version;
-}
 
 async function vardoApp(): Promise<{ id: string; organizationId: string } | null> {
   const app = await db.query.apps.findFirst({
@@ -114,12 +106,23 @@ export async function collectGateInputs(targetSha: string, state: UpdateState): 
 export type StartUpdateOptions = {
   trigger: "auto" | "manual";
   triggeredBy?: string;
+  rolloutId?: string;
   channel: "main" | "releases";
   update: ChannelUpdate | null;
 };
 
 /** Dumps the database, then redeploys the `vardo` app. Auto refuses without a dump; Update now carries on. */
 export async function startUpdate(opts: StartUpdateOptions): Promise<UpdateRun> {
+  const lock = await acquireLock(START_LOCK_KEY, LOCK_MS);
+  if (!lock) throw new UpdateBlockedError("An update is already starting");
+  try {
+    return await startUpdateUnlocked(opts);
+  } finally {
+    await releaseLock(START_LOCK_KEY, lock).catch(() => {});
+  }
+}
+
+async function startUpdateUnlocked(opts: StartUpdateOptions): Promise<UpdateRun> {
   if (!isSelfDeployLayout()) throw new UpdateBlockedError("This install updates from the host: run sudo vardo update");
   if (isRunActive(await getUpdateRun())) throw new UpdateBlockedError("An update is already running");
   if (opts.channel === "releases" && !opts.update) throw new UpdateBlockedError("Couldn't reach GitHub for the latest release");
@@ -138,8 +141,8 @@ export async function startUpdate(opts: StartUpdateOptions): Promise<UpdateRun> 
     log.warn(`Database dump failed, updating anyway: ${message}`);
   }
 
-  // Releases pin the tag's commit; main takes the branch tip.
-  const pin = opts.channel === "releases" && opts.update ? opts.update.targetSha : undefined;
+  // A coordinated rollout must deploy the commit it checked, even when following main.
+  const pin = opts.update && (opts.channel === "releases" || opts.rolloutId) ? opts.update.targetSha : undefined;
   const { triggerSelfDeploy } = await import("@/lib/lifecycle/deploy-request");
   const { deploymentId } = await triggerSelfDeploy({ triggeredBy: opts.triggeredBy, gitSha: pin });
 
@@ -156,6 +159,7 @@ export async function startUpdate(opts: StartUpdateOptions): Promise<UpdateRun> 
     toLabel: opts.update?.targetLabel ?? "main",
     channel: opts.channel,
     dumpFile,
+    rolloutId: opts.rolloutId,
   };
   await setUpdateRun(run);
   log.info(`Updating Vardo (${opts.trigger}) to ${run.toLabel} as ${deploymentId}`);
@@ -264,77 +268,6 @@ export async function advanceRun(run: UpdateRun, now = Date.now()): Promise<void
   }
 }
 
-// Auto
-
-async function canaryPeer(instanceId: string | null): Promise<CanaryPeer | null> {
-  if (!instanceId) return null;
-  const peer = await db.query.meshPeers.findFirst({
-    where: eq(meshPeers.instanceId, instanceId),
-    columns: { instanceId: true, name: true, vardoSha: true, vardoShaSince: true, vardoHealthy: true, lastSeenAt: true },
-  });
-  if (!peer) return null;
-  return {
-    instanceId: peer.instanceId,
-    name: peer.name,
-    version: peer.vardoSha,
-    versionSince: peer.vardoShaSince,
-    healthy: peer.vardoHealthy,
-    lastSeenAt: peer.lastSeenAt,
-  };
-}
-
-export async function canaryStatus(policy: UpdatePolicy, targetSha: string, state: UpdateState, now: Date): Promise<CanaryVerdict> {
-  return canaryVerdict({
-    canary: policy.canary,
-    targetSha,
-    peer: policy.canary.role === "follower" ? await canaryPeer(policy.canary.canaryInstanceId) : null,
-    approvedSha: state.approval?.sha ?? null,
-    now,
-  });
-}
-
-async function notifySkipped(update: ChannelUpdate, failures: GateFailure[], state: UpdateState): Promise<void> {
-  const key = failures.map((f) => f.gate).sort().join(",");
-  const last = state.lastSkip;
-  if (last && sameCommit(last.sha, update.targetSha) && last.key === key && Date.now() - Date.parse(last.at) < SKIP_RENOTIFY_MS) return;
-  await updateState((s) => ({ ...s, lastSkip: { sha: update.targetSha, key, at: new Date().toISOString() } }));
-  const reasons = failures.map((f) => f.reason);
-  log.warn(`Automatic update to ${update.targetLabel} skipped: ${reasons.join("; ")}`);
-  await updateSkipped({ fromVersion: currentVersion(), target: update.targetLabel, reasons });
-}
-
-async function autoTick(policy: UpdatePolicy, state: UpdateState, now: Date): Promise<void> {
-  const channel = effectiveChannel(policy);
-  const update = await getChannelUpdate(channel);
-  if (!update?.hasUpdate) return;
-
-  const zone = windowZone(policy.window.timezone, await getInstanceTimezone());
-  const decision = decideTick({
-    policy,
-    hasUpdate: update.hasUpdate,
-    selfDeploy: isSelfDeployLayout(),
-    runInProgress: false,
-    now,
-    zone,
-    canary: await canaryStatus(policy, update.targetSha, state, now),
-  });
-  if (decision.action !== "apply") return;
-
-  const failures = evaluateGates(await collectGateInputs(update.targetSha, state));
-  if (failures.length > 0) {
-    // A target that already failed here waits for a newer one without a notice each window.
-    if (failures.every((f) => f.gate === "failed-before")) return;
-    await notifySkipped(update, failures, state);
-    return;
-  }
-  try {
-    await startUpdate({ trigger: "auto", channel, update });
-  } catch (err) {
-    if (err instanceof UpdateBlockedError) await notifySkipped(update, [{ gate: "backup", reason: err.message }], state);
-    else throw err;
-  }
-}
-
 /** Records when this build started running and publishes it, with health, to mesh peers. */
 async function trackVersion(state: UpdateState, now: Date): Promise<UpdateState> {
   const sha = getBuildSha();
@@ -351,14 +284,14 @@ export async function tickSelfUpdate(now = new Date()): Promise<void> {
   const lock = await acquireLock(LOCK_KEY, LOCK_MS);
   if (!lock) return;
   try {
-    const state = await trackVersion(await getUpdateState(), now);
+    await trackVersion(await getUpdateState(), now);
     const run = await getUpdateRun();
     if (run && isRunActive(run, now.getTime())) {
       await advanceRun(run, now.getTime());
       return;
     }
-    const policy = await getUpdatePolicy();
-    if (policy.mode === "auto") await autoTick(policy, state, now);
+    const { tickRollout } = await import("./coordinator");
+    await tickRollout(now);
   } finally {
     await releaseLock(LOCK_KEY, lock).catch(() => {});
   }

@@ -1,0 +1,1 @@
+ALTER TABLE "mesh_peer" ADD COLUMN "vardo_update" jsonb;

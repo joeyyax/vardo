@@ -30,6 +30,10 @@ export const EVENT_CATEGORIES = {
     "system.updated",
     "system.update-failed",
     "system.update-skipped",
+    "system.rollout-started",
+    "system.rollout-busy",
+    "system.rollout-paused",
+    "system.rollout-finished",
     "system.restarting",
     "system.restarted",
     "system.restart-failed",
@@ -560,6 +564,17 @@ export type SystemUpdateSkippedEvent = {
   reasons: string[];
 };
 
+export type SystemRolloutEvent = {
+  type: "system.rollout-started" | "system.rollout-busy" | "system.rollout-paused" | "system.rollout-finished";
+  title: string;
+  message: string;
+  rolloutId: string;
+  targetSha: string;
+  targetLabel: string;
+  members: { instanceId: string; name: string; priority: "critical" | "standard" | "low"; state: string; reason: string | null }[];
+  busyInstanceId?: string;
+};
+
 /** What a restart of Vardo covers and who asked for it. */
 export type VardoRestartScope = {
   target: "console" | "worker" | "services";
@@ -763,6 +778,7 @@ export type BusEvent = EventEnvelope & (
   | SystemUpdatedEvent
   | SystemUpdateFailedEvent
   | SystemUpdateSkippedEvent
+  | SystemRolloutEvent
   | SystemRestartingEvent
   | SystemRestartedEvent
   | SystemRestartFailedEvent

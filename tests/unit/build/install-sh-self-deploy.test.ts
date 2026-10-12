@@ -32,7 +32,7 @@ exit 0
 /** A fresh VARDO_DIR. `layout` picks the console's layout. */
 function instance(layout: "self-deploy" | "legacy"): string {
   const vardo = mkdtempSync(join(dir, `${layout}-`));
-  writeFileSync(join(vardo, ".env"), "VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\n");
+  writeFileSync(join(vardo, ".env"), "VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MEM=512m\nVARDO_REDIS_MAXMEMORY=320mb\n");
   mkdirSync(join(vardo, "lifecycle"));
   mkdirSync(join(vardo, "apps/vardo/env/blue"), { recursive: true });
   writeFileSync(join(vardo, "apps/vardo/env/blue/install.sh"), "echo LEGACY-INSTALL-SH \"$@\"\n");
@@ -101,7 +101,7 @@ describe("vardo update on a self-deploy instance", { timeout: 30_000 }, () => {
     expect(r.out).toContain("Update complete!");
     expect(r.status).toBe(0);
     expect(r.docker).not.toMatch(/docker compose/);
-    expect(readFileSync(join(vardo, ".env"), "utf8")).toBe("VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\n");
+    expect(readFileSync(join(vardo, ".env"), "utf8")).toBe("VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MEM=512m\nVARDO_REDIS_MAXMEMORY=320mb\n");
     expect(readFileSync(join(vardo, "install.sh"), "utf8")).toContain("SLOT-INSTALL-SH");
   });
 
@@ -111,7 +111,7 @@ describe("vardo update on a self-deploy instance", { timeout: 30_000 }, () => {
       VARDO_TRUSTED_PROXIES: "192.0.2.10",
     });
     expect(readFileSync(join(vardo, ".env"), "utf8")).toBe(
-      "VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRUSTED_PROXIES=192.0.2.10\n",
+      "VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MEM=512m\nVARDO_REDIS_MAXMEMORY=320mb\nVARDO_TRUSTED_PROXIES=192.0.2.10\n",
     );
   });
 
@@ -220,7 +220,7 @@ deployment_status() { mkdir -p "$VARDO_DIR/apps/vardo/production/blue"; ln -sfn 
     const steps = ["exec vardo-postgres pg_dump", "exec abc123 curl", "stop vardo-frontend"].map((s) => r.docker.indexOf(s));
     expect(steps.every((i) => i >= 0)).toBe(true);
     expect([...steps].sort((a, b) => a - b)).toEqual(steps);
-    expect(readFileSync(join(vardo, ".env"), "utf8")).toBe("VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\n");
+    expect(readFileSync(join(vardo, ".env"), "utf8")).toBe("VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MEM=512m\nVARDO_REDIS_MAXMEMORY=320mb\n");
   });
 
   it("keeps vardo-frontend while the new console is unhealthy", () => {

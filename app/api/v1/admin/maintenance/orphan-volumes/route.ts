@@ -3,18 +3,20 @@ import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { deleteOrphanVolumes, findOrphanVolumes, measureOrphans } from "@/lib/docker/orphan-volumes";
+import { deleteOrphanVolumes, findOrphanVolumes, measureOrphans, volumeSizes } from "@/lib/docker/orphan-volumes";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:orphan-volumes");
 
-// GET /api/v1/admin/maintenance/orphan-volumes — volumes nothing mounts or claims. `?sizes=1` adds sizes.
+// GET /api/v1/admin/maintenance/orphan-volumes — volumes nothing mounts or claims. `?sizes=1` adds sizes; `measuring: true` means ask again.
 async function handleGet(request: NextRequest) {
   try {
     await requireAppAdmin();
     const found = await findOrphanVolumes();
-    const volumes = request.nextUrl.searchParams.get("sizes") === "1" ? await measureOrphans(found) : found;
-    return NextResponse.json({ volumes });
+    if (request.nextUrl.searchParams.get("sizes") === "1") return NextResponse.json(await measureOrphans(found));
+    // Starts df now so sizes are ready sooner.
+    if (found.length > 0) void volumeSizes();
+    return NextResponse.json({ volumes: found });
   } catch (error) {
     return handleRouteError(error, "Error listing unused volumes");
   }

@@ -1,5 +1,5 @@
 import { chmod, copyFile, readFile, realpath, statfs, writeFile } from "fs/promises";
-import { buildkitCacheMaxBytes } from "@/lib/resources/defaults";
+import { buildkitCacheMaxBytes, hostSizedEnv, memoryMiB } from "@/lib/resources/defaults";
 import { basename, dirname, join } from "path";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { VARDO_HOME_DIR } from "@/lib/paths";
@@ -23,13 +23,44 @@ export interface SeedSelfEnvOptions {
   globalEnvPath?: string;
   /** Size of the disk BuildKit's cache lives on. Null when unreadable. */
   diskBytes?: () => Promise<number | null>;
+  /** The host's RAM. Null when unreadable. */
+  hostMemoryBytes?: () => Promise<number | null>;
 }
 
 /** Appends the BuildKit cache ceiling derived from the disk when the env doesn't set it. */
 export function withBuildKitCacheMax(content: string, diskBytes: number | null): string {
   if (diskBytes === null || parseEnvLines(content).has("VARDO_BUILDKIT_CACHE_MAX")) return content;
-  const line = `VARDO_BUILDKIT_CACHE_MAX=${buildkitCacheMaxBytes(diskBytes)}`;
-  return `${content.replace(/\s+$/, "")}${content.trim() ? "\n\n" : ""}# Derived from the disk size\n${line}\n`;
+  return withEnvValues(content, { VARDO_BUILDKIT_CACHE_MAX: String(buildkitCacheMaxBytes(diskBytes)) }, "Derived from the disk size");
+}
+
+/** Fills the memory limits the env leaves unset from host RAM and keeps GOMEMLIMIT on the Traefik limit. */
+export function withHostSizing(content: string, memoryBytes: number | null): { content: string; keys: string[] } {
+  const entries = parseEnvLines(content);
+  const values = hostSizedEnv((key) => entries.get(key)?.value || undefined, memoryBytes ? memoryMiB(memoryBytes) : null);
+  const keys = Object.keys(values);
+  return { content: keys.length ? withEnvValues(content, values, "Derived from host RAM") : content, keys };
+}
+
+/** Replaces each key's lines in place and appends the rest under a comment. */
+function withEnvValues(content: string, values: Record<string, string>, comment: string): string {
+  const pending = new Map(Object.entries(values));
+  const lines = content.trim() ? content.replace(/\s+$/, "").split("\n") : [];
+  const out = lines.map((line) => {
+    const key = line.trimStart().startsWith("#") ? null : lineKey(line);
+    if (!key || !(key in values)) return line;
+    pending.delete(key);
+    return `${key}=${values[key]}`;
+  });
+  if (pending.size > 0) {
+    if (out.length > 0) out.push("");
+    out.push(`# ${comment}`, ...[...pending].map(([k, v]) => `${k}=${v}`));
+  }
+  return out.length ? `${out.join("\n")}\n` : "";
+}
+
+async function hostMemory(): Promise<number | null> {
+  const { detectHost } = await import("@/lib/resources/host");
+  return (await detectHost())?.memoryBytes ?? null;
 }
 
 async function rootDiskBytes(): Promise<number | null> {
@@ -51,7 +82,7 @@ export async function seedSelfEnv(
   appDir: string,
   slotDir: string,
   activeSlot: string | null,
-  { log, globalEnvPath = GLOBAL_ENV_PATH, diskBytes = rootDiskBytes }: SeedSelfEnvOptions,
+  { log, globalEnvPath = GLOBAL_ENV_PATH, diskBytes = rootDiskBytes, hostMemoryBytes = hostMemory }: SeedSelfEnvOptions,
 ): Promise<string | null> {
   if (!isSelfApp(appName)) return null;
 
@@ -65,12 +96,19 @@ export async function seedSelfEnv(
   }
 
   const previousContent = previous ? await readFile(target, "utf-8") : "";
-  const merged = mergeSelfEnv(globalContent, previousContent);
-  const derived = withBuildKitCacheMax(merged.content, await diskBytes());
-  if (derived !== merged.content) {
-    log(`[deploy] .env: VARDO_BUILDKIT_CACHE_MAX is unset in ${globalEnvPath}; using an eighth of the disk until install.sh writes it`);
+  // Derived before the merge so an earlier slot's derived value isn't carried forward as the owner's.
+  const [disk, memory] = await Promise.all([diskBytes(), hostMemoryBytes().catch(() => null)]);
+  const withCache = withBuildKitCacheMax(globalContent, disk);
+  const sized = withHostSizing(withCache, memory);
+  const derived = new Set(sized.keys);
+  if (withCache !== globalContent) derived.add("VARDO_BUILDKIT_CACHE_MAX");
+  const merged = mergeSelfEnv(sized.content, previousContent);
+  merged.changed = merged.changed.filter((key) => !derived.has(key));
+  merged.added = merged.added.filter((key) => !derived.has(key));
+  if (derived.size > 0) {
+    const values = parseEnvLines(merged.content);
+    log(`[deploy] .env: derived from the host: ${[...derived].map((k) => `${k}=${values.get(k)?.value}`).join(", ")}`);
   }
-  merged.content = derived;
   await writeFile(target, merged.content, { encoding: "utf-8", mode: 0o600 });
   await chmod(target, 0o600);
 

@@ -16,6 +16,7 @@ import {
   parseVardoStatus,
   vardoStatusColumns,
 } from "@/lib/self-update/peer-status";
+import { localRolloutCapability, parseRolloutCapability } from "@/lib/self-update/rollout-capability";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -28,7 +29,8 @@ async function handlePost(request: NextRequest) {
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
 
-    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; host?: unknown } | null;
+    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; rollout?: unknown; host?: unknown } | null;
+    const rollout = parseRolloutCapability(sent?.rollout);
     await db
       .update(meshPeers)
       .set({
@@ -36,6 +38,7 @@ async function handlePost(request: NextRequest) {
         lastSeenAt: new Date(),
         updatedAt: new Date(),
         ...vardoStatusColumns(parseVardoStatus(sent?.vardo)),
+        vardoUpdate: rollout,
         ...hostStatusColumns(parseHostStatus(sent?.host)),
         ...peerAcceptsColumns(sent),
       })
@@ -72,6 +75,7 @@ async function handlePost(request: NextRequest) {
         name: config.instanceName,
         internalIp,
         vardo: localVardoStatus(),
+        rollout: await localRolloutCapability().catch(() => null),
         host,
       },
       peers: allPeers,
