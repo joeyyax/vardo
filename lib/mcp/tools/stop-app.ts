@@ -86,6 +86,7 @@ export function registerStopApp(
       }
 
       return {
+        isError: !result.success,
         content: [
           {
             type: "text" as const,

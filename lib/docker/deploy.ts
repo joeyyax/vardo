@@ -971,17 +971,13 @@ async function stopSlotInDir(
   const composeFileArgs = await slotComposeFiles(slotDir);
 
   const down = async (project: string) => {
-    try {
-      const args = ["compose", ...composeFileArgs, "-p", project, "down"];
-      if (removeVolumes) {
-        args.push("--volumes");
-      }
-      const { stdout, stderr } = await execFileAsync("docker", args, { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
-      if (stdout.trim()) logs.push(stdout.trim());
-      if (stderr.trim()) logs.push(stderr.trim());
-    } catch (err) {
-      logs.push(`Warning: ${err instanceof Error ? err.message : String(err)}`);
+    const args = ["compose", ...composeFileArgs, "-p", project, "down"];
+    if (removeVolumes) {
+      args.push("--volumes");
     }
+    const { stdout, stderr } = await execFileAsync("docker", args, { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+    if (stdout.trim()) logs.push(stdout.trim());
+    if (stderr.trim()) logs.push(stderr.trim());
   };
 
   await down(composeProject);
@@ -1021,30 +1017,28 @@ export async function stopProject(
     } else {
       // All environments: env-aware layout first.
       const baseDir = appBaseDir(appName);
-      try {
-        const { readdir } = await import("fs/promises");
-        const entries = await readdir(baseDir, { withFileTypes: true });
-        const envDirs = entries.filter((e) => e.isDirectory() && e.name !== "repo");
-        if (envDirs.length > 0) {
-          for (const entry of envDirs) {
-            // Legacy blue/green dirs at the app root.
-            if (entry.name === "blue" || entry.name === "green") {
-              await stopSlotInDir(baseDir, appName, logs, removeVolumes);
-              break;
-            }
-            const envDir = join(baseDir, entry.name);
-            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes, {
-              appName,
-              envName: entry.name,
-              isDefault: entry.name === defaultEnvName,
-            });
+      const { readdir } = await import("fs/promises");
+      const entries = await readdir(baseDir, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === "ENOENT") return null;
+        throw err;
+      });
+      const envDirs = entries?.filter((e) => e.isDirectory() && e.name !== "repo") ?? [];
+      if (envDirs.length > 0) {
+        for (const entry of envDirs) {
+          // Legacy blue/green dirs at the app root.
+          if (entry.name === "blue" || entry.name === "green") {
+            await stopSlotInDir(baseDir, appName, logs, removeVolumes);
+            break;
           }
-        } else {
-          // Legacy: slot dirs directly under the app.
-          await stopSlotInDir(baseDir, appName, logs, removeVolumes);
+          const envDir = join(baseDir, entry.name);
+          await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes, {
+            appName,
+            envName: entry.name,
+            isDefault: entry.name === defaultEnvName,
+          });
         }
-      } catch {
-        // Legacy layout.
+      } else {
+        // Legacy: slot dirs directly under the app.
         await stopSlotInDir(baseDir, appName, logs, removeVolumes);
       }
     }

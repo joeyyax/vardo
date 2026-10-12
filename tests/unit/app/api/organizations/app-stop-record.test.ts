@@ -69,8 +69,10 @@ describe("stop route", () => {
   it("records nothing when the stop failed", async () => {
     mockStopProject.mockResolvedValue({ success: false, log: "boom" });
 
-    await POST(request(), params);
+    const res = await POST(request(), params);
 
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ success: false, error: "boom" });
     expect(mockSetParked).not.toHaveBeenCalled();
     expect(mockRecordLifecycle).not.toHaveBeenCalled();
   });

@@ -56,6 +56,7 @@ import { AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  execFileMock.mockReset().mockResolvedValue({ stdout: "", stderr: "" });
   assertOwnershipMock.mockResolvedValue(undefined);
 });
 
@@ -105,5 +106,18 @@ describe("stopProject ownership guard", () => {
     await stopProject("app-1", "api", "production");
 
     expect(updateMock).toHaveBeenCalled();
+  });
+
+  it("reports a failed compose down without marking the app stopped", async () => {
+    execFileMock.mockImplementation(async (_command: string, args: string[]) => {
+      if (args.includes("down")) throw new Error("Docker daemon unavailable");
+      return { stdout: "", stderr: "" };
+    });
+
+    const result = await stopProject("app-1", "api", "production");
+
+    expect(result).toMatchObject({ success: false });
+    expect(result.log).toContain("Docker daemon unavailable");
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });

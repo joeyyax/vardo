@@ -2,12 +2,13 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { order, findFirstMock, findManyMock, teardownMock, autoJobsMock } = vi.hoisted(() => ({
+const { order, findFirstMock, findManyMock, teardownMock, autoJobsMock, stopMock } = vi.hoisted(() => ({
   order: [] as string[],
   findFirstMock: vi.fn(),
   findManyMock: vi.fn(),
   teardownMock: vi.fn(),
   autoJobsMock: vi.fn(),
+  stopMock: vi.fn(),
 }));
 
 vi.mock("@/lib/metrics/series-cleanup", () => ({ deleteAppSeries: vi.fn().mockResolvedValue(0) }));
@@ -22,7 +23,7 @@ vi.mock("@/lib/db", () => ({
     }),
   },
 }));
-vi.mock("@/lib/docker/deploy", () => ({ stopProject: async () => ({ success: true, log: "" }) }));
+vi.mock("@/lib/docker/deploy", () => ({ stopProject: stopMock }));
 vi.mock("@/lib/docker/app-data", () => ({
   findAppData: async () => ({ volumes: [], bindMounts: [] }),
   appBindPaths: async () => [],
@@ -45,9 +46,10 @@ beforeEach(() => {
   order.length = 0;
   findFirstMock.mockResolvedValue({ id: "app-1", name: "agents", projectId: null, parentAppId: null, isSystemManaged: false });
   findManyMock.mockResolvedValue([{ id: "child-1", name: "agents-db" }]);
+  stopMock.mockReset().mockResolvedValue({ success: true, log: "" });
   teardownMock.mockReset().mockImplementation(async () => {
     order.push("teardown");
-    return { containers: [], networks: [], log: ["Removed container x"] };
+    return { containers: [], networks: [], log: ["Removed container x"], failed: [] };
   });
   autoJobsMock.mockReset().mockImplementation(async () => {
     order.push("auto-jobs");
@@ -75,5 +77,20 @@ describe("deleteApp teardown", () => {
     autoJobsMock.mockRejectedValue(new Error("db down"));
 
     await expect(deleteApp({ appId: "app-1", organizationId: "org-1" })).resolves.toMatchObject({ deleted: true });
+  });
+
+  it("keeps the app record when compose down fails", async () => {
+    stopMock.mockResolvedValue({ success: false, log: "Docker unavailable" });
+
+    await expect(deleteApp({ appId: "app-1", organizationId: "org-1" })).rejects.toThrow("Docker unavailable");
+    expect(order).not.toContain("delete-app-row");
+    expect(teardownMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the app record when a container cannot be removed", async () => {
+    teardownMock.mockResolvedValue({ containers: [], networks: [], log: [], failed: ["Kept container web"] });
+
+    await expect(deleteApp({ appId: "app-1", organizationId: "org-1" })).rejects.toThrow("Kept container web");
+    expect(order).not.toContain("delete-app-row");
   });
 });

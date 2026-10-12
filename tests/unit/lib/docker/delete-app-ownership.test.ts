@@ -46,7 +46,7 @@ vi.mock("@/lib/docker/client", () => ({
   stripDockerProjectPrefix: (n: string) => n,
 }));
 vi.mock("@/lib/docker/delete-teardown", () => ({
-  removeAppContainersAndNetworks: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [] }),
+  removeAppContainersAndNetworks: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [], failed: [] }),
   claimAppDirTopLevel: vi.fn(),
   isPermissionError: () => false,
 }));

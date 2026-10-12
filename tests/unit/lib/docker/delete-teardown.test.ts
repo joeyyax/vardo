@@ -87,6 +87,7 @@ describe("removeAppContainersAndNetworks", () => {
     const result = await removeAppContainersAndNetworks(["app-1"]);
 
     expect(result.containers).toEqual([]);
+    expect(result.failed).toContain("Kept container agents-production-blue-web-1 (removal failed: 409 busy)");
     expect(result.log.join("\n")).toContain("Kept container");
     expect(result.log.join("\n")).toContain("Kept network net");
   });
