@@ -2,7 +2,7 @@
 
 import { HostSampleBuffer, hostObservations, type HostContext, type MemoryUser } from "@/lib/alerts/host";
 import { anomalyItem } from "@/lib/anomaly/items";
-import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
+import type { AlertItem, AppRecap, BackupSummaryEvent, BusEvent, DigestAppRecapEvent } from "@/lib/bus/events";
 import { backupFailureItem } from "@/lib/backups/failure-alert";
 import { summarizeApps, summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
@@ -282,7 +282,133 @@ const deploySuccess: Extract<BusEvent, { type: "deploy.success" }> = {
   stageTimings: timings({ clone: 3_200, build: 61_800, pull: 4_100, up: 6_300, healthWait: 12_400, cleanup: 2_100 }),
 };
 
+const MB = 1024 ** 2;
+const RECAP_DEPLOYED = "2026-10-13T08:00:00.000Z";
+
+/** mowp-2026 at 72 hours: nothing needs a person. */
+export const RECAP_CLEAN: AppRecap = {
+  appId: "app_mowp",
+  appName: "mowp-2026",
+  projectId: "proj_mowp",
+  projectName: "MOWP",
+  kind: "72h",
+  deployedAt: RECAP_DEPLOYED,
+  since: RECAP_DEPLOYED,
+  until: "2026-10-16T09:00:00.000Z",
+  deploys: { total: 5, failed: 0 },
+  build: { avgMs: 134_000, fastestMs: 108_000 },
+  uptime: { ratio: 1, downMinutes: 0 },
+  crashes: 0,
+  oomKills: 0,
+  cpu: { avg: 2.1, peak: 31 },
+  memory: { avg: 195 * MB, peak: 275 * MB, peakAt: "2026-10-15T19:00:00.000Z", limit: 512 * MB },
+  network: { rx: 140 * MB, tx: 1.2 * GiB },
+  hours: [1, 1, 1, 1, 1, 1, 1, 3, 6, 10, 10, 7, 7, 7, 4, 4, 4, 4, 2, 2, 1, 1, 1, 1],
+  volumes: [
+    { name: "mowp-uploads", sizeBytes: 1.1 * GiB, unprotected: false },
+    { name: "mowp-cache", sizeBytes: 260 * MB, unprotected: false },
+  ],
+  ports: ["tcp/3000"],
+  processes: ["node", "npm"],
+  backups: { schedule: "Daily at 02:00", lastAt: "2026-10-16T02:04:00.000Z" },
+  scanFindings: 0,
+};
+
+/** immich at 72 hours: an unprotected volume and memory near its limit. */
+const RECAP_ACTIONS: AppRecap = {
+  ...RECAP_CLEAN,
+  appId: "app_immich",
+  appName: "immich",
+  projectId: "proj_immich",
+  projectName: "immich",
+  deploys: { total: 2, failed: 0 },
+  build: null,
+  cpu: { avg: 4.2, peak: 88 },
+  memory: { avg: 0.9 * GiB, peak: 1.88 * GiB, peakAt: "2026-10-15T21:00:00.000Z", limit: 2 * GiB },
+  network: { rx: 3.4 * GiB, tx: 610 * MB },
+  hours: [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 4, 4, 2, 1, 1],
+  volumes: [
+    { name: "immich-library", sizeBytes: 212 * GiB, unprotected: true },
+    { name: "immich-postgres", sizeBytes: 1.6 * GiB, unprotected: false },
+    { name: "immich-model-cache", sizeBytes: 640 * MB, unprotected: false },
+  ],
+  ports: ["tcp/2283", "tcp/3003"],
+  processes: ["node", "python3", "postgres", "redis-server"],
+  backups: { schedule: "Daily at 03:00", lastAt: "2026-10-16T03:02:00.000Z" },
+};
+
+/** mowp-2026 at 30 days. */
+const RECAP_MONTH: AppRecap = {
+  ...RECAP_CLEAN,
+  kind: "30d",
+  since: RECAP_DEPLOYED,
+  until: "2026-11-12T09:00:00.000Z",
+  deploys: { total: 64, failed: 4 },
+  deploysByDay: [3, 5, 2, 4, 1, 0, 0, 6, 4, 3, 2, 5, 0, 0, 2, 3, 1, 4, 2, 0, 0, 5, 3, 2, 1, 2, 0, 0, 0, 4].map((n, i) => ({
+    succeeded: [1, 7, 14, 21].includes(i) ? n - 1 : n,
+    failed: [1, 7, 14, 21].includes(i) ? 1 : 0,
+  })),
+  build: { avgMs: 141_000, fastestMs: 102_000, earlyAvgMs: 134_000 },
+  uptime: { ratio: 0.9998, downMinutes: 9 },
+  cpu: { avg: 3.2, peak: 46 },
+  memory: { avg: 280 * MB, peak: 471 * MB, peakAt: "2026-11-02T18:00:00.000Z", limit: 512 * MB, daysNearLimit: 6 },
+  network: { rx: 1.9 * GiB, tx: 14 * GiB },
+  volumes: [
+    { name: "mowp-uploads", sizeBytes: 2.4 * GiB, unprotected: false },
+    { name: "mowp-cache", sizeBytes: 380 * MB, unprotected: false },
+  ],
+  backups: { schedule: "Daily at 02:00", lastAt: "2026-11-12T02:03:00.000Z", nights: Array.from({ length: 30 }, () => "ok" as const) },
+  imageUpdates: 3,
+};
+
+function groupedRecap(appName: string, cpu: number, memMb: number, storageGb: number | null, bandwidthGb: number, extra: Partial<AppRecap> = {}): AppRecap {
+  return {
+    ...RECAP_CLEAN,
+    appId: `app_${appName.replace(/\W/g, "")}`,
+    appName,
+    cpu: { avg: cpu, peak: cpu * 4 },
+    memory: { avg: memMb * MB, peak: memMb * 1.4 * MB, peakAt: RECAP_DEPLOYED, limit: null },
+    network: { rx: bandwidthGb * 0.2 * GiB, tx: bandwidthGb * 0.8 * GiB },
+    volumes: storageGb === null ? [] : [{ name: `${appName}-data`, sizeBytes: storageGb * GiB, unprotected: false }],
+    ...extra,
+  };
+}
+
+/** Twelve apps adopted in one afternoon. */
+const RECAP_GROUP: AppRecap[] = [
+  groupedRecap("plex", 9, 1430, 2.1, 41),
+  groupedRecap("paperless", 3, 420, null, 0.4, {
+    volumes: [
+      { name: "paperless-media", sizeBytes: 16 * GiB, unprotected: true },
+      { name: "paperless-data", sizeBytes: 2 * GiB, unprotected: false },
+    ],
+  }),
+  groupedRecap("qbittorrent", 12, 1024, 640, 88, {
+    oomKills: 2,
+    memory: { avg: 1024 * MB, peak: 1024 * MB, peakAt: RECAP_DEPLOYED, limit: 1024 * MB },
+  }),
+  groupedRecap("gitea", 1, 210, 6.2, 1.1, { scanFindings: 1 }),
+  groupedRecap("sonarr-tv", 2, 310, 1.8, 2.6),
+  groupedRecap("radarr", 2, 290, 1.5, 2.2),
+  groupedRecap("outline", 1, 380, 3.4, 0.6),
+  groupedRecap("n8n", 1, 410, 0.9, 0.3),
+  groupedRecap("dockge", 0, 90, 0.1, 0.1),
+  groupedRecap("samba", 0, 60, null, 14),
+  groupedRecap("ntfy", 0, 40, 0.2, 0.1),
+  groupedRecap("cloudflare-ddns", 0, 12, null, 0.04),
+];
+
+function recapEvent(recaps: AppRecap[]): DigestAppRecapEvent {
+  return { type: "digest.app-recap", title: "App recaps", message: `${recaps.length} new app recaps.`, orgName: "Long House", recaps };
+}
+
+export const RECAP_FIXTURES = { clean: RECAP_CLEAN, actions: RECAP_ACTIONS, month: RECAP_MONTH, group: RECAP_GROUP };
+
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
+  { name: "recap-72h", event: recapEvent([RECAP_CLEAN]) },
+  { name: "recap-72h-actions", event: recapEvent([RECAP_ACTIONS]) },
+  { name: "recap-30d", event: recapEvent([RECAP_MONTH]) },
+  { name: "recap-grouped", event: recapEvent(RECAP_GROUP) },
   { name: "deploy-success", event: deploySuccess },
   {
     name: "deploy-success-first",

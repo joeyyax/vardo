@@ -865,7 +865,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
     const { emit } = await import("@/lib/notifications/dispatch");
     const deployment = await db.query.deployments.findFirst({
       where: eq(deployments.id, deploymentId),
-      columns: { gitSha: true, gitMessage: true, triggeredBy: true, trigger: true, slot: true, environmentId: true },
+      columns: { gitSha: true, gitMessage: true, triggeredBy: true, trigger: true, slot: true, environmentId: true, groupEnvironmentId: true },
     });
 
     // A deploy that failed before loading its app has no names yet.
@@ -911,6 +911,18 @@ export async function sendDeployNotification(notice: DeployNotice) {
 
     if (success) {
       const history = await successHistory(app.id, deploymentId, deployment?.environmentId ?? null).catch(() => ({ firstDeploy: false }));
+      let recapAt: string | undefined;
+      if (history.firstDeploy) {
+        const { scheduleRecaps } = await import("@/lib/recaps/tick");
+        const due = await scheduleRecaps(app.id, {
+          environmentId: deployment?.environmentId ?? null,
+          groupEnvironmentId: deployment?.groupEnvironmentId ?? null,
+        }).catch((err) => {
+          logger.child("recaps").warn(`Scheduling recaps for ${app.id} failed: ${err instanceof Error ? err.message : err}`);
+          return undefined;
+        });
+        recapAt = due?.toISOString();
+      }
       emit(organizationId, {
         type: "deploy.success",
         title: `Deploy successful: ${displayName}`,
@@ -924,6 +936,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
         gitMessage,
         triggeredBy: triggeredByName,
         ...history,
+        ...(recapAt ? { recapAt } : {}),
         ...details,
         ...incidentField,
       });

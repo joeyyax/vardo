@@ -61,4 +61,5 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "system.restart-failed": "Vardo didn't come back",
   "system.containers-missing": "Containers missing after restart",
   "digest.health": "Health summary",
+  "digest.app-recap": "New app recaps",
 };
