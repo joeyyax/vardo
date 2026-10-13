@@ -49,20 +49,18 @@ describe("notification subjects", () => {
     expect(subject(bare)).not.toMatch(/unknown/i);
   });
 
-  it("covers the lifecycle with commits, not package versions", () => {
+  it("keeps update subjects focused on status", () => {
     expect(subjectLine(fixture("system-started"))).toBe("✓ Vardo back up after 2 min 29 s");
-    expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo updated · e36c2e3 → 4f1a9b2 fix(email): one instance name in every subject");
+    expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo update complete");
     expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at Health check");
     expect(subjectLine(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped · v0.2.0");
-    expect(subjectLine(fixture("system-update-started"))).toBe("↑ Vardo updating · e36c2e3");
+    expect(subjectLine(fixture("system-update-started"))).toBe("↑ Vardo update started");
   });
 
-  it("counts an update's commits and names the newest", () => {
+  it("leaves raw commit subjects out of update subjects", () => {
     expect(subject(fixture("system-update-available-self-deploy"))).toBe(
-      "node-a · ↑ Vardo update · 12 commits · fix(email): one instance name in every subject",
+      "node-a · ↑ Vardo update available",
     );
-    const long = { ...fixture<"system.update-available">("system-update-available-self-deploy"), commits: [{ sha: "abc1234", subject: "x".repeat(40) + " " + "y".repeat(60) }] };
-    expect(subjectLine(long)).toBe(`↑ Vardo update · 12 commits · ${"x".repeat(40)}…`);
   });
 
   it("names the job and app when a cron alert clears", () => {
@@ -202,21 +200,59 @@ describe("notification emails", () => {
     expect(email.html).toContain('href="https://vardo.example.com/apps/app_d0cs/security"');
   });
 
-  it("shows what's new in an update, with Update now first", async () => {
+  it("keeps raw commits out of the update email", async () => {
     const email = (await renderNotificationEmail(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("What's new\n4f1a9b2: fix(email): one instance name in every subject · Dev Example");
-    expect(email.text).toContain("and 9 more commits");
+    expect(email.text).not.toContain("What's new");
+    expect(email.text).not.toContain("fix(email)");
     const updateNow = email.text.indexOf("Update now:");
-    const all = email.text.indexOf("View all changes on GitHub: https://github.com/example/vardo/compare/e36c2e3...4f1a9b2");
+    const all = email.text.indexOf("Full change history on GitHub: https://github.com/example/vardo/compare/e36c2e3...4f1a9b2");
+    const details = email.text.indexOf("Technical details");
     expect(updateNow).toBeGreaterThan(-1);
     expect(all).toBeGreaterThan(updateNow);
+    expect(details).toBeGreaterThan(all);
   });
 
-  it("shows commits, not the package version, when Vardo updated", async () => {
+  it("puts the updated version after the action and change history", async () => {
     const email = (await renderNotificationEmail(fixture("system-updated"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Version: e36c2e3 → 4f1a9b2\n");
+    expect(email.text).toContain("Version: 4f1a9b2\n");
     expect(email.text).not.toContain("0.1.0");
-    expect(email.text).toContain("What's new\n4f1a9b2");
+    expect(email.text).not.toContain("fix(email)");
+    expect(email.text.indexOf("Technical details")).toBeGreaterThan(email.text.indexOf("Open Vardo on node-a:"));
+  });
+
+  it("uses release notes in place of raw commits", async () => {
+    const event = { ...fixture<"system.updated">("system-updated"), releaseNotes: "- App stop failures are shown.\n- The dialog closes when stopping finishes." };
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("What changed\n  App stop failures are shown.\n  The dialog closes when stopping finishes.");
+    expect(email.text).not.toContain("fix(email)");
+  });
+
+  it("shows rollout priority and status before technical details", async () => {
+    const event = {
+      type: "system.rollout-started",
+      title: "Rollout started",
+      message: "",
+      rolloutId: "rollout_1",
+      targetSha: "f09896b",
+      targetLabel: "f09896b",
+      members: [
+        { instanceId: "lh1", name: "Long House", priority: "standard", state: "waiting", reason: null },
+        { instanceId: "jy0", name: "jy0", priority: "critical", state: "waiting", reason: null },
+      ],
+    } satisfies BusEvent;
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.subject).toBe("Vardo update started for jy0 and Long House");
+    expect(email.text).toContain("1. jy0: Waiting · Critical priority\n2. Long House: Waiting · Standard priority");
+    expect(email.text).toContain("Up to two can update at once; a busy instance waits until it's ready.");
+    expect(email.text.indexOf("View rollout:")).toBeLessThan(email.text.indexOf("Skip priority order:"));
+    expect(email.text.indexOf("Technical details")).toBeGreaterThan(email.text.indexOf("Skip priority order:"));
+    expect(email.text).not.toContain("Roll out everywhere now");
+
+    const finished = { ...event, type: "system.rollout-finished" as const, members: event.members.map((member) => ({ ...member, state: "verified" })) };
+    const done = (await renderNotificationEmail(finished, FIXTURE_CONTEXT))!;
+    expect(done.subject).toBe("Vardo update complete on jy0 and Long House");
+    expect(done.text).toContain("Both instances are updated");
+    expect(done.text).not.toContain("Instance status");
   });
 
   it("leaves out a zero console downtime", async () => {
