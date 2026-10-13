@@ -7,7 +7,6 @@ import { join } from "path";
 import { pipeline } from "stream/promises";
 import { identityToRecipient } from "age-encryption";
 import {
-  ArchiveDecryptError,
   createArchiveEncryptor,
   decryptArchiveFile,
   deriveArchiveRecipient,
