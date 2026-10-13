@@ -671,6 +671,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           stop,
         )
       : await stop();
+    // Before the new slot is healthy, a stop just clears the way and moves nothing.
+    if (outcome.ok && ctx.healthyAt !== undefined) log(`[deploy] Traffic moved to ${newSlot}; ${activeSlot} stopped`);
 
     await reportOomDuringDeploy(
       { organizationId: ctx.organizationId, appId: ctx.appId, appName: app.displayName || app.name },
@@ -1057,7 +1059,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  log(`[deploy] Traffic routed to ${newSlot}`);
+  // Traffic moves for good when the old slot stops; until then say what's serving.
+  if (ctx.stopOldSlot && hold.held) {
+    log(`[deploy] ${newSlot} is up alongside ${activeSlot}, which keeps serving until the cutover`);
+  } else if (ctx.stopOldSlot) {
+    log(`[deploy] ${newSlot} is up and sharing traffic with ${activeSlot} until it stops`);
+  } else {
+    log(`[deploy] Traffic routed to ${newSlot}`);
+  }
   ctx.stage("routing", "success");
 
   return ctx;

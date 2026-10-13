@@ -314,6 +314,40 @@ describe("swap — cutover pin", () => {
   });
 });
 
+describe("swap — what the log says about traffic", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    order.length = 0;
+    dockerHealthy();
+  });
+
+  it("says the held old slot keeps serving, then that traffic moved at the stop", async () => {
+    cutoverMock.holdSlot.mockImplementationOnce(async () => ({ held: true, release: async () => {} }));
+    const ctx = await swap(context());
+    expect(ctx.logLines).toContain("[deploy] green is up alongside blue, which keeps serving until the cutover");
+    expect(ctx.logLines.some((l) => l.includes("Traffic routed") || l.includes("Traffic moved"))).toBe(false);
+
+    await ctx.stopOldSlot!();
+    expect(ctx.logLines).toContain("[deploy] Traffic moved to green; blue stopped");
+  });
+
+  it("says the slots share traffic when Traefik never confirmed the hold", async () => {
+    const ctx = await swap(context());
+    expect(ctx.logLines).toContain("[deploy] green is up and sharing traffic with blue until it stops");
+  });
+
+  it("says traffic went to the new slot when the old one stopped before it started", async () => {
+    const ctx = await swap(context({ compose: composeFile({ ports: true }) }));
+    expect(ctx.logLines).toContain("[deploy] Traffic routed to green");
+    expect(ctx.logLines.some((l) => l.includes("Traffic moved"))).toBe(false);
+  });
+
+  it("says traffic went to the new slot on a first deploy", async () => {
+    const ctx = await swap(context({ activeSlot: null }));
+    expect(ctx.logLines).toContain("[deploy] Traffic routed to green");
+  });
+});
+
 describe("swap — hold pin on the old slot", () => {
   const isNewSlotUp = (a: string[]) => a.includes("up") && a.includes("app-production-green");
   const isNewSlotDown = (a: string[]) => a.includes("down") && a.includes("app-production-green");
