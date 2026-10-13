@@ -1,17 +1,6 @@
 "use client";
 
-import { Cron } from "croner";
-
-/** Next fire time of a schedule read in `timeZone`. */
-export function getNextRun(schedule: string, timeZone = "UTC"): Date | null {
-  if (!schedule || schedule === "manual") return null;
-  try {
-    const job = new Cron(schedule, { timezone: timeZone });
-    return job.nextRun() ?? null;
-  } catch {
-    return null;
-  }
-}
+import { getNextRun } from "@/lib/backups/next-run";
 
 export function NextRun({ schedule, timeZone }: { schedule: string; timeZone?: string }) {
   const next = getNextRun(schedule, timeZone);

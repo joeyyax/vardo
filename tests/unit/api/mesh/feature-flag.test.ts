@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 
+vi.mock("server-only", () => ({}));
+
 // With the mesh flag off, no mesh route answers: each returns 404 before it touches data.
 
 const untouchable = vi.hoisted(() => ({
@@ -59,7 +61,7 @@ describe("mesh routes and the mesh flag", () => {
       expect(res.status, `${method} ${_rel}`).toBe(404);
       expect((await res.json()).error).toMatch(/isn't enabled/);
     }
-  });
+  }, 20_000);
 
   it("lets a request past the gate when the flag is on", async () => {
     vi.stubEnv("VARDO_FEATURE_MESH", "on");

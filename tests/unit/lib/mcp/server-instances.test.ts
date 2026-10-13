@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 const { dbMock } = await import("@/tests/helpers/db");
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/constants", () => ({ getInstanceId: async () => "local-id" }));
 vi.mock("@/lib/system-settings", async (orig) => ({
   ...(await orig<typeof import("@/lib/system-settings")>()),
@@ -17,8 +18,8 @@ vi.mock("@/lib/self-update/store", () => ({
 
 const { createMcpServer } = await import("@/lib/mcp/server");
 
-async function connect(linkedInstances: boolean) {
-  const server = createMcpServer({ userId: "u1", organizationId: "o1", crossOrg: false, linkedInstances });
+async function connect(linkedInstances: boolean, adminScope = false) {
+  const server = createMcpServer({ userId: "u1", organizationId: "o1", crossOrg: false, linkedInstances, adminScope });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await server.connect(serverT);
   const client = new Client({ name: "test", version: "0" });
@@ -57,6 +58,28 @@ describe("MCP server across instances", () => {
       if (tool.name === "vardo_list_instances") expect(props.instance).toBeUndefined();
       else expect(props.instance, tool.name).toBeDefined();
       expect(tool.inputSchema.required ?? []).not.toContain("instance");
+    }
+    await client.close();
+  });
+
+  it("adds the instance argument to the admin-only status tools", async () => {
+    const client = await connect(false, true);
+    const { tools } = await client.listTools();
+    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now"]) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool, name).toBeDefined();
+      expect((tool!.inputSchema.properties ?? {}).instance, name).toBeDefined();
+    }
+    await client.close();
+  });
+
+  it("hides the admin-only status tools from a token without the admin scope", async () => {
+    const client = await connect(false);
+    const { tools } = await client.listTools();
+    const names = tools.map((t) => t.name);
+    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now"]) expect(names).not.toContain(name);
+    for (const name of ["vardo_list_attention", "vardo_list_backup_jobs", "vardo_list_backups", "vardo_list_deployments", "vardo_list_activity", "vardo_security_summary", "vardo_run_backup"]) {
+      expect(names).toContain(name);
     }
     await client.close();
   });

@@ -25,7 +25,7 @@ export function registerRunCronJob(server: McpServer, context: McpAuthContext) {
         },
       });
 
-      // Tokens never carry instance-admin power, so cron on Vardo's own org and apps stays session-only.
+      // Cron on Vardo's own org and apps stays session-only.
       const allowed =
         job &&
         !isSystemExecTarget(job.organization, job.app) &&

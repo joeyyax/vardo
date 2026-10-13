@@ -13,7 +13,7 @@ type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
 };
 
-// POST /api/v1/organizations/[orgId]/backups/[jobId]/run
+// POST /api/v1/organizations/[orgId]/backups/jobs/[jobId]/run
 async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
