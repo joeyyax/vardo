@@ -3,6 +3,7 @@
 import type { AlertResolvedEvent, BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, windowPhrase } from "./format";
+import { backupProblemCount } from "./templates/backup";
 import type { MailSeries } from "./templates/context";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
@@ -72,6 +73,8 @@ export function subjectLine(event: BusEvent): string {
     case "backup.summary": {
       const label = event.run.label;
       const failed = event.rows.filter((r) => r.outcome === "failed");
+      const problems = backupProblemCount(event);
+      if (problems > failed.length && problems > 1) return `${failed.length ? "✗" : "⚠"} ${label} · ${problems} need you`;
       if (failed.length) {
         const total = backupRunTotal(event);
         return event.failed === failed.length && total > 0

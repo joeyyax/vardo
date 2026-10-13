@@ -104,7 +104,7 @@ describe("timestamps", () => {
   it("print in the instance's zone", async () => {
     const ctx = { ...FIXTURE_CONTEXT, timeZone: "America/Los_Angeles" };
     const backups = (await renderNotificationEmail(fixture("backup-summary"), ctx))!;
-    expect(backups.text).toMatch(/Ran: .*P[DS]T/);
+    expect(backups.text).toMatch(/between \d\d:\d\d and \d\d:\d\d P[DS]T\./);
     const unclean = (await renderNotificationEmail(fixture("system-recovered-unclean"), ctx))!;
     expect(unclean.text).toMatch(/Last heartbeat: .*P[DS]T/);
     expect(unclean.text).not.toContain("2026-10-09T16:51:30.000Z");

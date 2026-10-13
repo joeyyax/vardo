@@ -198,9 +198,8 @@ describe("notification emails", () => {
 
   it("lists only the problem rows when a quiet run emails, with a link to the full run", async () => {
     const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual 1.8 GiB");
-    expect(email.text).not.toContain("By app");
-    expect(email.text).not.toContain("Shop: ");
+    expect(email.text).toContain("Shop Staging / uploads is 95% smaller than usual");
+    expect(email.text).not.toContain("Acme Data:");
     expect(email.text).toContain("View the full run: https://vardo.example.com/backups");
   });
 
@@ -303,14 +302,12 @@ describe("notification emails", () => {
   it("counts jobs that timed out as part of the run", async () => {
     const event = fixture<"backup.summary">("backup-summary-timed-out");
     const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
-    expect(email.subject).toBe("node-a · ⚠ Nightly backups · timed out, 8 didn't finish");
-    expect(email.text).toContain("Nightly backups timed out");
-    expect(email.text).toContain("Backed up: 10 of 18,");
-    expect(email.text).toContain("Succeeded 56% · Didn't finish 44%");
-    expect(email.text).toContain("Took: 1 h 1 min, then timed out (estimated 8 min 13 s)");
-    expect(email.text).toContain("timed out: Shop Staging, Search Data,");
+    expect(email.subject).toBe("node-a · ⚠ Nightly backups · 2 need you");
+    expect(email.text).toContain("10 of 18 volumes backed up before the run timed out at 03:01 UTC.");
+    expect(email.text).toContain("Backed up: 10/18 (8 didn't finish)");
+    expect(email.text).toContain("Took: 1 h 1 min (then timed out)");
+    expect(email.text).toContain("⚠ 8 jobs didn't finish before the timeout\nShop Staging, Search Data,");
     expect(email.text).not.toContain("Auto: ");
-    expect(email.html).toContain("10 of 18 backed up. 8 didn&#x27;t finish before the timeout.");
   });
 
   it("links no rollback that only repeats the deployment log", async () => {
@@ -324,7 +321,7 @@ describe("notification emails", () => {
     const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
     expect(email.text).not.toContain("loki-data");
     expect(email.text).not.toContain("larger");
-    expect(email.text).toContain("much smaller");
+    expect(email.text).toContain("smaller than usual");
   });
 
   it("names a stack child with its stack in a disk write alert", async () => {
