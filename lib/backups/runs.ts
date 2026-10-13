@@ -364,7 +364,7 @@ async function withDisplayNames(items: BackupResultItem[]): Promise<BackupResult
 
 /**
  * Takes results as they come: failures email now through the throttle, a success clears its
- * failure, and everything lands in its run or the org's open run for the summary.
+ * failure, and results with a run land in it for the summary. The digest counts the rest.
  */
 export async function recordBackupResults(
   organizationId: string,
@@ -381,20 +381,11 @@ export async function recordBackupResults(
     }
     await settleAlerts(organizationId, "backup.failure", items.filter((i) => i.outcome === "success").map(failureSubject), at);
 
-    const runId =
-      opts.runId ??
-      (
-        await db.query.backupRuns.findFirst({
-          where: and(eq(backupRuns.organizationId, organizationId), isNull(backupRuns.finishedAt)),
-          orderBy: [desc(backupRuns.startedAt)],
-          columns: { id: true },
-        })
-      )?.id;
-    if (!runId) return;
+    if (!opts.runId) return;
     await db
       .update(backupRuns)
       .set({ items: sql`${backupRuns.items} || ${JSON.stringify(items)}::jsonb` })
-      .where(and(eq(backupRuns.id, runId), isNull(backupRuns.finishedAt)));
+      .where(and(eq(backupRuns.id, opts.runId), isNull(backupRuns.finishedAt)));
   } catch (err) {
     log.error(`Couldn't record backup results for org ${organizationId}:`, err);
   }

@@ -203,15 +203,15 @@ describe("recordBackupResults", () => {
     expect(mocks.fire.mock.calls[0][2]).toMatchObject({ title: "Backup of Acme Data / data failed", appName: "Acme Data" });
   });
 
-  it("folds a result outside any run into the org's open run", async () => {
+  it("keeps a result outside any run out of another run's summary", async () => {
     dbMock.query.backupRuns.findFirst.mockResolvedValue({ id: "open" });
-    await recordBackupResults("org1", [item()], {}, t0);
-    expect(dbMock.updates).toHaveLength(1);
+    await recordBackupResults("org1", [item({ kind: "drill" }), item({ jobId: "requeued" })], {}, t0);
+    expect(dbMock.updates).toHaveLength(0);
   });
 
-  it("drops a success when no run is open; the digest still counts it", async () => {
-    dbMock.query.backupRuns.findFirst.mockResolvedValue(undefined);
-    await recordBackupResults("org1", [item()], {}, t0);
+  it("still emails a failure that has no run", async () => {
+    await recordBackupResults("org1", [item({ outcome: "failed", error: "boom" })], { runId: null }, t0);
+    expect(mocks.fire).toHaveBeenCalledTimes(1);
     expect(dbMock.updates).toHaveLength(0);
   });
 });
