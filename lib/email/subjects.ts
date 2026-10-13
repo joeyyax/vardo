@@ -2,7 +2,7 @@
 
 import type { AlertResolvedEvent, BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName } from "./format";
+import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, windowPhrase } from "./format";
 import type { MailSeries } from "./templates/context";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
@@ -86,7 +86,7 @@ export function subjectLine(event: BusEvent): string {
     case "cron.failed":
       return `✗ Cron ${event.cronJobName} failed on ${event.projectName || "an app"}`;
     case "disk.write-alert":
-      return `⚠ ${stackedName(event.appName || event.containerName, event.projectName)} wrote ${formatBytesIec(event.writtenBytes)} in ${event.window || "1h"}`;
+      return `⚠ ${stackedName(event.appName || event.containerName, event.projectName)} wrote ${formatBytesIec(event.writtenBytes)} in ${windowPhrase(event.window)}`;
     case "volume.drift":
       return `⚠ ${event.appName} volumes drifted · ${event.totalDrift} files`;
     case "security.scan-findings": {

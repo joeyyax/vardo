@@ -15,6 +15,7 @@ import {
 } from "@/lib/alerts/oom";
 import { alertFiredMail } from "@/lib/email/templates/alerts";
 import { notificationSubject } from "@/lib/email/subjects";
+import { EMAIL_FIXTURES } from "@/lib/email/fixtures";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -148,18 +149,61 @@ describe("OOM alert", () => {
     expect(oomObservation(record("process"), after, killedAt).item.title).toBe("Shop killed for memory · still running");
   });
 
-  it("renders as an email with the subject, both lines, facts and the limit button", () => {
+  it("renders as an email with the subject, status first and each fact once", () => {
     const r = record("exit");
     const { item } = oomObservation(r, after, killedAt + OOM_SETTLE_MS);
     const event = { type: "alert.fired" as const, title: item.title, message: item.title, alerts: [item] };
     expect(notificationSubject(event, ctx)).toMatch(/✗ Shop killed for memory · running again$/);
 
     const mail = alertFiredMail(event, ctx);
-    expect(mail.paragraphs).toEqual([
-      "It hit its 2 GiB limit (Vardo's default; none set in compose) and exited. Docker restarted it once; it's been running since 02:48 PDT.",
-      "Raise the limit to 3 GiB.",
-    ]);
-    expect(mail.facts?.map((f) => f.label)).toEqual(["Limit", "Peak (1h)", "Restarts", "Status", "Container", "Since"]);
-    expect(mail.action).toEqual({ label: "Change memory limit", href: "https://vardo.example.com/apps/a1/resources" });
+    expect(mail.heading).toBe("Shop was killed for memory");
+    expect(mail.blocks?.[0]).toEqual({ kind: "reassure", strong: "It's running again.", text: "Docker restarted it at 02:48 PDT." });
+    expect(mail.blocks?.[1]).toEqual({ kind: "text", text: "It hit its 2 GiB limit, Vardo's default since compose doesn't set one. Raise the limit to 3 GiB." });
+    const tiles = mail.blocks?.find((b) => b.kind === "tiles");
+    expect(tiles && "tiles" in tiles ? tiles.tiles.map((t) => t.label) : []).toEqual(["Peak", "Limit", "Restarts"]);
+    expect(mail.facts).toBeUndefined();
+    expect(mail.action).toEqual({ label: "Change the limit", href: "https://vardo.example.com/apps/a1/resources" });
+  });
+
+  it("says what the Auto profile did in place of advice", () => {
+    const r = record("exit");
+    r.autotune = { kind: "raised", toMb: 3072, live: true };
+    const view = oomObservation(r, after, killedAt + OOM_SETTLE_MS).item.view!;
+    expect(view.lead).toEqual(["It hit its 2 GiB limit, Vardo's default since compose doesn't set one. Its memory profile is Auto, so Vardo raised the limit to 3 GiB, starting now."]);
+    expect(view.tiles?.find((t) => t.label === "New limit")).toEqual({ label: "New limit", value: "3", unit: " GiB", sub: "was 2 GiB" });
+  });
+
+  it("matches the email fixture", () => {
+    const r = record("exit");
+    r.autotune = { kind: "raised", toMb: 3072, live: true };
+    const pdt = { ...after, runningSince: new Date("2026-10-09T14:04:00Z") };
+    const fixture = EMAIL_FIXTURES.find((f) => f.name === "alert-oom")!.event as { alerts: { view?: unknown }[] };
+    expect(oomObservation(r, pdt, killedAt + OOM_SETTLE_MS).item.view).toEqual({ ...(fixture.alerts[0].view as object), action: { label: "Change the limit", path: "/apps/a1/resources" } });
+  });
+
+  it("leads with down and a limit to set for an uncapped app the host killed", () => {
+    resetOomKills();
+    for (const at of [killedAt, killedAt + 1000]) {
+      recordOomKill("org1", { appId: "a1", appName: "Shop", containerName: "c", kind: "oom-host", path: "exit", restartCount: 0 }, at);
+    }
+    const r = recentOomKills(killedAt + 1000)[0];
+    const down = { ...after, status: "down" as const, runningSince: null, dockerRestarts: 0, vardoRestarts: 3, gaveUp: true, limitBytes: 0, limitSource: "none" as const, peakBytes: GIB };
+    const { item } = oomObservation(r, down, killedAt + OOM_SETTLE_MS);
+    expect(item.hostMemory).toBe(true);
+    expect(item.view?.reassure).toBeUndefined();
+    expect(item.view?.brief).toEqual({
+      title: "Shop is down",
+      body: "Killed twice with no limit of its own. Vardo restarted it 3 times, then stopped. Free memory on the host, or give it a limit of 1.5 GiB.",
+    });
+    expect(item.view?.action).toEqual({ label: "Set a limit", path: "/apps/a1/resources" });
+    expect(item.view?.tiles?.find((t) => t.label === "Restarts")).toMatchObject({ value: "3", sub: "restarts stopped", hot: true });
+  });
+
+  it("says the container kept running when only a process died", () => {
+    const view = oomObservation(record("process", "oom-host"), after, killedAt).item.view!;
+    expect(view.heading).toBe("A process in Shop was killed for memory");
+    expect(view.brief).toEqual({ title: "Shop lost a process", body: "The kernel killed one process inside it. The container kept running." });
+    expect(view.tiles?.map((t) => t.label)).not.toContain("Restarts");
+    expect(view.action).toEqual({ label: "Open Shop", path: "/apps/a1" });
   });
 });
