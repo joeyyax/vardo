@@ -2,7 +2,7 @@
 // creates the database, applies every migration with the production runner,
 // serves on E2E_PORT (default 3100) and drops the database on a clean exit.
 //
-// Reads .env from the working directory for REDIS_URL (database 15 is flushed), secrets and the Postgres
+// Reads .env from the working directory for REDIS_URL, secrets and the Postgres
 // admin URL (E2E_ADMIN_URL, else DATABASE_URL). Set BASE_URL to test a server
 // that is already running instead. E2E_VERBOSE=1 shows the server output.
 
@@ -20,10 +20,10 @@ if (!adminUrl) {
   process.exit(1);
 }
 
-// Logical database 15, emptied each run, so rate-limit counters from earlier runs
+// The selected Redis database is emptied each run, so rate-limit counters from earlier runs
 // (the setup token endpoint allows only a few attempts) don't leak in.
 const redisUrl = new URL(process.env.REDIS_URL ?? "redis://localhost:7200");
-redisUrl.pathname = "/15";
+redisUrl.pathname = `/${process.env.E2E_REDIS_DB ?? "15"}`;
 const redis = new Redis(redisUrl.toString());
 await redis.flushdb();
 await redis.quit();
