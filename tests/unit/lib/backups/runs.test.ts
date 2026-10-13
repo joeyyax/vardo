@@ -166,6 +166,17 @@ describe("summarizeResults", () => {
     ]);
   });
 
+  it("carries config skips and last good times, and leaves config out of the per-app counts", () => {
+    const rows = summarizeResults(
+      [item({ volumeName: "data" }), item({ volumeName: "nginx.conf", outcome: "skipped", error: "Single config file", expected: true, config: true })],
+      new Map(),
+      new Map([[volumeKey("a1", "data"), "2026-10-08T02:04:00.000Z"]]),
+    );
+    expect(rows.find((r) => r.volumeName === "nginx.conf")).toMatchObject({ config: true, expected: true });
+    expect(rows.find((r) => r.volumeName === "data")?.lastGoodAt).toBe("2026-10-08T02:04:00.000Z");
+    expect(summarizeApps(rows)).toMatchObject([{ volumes: 1, skipped: 0 }]);
+  });
+
   it("keys a failure by kind, app and volume", () => {
     expect(failureSubject(item({ kind: "drill" }))).toBe("drill:a1:data");
   });
@@ -418,8 +429,8 @@ describe("stale volumes in a summary", () => {
     dbMock.updateReturns([claimed]);
     await finishBackupRuns(t0 + 10 * MIN);
     expect(mocks.emit.mock.calls[0][1].staleVolumes).toEqual([
-      { appName: "Shop", volumeName: "data", lastSuccessAt: null },
-      { appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
+      { appId: "a1", appName: "Shop", volumeName: "data", lastSuccessAt: null },
+      { appId: "a9", appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
     ]);
   });
 });
