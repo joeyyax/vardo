@@ -52,6 +52,7 @@ const eslintConfig = defineConfig([
     "test-results/**",
     // Ignore worktrees and host project copies:
     ".claude/worktrees/**",
+    ".worktrees/**",
     ".host/**",
   ]),
 ]);
