@@ -6,13 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Boxes,
   Loader2,
   Lock,
   Globe,
-  GitBranch,
-  Container,
-  FileText,
   Globe2,
   RefreshCw,
 } from "lucide-react";
@@ -47,7 +43,8 @@ import {
   type AppDeployType,
   type AppSource,
 } from "@/lib/templates/create-payload";
-import { Card, cardVariants } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { SourcePicker, SOURCE_OPTIONS, type SourceOption } from "./source-picker";
 
 type Source = AppSource;
 type DeployType = AppDeployType;
@@ -98,27 +95,8 @@ type Props = {
   containerImportEnabled?: boolean;
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  database: "Databases",
-  cache: "Cache & queues",
-  monitoring: "Monitoring",
-  web: "Web servers",
-  tool: "Tools",
-  custom: "Custom",
-};
-
-const SOURCE_OPTIONS = [
-  { id: "github", icon: Github, label: "GitHub", description: "From your connected account" },
-  { id: "public-git", icon: GitBranch, label: "Public Git URL", description: "Any public repo" },
-  { id: "compose", icon: FileText, label: "Docker Compose", description: "Paste or from a repo" },
-  { id: "image", icon: Container, label: "Image", description: "Any Docker image" },
-] as const;
-
-type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
-
 import { slugify } from "@/lib/ui/slugify";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
-import { cn } from "@/lib/utils";
 
 export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
   const router = useRouter();
@@ -532,88 +510,13 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       </PageToolbar>
 
       {!isConfiguring ? (
-        /* Step 1: source */
-        <div className="space-y-8 max-w-4xl">
-          {/* Sources */}
-          <div>
-            <h2 className="type-h3 text-muted-foreground mb-3">
-              Start from
-            </h2>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {SOURCE_OPTIONS.map((opt) => {
-                const Icon = opt.icon;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => selectSource(opt.id)}
-                    className={cn(cardVariants({ variant: "inset" }), "flex flex-col items-center gap-2 p-4 text-center transition-colors hover:bg-accent/50")}
-                  >
-                    <Icon className="size-6 text-muted-foreground" />
-                    <span className="type-h4">{opt.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {opt.description}
-                    </span>
-                  </button>
-                );
-              })}
-              {containerImportEnabled && (
-                <Link
-                  href="/discover"
-                  className={cn(cardVariants({ variant: "inset" }), "flex flex-col items-center gap-2 p-4 text-center transition-colors hover:bg-accent/50")}
-                >
-                  <Boxes className="size-6 text-muted-foreground" aria-hidden="true" />
-                  <span className="type-h4">Existing containers</span>
-                  <span className="text-xs text-muted-foreground">
-                    Adopt what&apos;s already running on this host
-                  </span>
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {/* Templates */}
-          {Object.entries(templatesByCategory).map(([category, tmpls]) => (
-            <div key={category}>
-              <h2 className="type-h3 text-muted-foreground mb-3">
-                {CATEGORY_LABELS[category] || category}
-              </h2>
-              <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {tmpls.map((tmpl) => (
-                  <button
-                    key={tmpl.id}
-                    type="button"
-                    onClick={() => selectTemplate(tmpl)}
-                    className={cn(cardVariants({ variant: "inset" }), "flex items-center gap-3 p-3 text-left transition-colors hover:bg-accent/50")}
-                  >
-                    {tmpl.icon ? (
-                      <img
-                        src={tmpl.icon}
-                        alt=""
-                        className="size-8 shrink-0"
-                        style={{ filter: "drop-shadow(0 0 1px rgba(255,255,255,0.3))" }}
-                      />
-                    ) : (
-                      <Container className="size-8 shrink-0 text-muted-foreground" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {tmpl.displayName}
-                      </p>
-                      {tmpl.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                          {tmpl.description}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <SourcePicker
+          templatesByCategory={templatesByCategory}
+          containerImportEnabled={containerImportEnabled}
+          onSelectSource={selectSource}
+          onSelectTemplate={selectTemplate}
+        />
       ) : (
-        /* Step 2: configure */
         <div className="max-w-2xl space-y-6">
           {/* Back + title */}
           <div className="flex items-center gap-3">
