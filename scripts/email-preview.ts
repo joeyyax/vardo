@@ -3,7 +3,11 @@
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
+import { KIT_SAMPLES } from "@/lib/email/kit-fixture";
 import { renderNotificationEmail } from "@/lib/email/notification-email";
+import { NotificationMail, notificationMailText } from "@/lib/email/templates/components";
+import { createElement } from "react";
+import { render } from "react-email";
 
 const OUT = join(process.cwd(), ".email-preview");
 
@@ -22,6 +26,11 @@ async function main() {
     rows.push(
       `<tr><td><a href="${name}.html">${escape(email.subject)}</a></td><td><a href="${name}.txt">text</a></td><td><code>${event.type}</code></td></tr>`,
     );
+  }
+  for (const { name, subject, body } of KIT_SAMPLES) {
+    await writeFile(join(OUT, `${name}.html`), await render(createElement(NotificationMail, body)));
+    await writeFile(join(OUT, `${name}.txt`), `Subject: ${subject}\n\n${notificationMailText(body)}`);
+    rows.push(`<tr><td><a href="${name}.html">${escape(subject)}</a></td><td><a href="${name}.txt">text</a></td><td><code>kit</code></td></tr>`);
   }
   const index = `<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Vardo email preview</title>
 <style>body{font:14px system-ui;margin:32px;max-width:900px}td{padding:6px 12px 6px 0}code{color:#71717a}</style>

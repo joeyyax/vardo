@@ -31,6 +31,7 @@ export function footerFor(ctx: MailContext): MailFooter {
   return {
     instanceName: ctx.instanceName,
     consoleHost: consoleHost(ctx),
+    consoleUrl: ctx.baseUrl,
     settingsUrl: `${ctx.baseUrl}/user/settings/notifications`,
   };
 }
