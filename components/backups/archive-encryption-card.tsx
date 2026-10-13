@@ -13,7 +13,7 @@ type ArchiveEncryptionState = {
   keyAvailable: boolean;
 };
 
-const URL = "/api/v1/system/backup-encryption";
+const ENDPOINT = "/api/v1/system/backup-encryption";
 
 /** Whether new archives are encrypted with age under the recovery key, and the toggle for that setting. */
 export function ArchiveEncryptionCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
@@ -21,7 +21,7 @@ export function ArchiveEncryptionCard({ heading = "h3" }: { heading?: "h2" | "h3
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch(URL)
+    fetch(ENDPOINT)
       .then((res) => (res.ok ? res.json() : null))
       .then((body: ArchiveEncryptionState | null) => setState(body))
       .catch(() => setState(null));
@@ -32,7 +32,7 @@ export function ArchiveEncryptionCard({ heading = "h3" }: { heading?: "h2" | "h3
   async function change(next: boolean) {
     setSaving(true);
     try {
-      const res = await fetch(URL, {
+      const res = await fetch(ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: next }),
@@ -66,14 +66,11 @@ export function ArchiveEncryptionCard({ heading = "h3" }: { heading?: "h2" | "h3
       <CardContent className="space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-0.5">
-            <Label htmlFor={switchId}>
-              {state.enabled ? "On" : "Off"}
-              {state.enabled ? " · recommended" : ""}
-            </Label>
+            <Label htmlFor={switchId}>Encrypt new backups</Label>
             <p className="text-sm text-muted-foreground">
               {state.enabled
-                ? "New backups are encrypted with age under this server's recovery key."
-                : "New backups are stored readable by anyone with access to the backup storage."}
+                ? "On. Encrypted with age under this server's recovery key."
+                : "Off. Changes apply to new backups only."}
             </p>
             {!state.keyAvailable ? (
               <p className="text-xs text-muted-foreground">
@@ -90,8 +87,7 @@ export function ArchiveEncryptionCard({ heading = "h3" }: { heading?: "h2" | "h3
         </div>
         {!state.enabled ? (
           <Callout variant="warning" label="Heads up">
-            New backups are stored readable. Turning encryption on only affects new backups; existing
-            archives keep how they were written.
+            New backups are readable by anyone with access to the backup storage.
           </Callout>
         ) : null}
       </CardContent>
