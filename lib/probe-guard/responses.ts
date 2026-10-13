@@ -1,5 +1,7 @@
 // Bodies for turned-away requests. Generic on purpose: nothing about the app, its stack or why.
 
+import { isPermanent } from "./permanent";
+
 const STATUS_NAME: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
 
 const UNAVAILABLE: Record<number, string> = {
@@ -8,6 +10,32 @@ const UNAVAILABLE: Record<number, string> = {
   429: "Too many requests. Try again later.",
 };
 const UNAVAILABLE_BANNED = "Access from your address is unavailable right now.";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "05:24 UTC", with the date when it isn't today in UTC. */
+function utcClock(at: Date, now: Date): string {
+  const time = `${String(at.getUTCHours()).padStart(2, "0")}:${String(at.getUTCMinutes()).padStart(2, "0")} UTC`;
+  const sameDay = at.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+  return sameDay ? time : `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${time}`;
+}
+
+function untilNow(ms: number): string {
+  const minutes = Math.ceil(ms / 60_000);
+  if (minutes <= 1) return "about a minute";
+  if (minutes < 60) return `about ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours === 1) return "about an hour";
+  if (hours < 48) return `about ${hours} hours`;
+  return `about ${Math.round(hours / 24)} days`;
+}
+
+/** The banned line: when the ban ends if it's known and still ahead, otherwise the generic wording. Says nothing about why. */
+export function bannedMessage(until?: Date, now: Date = new Date()): string {
+  if (!until || !(until.getTime() > now.getTime())) return UNAVAILABLE_BANNED;
+  if (isPermanent(until)) return "Access from your address is unavailable, and there is no end date.";
+  return `Access from your address is unavailable until ${utcClock(until, now)} (${untilNow(until.getTime() - now.getTime())}).`;
+}
 
 export const RESPONSE_HEADERS = {
   "Content-Type": "text/plain; charset=utf-8",
@@ -48,9 +76,9 @@ h1{margin:0 0 .75rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.1;font-w
 `.trim();
 
 /** A small standalone page for a turned-away browser request: the status, its official name and one line. */
-export function errorPage(status: number, opts: { banned?: boolean } = {}): string {
+export function errorPage(status: number, opts: { banned?: boolean; until?: Date; now?: Date } = {}): string {
   const name = STATUS_NAME[status] ?? "Forbidden";
-  const message = opts.banned ? UNAVAILABLE_BANNED : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
+  const message = opts.banned ? bannedMessage(opts.until, opts.now) : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
   return `<!doctype html>
 <html lang="en">
 <head>

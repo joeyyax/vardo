@@ -16,6 +16,7 @@ import { clearWindow } from "./hits";
 import { PERMANENT_UNTIL } from "./permanent";
 import { getAllowlist } from "./allowlist-store";
 import { bansCovered } from "./allowlist";
+import type { BanRef } from "./block-source";
 
 const log = logger.child("probe-guard");
 
@@ -356,15 +357,17 @@ export async function blocklistBanCount(now = new Date()): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Active bans by address, for attributing blocked requests. */
-export async function activeBanRefs(now = new Date()): Promise<Map<string, { id: string; blocklist: boolean }>> {
+/** Active bans by address, for attributing blocked requests and telling a banned visitor when it ends. */
+export async function activeBanRefs(now = new Date()): Promise<Map<string, BanRef>> {
   const rows = await db
-    .select({ id: probeBans.id, ip: probeBans.ip, reason: probeBans.reason })
+    .select({ id: probeBans.id, ip: probeBans.ip, reason: probeBans.reason, expiresAt: probeBans.expiresAt })
     .from(probeBans)
     .where(and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)));
-  const out = new Map<string, { id: string; blocklist: boolean }>();
+  const out = new Map<string, BanRef>();
   // A local ban outranks a blocklist one on the same address.
-  for (const r of rows) if (!out.has(r.ip) || r.reason !== "blocklist") out.set(r.ip, { id: r.id, blocklist: r.reason === "blocklist" });
+  for (const r of rows) {
+    if (!out.has(r.ip) || r.reason !== "blocklist") out.set(r.ip, { id: r.id, blocklist: r.reason === "blocklist", expiresAt: r.expiresAt });
+  }
   return out;
 }
 
