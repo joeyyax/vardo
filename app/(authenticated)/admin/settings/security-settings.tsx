@@ -113,13 +113,6 @@ export function SecuritySettings() {
             <CardTitle>Probes and bans</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <SwitchRow
-              id="pg-humor"
-              label="Humor in probe responses"
-              hint="A short, friendly line instead of a bare Forbidden. Also covers the console's 404 page, robots.txt and security.txt."
-              checked={settings.humor}
-              onChange={(humor) => set({ humor })}
-            />
             <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
               <NumberField id="pg-threshold" label="Probes before a ban" value={settings.threshold} min={2} max={100} onChange={(threshold) => set({ threshold })} />
               <NumberField id="pg-window" label="Within minutes" value={settings.windowMinutes} min={1} max={1440} onChange={(windowMinutes) => set({ windowMinutes })} />

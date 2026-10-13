@@ -12,7 +12,7 @@ export async function GET(): Promise<Response> {
     const [settings, instance] = await Promise.all([getProbeGuardSettings(), getInstanceConfig()]);
     const contact = settings.securityContact || process.env.ACME_EMAIL?.trim() || "";
     const canonical = instance.domain ? `https://${instance.domain}/.well-known/security.txt` : undefined;
-    const body = renderSecurityTxt(contact, { humor: settings.humor, canonical });
+    const body = renderSecurityTxt(contact, { canonical });
     if (!body) return new Response("Not Found\n", NOT_FOUND);
     return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" } });
   } catch {

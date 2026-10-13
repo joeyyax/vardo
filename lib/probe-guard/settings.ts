@@ -50,8 +50,6 @@ export const DECOY_FILE = ".env";
 export const MAX_TRAP_PATHS = 20;
 
 export type InstanceProbeGuard = {
-  /** Witty bodies on turned-away probes, the console 404 and robots.txt. Off sends plain text. */
-  humor: boolean;
   /** Probe hits within the window that ban an address. */
   threshold: number;
   windowMinutes: number;
@@ -66,7 +64,6 @@ export type InstanceProbeGuard = {
 };
 
 export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
-  humor: true,
   threshold: 5,
   windowMinutes: 10,
   banMinutes: 60,
@@ -78,7 +75,6 @@ export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
 
 export const instanceProbeGuardSchema = z
   .object({
-    humor: z.boolean(),
     threshold: z.number().int().min(2).max(100),
     windowMinutes: z.number().int().min(1).max(1440),
     banMinutes: z.number().int().min(5).max(1440),
@@ -98,7 +94,7 @@ export const instanceProbeGuardSchema = z
 
 export function normalizeInstanceProbeGuard(raw: unknown): InstanceProbeGuard {
   if (!raw || typeof raw !== "object") return DEFAULT_INSTANCE_PROBE_GUARD;
-  const { tarpitMs: _legacy, ...r } = raw as Partial<InstanceProbeGuard> & { tarpitMs?: unknown };
+  const { tarpitMs: _tarpit, humor: _humor, ...r } = raw as Partial<InstanceProbeGuard> & { tarpitMs?: unknown; humor?: unknown };
   const merged = { ...DEFAULT_INSTANCE_PROBE_GUARD, ...r, traps: { ...DEFAULT_INSTANCE_PROBE_GUARD.traps, ...(r.traps ?? {}) } };
   const parsed = instanceProbeGuardSchema.safeParse(merged);
   return parsed.success ? parsed.data : DEFAULT_INSTANCE_PROBE_GUARD;
