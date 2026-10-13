@@ -1,31 +1,23 @@
-import type { BusEvent, UpdateChanges } from "@/lib/bus/events";
-import { formatDuration, plural, truncate } from "../format";
+import type { BusEvent } from "@/lib/bus/events";
+import { formatDuration, plural } from "../format";
 import { describeResolver } from "@/lib/system-alerts/cert-expiry";
-import { linkedList, nameLink, type MailFact, type MailInline, type MailLink, type NotificationMailBody, type StatTile } from "./components";
+import { linkedList, nameLink, type MailInline, type NotificationMailBody, type StatTile } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
+import { commitCount, versionLink } from "./lifecycle";
 
-/** Release-note lines an update email quotes. */
-const NOTE_LINES = 3;
-
-/** Release notes as plain lines: headings, bullets and emphasis stripped. */
-function noteLines(notes: string): string[] {
-  return notes
-    .split("\n")
-    .map((l) => l.replace(/^\s*(?:#+|[-*+]|\d+\.)\s+/, "").replace(/[*_`]+/g, "").trim())
-    .filter(Boolean)
-    .slice(0, NOTE_LINES)
-    .map((l) => truncate(l, 160));
-}
-
-/** Release notes and a link to the full change history. */
-export function changeSections(changes: UpdateChanges): { sections: { title: string; facts: MailFact[] }[]; paragraphs: string[]; links: MailLink[] } {
-  const notes = changes.releaseNotes ? noteLines(changes.releaseNotes) : [];
-  return {
-    sections: notes.length ? [{ title: "What changed", facts: notes.map((n) => ({ label: "", value: n })) }] : [],
-    paragraphs: [],
-    links: changes.changesUrl ? [{ label: "Full change history on GitHub", href: changes.changesUrl }] : [],
-  };
-}
+/** What stops while a shared service is down, and what it does for Vardo. Keyed by lowercase name. */
+const SERVICE_IMPACT: Record<string, { impact: string; role: string; appsServing: boolean; restart: boolean }> = {
+  postgresql: { impact: "The console, deploys and backups are down", role: "PostgreSQL is Vardo's database.", appsServing: true, restart: true },
+  postgres: { impact: "The console, deploys and backups are down", role: "postgres is Vardo's database.", appsServing: true, restart: true },
+  redis: { impact: "Deploys, metrics and live logs are paused", role: "redis holds Vardo's queues and cache.", appsServing: true, restart: true },
+  cadvisor: { impact: "Container metrics are paused", role: "cAdvisor collects container metrics.", appsServing: true, restart: true },
+  loki: { impact: "Logs and log search are paused", role: "Loki stores app logs.", appsServing: true, restart: true },
+  promtail: { impact: "New log lines aren't collected", role: "Promtail ships container logs to Loki.", appsServing: true, restart: true },
+  traefik: { impact: "Your apps' domains may not respond", role: "Traefik routes traffic and TLS for every app.", appsServing: false, restart: true },
+  docker: { impact: "Deploys, restarts and metrics are paused", role: "Docker runs every container.", appsServing: false, restart: false },
+  wireguard: { impact: "Mesh instances can't reach each other", role: "WireGuard carries the mesh tunnels.", appsServing: true, restart: true },
+  "mesh forward": { impact: "Mesh requests can't reach the live console", role: "It forwards tunnel traffic to the live console.", appsServing: true, restart: false },
+};
 
 export type SystemAlertEvent = Extract<
   BusEvent,
@@ -102,21 +94,32 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
   const admin = { label: "Open admin", href: consolePage(ctx, "/admin") };
 
   switch (event.type) {
-    case "system.service-down":
+    case "system.service-down": {
+      const known = SERVICE_IMPACT[event.service.toLowerCase()];
+      const latency = Number(event.latencyMs);
+      const check = latency > 0 ? ` Its last check took ${formatDuration(latency)}.` : "";
+      const restart = known?.restart ?? false;
       return {
         tone: "fail",
         status: "Service down",
         heading: `${event.service} isn't responding`,
-        paragraphs: [event.message],
-        facts: [
-          { label: "Service", value: event.service },
-          ...(event.description ? [{ label: "Role", value: event.description }] : []),
-          ...(event.latencyMs ? [{ label: "Last latency", value: `${event.latencyMs} ms` }] : []),
-          { label: "Host", value: ctx.instanceName },
+        preheader: known ? `${known.impact}.` : event.message,
+        blocks: [
+          ...(known?.appsServing ? [{ kind: "reassure" as const, strong: "Your apps are still serving.", text: "Only Vardo itself is affected." }] : []),
+          {
+            kind: "callout",
+            tone: "bad",
+            title: known?.impact ?? event.message,
+            body: known ? `${known.role}${check}` : check.trim() || undefined,
+            action: restart
+              ? { label: "Restart shared services", href: consolePage(ctx, "/admin/settings/maintenance") }
+              : { label: "Open maintenance", href: consolePage(ctx, "/admin/settings/maintenance") },
+          },
         ],
-        action: admin,
+        links: [{ label: "Admin", href: admin.href }],
         footer,
       };
+    }
     case "system.restart-loop":
       return {
         tone: "warn",
@@ -130,24 +133,25 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
     case "system.cert-expiring":
       return certExpiringMail(event, ctx);
     case "system.update-available": {
-      const changes = changeSections(event);
+      const behind = event.commitsBehind ?? commitCount(event);
+      const version = event.target ?? event.remoteHead;
+      const lead = behind
+        ? [versionLink(version, event), ` is ${plural(behind, "commit")} newer than what ${ctx.instanceName} runs.`]
+        : [versionLink(version, event), ` is out; ${ctx.instanceName} runs ${event.localHead}.`];
       return {
         tone: "info",
         status: "Update available",
         mark: "↑",
-        heading: `A Vardo update is available for ${ctx.instanceName}`,
-        preheader: "A Vardo update is ready for this instance.",
-        paragraphs: ["Update when it suits you. Deployed apps keep running during the update."],
-        details: [
-          { label: "Running", value: event.localHead, mono: true },
-          { label: "Available", value: event.target ? `${event.target} (${event.remoteHead})` : event.remoteHead, mono: true },
-          ...(event.commitsBehind ? [{ label: "Behind", value: plural(event.commitsBehind, "commit") }] : []),
+        heading: "A Vardo update is available",
+        preheader: `${version} is ready for ${ctx.instanceName}.`,
+        blocks: [
+          { kind: "text", text: [...lead, " Your apps keep running during the update."] },
+          ...(event.selfDeploy ? [] : [{ kind: "section" as const, title: "Run on the host" }, { kind: "log" as const, lines: ["sudo vardo update"], highlight: [] }]),
         ],
-        sections: changes.sections,
-        ...(event.selfDeploy
-          ? { action: { label: "Update now", href: consolePage(ctx, "/admin/settings/maintenance?update=now#updates") } }
-          : { command: { title: "Run on the host", text: "sudo vardo update" }, action: admin }),
-        links: changes.links,
+        action: event.selfDeploy
+          ? { label: "Update now", href: consolePage(ctx, "/admin/settings/maintenance?update=now#updates") }
+          : { label: "Open updates", href: consolePage(ctx, "/admin/settings/maintenance#updates") },
+        links: event.changesUrl ? [{ label: "What changed", href: event.changesUrl }] : [],
         footer,
       };
     }

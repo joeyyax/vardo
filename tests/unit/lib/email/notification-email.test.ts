@@ -51,17 +51,32 @@ describe("notification subjects", () => {
   });
 
   it("keeps update subjects focused on status", () => {
-    expect(subjectLine(fixture("system-started"))).toBe("✓ Vardo back up after 2 min 29 s");
-    expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo update complete");
-    expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at Health check");
+    expect(subjectLine(fixture("system-started"))).toBe("⚠ Vardo back up after 2 min · 2 apps didn't come back");
+    expect(subjectLine(fixture("system-started-console"))).toBe("✓ Vardo back up after 38 s");
+    expect(subjectLine(fixture("system-recovered-unclean"))).toBe("⚠ Vardo stopped unexpectedly");
+    expect(subjectLine(fixture("system-restart-failed"))).toBe("✗ The shared services didn't come back");
+    expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo updated · 4f1a9b2");
+    expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at health check");
     expect(subjectLine(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped · v0.2.0");
     expect(subjectLine(fixture("system-update-started"))).toBe("↑ Vardo update started");
   });
 
-  it("leaves raw commit subjects out of update subjects", () => {
-    expect(subject(fixture("system-update-available-self-deploy"))).toBe(
-      "node-a · ↑ Vardo update available",
-    );
+  it("says how far behind an update is, never its raw commits", () => {
+    expect(subject(fixture("system-update-available-self-deploy"))).toBe("node-a · ↑ Vardo update available · 12 commits");
+    expect(subjectLine({ ...fixture<"system.update-available">("system-update-available-self-deploy"), target: "v0.2.0" })).toBe("↑ Vardo update available · v0.2.0");
+  });
+
+  it("names every instance of a rollout and leaves the instance prefix off", () => {
+    expect(subject(fixture("system-rollout-finished"))).toBe("✓ Vardo updated on jy0 and Long House · 4f1a9b2");
+    expect(subject(fixture("system-rollout-finished-skipped"))).toBe("⚠ Vardo updated on 1 of 2 instances · 4f1a9b2");
+    expect(subject(fixture("system-rollout-paused"))).toBe("✗ Vardo update paused · 4f1a9b2");
+  });
+
+  it("never says slot in a lifecycle or update email", async () => {
+    for (const { name, event } of EMAIL_FIXTURES.filter((f) => f.event.type.startsWith("system."))) {
+      const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+      expect(`${email.subject}\n${email.text}`, name).not.toMatch(/\bslots?\b/i);
+    }
   });
 
   it("names the job and app when a cron alert clears", () => {
@@ -96,9 +111,9 @@ describe("notification subjects", () => {
   it("links Update now in the update email on a self-deploy instance, and the host command otherwise", () => {
     const self = notificationMailBody(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT)!;
     expect(self.action).toEqual({ label: "Update now", href: "https://vardo.example.com/admin/settings/maintenance?update=now#updates" });
-    expect(self.command).toBeUndefined();
+    expect(self.blocks?.some((b) => b.kind === "log")).toBe(false);
     const legacy = notificationMailBody({ ...fixture<"system.update-available">("system-update-available-self-deploy"), selfDeploy: false }, FIXTURE_CONTEXT)!;
-    expect(legacy.command?.text).toBe("sudo vardo update");
+    expect(legacy.blocks).toContainEqual({ kind: "log", lines: ["sudo vardo update"], highlight: [] });
   });
 });
 
@@ -239,31 +254,83 @@ describe("notification emails", () => {
     expect(email.text).not.toContain("App:");
   });
 
-  it("keeps raw commits out of the update email", async () => {
+  it("says how far behind an available update is, with one button and the change history", async () => {
     const email = (await renderNotificationEmail(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT))!;
-    expect(email.text).not.toContain("What's new");
+    expect(email.text).toContain("4f1a9b2 is 12 commits newer than what node-a runs. Your apps keep running during the update.");
     expect(email.text).not.toContain("fix(email)");
-    const updateNow = email.text.indexOf("Update now:");
-    const all = email.text.indexOf("Full change history on GitHub: https://github.com/example/vardo/compare/e36c2e3...4f1a9b2");
-    const details = email.text.indexOf("Technical details");
-    expect(updateNow).toBeGreaterThan(-1);
-    expect(all).toBeGreaterThan(updateNow);
-    expect(details).toBeGreaterThan(all);
+    expect(email.text).not.toContain("Technical details");
+    expect(email.text).toContain("Update now: ");
+    expect(email.text).toContain("What changed: https://github.com/example/vardo/compare/e36c2e3...4f1a9b2");
   });
 
-  it("puts the updated version after the action and change history", async () => {
+  it("puts the new commit, how far it moved and the downtime in an update email", async () => {
     const email = (await renderNotificationEmail(fixture("system-updated"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Version: 4f1a9b2\n");
+    expect(email.text).toContain("node-a is on 4f1a9b2, 12 commits newer. Your apps kept running throughout.");
+    expect(email.html).toContain('href="https://github.com/example/vardo/compare/e36c2e3...4f1a9b2"');
+    expect(email.text).toContain("Took: 3 min 32 s\nConsole down: 18 s");
     expect(email.text).not.toContain("0.1.0");
     expect(email.text).not.toContain("fix(email)");
-    expect(email.text.indexOf("Technical details")).toBeGreaterThan(email.text.indexOf("Open Vardo on node-a:"));
   });
 
-  it("uses release notes in place of raw commits", async () => {
-    const event = { ...fixture<"system.updated">("system-updated"), releaseNotes: "- App stop failures are shown.\n- The dialog closes when stopping finishes." };
-    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("What changed\n  App stop failures are shown.\n  The dialog closes when stopping finishes.");
-    expect(email.text).not.toContain("fix(email)");
+  it("reassures only when a failed update rolled back", async () => {
+    const rolledBack = (await renderNotificationEmail(fixture("system-update-failed"), FIXTURE_CONTEXT))!;
+    expect(rolledBack.text).toContain("Nothing changed. Vardo rolled back and is running e36c2e3.");
+    expect(rolledBack.text).toContain("The new console didn't become healthy within 2 minutes\nUpdate to 4f1a9b2 stopped at health check");
+    expect(rolledBack.text).toContain("Retry on the host\n    sudo vardo update");
+    const stuck = (await renderNotificationEmail({ ...fixture<"system.update-failed">("system-update-failed"), rolledBack: false }, FIXTURE_CONTEXT))!;
+    expect(stuck.text).not.toContain("Nothing changed");
+  });
+
+  it("lists each failed update check with what it needs", async () => {
+    const email = (await renderNotificationEmail(fixture("system-update-skipped"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Jobs: Now 1 deploy in progress · Needs none");
+    expect(email.text).toContain("Disk: Now 3.1 GB free, 94% used · Needs 5 GB and under 90%");
+    const odd = (await renderNotificationEmail({ ...fixture<"system.update-skipped">("system-update-skipped"), reasons: ["This version failed its health check here and was rolled back"] }, FIXTURE_CONTEXT))!;
+    expect(odd.text).toContain("This version failed its health check here and was rolled back");
+  });
+
+  it("folds containers that didn't come back into the back-up email, linked to their apps", async () => {
+    const email = (await renderNotificationEmail(fixture("system-started"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("The host rebooted. Apps with a restart policy came back on their own, except these two.");
+    expect(email.text).toContain("search-data: Container meilisearch · State exited");
+    expect(email.html).toContain('href="https://vardo.example.com/apps/app_srch"');
+    expect(email.text).toContain("Version 0.1.0 (e36c2e3)");
+    const one = { ...fixture<"system.started">("system-started"), containers: [fixture<"system.started">("system-started").containers![0]] };
+    expect(notificationMailBody(one, FIXTURE_CONTEXT)!.action).toEqual({ label: "Open search-data", href: "https://vardo.example.com/apps/app_srch" });
+    expect(notificationMailBody(fixture("system-started-console"), FIXTURE_CONTEXT)!.action).toBeUndefined();
+  });
+
+  it("says when a long unexpected stop went down and how long it lasted", async () => {
+    const email = (await renderNotificationEmail(fixture("system-recovered-unclean"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("It went down at 16:51 UTC without shutting down cleanly, like a power loss or a crash, and was back about 21 min later. The host rebooted.");
+    expect(email.text).toContain("Open activity: https://vardo.example.com/activity");
+  });
+
+  it("names what didn't come back after a shared-services restart", async () => {
+    const email = (await renderNotificationEmail(fixture("system-restart-failed"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Your apps are still serving. Vardo itself can't deploy or back up until this is fixed.");
+    expect(email.text).toContain("vardo-postgres isn't back\nStill not back 5 min after the restart you started from Maintenance.");
+  });
+
+  it("says what stops while a shared service is down", async () => {
+    const email = (await renderNotificationEmail(fixture("system-service-down"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Your apps are still serving. Only Vardo itself is affected.");
+    expect(email.text).toContain("Deploys, metrics and live logs are paused\nredis holds Vardo's queues and cache. Its last check took 5 s.");
+    const traefik = (await renderNotificationEmail({ ...fixture<"system.service-down">("system-service-down"), service: "Traefik" }, FIXTURE_CONTEXT))!;
+    expect(traefik.text).not.toContain("still serving");
+    const other = (await renderNotificationEmail({ ...fixture<"system.service-down">("system-service-down"), service: "vardo-wg", message: "The watchdog gave up on vardo-wg.", latencyMs: undefined }, FIXTURE_CONTEXT))!;
+    expect(other.text).toContain("The watchdog gave up on vardo-wg.");
+  });
+
+  it("sends one rollout email naming every instance", async () => {
+    const done = (await renderNotificationEmail(fixture("system-rollout-finished"), FIXTURE_CONTEXT))!;
+    expect(done.text).toContain("jy0 and Long House are on 4f1a9b2. Your apps kept running throughout.");
+    expect(done.text).not.toContain("State");
+    const skipped = (await renderNotificationEmail(fixture("system-rollout-finished-skipped"), FIXTURE_CONTEXT))!;
+    expect(skipped.text).toContain("jy0 is on 4f1a9b2. Skipped instances stay on their version");
+    expect(skipped.text).toContain("Long House: State Skipped\n  Skipped by an admin");
+    const paused = (await renderNotificationEmail(fixture("system-rollout-paused"), FIXTURE_CONTEXT))!;
+    expect(paused.text).toContain("Long House: State Failed\n  Post-update health check failed; rolled back");
   });
 
   it("shows rollout priority and status before technical details", async () => {
@@ -287,11 +354,6 @@ describe("notification emails", () => {
     expect(email.text.indexOf("Technical details")).toBeGreaterThan(email.text.indexOf("Skip priority order:"));
     expect(email.text).not.toContain("Roll out everywhere now");
 
-    const finished = { ...event, type: "system.rollout-finished" as const, members: event.members.map((member) => ({ ...member, state: "verified" })) };
-    const done = (await renderNotificationEmail(finished, FIXTURE_CONTEXT))!;
-    expect(done.subject).toBe("Vardo update complete on jy0 and Long House");
-    expect(done.text).toContain("Both instances are updated");
-    expect(done.text).not.toContain("Instance status");
   });
 
   it("leaves out a zero console downtime", async () => {

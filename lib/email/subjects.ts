@@ -1,8 +1,8 @@
 // Notification email subjects: the instance, then the state, the subject and one key detail.
 
-import type { AlertResolvedEvent, BusEvent } from "@/lib/bus/events";
+import type { AlertResolvedEvent, BusEvent, MissingContainer } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, windowPhrase } from "./format";
+import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, versionShort, windowPhrase } from "./format";
 import { backupProblemCount } from "./templates/backup";
 import type { MailSeries } from "./templates/context";
 
@@ -43,6 +43,15 @@ function rolloutInstances(members: { name: string; priority: "critical" | "stand
   if (members.length > 2) return `${members.length} instances`;
   const rank = { critical: 0, standard: 1, low: 2 };
   return [...members].sort((a, b) => rank[a.priority] - rank[b.priority] || a.name.localeCompare(b.name)).map((member) => member.name).join(" and ");
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "2 apps" when every container has an app, "3 containers" otherwise. */
+export function missingLabel(containers: MissingContainer[]): string {
+  return containers.every((c) => c.app)
+    ? plural(new Set(containers.map((c) => c.app)).size, "app")
+    : plural(containers.length, "container");
 }
 
 /** "✓ WP Cron on Shop recovered after 4 min", for a single cleared cron alert. */
@@ -121,8 +130,10 @@ export function subjectLine(event: BusEvent): string {
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
     case "system.integration-permissions":
       return `⚠ ${event.title}`;
-    case "system.update-available":
-      return `↑ Vardo update available${event.target ? ` · ${event.target}` : ""}`;
+    case "system.update-available": {
+      const detail = event.target ?? (event.commitsBehind ? plural(event.commitsBehind, "commit") : undefined);
+      return `↑ Vardo update available${detail ? ` · ${detail}` : ""}`;
+    }
     case "alert.fired": {
       const [first] = event.alerts;
       const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
@@ -139,16 +150,18 @@ export function subjectLine(event: BusEvent): string {
       return event.gaveUp ? `✗ ${event.appName} keeps failing, restarts stopped` : `⚠ ${event.appName} restarted`;
     case "system.shutdown":
       return "↓ Vardo stopping";
-    case "system.started":
-      return event.downSeconds !== undefined ? `✓ Vardo back up after ${formatDuration(event.downSeconds * 1000)}` : "✓ Vardo back up";
+    case "system.started": {
+      const after = event.downSeconds !== undefined ? ` after ${formatDurationRough(event.downSeconds * 1000)}` : "";
+      return event.containers?.length ? `⚠ Vardo back up${after} · ${missingLabel(event.containers)} didn't come back` : `✓ Vardo back up${after}`;
+    }
     case "system.recovered-unclean":
-      return "⚠ Vardo stopped unexpectedly";
+      return `⚠ Vardo stopped unexpectedly${event.containers?.length ? ` · ${missingLabel(event.containers)} didn't come back` : ""}`;
     case "system.update-started":
       return "↑ Vardo update started";
     case "system.updated":
-      return "✓ Vardo update complete";
+      return `✓ Vardo updated · ${versionShort(event.toVersion)}`;
     case "system.update-failed":
-      return `✗ Vardo update failed at ${event.step}`;
+      return `✗ Vardo update failed at ${event.step.charAt(0).toLowerCase()}${event.step.slice(1)}`;
     case "system.update-skipped":
       return `⚠ Vardo update skipped · ${event.target}`;
     case "system.rollout-started":
@@ -158,19 +171,21 @@ export function subjectLine(event: BusEvent): string {
       return `Vardo update waiting${busy ? ` for ${busy.name}` : ""}`;
     }
     case "system.rollout-paused":
-      return "Vardo update paused";
-    case "system.rollout-finished":
-      return event.members.some((member) => member.state === "skipped")
-        ? `Vardo rollout finished · ${event.members.filter((member) => member.state === "skipped").length} skipped`
-        : `Vardo update complete on ${rolloutInstances(event.members)}`;
+      return `✗ Vardo update paused · ${event.targetLabel}`;
+    case "system.rollout-finished": {
+      const updated = event.members.filter((member) => member.state !== "skipped");
+      return updated.length < event.members.length
+        ? `⚠ Vardo updated on ${updated.length} of ${plural(event.members.length, "instance")} · ${event.targetLabel}`
+        : `✓ Vardo updated on ${rolloutInstances(event.members)} · ${event.targetLabel}`;
+    }
     case "system.restarting":
       return `↻ Restarting ${event.label}`;
     case "system.restarted":
-      return `✓ Restarted ${event.label}`;
+      return event.target === "services" ? `✓ Restarted ${event.label}` : `✓ ${capitalize(event.label)} back up`;
     case "system.restart-failed":
-      return `✗ ${event.label} didn't come back`;
+      return `✗ ${capitalize(event.label)} didn't come back`;
     case "system.containers-missing":
-      return `⚠ ${plural(event.containers.length, "container")} didn't come back`;
+      return `⚠ ${missingLabel(event.containers)} didn't come back`;
     case "digest.health":
       return `${event.cadence === "daily" ? "Daily" : "Weekly"} summary · ${event.orgName} · ${event.windowLabel}`;
     default:
