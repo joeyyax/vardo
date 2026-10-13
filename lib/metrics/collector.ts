@@ -114,6 +114,7 @@ async function collect() {
       metrics.flatMap((m) => {
         // Stack children share the parent's project label; the service tells them apart.
         const service = m.labels["com.docker.compose.service"] ?? null;
+        const environment = m.labels["vardo.environment"] ?? m.labels["host.environment"] ?? null;
         const ops = [
           storeMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
             cpuPercent: m.cpuPercent,
@@ -121,7 +122,7 @@ async function collect() {
             memoryLimit: m.memoryLimit,
             networkRxBytes: m.networkRxBytes,
             networkTxBytes: m.networkTxBytes,
-          }, m.organizationId, service),
+          }, m.organizationId, service, environment),
         ];
         // Skip unreported counters; storing 0 reads as "wrote nothing".
         if (m.diskWriteBytes !== null) {

@@ -897,6 +897,20 @@
       "when": 1791928952617,
       "tag": "0127_app_metric_hour",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1791930763577,
+      "tag": "0128_rollup_production_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1791931099322,
+      "tag": "0129_domain_check_timestamptz",
+      "breakpoints": true
     }
   ]
 }

@@ -66,8 +66,19 @@ const SAMPLE_MS = 30_000;
 const NOW = Date.UTC(2026, 9, 10, 12, 5);
 
 /** A container sampled every 30s over [from, to): steady CPU and memory, counters climbing 1000 and 500 a sample. */
-function addContainer(project: string, container: string, from: number, to: number, opts: { service?: string; cpu?: number } = {}) {
-  const base = { project, container, ...(opts.service ? { service: opts.service } : {}) };
+function addContainer(
+  project: string,
+  container: string,
+  from: number,
+  to: number,
+  opts: { service?: string; cpu?: number; environment?: string } = {},
+) {
+  const base = {
+    project,
+    container,
+    ...(opts.service ? { service: opts.service } : {}),
+    ...(opts.environment ? { environment: opts.environment } : {}),
+  };
   const metrics: Record<string, (i: number) => number> = {
     cpu: () => opts.cpu ?? 10,
     memory: () => 100_000_000,
@@ -179,6 +190,29 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     expect(child?.cpu_avg).toBe(30);
   });
 
+  it("counts only the default environment's containers and domains", async () => {
+    addContainer("web", "prod", NOW - 2 * HOUR, NOW, { environment: "production", cpu: 10 });
+    addContainer("web", "preview", NOW - 2 * HOUR, NOW, { environment: "pr-4", cpu: 70 });
+    addContainer("web", "staging", NOW - 2 * HOUR, NOW, { environment: "staging", cpu: 20 });
+    await sql`insert into environment (id, app_id, name, type, is_default, domain) values
+      ('env-prod', 'web', 'production', 'production', true, null),
+      ('env-stg', 'web', 'staging', 'staging', false, 'staging.web.example.com')`;
+    await sql`insert into domain (id, app_id, domain) values ('d-stg', 'web', 'staging.web.example.com')`;
+    const at = new Date(NOW - HOUR + 60_000);
+    await sql`insert into domain_check (id, domain_id, reachable, response_time_ms, checked_at) values
+      ('k-prod', 'd1', true, 100, ${at}),
+      ('k-stg', 'd-stg', false, null, ${at})`;
+
+    try {
+      await rollup.rollupHours({ now: NOW });
+      const last = (await rows("web")).find((r) => r.hour.getTime() === NOW - HOUR - 5 * 60_000)!;
+      expect(last).toMatchObject({ cpu_avg: 10, checks_total: 1, checks_up: 1 });
+    } finally {
+      await sql`delete from domain where id = 'd-stg'`;
+      await sql`delete from environment`;
+    }
+  });
+
   it("catches up on hours missed while down, from the watermark", async () => {
     addContainer("web", "c1", NOW - 3 * HOUR, NOW + 10 * HOUR);
     await rollup.rollupHours({ now: NOW });
@@ -245,6 +279,26 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
 
     const ids = (await sql<{ id: string }[]>`select id from domain_check order by checked_at`).map((r) => r.id);
     expect(ids).toEqual(["edge", "new"]);
+  });
+
+  it("keeps the newest checks of each domain, not the newest overall", async () => {
+    await sql`insert into domain (id, app_id, domain) values ('d-quiet', 'web', 'quiet.example.com')`;
+    try {
+      for (let i = 0; i < 15; i++) {
+        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`busy${i}`}, 'd1', true, ${new Date(NOW - i * 60_000)})`;
+      }
+      for (let i = 0; i < 3; i++) {
+        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`quiet${i}`}, 'd-quiet', true, ${new Date(NOW - HOUR - i * 60_000)})`;
+      }
+
+      const checks = await monitor.recentChecks(["d1", "d-quiet"], 10);
+
+      expect(checks.filter((c) => c.domainId === "d1").map((c) => c.id)).toEqual(Array.from({ length: 10 }, (_, i) => `busy${i}`));
+      expect(checks.filter((c) => c.domainId === "d-quiet")).toHaveLength(3);
+      expect(await monitor.recentChecks([], 10)).toEqual([]);
+    } finally {
+      await sql`delete from domain where id = 'd-quiet'`;
+    }
   });
 
   it("serves summaries, hour-of-day and daily reads from the rows", async () => {

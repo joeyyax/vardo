@@ -142,3 +142,16 @@ describe("stored series scope", () => {
     expect(points).toEqual([]);
   });
 });
+
+describe("environment label", () => {
+  beforeEach(() => fake.reset());
+
+  it("labels container series with the environment they ran under", async () => {
+    const values = { cpuPercent: 1, memoryUsage: 1, memoryLimit: 1, networkRxBytes: 1, networkTxBytes: 1 };
+    await storeMetrics("web", "c-pr", "web-pr-3-blue-app-1", 1000, values, "org-1", null, "pr-3");
+    await storeMetrics("web", "c-old", "web-app-1", 1000, values, "org-1", null);
+
+    expect(fake.series.get("metrics:web:cpu:c-pr")?.labels.environment).toBe("pr-3");
+    expect(fake.series.get("metrics:web:cpu:c-old")?.labels).not.toHaveProperty("environment");
+  });
+});

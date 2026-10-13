@@ -14,6 +14,7 @@ async function storeContainerSeries(
   metrics: Record<string, number>,
   organizationId?: string | null,
   composeService?: string | null,
+  environment?: string | null,
 ) {
   const baseLabels: Record<string, string> = {
     project: projectName,
@@ -22,6 +23,7 @@ async function storeContainerSeries(
   };
   if (organizationId) baseLabels.organization = organizationId;
   if (composeService) baseLabels.service = composeService;
+  if (environment) baseLabels.environment = environment;
 
   const entries = Object.entries(metrics);
   const keys = entries.map(([name]) => tsKey(projectName, name, containerId));
@@ -54,6 +56,7 @@ export async function storeMetrics(
   },
   organizationId?: string | null,
   composeService?: string | null,
+  environment?: string | null,
 ) {
   await storeContainerSeries(projectName, containerId, containerName, timestamp, {
     cpu: values.cpuPercent,
@@ -61,7 +64,7 @@ export async function storeMetrics(
     memoryLimit: values.memoryLimit,
     networkRx: values.networkRxBytes,
     networkTx: values.networkTxBytes,
-  }, organizationId, composeService);
+  }, organizationId, composeService, environment);
 }
 
 /** Stores cumulative disk write bytes for a container. */

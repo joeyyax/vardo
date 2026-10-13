@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { domainChecks } from "@/lib/db/schema";
-import { desc, inArray, lt } from "drizzle-orm";
+import { desc, inArray, lt, lte, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
@@ -18,6 +18,38 @@ export const DOMAIN_CHECK_RETENTION_MS = 7 * 24 * 60 * 60_000;
 /** Deletes checks older than the retention window, for every domain. */
 export async function pruneDomainChecks(now = Date.now()): Promise<void> {
   await db.delete(domainChecks).where(lt(domainChecks.checkedAt, new Date(now - DOMAIN_CHECK_RETENTION_MS)));
+}
+
+/** The newest `perDomain` checks of each domain, newest first. */
+export async function recentChecks(domainIds: string[], perDomain: number) {
+  if (domainIds.length === 0) return [];
+  const ranked = db
+    .select({
+      id: domainChecks.id,
+      domainId: domainChecks.domainId,
+      reachable: domainChecks.reachable,
+      statusCode: domainChecks.statusCode,
+      responseTimeMs: domainChecks.responseTimeMs,
+      error: domainChecks.error,
+      checkedAt: domainChecks.checkedAt,
+      rn: sql<number>`row_number() over (partition by ${domainChecks.domainId} order by ${domainChecks.checkedAt} desc)`.as("rn"),
+    })
+    .from(domainChecks)
+    .where(inArray(domainChecks.domainId, domainIds))
+    .as("ranked");
+  return db
+    .select({
+      id: ranked.id,
+      domainId: ranked.domainId,
+      reachable: ranked.reachable,
+      statusCode: ranked.statusCode,
+      responseTimeMs: ranked.responseTimeMs,
+      error: ranked.error,
+      checkedAt: ranked.checkedAt,
+    })
+    .from(ranked)
+    .where(lte(ranked.rn, perDomain))
+    .orderBy(desc(ranked.checkedAt));
 }
 
 type DomainCheckResult = {

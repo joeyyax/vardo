@@ -1,8 +1,9 @@
 // Rolls the 7-day time-series store and domain checks into hourly per-app rows kept 13 months.
+// Production only: each app's default environment, never its staging or preview containers and hosts.
 
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appMetricHours, domainChecks, domains, systemSettings } from "@/lib/db/schema";
+import { appMetricHours, domainChecks, domains, environments, systemSettings } from "@/lib/db/schema";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 import { IntervalLoop, type LoopContext } from "@/lib/worker/interval-loop";
@@ -81,7 +82,7 @@ async function readSlots(fromMs: number, toMs: number): Promise<SlotSeries> {
         // SELECTED_LABELS would read ALIGN as a label name; it goes last.
         "ALIGN", "0",
         "AGGREGATION", aggregation, String(SLOT_MS),
-        "SELECTED_LABELS", "project", "service", "container",
+        "SELECTED_LABELS", "project", "service", "container", "environment", "containerName",
         "FILTER", `metric=${metric}`,
       );
       return [read, parseSeries(raw).filter((s) => s.container && s.points.length > 0)] as const;
@@ -102,15 +103,36 @@ async function readChecks(fromMs: number, toMs: number) {
     })
     .from(domainChecks)
     .innerJoin(domains, eq(domains.id, domainChecks.domainId))
-    .where(and(gte(domainChecks.checkedAt, new Date(fromMs)), lt(domainChecks.checkedAt, new Date(toMs))));
+    // Older releases stored a non-default environment's hostname as a domain row; those aren't production.
+    .leftJoin(
+      environments,
+      and(eq(environments.appId, domains.appId), eq(environments.domain, domains.domain), sql`${environments.isDefault} is not true`),
+    )
+    .where(
+      and(
+        gte(domainChecks.checkedAt, new Date(fromMs)),
+        lt(domainChecks.checkedAt, new Date(toMs)),
+        isNull(environments.id),
+      ),
+    );
 }
 
 async function readApps(): Promise<RollupApp[]> {
-  const rows = await db.query.apps.findMany({
-    columns: { id: true, organizationId: true, name: true, parentAppId: true, composeService: true },
-    with: { parentApp: { columns: { name: true } } },
-  });
-  return rows;
+  const [rows, defaults] = await Promise.all([
+    db.query.apps.findMany({
+      columns: { id: true, organizationId: true, name: true, parentAppId: true, composeService: true },
+      with: { parentApp: { columns: { name: true } } },
+    }),
+    db
+      .select({ appId: environments.appId, name: environments.name })
+      .from(environments)
+      .where(eq(environments.isDefault, true)),
+  ]);
+  const defaultOf = new Map(defaults.map((e) => [e.appId, e.name]));
+  return rows.map((app) => ({
+    ...app,
+    defaultEnvironment: (app.parentAppId && defaultOf.get(app.parentAppId)) || defaultOf.get(app.id) || null,
+  }));
 }
 
 const excluded = (column: string) => sql.raw(`excluded."${column}"`);

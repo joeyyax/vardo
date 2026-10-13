@@ -2,9 +2,12 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { domains, domainChecks, apps } from "@/lib/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { domains, apps } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { recentChecks } from "@/lib/domain-monitoring/monitor";
+
+const CHECKS_PER_DOMAIN = 10;
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -38,19 +41,9 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ checks: [] });
     }
 
-    const domainIds = appDomains.map((d) => d.id);
-
-    // Last 10 checks per domain.
-    const checks = await db.query.domainChecks.findMany({
-      where: inArray(domainChecks.domainId, domainIds),
-      orderBy: [desc(domainChecks.checkedAt)],
-      limit: appDomains.length * 10,
-      with: {
-        domain: {
-          columns: { domain: true },
-        },
-      },
-    });
+    const hostById = new Map(appDomains.map((d) => [d.id, d.domain]));
+    const rows = await recentChecks([...hostById.keys()], CHECKS_PER_DOMAIN);
+    const checks = rows.map((c) => ({ ...c, domain: { domain: hostById.get(c.domainId)! } }));
 
     return NextResponse.json({ checks });
   } catch (error) {

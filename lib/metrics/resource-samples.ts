@@ -28,6 +28,10 @@ export type LabeledSeries = {
   service: string | null;
   /** Short container id, empty on per-project series. */
   container: string;
+  /** `environment` label, read only when selected. Null on series written before it existed. */
+  environment?: string | null;
+  /** `containerName` label, read only when selected. */
+  containerName?: string;
   points: [number, number][];
 };
 
@@ -79,19 +83,30 @@ export function parseSeries(result: unknown): LabeledSeries[] {
     }
     points.sort((a, b) => a[0] - b[0]);
 
-    out.push({
+    const series: LabeledSeries = {
       key,
       project: labels.project ?? "",
       service: labels.service ? labels.service : null,
       container: labels.container ?? "",
       points,
-    });
+    };
+    if ("environment" in labels) series.environment = labels.environment || null;
+    if ("containerName" in labels) series.containerName = labels.containerName;
+    out.push(series);
   }
 
   return out;
 }
 
-/** Every series with samples in the window, per metric. Empty series are dropped. */
+/** The time-series store couldn't be read. Not the same as no samples. */
+export class MetricsStoreError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "MetricsStoreError";
+  }
+}
+
+/** Every series with samples in the window, per metric. Empty series are dropped. Throws MetricsStoreError. */
 export async function readSeries(
   metrics: readonly ResourceMetricName[],
   fromMs: number,
@@ -116,8 +131,8 @@ export async function readSeries(
       try {
         const raw = await tsRedis.call("TS.MRANGE", ...args);
         return [metric, parseSeries(raw).filter((s) => s.points.length > 0)];
-      } catch {
-        return [metric, []];
+      } catch (err) {
+        throw new MetricsStoreError(`Reading ${metric} from the metrics store failed`, { cause: err });
       }
     }),
   );

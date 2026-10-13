@@ -59,7 +59,7 @@ export const domainChecks = pgTable(
     statusCode: integer("status_code"),
     responseTimeMs: integer("response_time_ms"),
     error: text("error"),
-    checkedAt: timestamp("checked_at").defaultNow().notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index("domain_check_domain_checked_at_idx").on(t.domainId, t.checkedAt),

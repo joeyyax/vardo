@@ -14,6 +14,7 @@ import { organizations } from "./organizations";
 
 /**
  * One row per app per UTC hour, rolled up from the time-series store and domain checks. Kept 13 months.
+ * Counts the app's default environment only.
  * Rows are disjoint: a stack child owns its service's containers and the parent keeps only the rest.
  */
 export const appMetricHours = pgTable(

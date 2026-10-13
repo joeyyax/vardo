@@ -7,6 +7,7 @@ import {
   histogramBucket,
   histogramPercentile,
   emptyHistogram,
+  seriesEnvironment,
   type RollupApp,
   type SlotSeries,
 } from "@/lib/metrics/rollup-math";
@@ -210,5 +211,70 @@ describe("histogramPercentile", () => {
     h[h.length - 1] = 3;
     expect(histogramPercentile(h, 0.5)).toBe(10_000);
     expect(histogramPercentile(emptyHistogram(), 0.5)).toBeNull();
+  });
+});
+
+describe("production only", () => {
+  const cpuOnly = (...list: LabeledSeries[]) => {
+    const s = emptySeries();
+    s.cpu = list;
+    return s;
+  };
+  const named = (container: string, project: string, extra: Partial<LabeledSeries>, service: string | null = null) => ({
+    ...series(container, project, slots(every(10)), service),
+    ...extra,
+  });
+
+  it("drops preview and staging containers and keeps the default environment's", () => {
+    const s = cpuOnly(
+      named("prod", "web", { environment: "production" }),
+      named("pr", "web", { environment: "pr-7" }),
+      named("stg", "web", { environment: "staging" }),
+    );
+    const [row] = buildHourRows({ apps: [web], series: s, checks: [], fromMs: H0, toMs: H0 + HOUR_MS });
+    expect(row?.cpuAvg).toBe(10);
+  });
+
+  it("counts a renamed default environment and deploys without one", () => {
+    const main: RollupApp = { ...web, defaultEnvironment: "main" };
+    const s = cpuOnly(
+      named("a", "web", { environment: "main" }),
+      named("b", "web", { environment: "production" }),
+      named("c", "web", { environment: "staging" }),
+    );
+    const [row] = buildHourRows({ apps: [main], series: s, checks: [], fromMs: H0, toMs: H0 + HOUR_MS });
+    expect(row?.cpuAvg).toBe(20);
+  });
+
+  it("places series written before the label by container name or compose project", () => {
+    const s = cpuOnly(
+      named("prod", "web", { environment: null, containerName: "web-production-blue-app-1" }),
+      named("pr", "web", { environment: null, containerName: "web-pr-12-green-app-1" }),
+      named("feat", "web", { environment: null, containerName: "web-feature-x-blue-app-1" }),
+      named("shared", "web-pr-12-shared", { environment: null, containerName: "web-pr-12-shared-db-1" }),
+      named("legacy", "web", { environment: null, containerName: "web-blue-shared-db-1" }),
+      named("imported", "web", { environment: null, containerName: "my-web" }),
+    );
+    const [row] = buildHourRows({ apps: [web], series: s, checks: [], fromMs: H0, toMs: H0 + HOUR_MS });
+    // prod, legacy and imported.
+    expect(row?.cpuAvg).toBe(30);
+  });
+
+  it("drops a stack child's preview containers", () => {
+    const s = cpuOnly(
+      named("db", "stack", { environment: "production" }, "db"),
+      named("db-pr", "stack", { environment: "pr-3" }, "db"),
+    );
+    const rows = buildHourRows({ apps: [stack, stackDb], series: s, checks: [], fromMs: H0, toMs: H0 + HOUR_MS });
+    expect(rows.find((r) => r.appId === "stack-db-id")?.cpuAvg).toBe(10);
+  });
+
+  it("reads the environment from each source", () => {
+    const base = series("c", "web", []);
+    expect(seriesEnvironment({ ...base, environment: "staging", containerName: "web-production-blue-app-1" }, "web")).toBe("staging");
+    expect(seriesEnvironment({ ...base, containerName: "web-production-green-app-1" }, "web")).toBe("production");
+    expect(seriesEnvironment({ ...base, project: "web-staging-shared" }, "web")).toBe("staging");
+    expect(seriesEnvironment({ ...base, containerName: "web-blue-app-1" }, "web")).toBeNull();
+    expect(seriesEnvironment(base, "web")).toBeNull();
   });
 });
