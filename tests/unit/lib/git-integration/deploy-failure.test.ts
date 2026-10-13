@@ -23,6 +23,8 @@ describe("knownFailure", () => {
     [`Command failed: docker volume create x\nDATABASE_URL=postgres://${CRED}@db/x`, "A command failed during the deploy."],
     ["Deployment aborted", "The deploy was stopped."],
     ["Cancelled", "The deploy was cancelled."],
+    ["Deployment never started — the process that queued it stopped and was cancelled", "The deploy was cancelled before it started."],
+    ["Deployment was stuck in the queue for 90 minutes and was cancelled", "The deploy waited in the queue longer than 90 minutes and was cancelled."],
     ["Rolled back after the deploy", "The new version stopped soon after going live."],
   ])("maps %j", (raw, expected) => {
     expect(knownFailure(raw)).toBe(expected);

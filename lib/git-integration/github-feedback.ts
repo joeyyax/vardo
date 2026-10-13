@@ -755,66 +755,86 @@ export function createFeedback(deps: FeedbackDeps) {
     error: string;
     /** Commit and deployment status text. */
     summary: string;
-    mergedState: "failed" | "rolled_back";
-    durationMs?: number | null;
+    /** Commit and deployment status state. */
+    outcome: "failure" | "error";
+    /** The merged PR's row; none leaves that comment alone. */
+    merged?: { state: "failed" | "rolled_back"; durationMs?: number | null };
     /** The restored version is running. */
     serving?: boolean;
-    /** Writes only while the deploy is still failed and its PR row is still its own and in flight. */
-    ownOnly?: boolean;
+    /** Writes only while the row still has this status and its PR row is still its own and in flight. */
+    whileStatus?: "failed" | "cancelled";
   };
 
   /** A deploy whose end its own process didn't report. */
   async function endedElsewhere(deploymentId: string, end: Ended): Promise<void> {
+    const ownOnly = !!end.whileStatus;
     const info = await deps.loadInfo(deploymentId, "", null);
     if (!info || !info.enabled || !info.repo) return;
-    if (end.ownOnly && deps.readStatus && (await deps.readStatus(deploymentId)) !== "failed") return;
+    if (ownOnly && deps.readStatus && (await deps.readStatus(deploymentId)) !== end.whileStatus) return;
     const sha = await deps.readSha(deploymentId);
     const instance = await deps.instance();
     const logUrl = deployPageUrl(instance.consoleUrl, info.appId, deploymentId);
     const appUrl = appPageUrl(instance.consoleUrl, info.appId);
     // An own-only write leaves the heading's SHA alone; a newer push may own it.
-    const wrote = await setPreviewRow(info, { state: "failed", error: end.error, logUrl, appUrl }, end.ownOnly ? null : sha, end.ownOnly);
-    if (end.ownOnly && info.pr && !wrote) return;
+    const wrote = await setPreviewRow(info, { state: "failed", error: end.error, logUrl, appUrl }, ownOnly ? null : sha, ownOnly);
+    if (ownOnly && info.pr && !wrote) return;
     if (!sha) return;
-    await postCommitStatus(info, sha, "failure", end.summary);
+    await postCommitStatus(info, sha, end.outcome, end.summary);
     if (wantsDeployment(info)) {
       const gh = await withClient(info.repo, [info.organizationId]);
       if (gh) {
         await guarded([info.appId], info.organizationId, `Deployment status on ${info.repo}`, async () => {
           const id = await findGhDeployment(gh, info, sha);
           if (!id) return;
-          await gh.request("POST", `/repos/${info.repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: "failure", description: end.summary, logUrl }));
+          await gh.request("POST", `/repos/${info.repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: end.outcome, description: end.summary, logUrl }));
         }, { final: true, conn: gh });
       }
     }
+    if (!end.merged) return;
     const servingSha = end.serving ? await deps.readServingSha?.(deploymentId, info.appId).catch(() => null) : null;
     await mergedRow(info, sha, {
-      state: end.mergedState,
+      ...end.merged,
       error: end.error,
-      durationMs: end.durationMs,
       logUrl,
       appUrl,
       ...(servingSha ? { servingSha } : {}),
-    }, { keepLive: end.ownOnly });
+    }, { keepLive: ownOnly });
+  }
+
+  /** `endedElsewhere` that logs instead of throwing. */
+  async function report(label: string, deploymentId: string, end: Ended): Promise<void> {
+    try {
+      await endedElsewhere(deploymentId, end);
+    } catch (err) {
+      log.warn(`${label} feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /** A deploy that went live was rolled back afterwards. `serving` when the restored version is running. */
   async function deployRolledBack(deploymentId: string, opts: { serving?: boolean } = {}): Promise<void> {
     const reason = "Rolled back after the deploy";
-    try {
-      await endedElsewhere(deploymentId, { error: reason, summary: reason, mergedState: "rolled_back", serving: opts.serving });
-    } catch (err) {
-      log.warn(`Rollback feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
-    }
+    await report("Rollback", deploymentId, { error: reason, summary: reason, outcome: "failure", merged: { state: "rolled_back" }, serving: opts.serving });
   }
 
   /** The sweeper failed a deploy whose process stopped reporting. */
   async function deployTimedOut(deploymentId: string, error: string, durationMs?: number | null): Promise<void> {
-    try {
-      await endedElsewhere(deploymentId, { error, summary: failureText(error) ?? "Deploy failed", mergedState: "failed", durationMs, ownOnly: true });
-    } catch (err) {
-      log.warn(`Timeout feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
-    }
+    await report("Timeout", deploymentId, {
+      error,
+      summary: failureText(error) ?? "Deploy failed",
+      outcome: "failure",
+      merged: { state: "failed", durationMs },
+      whileStatus: "failed",
+    });
+  }
+
+  /** The sweeper cancelled a deploy that never left the queue. Reported like a cancel, so no merged-PR row. */
+  async function queuedDeployCancelled(deploymentId: string, error: string): Promise<void> {
+    await report("Queue cancel", deploymentId, {
+      error,
+      summary: failureText(error) ?? "Cancelled",
+      outcome: "error",
+      whileStatus: "cancelled",
+    });
   }
 
   /** A PR's preview was torn down: the comment says so and its deployments go inactive. */
@@ -861,7 +881,7 @@ export function createFeedback(deps: FeedbackDeps) {
     }
   }
 
-  return { trackDeploy, deployRolledBack, deployTimedOut, previewRemoved, previewLive };
+  return { trackDeploy, deployRolledBack, deployTimedOut, queuedDeployCancelled, previewRemoved, previewLive };
 }
 
 /** The merged pull request whose merge produced this commit. */
@@ -1094,5 +1114,6 @@ const feedback = createFeedback({
 export const trackDeploy = feedback.trackDeploy;
 export const deployRolledBack = feedback.deployRolledBack;
 export const deployTimedOut = feedback.deployTimedOut;
+export const queuedDeployCancelled = feedback.queuedDeployCancelled;
 export const previewRemoved = feedback.previewRemoved;
 export const previewLive = feedback.previewLive;

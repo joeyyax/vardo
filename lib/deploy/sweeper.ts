@@ -27,7 +27,7 @@ import {
   slotContainerIds,
   slotIsDown,
 } from "@/lib/docker/rollback-monitor";
-import { deployTimedOut } from "@/lib/git-integration/github-feedback";
+import { deployTimedOut, queuedDeployCancelled } from "@/lib/git-integration/github-feedback";
 import {
   evaluateWatch,
   MAX_GRACE_PERIOD_SECONDS,
@@ -383,7 +383,7 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
       const message = `Deployment ${deploy.reason} and was cancelled`;
       const line = `[${now.toISOString()}] [CANCELLED] ${message}`;
 
-      await db
+      const cancelled = await db
         .update(deployments)
         .set({
           status: "cancelled",
@@ -393,9 +393,18 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
         })
         .where(
           and(eq(deployments.id, deploy.id), eq(deployments.status, "queued")),
-        );
+        )
+        .returning({ id: deployments.id });
+
+      // It left the queue between the read and here.
+      if (cancelled.length === 0) continue;
 
       await removeFromQueue(deploy.id).catch(() => {});
+
+      // GitHub statuses and PR comments. Fire-and-forget; never throws.
+      Promise.resolve()
+        .then(() => queuedDeployCancelled(deploy.id, message))
+        .catch((err) => log.warn(`Queue cancel feedback for ${deploy.id} failed:`, err));
 
       const app = appMap.get(deploy.appId);
       if (app) {

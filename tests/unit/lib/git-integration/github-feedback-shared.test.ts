@@ -284,6 +284,56 @@ describe("a deploy the sweeper timed out", () => {
   });
 });
 
+describe("a queued deploy the sweeper cancelled", () => {
+  const preview = { environment: "preview" as const, pr: { repo: "acme/widget", number: 4 } };
+  const ORPHANED = "Deployment never started — the process that queued it stopped and was cancelled";
+
+  it("fails its queued PR row and errors its commit status", async () => {
+    const web = processFeedback(redis, preview, []);
+    web.feedback.trackDeploy("dep-api", { trigger: "webhook" });
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { readStatus: async () => "cancelled" });
+    await sweeper.feedback.queuedDeployCancelled("dep-api", ORPHANED);
+    await settle();
+
+    const body = lastBody(calls, 4);
+    expect(body).toContain("**Preview failed**\n\nThe deploy was cancelled before it started.\n");
+    expect(body).toContain("| api | Failed |");
+    expect(calls.find((c) => c.path === `/repos/acme/widget/statuses/${SHA}`)?.body).toMatchObject({
+      state: "error",
+      description: "The deploy was cancelled before it started.",
+    });
+  });
+
+  it("leaves the merged PR alone in production, like any cancel", async () => {
+    const web = processFeedback(redis, {}, []);
+    deploy(web.feedback, "dep-web");
+    web.feedback.trackDeploy("dep-api", { trigger: "webhook" });
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, {}, calls, { readStatus: async () => "cancelled" });
+    await sweeper.feedback.queuedDeployCancelled("dep-api", ORPHANED);
+    await settle();
+    expect(commentEdits(calls, 8)).toHaveLength(0);
+    expect(calls.find((c) => c.path === `/repos/acme/widget/statuses/${SHA}`)?.body).toMatchObject({ state: "error" });
+  });
+
+  it("does nothing once the deploy has started", async () => {
+    const web = processFeedback(redis, preview, []);
+    web.feedback.trackDeploy("dep-api", { trigger: "webhook" });
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { readStatus: async () => "running" });
+    await sweeper.feedback.queuedDeployCancelled("dep-api", ORPHANED);
+    await settle();
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("redisFeedbackStore", () => {
   it("keeps a field per row, so two writers' rows both survive, for the rollback watch window", async () => {
     const store = redisFeedbackStore(redis as unknown as FeedbackRedis);
