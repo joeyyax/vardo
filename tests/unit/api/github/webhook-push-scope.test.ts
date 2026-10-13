@@ -49,8 +49,9 @@ vi.mock("@/lib/db", () => ({
 
 const { POST } = await import("@/app/api/v1/github/webhook/route");
 
-function push(installationId: number | undefined, after = "abc1234") {
+function push(installationId: number | undefined, after = "abc1234", extra: Record<string, unknown> = {}) {
   const body = JSON.stringify({
+    ...extra,
     ref: "refs/heads/main",
     after,
     repository: { full_name: "acme/site" },
@@ -106,7 +107,25 @@ describe("push webhook scope", () => {
     expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha }));
   });
 
-  it.each(["0000000000000000000000000000000000000000", "abc1234", "not-a-sha"])("pins nothing for after=%s", async (after) => {
+  it("deploys nothing when the push deleted the branch", async () => {
+    links.set(2, ["org-vardo"]);
+
+    const res = await push(2, "0000000000000000000000000000000000000000", { deleted: true });
+
+    expect((await res.json()).skipped).toBe("branch deleted");
+    expect(requestDeploy).not.toHaveBeenCalled();
+  });
+
+  it("deploys nothing for an all-zero after, as a relayed deletion carries it", async () => {
+    links.set(2, ["org-vardo"]);
+
+    const res = await push(2, "0000000000000000000000000000000000000000");
+
+    expect((await res.json()).skipped).toBe("branch deleted");
+    expect(requestDeploy).not.toHaveBeenCalled();
+  });
+
+  it.each(["abc1234", "not-a-sha"])("pins nothing for after=%s", async (after) => {
     links.set(2, ["org-vardo"]);
 
     await push(2, after);

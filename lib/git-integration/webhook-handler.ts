@@ -38,6 +38,12 @@ export async function handlePushEvent(event: PushEvent, scope: EventScope): Prom
     `Push to ${repoFullName}:${branch}${event.pusher ? ` by ${event.pusher}` : ""} — ${headSha?.slice(0, 7)} ${event.commitMessage?.split("\n")[0] ?? ""}${scope.trigger === "relay" ? " (relayed)" : ""}`,
   );
 
+  // Nothing to deploy. A PR's preview is removed by its pull_request close, not by this push.
+  if (event.deleted || (headSha && /^0+$/.test(headSha))) {
+    log.info(`Branch ${repoFullName}:${branch} deleted; nothing to deploy`);
+    return NextResponse.json({ ok: true, skipped: "branch deleted" });
+  }
+
   const orgs = await scope.resolveOrgs();
   if ("skipped" in orgs) {
     return NextResponse.json({ ok: true, skipped: orgs.skipped });
