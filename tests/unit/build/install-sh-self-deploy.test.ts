@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
 
 // vardo update on a self-deploy instance redeploys the vardo app through the console; it never runs the legacy swap.
 
+const CLI = join(__dirname, "../../../scripts/vardo-cli.sh");
 let dir: string;
 let lib: string;
 let bin: string;
@@ -34,11 +35,13 @@ function instance(layout: "self-deploy" | "legacy"): string {
   const vardo = mkdtempSync(join(dir, `${layout}-`));
   writeFileSync(join(vardo, ".env"), "VARDO_ROLE=production\nCOMPOSE_PROFILES=production,buildkit\nVARDO_BUILDKIT_MEM=4g\nVARDO_BUILDKIT_CACHE_MAX=20GB\nVARDO_WORKER_MEM=1g\nVARDO_TRAEFIK_MEM=512m\nVARDO_TRAEFIK_GOMEMLIMIT=460MiB\nVARDO_REDIS_MEM=512m\nVARDO_REDIS_MAXMEMORY=320mb\n");
   mkdirSync(join(vardo, "lifecycle"));
-  mkdirSync(join(vardo, "apps/vardo/env/blue"), { recursive: true });
+  mkdirSync(join(vardo, "apps/vardo/env/blue/scripts"), { recursive: true });
+  copyFileSync(CLI, join(vardo, "apps/vardo/env/blue/scripts/vardo-cli.sh"));
   writeFileSync(join(vardo, "apps/vardo/env/blue/install.sh"), "echo LEGACY-INSTALL-SH \"$@\"\n");
   symlinkSync("blue", join(vardo, "apps/vardo/env/current"));
   if (layout === "self-deploy") {
-    mkdirSync(join(vardo, "apps/vardo/production/blue"), { recursive: true });
+    mkdirSync(join(vardo, "apps/vardo/production/blue/scripts"), { recursive: true });
+    copyFileSync(CLI, join(vardo, "apps/vardo/production/blue/scripts/vardo-cli.sh"));
     writeFileSync(join(vardo, "apps/vardo/production/blue/install.sh"), "echo SLOT-INSTALL-SH \"$@\"\n");
     symlinkSync("blue", join(vardo, "apps/vardo/production/current"));
   }

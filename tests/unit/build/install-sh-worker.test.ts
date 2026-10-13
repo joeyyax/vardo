@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
@@ -28,13 +28,10 @@ function sh(script: string, env: Record<string, string> = {}, ramMb = 8192) {
   const log = join(vardo, "docker.log");
   writeFileSync(log, "");
   writeFileSync(join(vardo, ".env"), env.ENV_FILE ?? "VARDO_ROLE=production\n");
-  if (env.LAYOUT !== "legacy") {
-    mkdirSync(join(vardo, "apps/vardo/production/blue"), { recursive: true });
-    symlinkSync("blue", join(vardo, "apps/vardo/production/current"));
-  } else {
-    mkdirSync(join(vardo, "apps/vardo/env/blue"), { recursive: true });
-    symlinkSync("blue", join(vardo, "apps/vardo/env/current"));
-  }
+  const slotParent = env.LAYOUT !== "legacy" ? "apps/vardo/production" : "apps/vardo/env";
+  mkdirSync(join(vardo, slotParent, "blue/scripts"), { recursive: true });
+  copyFileSync(join(__dirname, "../../../scripts/vardo-cli.sh"), join(vardo, slotParent, "blue/scripts/vardo-cli.sh"));
+  symlinkSync("blue", join(vardo, slotParent, "current"));
   const r = spawnSync("bash", ["-c", `set -euo pipefail\nsource "${lib}"\nPLATFORM=macos\nget_ram_mb() { echo ${ramMb}; }\nsleep() { :; }\n${script}`], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, VARDO_REF: "", VARDO_DIR: vardo, VARDO_BIN: join(vardo, "vardo-wrapper"), DOCKER_LOG: log, ...env },
