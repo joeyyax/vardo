@@ -34,13 +34,12 @@ describe("bannedMessage", () => {
   const HOUR = 60 * MIN;
 
   it.each([
-    [18 * HOUR, "until 22:00 UTC (about 18 hours)."],
-    [23 * HOUR, "until Oct 14, 03:00 UTC (about 23 hours)."],
-    [30_000, "until 04:00 UTC (about a minute)."],
-    [45 * MIN, "until 04:45 UTC (about 45 minutes)."],
-    [60 * MIN, "until 05:00 UTC (about an hour)."],
-    [30 * HOUR, "until Oct 14, 10:00 UTC (about 30 hours)."],
-    [72 * HOUR, "until Oct 16, 04:00 UTC (about 3 days)."],
+    [30_000, "until 04:00 UTC."],
+    [45 * MIN, "until 04:45 UTC."],
+    [60 * MIN, "until 05:00 UTC."],
+    [18 * HOUR, "until 22:00 UTC."],
+    [23 * HOUR, "until Oct 14, 03:00 UTC."],
+    [72 * HOUR, "until Oct 16, 04:00 UTC."],
   ])("ends %i ms out: %s", (ms, tail) => {
     expect(bannedMessage(after(ms), now)).toBe(`Access from your address is unavailable ${tail}`);
   });
@@ -79,7 +78,7 @@ describe("errorPage", () => {
   describe("reference", () => {
     const now = new Date("2026-10-13T04:00:00Z");
     const until = new Date("2026-10-13T04:45:00Z");
-    const MESSAGE = "Access from your address is unavailable until 04:45 UTC (about 45 minutes).";
+    const MESSAGE = "Access from your address is unavailable until 04:45 UTC.";
 
     it("joins the status on the label line, selectable in one click", () => {
       const page = errorPage(403, { banned: true, until, ref: "13-K7M2", now });

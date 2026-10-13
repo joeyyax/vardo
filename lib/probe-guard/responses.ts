@@ -21,21 +21,11 @@ function utcClock(at: Date, now: Date): string {
   return sameDay ? time : `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${time}`;
 }
 
-function untilNow(ms: number): string {
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes <= 1) return "about a minute";
-  if (minutes < 60) return `about ${minutes} minutes`;
-  const hours = Math.round(minutes / 60);
-  if (hours === 1) return "about an hour";
-  if (hours < 48) return `about ${hours} hours`;
-  return `about ${Math.round(hours / 24)} days`;
-}
-
 /** The banned line: when the ban ends if it's known and still ahead, otherwise the generic wording. Says nothing about why. */
 export function bannedMessage(until?: Date, now: Date = new Date()): string {
   if (!until || !(until.getTime() > now.getTime())) return UNAVAILABLE_BANNED;
   if (isPermanent(until)) return "Access from your address is unavailable, and there is no end date.";
-  return `Access from your address is unavailable until ${utcClock(until, now)} (${untilNow(until.getTime() - now.getTime())}).`;
+  return `Access from your address is unavailable until ${utcClock(until, now)}.`;
 }
 
 export const RESPONSE_HEADERS = {
