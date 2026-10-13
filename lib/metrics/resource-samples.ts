@@ -98,7 +98,15 @@ export function parseSeries(result: unknown): LabeledSeries[] {
   return out;
 }
 
-/** Every series with samples in the window, per metric. Empty series are dropped. */
+/** The time-series store couldn't be read. Not the same as no samples. */
+export class MetricsStoreError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "MetricsStoreError";
+  }
+}
+
+/** Every series with samples in the window, per metric. Empty series are dropped. Throws MetricsStoreError. */
 export async function readSeries(
   metrics: readonly ResourceMetricName[],
   fromMs: number,
@@ -123,8 +131,8 @@ export async function readSeries(
       try {
         const raw = await tsRedis.call("TS.MRANGE", ...args);
         return [metric, parseSeries(raw).filter((s) => s.points.length > 0)];
-      } catch {
-        return [metric, []];
+      } catch (err) {
+        throw new MetricsStoreError(`Reading ${metric} from the metrics store failed`, { cause: err });
       }
     }),
   );

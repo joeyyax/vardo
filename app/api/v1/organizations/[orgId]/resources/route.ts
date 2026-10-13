@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getOrgResources, DEFAULT_WINDOW_MS, DEFAULT_BUCKETS } from "@/lib/metrics/resources-query";
+import { MetricsStoreError } from "@/lib/metrics/resource-samples";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -34,6 +35,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(resources);
   } catch (error) {
+    if (error instanceof MetricsStoreError) {
+      return NextResponse.json({ error: "Metrics are unavailable right now. Try again shortly." }, { status: 503 });
+    }
     return handleRouteError(error, "Error fetching resource usage");
   }
 }
