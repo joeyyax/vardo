@@ -33,7 +33,7 @@ export function RelativeTime({ date, className, absoluteFirst = false }: Relativ
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <time dateTime={parsed.toISOString()} className={className}>
+        <time dateTime={parsed.toISOString()} className={className} suppressHydrationWarning>
           {absoluteFirst ? absolute : relative}
         </time>
       </TooltipTrigger>

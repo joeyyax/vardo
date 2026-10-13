@@ -71,7 +71,7 @@ export function AppConditionsPanel({
               </span>
             )}
             <span className="text-muted-foreground">{c.detail}</span>
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground/70" suppressHydrationWarning>
               for {formatSpan(c.since)}
             </span>
           </li>
