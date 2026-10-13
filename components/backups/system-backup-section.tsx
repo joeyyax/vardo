@@ -13,7 +13,7 @@ import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { KeyEscrowCard } from "./key-escrow-card";
 import { StatusBadge } from "./status-badge";
-import { getNextRun } from "./next-run";
+import { getNextRun } from "@/lib/backups/next-run";
 import { RetentionSummary } from "./retention-summary";
 import { scheduleLabel } from "./constants";
 import { failureReason, isEncryptedRun } from "./history-state";

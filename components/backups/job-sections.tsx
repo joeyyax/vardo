@@ -25,7 +25,7 @@ import { failureReason, isEncryptedRun, restoreTestFor } from "./history-state";
 import { EncryptedMark } from "./encrypted-mark";
 import { jobAnchor } from "./job-anchor";
 import { archiveSize, asRecent, isJobOverdue, jobNeedsLook, latestFinished, runMark } from "./job-state";
-import { getNextRun } from "./next-run";
+import { getNextRun } from "@/lib/backups/next-run";
 import { RestoreTestBadge } from "./restore-test-badge";
 import { RetentionSummary } from "./retention-summary";
 import { RunProgressLine } from "./run-progress";
