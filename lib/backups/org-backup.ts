@@ -32,6 +32,18 @@ export async function findOrgAppBackup(orgId: string, backupId: string) {
   return backup;
 }
 
+export type DrillableBackup =
+  | { ok: true; backup: NonNullable<Awaited<ReturnType<typeof findOrgAppBackup>>> }
+  | { ok: false; reason: "not_found" | "not_successful" };
+
+/** An org's app backup that a restore drill can run on: owned by the org and successful. */
+export async function findDrillableBackup(orgId: string, backupId: string): Promise<DrillableBackup> {
+  const backup = await findOrgAppBackup(orgId, backupId);
+  if (!backup) return { ok: false, reason: "not_found" };
+  if (backup.status !== "success") return { ok: false, reason: "not_successful" };
+  return { ok: true, backup };
+}
+
 /** Moves each live app's backups to the app's org. Returns the rows moved. */
 export async function realignBackupOrgs(): Promise<number> {
   const moved = await db

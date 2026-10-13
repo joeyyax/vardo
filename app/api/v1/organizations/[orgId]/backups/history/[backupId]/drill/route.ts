@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { runRestoreDrill } from "@/lib/backups/drill";
-import { findOrgAppBackup } from "@/lib/backups/org-backup";
+import { findDrillableBackup } from "@/lib/backups/org-backup";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -19,11 +19,9 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "backup.run");
     if (!org) return apiError.forbidden();
 
-    const backup = await findOrgAppBackup(orgId, backupId);
-    if (!backup) {
-      return apiError.notFound("backup");
-    }
-    if (backup.status !== "success") {
+    const drillable = await findDrillableBackup(orgId, backupId);
+    if (!drillable.ok) {
+      if (drillable.reason === "not_found") return apiError.notFound("backup");
       return NextResponse.json({ error: "Only a successful backup can be drilled" }, { status: 400 });
     }
 
