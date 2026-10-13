@@ -13,6 +13,7 @@ import {
   IN_FLIGHT,
   mergedMarker,
   overallState,
+  placeText,
   previewMarker,
   publicConsoleUrl,
   renderMergedComment,
@@ -20,7 +21,9 @@ import {
   type CommitState,
   type DeploymentState,
   type PreviewRow,
+  type PreviewState,
   type ProductionRow,
+  type QueuePlace,
 } from "./github-feedback-render";
 import { redisFeedbackStore, type FeedbackRedis, type FeedbackStore } from "./github-feedback-store";
 
@@ -325,11 +328,16 @@ type PrState = { sha: string | null; rows: Map<string, PreviewRow>; commentId: n
 type MergedState = { pr: number | null | undefined; rows: Map<string, ProductionRow>; commentId: number | null; touchedAt: number };
 
 export type DeployTracker = {
+  /** Where the deploy waits; called only while it's queued. */
+  queued(place: QueuePlace): void;
   stage(stage: string, status: string): void;
   finish(result: { status: "success" | "failed" | "cancelled" | "superseded"; error?: string; durationMs?: number }): void;
 };
 
-const NOOP: DeployTracker = { stage() {}, finish() {} };
+/** Fewest milliseconds between queued commit and deployment statuses for one deploy. */
+export const QUEUE_STATUS_INTERVAL_MS = 15_000;
+
+const NOOP: DeployTracker = { queued() {}, stage() {}, finish() {} };
 
 export function createFeedback(deps: FeedbackDeps) {
   const now = deps.now ?? Date.now;
@@ -487,13 +495,13 @@ export function createFeedback(deps: FeedbackDeps) {
     return [key, state];
   }
 
-  /** Records an app's row on its PR comment and schedules an edit. `ownOnly` writes only over this deploy's in-flight row. */
-  async function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null, ownOnly = false): Promise<boolean> {
+  /** Records an app's row on its PR comment and schedules an edit. `onlyOver` writes only over this deploy's own row in one of those states. */
+  async function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null, onlyOver?: PreviewState[]): Promise<boolean> {
     if (!info.pr || isBlocked(info.appId)) return false;
     const [key, state] = await prState(info.pr.repo, info.pr.number);
-    if (ownOnly) {
+    if (onlyOver) {
       const current = state.rows.get(info.appName);
-      if (!current || current.deploymentId !== info.deploymentId || !IN_FLIGHT.includes(current.state)) return false;
+      if (!current || current.deploymentId !== info.deploymentId || !onlyOver.includes(current.state)) return false;
     }
     state.appIds.add(info.appId);
     state.orgIds.add(info.organizationId);
@@ -626,6 +634,12 @@ export function createFeedback(deps: FeedbackDeps) {
       let ghDeploymentId: number | null = null;
       let ghClient: Conn | null = null;
       let started = false;
+      // Places apply only until the first stage runs.
+      let leftQueue = false;
+      let place: QueuePlace | null = null;
+      let queuedPostAt = -Infinity;
+      // The commit status still reads Queued.
+      let pendingQueued = false;
       // Latched once another process, such as the sweeper, closed the row: this deploy's later states are stale.
       let closed = false;
       const closedElsewhere = async (expected: string[]) => {
@@ -688,6 +702,7 @@ export function createFeedback(deps: FeedbackDeps) {
         if (!sha) return;
         started = true;
         const label = queued ? "Queued" : "Building";
+        pendingQueued = queued;
         await postCommitStatus(i, sha, "pending", label);
         if (!wantsDeployment(i) || isBlocked(i.appId)) return;
         ghClient = await withClient(i.repo!, [i.organizationId]);
@@ -705,11 +720,32 @@ export function createFeedback(deps: FeedbackDeps) {
       });
 
       return {
+        queued(next) {
+          enqueue(async () => {
+            // The chain runs in order, so a place reported before the first stage never lands after it.
+            if (leftQueue || next === place) return;
+            const i = await load();
+            if (!i) return;
+            place = next;
+            await setPreviewRow(i, { state: "queued", place: next }, null, ["queued"]);
+            if (!sha || !started || now() - queuedPostAt < QUEUE_STATUS_INTERVAL_MS) return;
+            queuedPostAt = now();
+            const text = `Queued, ${placeText(next)}`;
+            await postCommitStatus(i, sha, "pending", text);
+            await deploymentStatus(i, "queued", text);
+          });
+        },
         stage(stage, status) {
           if (status !== "running") return;
           enqueue(async () => {
+            leftQueue = true;
             const i = await load();
             if (!i || (await closedElsewhere(["queued", "running"]))) return;
+            // The commit status said Queued; it's building now.
+            if (pendingQueued && sha) {
+              pendingQueued = false;
+              await postCommitStatus(i, sha, "pending", "Building");
+            }
             if (stage === "clone") {
               await deploymentStatus(i, "in_progress", "Building");
               await setPreviewRow(i, { state: "building" }, sha);
@@ -790,7 +826,7 @@ export function createFeedback(deps: FeedbackDeps) {
     const logUrl = deployPageUrl(instance.consoleUrl, info.appId, deploymentId);
     const appUrl = appPageUrl(instance.consoleUrl, info.appId);
     // An own-only write leaves the heading's SHA alone; a newer push may own it.
-    const wrote = await setPreviewRow(info, { state: "failed", error: end.error, logUrl, appUrl }, ownOnly ? null : sha, ownOnly);
+    const wrote = await setPreviewRow(info, { state: "failed", error: end.error, logUrl, appUrl }, ownOnly ? null : sha, ownOnly ? IN_FLIGHT : undefined);
     if (ownOnly && info.pr && !wrote) return;
     if (!sha) return;
     await postCommitStatus(info, sha, end.outcome, end.summary);

@@ -9,6 +9,7 @@ import {
   formatDuration,
   mergedMarker,
   overallState,
+  placeText,
   previewMarker,
   publicConsoleUrl,
   renderMergedComment,
@@ -85,6 +86,43 @@ describe("renderPreviewComment", () => {
     });
     expect(body).toContain("**Preview failed at `3bed176`**\n\nThe build took longer than the 40 minute limit.\n\n| Service | Status |  |");
     expect(body).toContain(`| api | Failed | [Log](${LOG}) |`);
+  });
+
+  it("gives a queued row its place in line", () => {
+    const body = renderPreviewComment({
+      ...base,
+      sha: SHA,
+      rows: [
+        { app: "api", state: "queued", place: 1 },
+        { app: "web", state: "queued", place: 0 },
+        { app: "worker", state: "building" },
+      ],
+    });
+    expect(body).toBe([
+      previewMarker("inst-1"),
+      "**Preview queued at `3bed176`**",
+      "",
+      "| Service | Status |",
+      "| --- | --- |",
+      "| api | Queued · 2nd in line |",
+      "| web | Queued · next |",
+      "| worker | Building |",
+    ].join("\n"));
+  });
+
+  it.each([
+    [0, "next"],
+    [1, "2nd in line"],
+    [2, "3rd in line"],
+    [3, "4th in line"],
+    [10, "11th in line"],
+    [11, "12th in line"],
+    [12, "13th in line"],
+    [20, "21st in line"],
+    [21, "22nd in line"],
+    ["app", "behind this app's current deploy"],
+  ] as const)("words place %s as %s", (place, text) => {
+    expect(placeText(place)).toBe(text);
   });
 
   it("says when the preview was removed, in one line", () => {

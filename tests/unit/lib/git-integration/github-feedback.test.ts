@@ -399,6 +399,66 @@ describe("deploy feedback", () => {
     expect(calls.filter((c) => c.path.includes("/statuses/abcdef")).at(-1)?.body).toMatchObject({ state: "success" });
   });
 
+  describe("place in the queue", () => {
+    const previewInfo = () => info({ environment: "preview", pr: { repo: "acme/widget", number: 4 } });
+    const lastComment = (calls: { method: string; path: string; body?: unknown }[]) =>
+      (calls.filter((c) => /\/issues\/(4\/comments$|comments\/\d+)/.test(c.path) && c.method !== "GET").at(-1)?.body as { body: string }).body;
+    const commentWrites = (calls: { method: string; path: string }[]) =>
+      calls.filter((c) => /\/issues\/(4\/comments$|comments\/\d+)/.test(c.path) && c.method !== "GET").length;
+
+    it("shows the row's place and moves it up as deploys ahead start", async () => {
+      const { feedback, calls } = harness({ info: previewInfo() });
+      const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+      t.queued(1);
+      await settle();
+      expect(lastComment(calls)).toContain("| web | Queued · 2nd in line |");
+      const writes = commentWrites(calls);
+      t.queued(1);
+      await settle();
+      expect(commentWrites(calls)).toBe(writes);
+      t.queued(0);
+      await settle();
+      expect(lastComment(calls)).toContain("| web | Queued · next |");
+      t.queued("app");
+      await settle();
+      expect(lastComment(calls)).toContain("| web | Queued · behind this app's current deploy |");
+    });
+
+    it("never lets a stale place overwrite a later state", async () => {
+      const { feedback, calls } = harness({ info: previewInfo() });
+      const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+      t.queued(2);
+      t.stage("clone", "running");
+      t.queued(0);
+      await settle();
+      expect(lastComment(calls)).toContain("| web | Building |");
+      expect(lastComment(calls)).not.toContain("next");
+    });
+
+    it("puts the place on the commit status, at most once per interval, then Building", async () => {
+      let clock = 1_000_000;
+      const { feedback, calls } = harness({ info: info({ trigger: "manual", pinnedSha: "1111111aaaa" }), deps: { now: () => clock } });
+      const t = feedback.trackDeploy("dep-1", { trigger: "manual", gitSha: "1111111aaaa" });
+      t.queued(2);
+      await settle();
+      t.queued(1);
+      await settle();
+      clock += 15_000;
+      t.queued(0);
+      await settle();
+      t.stage("clone", "running");
+      await settle();
+      const descriptions = calls.filter((c) => c.path.includes("/statuses/1111111aaaa")).map((c) => (c.body as { description: string }).description);
+      expect(descriptions).toEqual(["Queued", "Queued, 3rd in line", "Queued, next", "Building"]);
+      const deploymentStatuses = calls.filter((c) => c.path.endsWith("/deployments/500/statuses")).map((c) => c.body as { state: string; description?: string });
+      expect(deploymentStatuses.slice(0, 3)).toEqual([
+        expect.objectContaining({ state: "queued", description: "Queued" }),
+        expect.objectContaining({ state: "queued", description: "Queued, 3rd in line" }),
+        expect.objectContaining({ state: "queued", description: "Queued, next" }),
+      ]);
+    });
+  });
+
   it("skips commit statuses on a manual redeploy of the branch", async () => {
     const { feedback, calls } = harness({ info: info({ trigger: "manual" }) });
     const t = feedback.trackDeploy("dep-1", { trigger: "manual" });

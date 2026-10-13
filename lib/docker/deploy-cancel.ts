@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
 import { DeployBlockedError } from "./errors";
 import { trackDeploy } from "@/lib/git-integration/github-feedback";
+import type { QueuePlace } from "@/lib/git-integration/github-feedback-render";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 import {
   enqueueAndTryAcquire,
@@ -358,7 +359,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
         feedback.stage(stage, status);
         onStage?.(stage, status);
       },
-    });
+    }, (place) => feedback.queued(place));
     feedback.finish(result);
     return result;
   } catch (err) {
@@ -387,7 +388,7 @@ function oneClaimAtATime<T>(scope: string, fn: () => Promise<T>): Promise<T> {
 }
 
 /** Takes the scope's Redis key with NX, superseding or waiting out its owner. Overwrites at the deadline, as a dead owner would have let it lapse. */
-async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (line: string) => void): Promise<void> {
+async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (line: string) => void, onWait?: () => void): Promise<void> {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   const value = JSON.stringify({ deploymentId, stage: "clone" });
   let signalled: string | null = null;
@@ -406,6 +407,7 @@ async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (
     }
     if (!announced) {
       onLog?.("[queue] Waiting for the deploy already running for this app");
+      onWait?.();
       announced = true;
     }
     if (Date.now() >= deadline) {
@@ -416,7 +418,7 @@ async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (
   }
 }
 
-async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Promise<DeployResult> {
+async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts, onQueue?: (place: QueuePlace) => void): Promise<DeployResult> {
   const scope = await deployScope(opts.appId, opts.environmentId);
 
   const controller = new AbortController();
@@ -438,11 +440,12 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
       if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
         localExisting.controller.abort({ supersededBy: newDeploymentId });
       }
+      onQueue?.("app");
       await localExisting.done.catch(() => {});
     }
 
     // 2. Deploy owned by another process. Its lease renews only while its process lives, so a dead owner clears itself.
-    await claimActiveInRedis(scope, newDeploymentId, opts.onLog);
+    await claimActiveInRedis(scope, newDeploymentId, opts.onLog, () => onQueue?.("app"));
 
     // 3. Register this deploy locally.
     localRegistry.set(scope, active);
@@ -476,7 +479,7 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
       opts.onLog?.(
         `[queue] Waiting for a concurrency slot (${limit} max simultaneous deploy${limit === 1 ? "" : "s"})`,
       );
-      await waitForConcurrencySlot(newDeploymentId, controller.signal);
+      await waitForConcurrencySlot(newDeploymentId, controller.signal, onQueue);
       opts.onLog?.("[queue] Concurrency slot acquired — starting deploy");
     }
     concurrencySlotHeld = true;

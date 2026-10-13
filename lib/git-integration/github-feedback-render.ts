@@ -4,9 +4,14 @@ import { knownFailure } from "./deploy-failure";
 
 export type PreviewState = "queued" | "building" | "deploying" | "live" | "failed";
 
+/** Where a waiting deploy stands: deploys ahead of it in the system queue, or behind its app's current deploy. */
+export type QueuePlace = number | "app";
+
 export type PreviewRow = {
   app: string;
   state: PreviewState;
+  /** A queued row's place in line. */
+  place?: QueuePlace | null;
   url?: string | null;
   error?: string | null;
   logUrl?: string | null;
@@ -89,9 +94,22 @@ function linksCell(r: Row): string {
   return [r.logUrl && `[Log](${r.logUrl})`, r.appUrl && `[Open in Vardo](${r.appUrl})`].filter(Boolean).join(" · ");
 }
 
+function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/** "next", "3rd in line" or "behind this app's current deploy". */
+export function placeText(place: QueuePlace): string {
+  if (place === "app") return "behind this app's current deploy";
+  return place === 0 ? "next" : `${ordinal(place + 1)} in line`;
+}
+
 function statusCell(r: Row, errorShared: boolean): string {
   const label = STATE_LABEL[r.state];
   if (r.state === "live") return r.url ? `${label} · ${r.url}` : label;
+  if (r.state === "queued" && "place" in r && r.place != null) return `${label} · ${placeText(r.place)}`;
   const error = errorShared ? null : rowError(r);
   return error ? `${label} · ${error}` : label;
 }

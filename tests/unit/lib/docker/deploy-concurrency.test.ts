@@ -36,6 +36,10 @@ const { redisState, redisList, redisMock } = vi.hoisted(() => {
       return list[index] ?? null;
     }),
     llen: vi.fn(async (key: string) => (redisList[key] ?? []).length),
+    lpos: vi.fn(async (key: string, value: string) => {
+      const index = (redisList[key] ?? []).indexOf(value);
+      return index === -1 ? null : index;
+    }),
     lrange: vi.fn(async (key: string, start: number, stop: number) => {
       const list = redisList[key] ?? [];
       const end = stop === -1 ? list.length : stop + 1;
@@ -112,6 +116,7 @@ import {
   reconcileActiveCounter,
   reconcileQueue,
   getConcurrencyLimit,
+  queuePosition,
   ACTIVE_KEY,
   QUEUE_KEY,
 } from "@/lib/docker/deploy-concurrency";
@@ -286,6 +291,55 @@ describe("deploy-concurrency", () => {
       redisMock.eval.mockRejectedValueOnce(new Error("Redis connection failed"));
 
       await expect(waitForConcurrencySlot("deploy-redis-err")).resolves.not.toThrow();
+    });
+  });
+
+  describe("queue position", () => {
+    it("counts the deploys ahead in the system queue", async () => {
+      redisList[QUEUE_KEY] = ["a", "b", "me"];
+      expect(await queuePosition("me")).toBe(2);
+      expect(await queuePosition("a")).toBe(0);
+      expect(await queuePosition("gone")).toBeNull();
+      redisMock.lpos.mockRejectedValueOnce(new Error("Redis down"));
+      expect(await queuePosition("me")).toBeNull();
+    });
+
+    it("reports each new place as the deploys ahead start, then takes the slot", async () => {
+      vi.useFakeTimers();
+      try {
+        redisList[QUEUE_KEY] = ["a", "b", "me"];
+        redisState[ACTIVE_KEY] = "2";
+        const places: number[] = [];
+        const waiting = waitForConcurrencySlot("me", undefined, (ahead) => places.push(ahead));
+
+        await vi.advanceTimersByTimeAsync(0);
+        expect(places).toEqual([2]);
+
+        // Unchanged places aren't reported again.
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(places).toEqual([2]);
+
+        // "a" started; then "b" was cancelled and a slot freed.
+        redisList[QUEUE_KEY] = ["b", "me"];
+        await vi.advanceTimersByTimeAsync(2_500);
+        expect(places).toEqual([2, 1]);
+        redisList[QUEUE_KEY] = ["me"];
+        await vi.advanceTimersByTimeAsync(2_500);
+        expect(places).toEqual([2, 1, 0]);
+        redisState[ACTIVE_KEY] = "1";
+        await vi.advanceTimersByTimeAsync(1_000);
+        await waiting;
+        expect(redisList[QUEUE_KEY]).toEqual([]);
+        expect(redisState[ACTIVE_KEY]).toBe("2");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps waiting when a place listener throws", async () => {
+      redisList[QUEUE_KEY] = ["me"];
+      redisState[ACTIVE_KEY] = "1";
+      await expect(waitForConcurrencySlot("me", undefined, () => { throw new Error("listener"); })).resolves.toBeUndefined();
     });
   });
 
