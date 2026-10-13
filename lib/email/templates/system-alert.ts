@@ -4,7 +4,7 @@ import type { MailFact, MailLink, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 
 /** Release-note lines an update email quotes. */
-const NOTE_LINES = 8;
+const NOTE_LINES = 3;
 
 /** Release notes as plain lines: headings, bullets and emphasis stripped. */
 function noteLines(notes: string): string[] {
@@ -16,18 +16,13 @@ function noteLines(notes: string): string[] {
     .map((l) => truncate(l, 160));
 }
 
-/** "What's new": the newest commits, or the release notes, and the link to everything. */
+/** Release notes and a link to the full change history. */
 export function changeSections(changes: UpdateChanges): { sections: { title: string; facts: MailFact[] }[]; paragraphs: string[]; links: MailLink[] } {
-  const facts: MailFact[] = (changes.commits ?? []).map((c) => ({
-    label: c.sha,
-    value: `${truncate(c.subject, 100)}${c.author ? ` · ${c.author}` : ""}`,
-  }));
-  if (facts.length && changes.moreCommits) facts.push({ label: "", value: `and ${plural(changes.moreCommits, "more commit")}` });
-  const notes = !facts.length && changes.releaseNotes ? noteLines(changes.releaseNotes) : [];
+  const notes = changes.releaseNotes ? noteLines(changes.releaseNotes) : [];
   return {
-    sections: facts.length ? [{ title: "What's new", facts }] : notes.length ? [{ title: "What's new", facts: notes.map((n) => ({ label: "", value: n })) }] : [],
+    sections: notes.length ? [{ title: "What changed", facts: notes.map((n) => ({ label: "", value: n })) }] : [],
     paragraphs: [],
-    links: changes.changesUrl ? [{ label: "View all changes on GitHub", href: changes.changesUrl }] : [],
+    links: changes.changesUrl ? [{ label: "Full change history on GitHub", href: changes.changesUrl }] : [],
   };
 }
 
@@ -100,17 +95,16 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
     }
     case "system.update-available": {
       const changes = changeSections(event);
-      const head = event.commits?.[0];
       return {
         tone: "info",
         status: "Update available",
         mark: "↑",
         heading: `A Vardo update is available for ${ctx.instanceName}`,
-        preheader: head ? head.subject : undefined,
+        preheader: "A Vardo update is ready for this instance.",
         paragraphs: ["Update when it suits you. Deployed apps keep running during the update."],
-        facts: [
+        details: [
           { label: "Running", value: event.localHead, mono: true },
-          { label: "Latest", value: event.target ? `${event.target} (${event.remoteHead})` : event.remoteHead, mono: true },
+          { label: "Available", value: event.target ? `${event.target} (${event.remoteHead})` : event.remoteHead, mono: true },
           ...(event.commitsBehind ? [{ label: "Behind", value: plural(event.commitsBehind, "commit") }] : []),
         ],
         sections: changes.sections,

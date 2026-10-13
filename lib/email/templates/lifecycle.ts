@@ -1,5 +1,5 @@
-import type { BusEvent, UpdateChanges } from "@/lib/bus/events";
-import { formatDuration, truncate, versionShort } from "../format";
+import type { BusEvent } from "@/lib/bus/events";
+import { formatDuration, versionShort } from "../format";
 import { timeLabel } from "./alerts";
 import type { MailFact, NotificationMailBody } from "./components";
 import { consolePage, footerFor, type MailContext } from "./context";
@@ -34,12 +34,6 @@ function fact(label: string, value: string | undefined, mono = false): MailFact[
 /** "bc2083d → 559e5b2", the commits in place of the package version. */
 function versionChange(from: string, to: string | undefined): string {
   return to ? `${versionShort(from)} → ${versionShort(to)}` : versionShort(from);
-}
-
-/** The version change and the head commit's subject, for the inbox preview. */
-function versionPreheader(from: string, to: string | undefined, changes: UpdateChanges): string {
-  const head = changes.commits?.[0]?.subject;
-  return `${versionChange(from, to)}${head ? ` ${truncate(head, 80)}` : ""}`;
 }
 
 function restartSource(source: "maintenance" | "console" | "watchdog"): string {
@@ -118,12 +112,11 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         status: "Updating",
         mark: "↑",
         heading: `Vardo is updating on ${host}`,
-        paragraphs: ["You'll get one more email when it finishes or fails. Deployed apps keep running."],
-        facts: [
-          { label: "From", value: versionShort(event.fromVersion), mono: true },
-          ...fact("To", event.toVersion ? versionShort(event.toVersion) : undefined, true),
+        paragraphs: ["Deployed apps keep running. You'll get another email when the update finishes or fails."],
+        details: [
+          { label: "Version", value: versionChange(event.fromVersion, event.toVersion), mono: true },
           ...fact("Branch", event.branch, true),
-          ...fact("Slot", slots(event.fromSlot, event.toSlot)),
+          ...fact("Deployment slot", slots(event.fromSlot, event.toSlot)),
         ],
         footer,
       };
@@ -131,17 +124,17 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
       const changes = changeSections(event);
       return {
         tone: "success",
-        status: "Updated",
-        heading: `Vardo updated on ${host}`,
-        preheader: versionPreheader(event.fromVersion, event.toVersion, event),
-        facts: [
-          { label: "Version", value: versionChange(event.fromVersion, event.toVersion), mono: true },
-          ...fact("Slot", slots(event.fromSlot, event.toSlot)),
-          ...fact("Took", seconds(event.durationSeconds)),
+        status: "Update complete",
+        heading: `${host} is updated`,
+        preheader: changes.sections[0]?.facts[0]?.value ?? `Vardo finished updating ${host}.`,
+        details: [
+          ...fact("Finished in", seconds(event.durationSeconds)),
+          { label: "Version", value: versionShort(event.toVersion), mono: true },
+          ...fact("Deployment slot", slots(event.fromSlot, event.toSlot)),
           ...fact("Console down", event.downSeconds ? seconds(event.downSeconds) : undefined),
         ],
         sections: changes.sections,
-        action: admin,
+        action: { label: `Open Vardo on ${host}`, href: admin.href },
         links: changes.links,
         footer,
       };

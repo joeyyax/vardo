@@ -2,7 +2,7 @@
 
 import type { AlertResolvedEvent, BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, truncate, versionShort } from "./format";
+import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName } from "./format";
 import type { MailSeries } from "./templates/context";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
@@ -28,16 +28,15 @@ export function stageLabel(stage: string | undefined): string | undefined {
   return STAGE_LABELS[stage] ?? stage;
 }
 
-/** Commit subjects in a subject line are cut to this. */
-const COMMIT_SUBJECT_MAX = 60;
-
 function withSha(text: string, sha: string | undefined): string {
   return sha ? `${text} · ${shortSha(sha)}` : text;
 }
 
-function headSubject(commits: { subject: string }[] | undefined): string | undefined {
-  const head = commits?.[0]?.subject;
-  return head ? truncate(head, COMMIT_SUBJECT_MAX) : undefined;
+function rolloutInstances(members: { name: string; priority: "critical" | "standard" | "low" }[]): string {
+  if (!members.length) return "your instances";
+  if (members.length > 2) return `${members.length} instances`;
+  const rank = { critical: 0, standard: 1, low: 2 };
+  return [...members].sort((a, b) => rank[a.priority] - rank[b.priority] || a.name.localeCompare(b.name)).map((member) => member.name).join(" and ");
 }
 
 /** "✓ WP Cron on Shop recovered after 4 min", for a single cleared cron alert. */
@@ -113,14 +112,7 @@ export function subjectLine(event: BusEvent): string {
     case "system.integration-permissions":
       return `⚠ ${event.title}`;
     case "system.update-available":
-      return [
-        "↑ Vardo update",
-        event.target,
-        event.commitsBehind ? plural(event.commitsBehind, "commit") : undefined,
-        headSubject(event.commits),
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      return `↑ Vardo update available${event.target ? ` · ${event.target}` : ""}`;
     case "alert.fired": {
       const [first] = event.alerts;
       const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
@@ -142,23 +134,25 @@ export function subjectLine(event: BusEvent): string {
     case "system.recovered-unclean":
       return "⚠ Vardo stopped unexpectedly";
     case "system.update-started":
-      return `↑ Vardo updating · ${versionShort(event.fromVersion)}${event.toVersion ? ` → ${versionShort(event.toVersion)}` : ""}`;
+      return "↑ Vardo update started";
     case "system.updated":
-      return [`✓ Vardo updated · ${versionShort(event.fromVersion)} → ${versionShort(event.toVersion)}`, headSubject(event.commits)]
-        .filter(Boolean)
-        .join(" ");
+      return "✓ Vardo update complete";
     case "system.update-failed":
       return `✗ Vardo update failed at ${event.step}`;
     case "system.update-skipped":
       return `⚠ Vardo update skipped · ${event.target}`;
     case "system.rollout-started":
-      return `↑ Vardo update rolling out · ${event.targetLabel}`;
-    case "system.rollout-busy":
-      return `⚠ Vardo update waiting · ${event.targetLabel}`;
+      return `Vardo update started for ${rolloutInstances(event.members)}`;
+    case "system.rollout-busy": {
+      const busy = event.members.find((member) => member.instanceId === event.busyInstanceId);
+      return `Vardo update waiting${busy ? ` for ${busy.name}` : ""}`;
+    }
     case "system.rollout-paused":
-      return `✗ Vardo rollout paused · ${event.targetLabel}`;
+      return "Vardo update paused";
     case "system.rollout-finished":
-      return `✓ Vardo rollout finished · ${event.targetLabel}`;
+      return event.members.some((member) => member.state === "skipped")
+        ? `Vardo rollout finished · ${event.members.filter((member) => member.state === "skipped").length} skipped`
+        : `Vardo update complete on ${rolloutInstances(event.members)}`;
     case "system.restarting":
       return `↻ Restarting ${event.label}`;
     case "system.restarted":
@@ -177,6 +171,7 @@ export function subjectLine(event: BusEvent): string {
 /** "node-a · ✓ Shop deployed · 4d75067": the instance first, so one name leads every email. */
 export function notificationSubject(event: BusEvent, ctx: SubjectContext): string {
   const line = subjectLine(event);
+  if (event.type.startsWith("system.rollout-")) return line;
   const instance = ctx.instanceName.trim();
   return instance ? `${instance} · ${line}` : line;
 }

@@ -98,6 +98,8 @@ export type NotificationMailBody = {
   preheader?: string;
   paragraphs?: string[];
   facts?: MailFact[];
+  /** Secondary version and deployment facts, shown after actions. */
+  details?: MailFact[];
   /** Extra fact tables under their own titles. */
   sections?: { title: string; facts: MailFact[] }[];
   log?: { title: string; lines: string[] };
@@ -796,6 +798,12 @@ export function NotificationMail(body: NotificationMailBody) {
                     {body.command ? <CodeBlock title={body.command.title} lines={[body.command.text]} /> : null}
                     {body.action ? <PrimaryButton href={body.action.href}>{body.action.label}</PrimaryButton> : null}
                     <SecondaryLinks links={body.links ?? []} />
+                    {body.details?.length ? (
+                      <div style={{ marginTop: "20px" }}>
+                        <p className="vd-muted" style={text(13, light.muted, { margin: "0 0 4px" })}>Technical details</p>
+                        <FactsTable facts={body.details} />
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
                 <tr>
@@ -837,6 +845,7 @@ export function notificationMailText(body: NotificationMailBody): string {
   if (body.command) blocks.push(`${body.command.title}\n    ${body.command.text}`);
   const links = [...(body.action ? [body.action] : []), ...(body.links ?? [])];
   if (links.length) blocks.push(links.map((l) => `${l.label}: ${l.href}`).join("\n"));
+  if (body.details?.length) blocks.push(`Technical details\n${factsText(body.details)}`);
   blocks.push(`--\n${footerLine(body.footer)}.\nNotification settings: ${body.footer.settingsUrl}`);
   return blocks.join("\n\n") + "\n";
 }
