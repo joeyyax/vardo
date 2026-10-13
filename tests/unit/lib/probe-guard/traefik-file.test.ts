@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
+import { PROBE_RULES } from "@/lib/probe-guard/rules";
 import {
   APP_HEADER,
   CONSOLE_SERVICE,
@@ -23,7 +24,7 @@ import { parseRule } from "@/lib/docker/traefik-rule";
 const KEY = "a".repeat(64);
 const state = (over: Partial<GuardState> = {}): GuardState => ({
   key: KEY,
-  apps: [{ id: "app1", hosts: ["shop.example.com", "www.shop.example.com"], exceptions: [], wordpress: false, robotsTxt: false }],
+  apps: [{ id: "app1", hosts: ["shop.example.com", "www.shop.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false }],
   bannedIps: [],
   trapPaths: ["/admin-backup/", "/private/db.sql"],
   markers: [],
@@ -57,14 +58,31 @@ describe("renderGuardConfig", () => {
     expect(http.middlewares["vardo-guard-to-probe"]).toEqual({ replacePath: { path: "/probe-guard/probe" } });
   });
 
-  it("drops WordPress rules for a WordPress app", () => {
-    const wp = parse(state({ apps: [{ id: "wp", hosts: ["blog.example.com"], exceptions: [], wordpress: true, robotsTxt: false }] }));
-    expect(wp.http.routers!["vardo-guard-wp-probe-web"].rule).not.toContain("wp-admin");
-    expect(parse(state()).http.routers!["vardo-guard-app1-probe-web"].rule).toContain("wp-admin");
+  it("leaves the opt-in WordPress rules out until an app turns them on", () => {
+    expect(parse(state()).http.routers!["vardo-guard-app1-probe-web"].rule).not.toContain("wp-admin");
+    const on = parse(state({ apps: [{ id: "wp", hosts: ["blog.example.com"], exceptions: [], rules: { "wp-admin": true }, blocks: [], robotsTxt: false }] }));
+    expect(on.http.routers!["vardo-guard-wp-probe-web"].rule).toContain("wp-admin");
+  });
+
+  it("renders no probe router when every rule is off and there are no blocks", () => {
+    const off = Object.fromEntries(PROBE_RULES.map((r) => [r.id, false]));
+    const { http } = parse(state({ apps: [{ id: "a", hosts: ["a.example.com"], exceptions: [], rules: off, blocks: [], robotsTxt: false }] }));
+    expect(Object.keys(http.routers!).filter((n) => n.includes("-a-probe") || n.includes("-a-block"))).toEqual([]);
+    expect(Object.keys(http.routers!).some((n) => n.includes("-a-trap"))).toBe(true);
+  });
+
+  it("renders blocks in their own router, so exceptions never lift them", () => {
+    const off = Object.fromEntries(PROBE_RULES.map((r) => [r.id, false]));
+    const app = { id: "a", hosts: ["a.example.com"], exceptions: ["/phpmyadmin"], rules: off, blocks: [{ kind: "prefix" as const, value: "/phpmyadmin/setup" }], robotsTxt: false };
+    const { http } = parse(state({ apps: [app] }));
+    const rule = http.routers!["vardo-guard-a-block-web"].rule;
+    expect(rule).toContain("PathRegexp(`(?i)(?:^/phpmyadmin/setup)`)");
+    expect(rule).not.toContain("!PathPrefix");
+    expect(http.routers!["vardo-guard-a-probe-web"]).toBeUndefined();
   });
 
   it("adds exceptions to probe and trap rules", () => {
-    const { http } = parse(state({ apps: [{ id: "a", hosts: ["a.example.com"], exceptions: ["/actuator"], wordpress: false, robotsTxt: false }] }));
+    const { http } = parse(state({ apps: [{ id: "a", hosts: ["a.example.com"], exceptions: ["/actuator"], rules: {}, blocks: [], robotsTxt: false }] }));
     expect(http.routers!["vardo-guard-a-probe-web"].rule).toMatch(/&& !PathPrefix\(`\/actuator`\)$/);
     expect(http.routers!["vardo-guard-a-trap-web"].rule).toMatch(/&& !PathPrefix\(`\/actuator`\)$/);
   });
@@ -87,7 +105,7 @@ describe("renderGuardConfig", () => {
     const { http } = parse(state({
       bannedIps: ["203.0.113.9"],
       markers: ["abcdefghjk23"],
-      apps: [{ id: "app1", hosts: ["a.example.com"], exceptions: [], wordpress: false, robotsTxt: true }],
+      apps: [{ id: "app1", hosts: ["a.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: true }],
     }));
     const p = (n: string) => http.routers![`vardo-guard-${n}-web`].priority;
     expect(p("banned")).toBeGreaterThan(p("canary"));
@@ -97,17 +115,17 @@ describe("renderGuardConfig", () => {
   });
 
   it("renders a file with only middlewares when no app has a domain", () => {
-    const { http } = parse(state({ apps: [{ id: "x", hosts: [], exceptions: [], wordpress: false, robotsTxt: false }], bannedIps: ["203.0.113.9"] }));
+    const { http } = parse(state({ apps: [{ id: "x", hosts: [], exceptions: [], rules: {}, blocks: [], robotsTxt: false }], bannedIps: ["203.0.113.9"] }));
     expect(http.routers).toBeUndefined();
   });
 
   it("skips hosts that aren't hostnames", () => {
-    const { http } = parse(state({ apps: [{ id: "a", hosts: ["ok.example.com", "bad`) || Host(`x"], exceptions: [], wordpress: false, robotsTxt: false }] }));
+    const { http } = parse(state({ apps: [{ id: "a", hosts: ["ok.example.com", "bad`) || Host(`x"], exceptions: [], rules: {}, blocks: [], robotsTxt: false }] }));
     expect(http.routers!["vardo-guard-a-probe-web"].rule).not.toContain("bad");
   });
 
   it("matches wildcard domains by regexp", () => {
-    const { http } = parse(state({ apps: [{ id: "a", hosts: ["*.apps.example.com"], exceptions: [], wordpress: false, robotsTxt: false }] }));
+    const { http } = parse(state({ apps: [{ id: "a", hosts: ["*.apps.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false }] }));
     expect(http.routers!["vardo-guard-a-probe-web"].rule).toContain("HostRegexp(`^[^.]+\\.apps\\.example\\.com$`)");
   });
 
@@ -121,8 +139,8 @@ describe("renderGuardConfig", () => {
     const { http } = parse(state({
       bannedIps: ["203.0.113.9"],
       apps: [
-        { id: "app1", hosts: ["a.example.com"], exceptions: [], wordpress: false, robotsTxt: false },
-        { id: "vardo-console", hosts: ["console.example.com"], exceptions: [], wordpress: false, robotsTxt: false, console: true },
+        { id: "app1", hosts: ["a.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false },
+        { id: "vardo-console", hosts: ["console.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false, console: true },
       ],
     }));
     expect(http.routers!["vardo-guard-banned-web"].rule).not.toContain("console.example.com");

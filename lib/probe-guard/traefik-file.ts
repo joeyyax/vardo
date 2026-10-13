@@ -6,7 +6,8 @@ import YAML from "yaml";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 import { isHostname } from "@/lib/security/hostname";
 import { parseRule } from "@/lib/docker/traefik-rule";
-import { activeRules, exceptionClause, exceptionProblem, probePathRegexp } from "./rules";
+import { activeRules, exceptionClause, exceptionProblem, type RuleOverrides } from "./rules";
+import { type CustomBlock, probePathRegexp } from "./blocks";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, MARKER_RE, canaryRegexp } from "./canary";
 import { normalizeIp, parseCidr } from "./ban-policy";
 
@@ -47,7 +48,10 @@ export type GuardApp = {
   id: string;
   hosts: string[];
   exceptions: string[];
-  wordpress: boolean;
+  /** Per-rule switches; a rule without one keeps its default. */
+  rules: RuleOverrides;
+  /** The owner's turn-away entries. Exceptions never apply to them. */
+  blocks: readonly CustomBlock[];
   robotsTxt: boolean;
   /** The console's own host: traps and probes only, never the ban router. */
   console?: boolean;
@@ -250,8 +254,11 @@ export function renderGuardConfig(state: GuardState): Record<string, unknown> {
     const tag = app.console ? `${GUARD_PREFIX}tag` : `${GUARD_PREFIX}${app.id}-tag`;
     if (!app.console) middlewares[tag] = { headers: { customRequestHeaders: { [KEY_HEADER]: state.key, [APP_HEADER]: app.id } } };
     if (traps) add(`${GUARD_PREFIX}${app.id}-trap`, "trap", unlessSkipped(withExceptions(`${hosts} && ${traps}`, app.exceptions)), tag);
-    const probe = `${hosts} && PathRegexp(\`${probePathRegexp(activeRules({ wordpress: app.wordpress }))}\`)`;
-    add(`${GUARD_PREFIX}${app.id}-probe`, "probe", unlessSkipped(withExceptions(probe, app.exceptions)), tag);
+    // An empty alternation matches every path, so no rules and no blocks means no router.
+    const managed = probePathRegexp(activeRules(app.rules));
+    if (managed) add(`${GUARD_PREFIX}${app.id}-probe`, "probe", unlessSkipped(withExceptions(`${hosts} && PathRegexp(\`${managed}\`)`, app.exceptions)), tag);
+    const custom = probePathRegexp([], app.blocks);
+    if (custom) add(`${GUARD_PREFIX}${app.id}-block`, "probe", unlessSkipped(`${hosts} && PathRegexp(\`${custom}\`)`), tag);
     if (app.robotsTxt) add(`${GUARD_PREFIX}${app.id}-robots`, "robots", `${hosts} && Path(\`/robots.txt\`)`, tag);
   }
 

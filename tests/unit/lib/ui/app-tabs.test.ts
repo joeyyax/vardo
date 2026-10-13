@@ -52,6 +52,7 @@ describe("availableAppTabs", () => {
       "metrics",
       "errors",
       "security",
+      "security-settings",
       "volumes",
       "backups",
       "terminal",

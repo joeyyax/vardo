@@ -4,16 +4,16 @@ import {
   DEFAULT_INSTANCE_PROBE_GUARD,
   appProbeGuardSchema,
   decoyPath,
-  detectWordPress,
+  instanceProbeGuardPartialSchema,
   instanceProbeGuardSchema,
-  isWordPress,
+  mergeInstanceProbeGuard,
   normalizeAppProbeGuard,
   normalizeInstanceProbeGuard,
 } from "@/lib/probe-guard/settings";
 
 describe("app settings", () => {
   it("default to on with no exceptions", () => {
-    expect(normalizeAppProbeGuard(null)).toEqual({ enabled: true, exceptions: [], wordpress: "auto", robotsTxt: false });
+    expect(normalizeAppProbeGuard(null)).toEqual({ enabled: true, exceptions: [], rules: {}, blocks: [], templates: [], robotsTxt: false });
     expect(normalizeAppProbeGuard({ enabled: "yes" })).toEqual(DEFAULT_APP_PROBE_GUARD);
   });
 
@@ -21,6 +21,24 @@ describe("app settings", () => {
     const ok = appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, exceptions: ["/a", "/a", " /b "] });
     expect(ok.success && ok.data.exceptions).toEqual(["/a", "/b"]);
     expect(appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, exceptions: ["/x`"] }).success).toBe(false);
+  });
+});
+
+describe("app rules and blocks", () => {
+  it("read a legacy row as the default", () => {
+    expect(normalizeAppProbeGuard({ enabled: true, exceptions: [], wordpress: "auto", robotsTxt: false })).toEqual(DEFAULT_APP_PROBE_GUARD);
+  });
+
+  it("drop rule ids that no longer exist when reading, refuse them when saving", () => {
+    expect(normalizeAppProbeGuard({ ...DEFAULT_APP_PROBE_GUARD, rules: { gone: true, dotenv: false } }).rules).toEqual({ dotenv: false });
+    expect(appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, rules: { gone: true } }).success).toBe(false);
+  });
+
+  it("dedupe blocks and refuse a bad one", () => {
+    const blocks = [{ kind: "prefix", value: "/old" }, { kind: "prefix", value: "/old" }, { kind: "exact", value: "/old" }];
+    const ok = appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, blocks });
+    expect(ok.success && ok.data.blocks).toHaveLength(2);
+    expect(appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, blocks: [{ kind: "regex", value: ".*" }] }).success).toBe(false);
   });
 });
 
@@ -50,24 +68,52 @@ describe("instance settings", () => {
   });
 });
 
-describe("detectWordPress", () => {
-  it("reads the image, template and compose file", () => {
-    expect(detectWordPress({ imageName: "wordpress:6-php8.3" })).toBe(true);
-    expect(detectWordPress({ imageName: "bitnami/wordpress" })).toBe(true);
-    expect(detectWordPress({ templateName: "wordpress" })).toBe(true);
-    expect(detectWordPress({ composeContent: "services:\n  wp:\n    image: wordpress:latest\n" })).toBe(true);
-    expect(detectWordPress({ childImages: [null, "docker.io/library/wordpress@sha256:abc"] })).toBe(true);
+describe("mergeInstanceProbeGuard", () => {
+  const stored = {
+    ...DEFAULT_INSTANCE_PROBE_GUARD,
+    threshold: 7,
+    traps: { enabled: false, paths: ["/old/"], decoy: false },
+    exceptions: ["/kept"],
+    blocks: [{ kind: "prefix" as const, value: "/kept-block" }],
+    securityContact: "old@example.com",
+  };
+
+  it("keeps other fields when only one top-level field is patched", () => {
+    const merged = mergeInstanceProbeGuard(stored, { threshold: 11 });
+    expect(merged.threshold).toBe(11);
+    expect(merged.traps).toEqual(stored.traps);
+    expect(merged.exceptions).toEqual(stored.exceptions);
+    expect(merged.blocks).toEqual(stored.blocks);
+    expect(merged.securityContact).toBe(stored.securityContact);
   });
 
-  it("ignores lookalikes", () => {
-    expect(detectWordPress({ imageName: "ghost:5" })).toBe(false);
-    expect(detectWordPress({ imageName: "acme/wordpress-exporter" })).toBe(false);
-    expect(detectWordPress({ composeContent: "# migrated from wordpress\nservices:\n  web:\n    image: nginx\n" })).toBe(false);
+  it("merges traps one level deep", () => {
+    const merged = mergeInstanceProbeGuard(stored, { traps: { enabled: true, paths: ["/new/"] } });
+    expect(merged.traps).toEqual({ enabled: true, paths: ["/new/"], decoy: false });
   });
 
-  it("lets the setting override detection", () => {
-    expect(isWordPress({ ...DEFAULT_APP_PROBE_GUARD, wordpress: "off" }, true)).toBe(false);
-    expect(isWordPress({ ...DEFAULT_APP_PROBE_GUARD, wordpress: "on" }, false)).toBe(true);
-    expect(isWordPress(DEFAULT_APP_PROBE_GUARD, true)).toBe(true);
+  it("replaces exceptions and blocks wholesale", () => {
+    const merged = mergeInstanceProbeGuard(stored, { exceptions: ["/new-ex"], blocks: [{ kind: "exact", value: "/new-block" }] });
+    expect(merged.exceptions).toEqual(["/new-ex"]);
+    expect(merged.blocks).toEqual([{ kind: "exact", value: "/new-block" }]);
+  });
+
+  it("rejects unknown top-level and traps fields", () => {
+    expect(() => mergeInstanceProbeGuard(stored, { unknown: true } as never)).toThrow(/Unknown field/);
+    expect(() => mergeInstanceProbeGuard(stored, { traps: { unknown: true } as never })).toThrow(/Unknown traps field/);
+  });
+
+  it("partial schema refuses values outside the full schema's range", () => {
+    const ok = instanceProbeGuardPartialSchema.safeParse({ threshold: 2 });
+    expect(ok.success).toBe(true);
+    const bad = instanceProbeGuardPartialSchema.safeParse({ threshold: 1 });
+    expect(bad.success).toBe(false);
+  });
+
+  it("refuses a merge that makes the full schema invalid", () => {
+    const stored = { ...DEFAULT_INSTANCE_PROBE_GUARD, maxBanHours: 1 };
+    const merged = mergeInstanceProbeGuard(stored, { banMinutes: 600 });
+    const final = instanceProbeGuardSchema.safeParse(merged);
+    expect(final.success).toBe(false);
   });
 });

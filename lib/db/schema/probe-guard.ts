@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { apps } from "./apps";
 import { meshPeers } from "./mesh";
 
@@ -72,4 +72,27 @@ export const probeEvents = pgTable(
     index("probe_event_created_at_idx").on(t.createdAt),
     index("probe_event_app_created_idx").on(t.appId, t.createdAt),
   ],
+);
+
+export const PROBE_RECOMMENDATION_STATUSES = ["pending", "applied", "ignored"] as const;
+export type ProbeRecommendationStatus = (typeof PROBE_RECOMMENDATION_STATUSES)[number];
+
+/** A stack template a scan recognized in an app. Ignored ones stay ignored until the template's version changes. */
+export const probeRecommendations = pgTable(
+  "probe_recommendation",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    templateId: text("template_id").notNull(),
+    /** The template version the status was set against. */
+    templateVersion: integer("template_version").notNull(),
+    status: text("status", { enum: PROBE_RECOMMENDATION_STATUSES }).notNull().default("pending"),
+    /** Set when a new template version reopened an ignored recommendation. */
+    updated: boolean("updated").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("probe_recommendation_app_template_uniq").on(t.appId, t.templateId)],
 );

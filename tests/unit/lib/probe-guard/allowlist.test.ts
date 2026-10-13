@@ -139,7 +139,7 @@ describe("skip-guard rendering", () => {
   const KEY = "a".repeat(64);
   const state = (over: Partial<GuardState> = {}): GuardState => ({
     key: KEY,
-    apps: [{ id: "app1", hosts: ["shop.example.com"], exceptions: [], wordpress: false, robotsTxt: false }],
+    apps: [{ id: "app1", hosts: ["shop.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false }],
     bannedIps: ["198.51.100.66"],
     trapPaths: ["/admin-backup/"],
     markers: ["abcdefghjk23"],

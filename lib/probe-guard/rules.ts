@@ -21,8 +21,8 @@ export type ProbeRule = {
   status: 403 | 404;
   /** Anchored at the start of the path. */
   pattern: string;
-  /** Skipped for WordPress apps. */
-  wordpress?: true;
+  /** Off until an app opts in: real software serves the path on some apps. */
+  suggested?: true;
   /** Abuse reporting: "exploit" is reported on sight, "credentials" only as part of a ban. */
   report?: ReportKind;
 };
@@ -38,9 +38,9 @@ export const PROBE_RULES: readonly ProbeRule[] = [
   { id: "git", category: "vcs", label: "Git metadata", status: 404, pattern: String.raw`^.*/\.git(?:/|$)` },
   { id: "svn-hg", category: "vcs", label: "version control metadata", status: 404, pattern: String.raw`^.*/\.(?:svn|hg|bzr)(?:/|$)` },
   { id: "ds-store", category: "vcs", label: "macOS folder metadata", status: 404, pattern: String.raw`^.*/\.DS_Store$` },
-  { id: "wp-login", category: "wordpress", label: "WordPress login", status: 403, wordpress: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/wp-login\.php(?:/|$)` },
-  { id: "wp-admin", category: "wordpress", label: "WordPress admin", status: 403, wordpress: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/wp-admin(?:/|$)` },
-  { id: "xmlrpc", category: "wordpress", label: "WordPress XML-RPC", status: 403, wordpress: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/xmlrpc\.php(?:/|$)` },
+  { id: "wp-login", category: "wordpress", label: "WordPress login", status: 403, suggested: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/wp-login\.php(?:/|$)` },
+  { id: "wp-admin", category: "wordpress", label: "WordPress admin", status: 403, suggested: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/wp-admin(?:/|$)` },
+  { id: "xmlrpc", category: "wordpress", label: "WordPress XML-RPC", status: 403, suggested: true, pattern: String.raw`^(?:/(?:wordpress|wp|blog))?/xmlrpc\.php(?:/|$)` },
   { id: "phpmyadmin", category: "db-admin", label: "phpMyAdmin", status: 403, pattern: String.raw`^/(?:phpmyadmin[^/]*|pma|myadmin|mysqladmin|adminer\.php)(?:/|$)` },
   { id: "cgi-bin", category: "cgi", label: "CGI scripts", status: 403, pattern: String.raw`^/cgi-bin(?:/|$)` },
   { id: "phpunit", category: "framework", label: "PHPUnit exploit (RCE)", status: 403, report: "exploit", pattern: String.raw`^.*/vendor/phpunit(?:/|$)` },
@@ -50,7 +50,7 @@ export const PROBE_RULES: readonly ProbeRule[] = [
   { id: "actuator-index", category: "framework", label: "Spring Boot Actuator", status: 403, pattern: String.raw`^/actuator/?$` },
   { id: "server-status", category: "server-info", label: "Apache server status", status: 403, pattern: String.raw`^/server-(?:status|info)(?:/|$)` },
   { id: "php-backup", category: "backup", label: "config backups", status: 404, pattern: String.raw`^.*/(?:wp-config|config|configuration|settings|database|db|local)\.php(?:\.bak|\.old|\.orig|\.save|\.swp|\.txt|\.dist|~)$` },
-  { id: "wp-config", category: "backup", label: "WordPress config", status: 404, pattern: String.raw`^.*/wp-config\.php$`, wordpress: true },
+  { id: "wp-config", category: "backup", label: "WordPress config", status: 404, pattern: String.raw`^.*/wp-config\.php$`, suggested: true },
   { id: "sql-dump", category: "backup", label: "SQL dumps", status: 404, pattern: String.raw`^/(?:backup|dump|db|database|data|site|www|mysql)\.sql(?:\.gz|\.zip|\.bz2)?$` },
   { id: "traversal", category: "traversal", label: "path traversal", status: 403, report: "exploit", pattern: String.raw`^.*/(?:etc/(?:passwd|shadow)|windows/win\.ini|proc/self/environ)$` },
   { id: "router-exploits", category: "router", label: "router exploits", status: 403, report: "exploit", pattern: String.raw`^/(?:boaform|HNAP1|GponForm)(?:/|$)` },
@@ -58,9 +58,17 @@ export const PROBE_RULES: readonly ProbeRule[] = [
 
 export type ProbeMatch = { rule: ProbeRule };
 
+/** Per-app switches by rule id; a rule without an entry keeps its default. */
+export type RuleOverrides = Record<string, boolean>;
+
+/** Overrides that turn every opt-in rule on. */
+export const SUGGESTED_RULES_ON: RuleOverrides = Object.fromEntries(PROBE_RULES.filter((r) => r.suggested).map((r) => [r.id, true]));
+
+export const PROBE_RULE_IDS: ReadonlySet<string> = new Set(PROBE_RULES.map((r) => r.id));
+
 /** The rules that apply to an app. */
-export function activeRules(opts: { wordpress: boolean }): ProbeRule[] {
-  return PROBE_RULES.filter((r) => !(opts.wordpress && r.wordpress));
+export function activeRules(overrides: RuleOverrides = {}): ProbeRule[] {
+  return PROBE_RULES.filter((r) => overrides[r.id] ?? !r.suggested);
 }
 
 const compiled = new Map<string, RegExp>();
@@ -78,13 +86,10 @@ export function isExcepted(path: string, exceptions: readonly string[]): boolean
   return exceptions.some((e) => path.startsWith(e));
 }
 
-/** The first rule a path trips, or null. Mirrors the Traefik rule renderProbeMatcher builds. */
-export function matchProbe(
-  path: string,
-  opts: { wordpress?: boolean; exceptions?: readonly string[] } = {},
-): ProbeMatch | null {
+/** The first rule a path trips, or null. Checks every rule: a request Traefik routed here already tripped one, and labels it. */
+export function matchProbe(path: string, opts: { exceptions?: readonly string[] } = {}): ProbeMatch | null {
   if (opts.exceptions && isExcepted(path, opts.exceptions)) return null;
-  for (const rule of activeRules({ wordpress: !!opts.wordpress })) {
+  for (const rule of PROBE_RULES) {
     if (regex(rule.pattern).test(path)) return { rule };
   }
   return null;
@@ -104,18 +109,13 @@ export function probeLabel(path: string): string {
   return matchProbe(path)?.rule.label ?? OTHER_PROBE_LABEL;
 }
 
-/** One case-insensitive PathRegexp alternation over the rules. */
-export function probePathRegexp(rules: readonly ProbeRule[]): string {
-  return `(?i)${rules.map((r) => `(?:${r.pattern})`).join("|")}`;
-}
-
-const EXCEPTION_RE = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,199}$/;
+export const PATH_RE = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,199}$/;
 export const MAX_EXCEPTIONS = 50;
 
 /** Why an exception path is refused, or null. */
 export function exceptionProblem(path: string): string | null {
   if (!path.startsWith("/")) return `"${path.slice(0, 60)}" must start with /`;
-  if (!EXCEPTION_RE.test(path)) return `"${path.slice(0, 60)}" has characters a path can't`;
+  if (!PATH_RE.test(path)) return `"${path.slice(0, 60)}" has characters a path can't`;
   if (path === "/") return "Turn the guard off instead of excepting /";
   return null;
 }

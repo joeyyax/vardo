@@ -58,6 +58,33 @@ export const abuseSettingsBodySchema = z
   })
   .strict();
 
+/** Each settings field is independent. Cards send only the fields they own. */
+export const abuseSettingsPartialSchema = z
+  .object({
+    reporting: z.object({ enabled: z.boolean(), dailyCap: z.number().int().min(1).max(MAX_DAILY_CAP) }).strict().optional(),
+    blocklists: z
+      .object({
+        abuseipdb: z.object({ enabled: z.boolean(), minConfidence: z.number().int().min(MIN_CONFIDENCE).max(100) }).strict().optional(),
+        spamhaus: z.object({ enabled: z.boolean() }).strict().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type AbuseSettingsPartial = z.infer<typeof abuseSettingsPartialSchema>;
+
+/** Shallow merge for `AbuseSettings`; one level deep into `reporting` and each blocklist entry. */
+export function mergeAbuseSettings(current: AbuseSettings, patch: AbuseSettingsPartial): AbuseSettings {
+  const reporting = patch.reporting ? { ...current.reporting, ...patch.reporting } : current.reporting;
+  const abuseipdb = patch.blocklists?.abuseipdb ? { ...current.blocklists.abuseipdb, ...patch.blocklists.abuseipdb } : current.blocklists.abuseipdb;
+  const spamhaus = patch.blocklists?.spamhaus ? { ...current.blocklists.spamhaus, ...patch.blocklists.spamhaus } : current.blocklists.spamhaus;
+  return {
+    reporting,
+    blocklists: { abuseipdb, spamhaus },
+  };
+}
+
 export type BlocklistSourceStatus = {
   count: number;
   fetchedAt: string | null;

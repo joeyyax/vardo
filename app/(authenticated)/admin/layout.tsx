@@ -25,7 +25,7 @@ const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     label: "Access",
     items: [
       { label: "Sign-in", href: "/admin/settings/authentication" },
-      { label: "Security", href: "/admin/settings/security" },
+      { label: "Probe guard", href: "/admin/probe-guard" },
     ],
   },
   {
@@ -70,13 +70,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   const groups: SettingsNavGroup[] = [
     { items: [{ label: "Overview", href: "/admin", exact: true }] },
-    {
-      label: "Manage",
-      items: [
-        { label: "Organizations", href: "/admin/organizations" },
-        { label: "Users", href: "/admin/users" },
-      ],
-    },
+{
+    label: "Manage",
+    items: [
+      { label: "Organizations", href: "/admin/organizations" },
+      { label: "Users", href: "/admin/users" },
+      { label: "Security", href: "/admin/security" },
+    ],
+  },
     ...settingsGroups,
   ];
 

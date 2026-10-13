@@ -95,6 +95,34 @@ vi.mock("@/lib/security/ports", () => ({
   checkExposedPorts: vi.fn().mockReturnValue([]),
 }));
 
+const { mockFingerprintApp, mockRecordRecognized } = vi.hoisted(() => ({
+  mockFingerprintApp: vi.fn(),
+  mockRecordRecognized: vi.fn(),
+}));
+
+vi.mock("@/lib/security/template-fingerprint", () => ({
+  fingerprintApp: mockFingerprintApp,
+}));
+
+vi.mock("@/lib/probe-guard/recommendations", () => ({
+  recordRecognized: mockRecordRecognized,
+}));
+
+const { mockNormalizeAppProbeGuard } = vi.hoisted(() => ({
+  mockNormalizeAppProbeGuard: vi.fn((raw: { templates?: string[] } | null | undefined) => ({
+    enabled: true,
+    exceptions: [],
+    rules: {},
+    blocks: [],
+    templates: raw && Array.isArray(raw.templates) ? raw.templates : [],
+    robotsTxt: false,
+  })),
+}));
+
+vi.mock("@/lib/probe-guard/settings", () => ({
+  normalizeAppProbeGuard: mockNormalizeAppProbeGuard,
+}));
+
 vi.mock("@/lib/logger", () => ({
   logger: {
     child: () => ({
@@ -129,7 +157,12 @@ const baseApp = {
   name: "test-app",
   displayName: "Test App",
   exposedPorts: null,
+  imageName: null,
+  composeContent: null,
+  parentAppId: null,
+  probeGuard: { enabled: true, exceptions: [], rules: {}, blocks: [], templates: [], robotsTxt: false },
   domains: [{ domain: "example.com", isPrimary: true, sslEnabled: true }],
+  childApps: [],
 };
 
 beforeEach(() => {
@@ -156,6 +189,16 @@ beforeEach(() => {
   mockCheckSecurityHeaders.mockResolvedValue([]);
   mockCheckTls.mockResolvedValue([]);
   mockCheckExposedPorts.mockReturnValue([]);
+  mockFingerprintApp.mockResolvedValue({ recognizedIds: [] });
+  mockRecordRecognized.mockResolvedValue(undefined);
+  mockNormalizeAppProbeGuard.mockImplementation((raw: { templates?: string[] } | null | undefined) => ({
+    enabled: true,
+    exceptions: [],
+    rules: {},
+    blocks: [],
+    templates: raw && Array.isArray(raw.templates) ? raw.templates : [],
+    robotsTxt: false,
+  }));
 });
 
 // ---------------------------------------------------------------------------
@@ -312,6 +355,65 @@ describe("runSecurityScan", () => {
       expect(event.apps).toEqual([
         { appId: "app-1", appName: "Test App", domain: "example.com", findings: [{ severity: "critical", title: ".env is served", description: "Secrets are public." }] },
       ]);
+    });
+  });
+
+  describe("template fingerprinting", () => {
+    it("calls recordRecognized with the guard's applied templates and the recognized ids", async () => {
+      mockFingerprintApp.mockResolvedValue({ recognizedIds: ["wordpress"] });
+      mockFindFirstApp.mockResolvedValueOnce({
+        ...baseApp,
+        probeGuard: { ...baseApp.probeGuard, templates: ["laravel"] },
+      });
+
+      await runSecurityScan({ appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+      expect(mockRecordRecognized).toHaveBeenCalledTimes(1);
+      expect(mockRecordRecognized).toHaveBeenCalledWith("app-1", ["wordpress"], ["laravel"]);
+    });
+
+    it("passes the app's imageName, composeContent and child images to fingerprintApp", async () => {
+      mockFindFirstApp.mockResolvedValueOnce({
+        ...baseApp,
+        imageName: "wordpress:6",
+        composeContent: "services:\n  db:\n    image: 'postgres:16'\n",
+        childApps: [{ imageName: "redis:7" }],
+      });
+
+      await runSecurityScan({ appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+      expect(mockFingerprintApp).toHaveBeenCalledTimes(1);
+      const input = mockFingerprintApp.mock.calls[0][0];
+      expect(input.appId).toBe("app-1");
+      expect(input.imageName).toBe("wordpress:6");
+      expect(input.composeContent).toContain("postgres:16");
+      expect(input.childImages).toEqual(["redis:7"]);
+      expect(input.domain).toBe("example.com");
+    });
+
+    it("does not call recordRecognized when fingerprint found nothing", async () => {
+      mockFingerprintApp.mockResolvedValue({ recognizedIds: [] });
+
+      await runSecurityScan({ appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+      expect(mockRecordRecognized).not.toHaveBeenCalled();
+    });
+
+    it("uses the top-level app id for recordRecognized when this is a compose child", async () => {
+      mockFingerprintApp.mockResolvedValue({ recognizedIds: ["wordpress"] });
+      // parentAppId is just a column read; recordRecognized should always get app.id.
+      mockFindFirstApp.mockResolvedValueOnce({ ...baseApp, parentAppId: "parent-app-id" });
+
+      await runSecurityScan({ appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+      expect(mockRecordRecognized).toHaveBeenCalledWith("app-1", ["wordpress"], expect.anything());
+    });
+
+    it("ignores fingerprint failures without failing the scan", async () => {
+      mockFingerprintApp.mockRejectedValue(new Error("network down"));
+
+      await expect(runSecurityScan({ appId: "app-1", organizationId: "org-1", trigger: "manual" })).resolves.toBeTruthy();
+      expect(mockRecordRecognized).not.toHaveBeenCalled();
     });
   });
 });
