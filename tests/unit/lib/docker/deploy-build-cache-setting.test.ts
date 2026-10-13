@@ -14,7 +14,7 @@ const { dbMock, state } = vi.hoisted(() => {
 
   const dbMock = {
     update: vi.fn().mockImplementation(() => ({
-      set: vi.fn().mockImplementation(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      set: vi.fn().mockImplementation(() => ({ where: vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] })) })),
     })),
     query: {
       apps: {

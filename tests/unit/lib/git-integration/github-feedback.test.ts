@@ -362,6 +362,43 @@ describe("deploy feedback", () => {
     expect(JSON.stringify(calls)).not.toContain("npm ERR");
   });
 
+  it("posts no success when the sweeper closed the row before the deploy's own write", async () => {
+    let status = "running";
+    const { feedback, calls } = harness({ deps: { readStatus: async () => status } });
+    const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+    t.stage("compose", "running");
+    await settle();
+    status = "failed";
+    t.finish({ status: "success", durationMs: 1000 });
+    await settle();
+    const commitStates = calls.filter((c) => c.path.includes("/statuses/abcdef")).map((c) => (c.body as { state: string }).state);
+    expect(commitStates).toEqual(["pending"]);
+    expect(calls.some((c) => (c.body as { state?: string } | undefined)?.state === "success")).toBe(false);
+  });
+
+  it("goes silent on stages once another process closed the row", async () => {
+    const { feedback, calls } = harness({ deps: { readStatus: async () => "failed" } });
+    const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+    await settle();
+    const before = calls.length;
+    t.stage("clone", "running");
+    t.stage("deploy", "running");
+    await settle();
+    expect(calls.slice(before).filter((c) => c.method !== "GET")).toHaveLength(0);
+  });
+
+  it("still posts success when the deploy's own write recorded it", async () => {
+    let status = "running";
+    const { feedback, calls } = harness({ deps: { readStatus: async () => status } });
+    const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+    t.stage("compose", "running");
+    await settle();
+    status = "success";
+    t.finish({ status: "success", durationMs: 1000 });
+    await settle();
+    expect(calls.filter((c) => c.path.includes("/statuses/abcdef")).at(-1)?.body).toMatchObject({ state: "success" });
+  });
+
   it("skips commit statuses on a manual redeploy of the branch", async () => {
     const { feedback, calls } = harness({ info: info({ trigger: "manual" }) });
     const t = feedback.trackDeploy("dep-1", { trigger: "manual" });

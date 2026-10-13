@@ -599,7 +599,7 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(eq(deployments.id, deploymentId));
+          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
@@ -627,7 +627,7 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(eq(deployments.id, deploymentId));
+          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
 
         // Guarded so a newer deploy keeps ownership; the reconciler corrects "stopped" from Docker.
         if (ownsAppStatus) {
@@ -698,12 +698,15 @@ export async function runDeployment(
     }
 
     fail();
-    await db
+    // A row the sweeper already closed keeps its record and the app status it set.
+    const recorded = await db
       .update(deployments)
       .set({ status: "failed", log: logLines.join("\n"), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])))
+      .returning({ id: deployments.id })
+      .then((rows) => rows.length > 0);
 
-    if (ownsAppStatus) {
+    if (ownsAppStatus && recorded) {
       await db
         .update(apps)
         .set(statusChange(keptNewSlot ? "active" : "error"))

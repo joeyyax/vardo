@@ -28,7 +28,7 @@ const { dbMock, events, dockerCalls } = vi.hoisted(() => {
   };
 
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
+    const where = vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] }));
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       const isDeploymentRow = typeof values.status === "string" && "finishedAt" in values;
       if (isDeploymentRow) events.push({ kind: "row", detail: String(values.status) });

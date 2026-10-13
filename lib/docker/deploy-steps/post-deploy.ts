@@ -326,25 +326,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  if (!ctx.envIsolated) {
-    await db
-      .update(apps)
-      .set({
-        ...statusChange("active"),
-        needsRedeploy: false,
-        ...(ctx.headersLive !== undefined ? { securityHeadersLive: ctx.headersLive } : {}),
-        kind: inferServiceKind({
-          image: app.imageName,
-          serviceName: app.composeService ?? app.name,
-          hasPort: !!app.containerPort || app.domains.length > 0,
-        }),
-      })
-      .where(eq(apps.id, ctx.appId));
-
-    // A successful deploy clears the operator stop.
-    await setParked(ctx.appId, false);
-  }
-
   // Config snapshot for rollback.
   let envSnapshot: string | null = null;
   if (app.envContent) {
@@ -389,7 +370,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   };
 
   const durationMs = Date.now() - ctx.startTime;
-  await db
+  // Only while still in progress: the sweeper may have closed the row already.
+  const recorded = await db
     .update(deployments)
     .set({
       status: "success",
@@ -401,10 +383,34 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       slot: ctx.newSlot,
       ...(swapUnfinished.length > 0 && { postDeployError: swapUnfinished.join("\n") }),
     })
-    .where(eq(deployments.id, ctx.deploymentId));
+    .where(and(eq(deployments.id, ctx.deploymentId), inArray(deployments.status, ["queued", "running"])))
+    .returning({ id: deployments.id })
+    .then((rows) => rows.length > 0);
 
-  // Committed. Nothing below may take the new slot down when it throws.
+  // Committed, or serving under a record closed elsewhere. Nothing below may take the new slot down when it throws.
   ctx.succeeded = true;
+  if (!recorded) {
+    log(`[deploy] ${newSlot} is serving, but the deployment was closed elsewhere first, as by the sweeper; keeping that record`);
+  }
+
+  if (recorded && !ctx.envIsolated) {
+    await db
+      .update(apps)
+      .set({
+        ...statusChange("active"),
+        needsRedeploy: false,
+        ...(ctx.headersLive !== undefined ? { securityHeadersLive: ctx.headersLive } : {}),
+        kind: inferServiceKind({
+          image: app.imageName,
+          serviceName: app.composeService ?? app.name,
+          hasPort: !!app.containerPort || app.domains.length > 0,
+        }),
+      })
+      .where(eq(apps.id, ctx.appId));
+
+    // A successful deploy clears the operator stop.
+    await setParked(ctx.appId, false);
+  }
 
   for (const reason of swapUnfinished) await announcePostDeployIncomplete(ctx, reason);
 
@@ -536,24 +542,26 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Closes the deploy stream; must follow the success write.
   ctx.stage("done", "success");
 
-  // Announcements are fire-and-forget.
-  addEvent(ctx.organizationId, {
-    type: "deploy.status",
-    title: "Deploy succeeded",
-    message: `Deployment ${ctx.deploymentId} completed successfully`,
-    appId: ctx.appId,
-    deploymentId: ctx.deploymentId,
-    status: "active",
-    success: true,
-    durationMs,
-  }).catch(() => {});
+  // Announcements are fire-and-forget. A record closed elsewhere was announced there.
+  if (recorded) {
+    addEvent(ctx.organizationId, {
+      type: "deploy.status",
+      title: "Deploy succeeded",
+      message: `Deployment ${ctx.deploymentId} completed successfully`,
+      appId: ctx.appId,
+      deploymentId: ctx.deploymentId,
+      status: "active",
+      success: true,
+      durationMs,
+    }).catch(() => {});
 
-  recordActivity({
-    organizationId: ctx.organizationId,
-    action: "deployment.succeeded",
-    appId: ctx.appId,
-    metadata: { deploymentId: ctx.deploymentId, durationMs },
-  }).catch(() => {});
+    recordActivity({
+      organizationId: ctx.organizationId,
+      action: "deployment.succeeded",
+      appId: ctx.appId,
+      metadata: { deploymentId: ctx.deploymentId, durationMs },
+    }).catch(() => {});
+  }
 
   // Waits for Traefik to route to the new slot.
   const { organizationId, appId } = ctx;
@@ -563,15 +571,17 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       .catch(() => {});
   }, POST_DEPLOY_SCAN_DELAY_MS).unref();
 
-  sendDeployNotification({
-    app,
-    deploymentId: ctx.deploymentId,
-    success: true,
-    durationMs,
-    ctx,
-    trigger: ctx.trigger,
-    stageTimings: ctx.timer?.snapshot(),
-  }).catch(() => {});
+  if (recorded) {
+    sendDeployNotification({
+      app,
+      deploymentId: ctx.deploymentId,
+      success: true,
+      durationMs,
+      ctx,
+      trigger: ctx.trigger,
+      stageTimings: ctx.timer?.snapshot(),
+    }).catch(() => {});
+  }
 
   if (!ctx.envIsolated) {
     import("@/lib/backups/initial-backup")

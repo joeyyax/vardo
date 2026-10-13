@@ -29,7 +29,7 @@ const { dbMock, writes, emitMock, addEventMock } = vi.hoisted(() => {
   };
 
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
+    const where = vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] }));
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       writes.push({ table, values });
       return { where };

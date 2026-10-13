@@ -626,6 +626,17 @@ export function createFeedback(deps: FeedbackDeps) {
       let ghDeploymentId: number | null = null;
       let ghClient: Conn | null = null;
       let started = false;
+      // Latched once another process, such as the sweeper, closed the row: this deploy's later states are stale.
+      let closed = false;
+      const closedElsewhere = async (expected: string[]) => {
+        if (closed || !deps.readStatus) return closed;
+        const status = await deps.readStatus(deploymentId).catch(() => null);
+        if (status && !expected.includes(status)) {
+          closed = true;
+          log.info(`Deploy feedback for ${deploymentId} stopped: the deployment was closed as ${status}`);
+        }
+        return closed;
+      };
 
       const load = async () => {
         if (!loaded) {
@@ -698,7 +709,7 @@ export function createFeedback(deps: FeedbackDeps) {
           if (status !== "running") return;
           enqueue(async () => {
             const i = await load();
-            if (!i) return;
+            if (!i || (await closedElsewhere(["queued", "running"]))) return;
             if (stage === "clone") {
               await deploymentStatus(i, "in_progress", "Building");
               await setPreviewRow(i, { state: "building" }, sha);
@@ -716,6 +727,9 @@ export function createFeedback(deps: FeedbackDeps) {
           enqueue(async () => {
             const i = await load();
             if (!i) return;
+            // Success only stands if this deploy's own write recorded it.
+            if (result.status === "success" && (await closedElsewhere(["success"]))) return;
+            if (closed) return;
             await begin(i);
             const instance = await deps.instance();
             const logUrl = deployPageUrl(instance.consoleUrl, i.appId, deploymentId);

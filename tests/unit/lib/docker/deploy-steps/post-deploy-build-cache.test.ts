@@ -19,7 +19,7 @@ const { dbMock, emitMock, pruneBuildCacheMock, queueDrained, lockAcquired } =
     const lockAcquired = vi.fn().mockResolvedValue(true);
 
     const dbMock = {
-      update: vi.fn().mockImplementation(() => ({ set: () => ({ where: async () => undefined }) })),
+      update: vi.fn().mockImplementation(() => ({ set: () => ({ where: () => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] }) }) })),
       insert: vi
         .fn()
         .mockReturnValue({ values: () => ({ onConflictDoNothing: async () => undefined }) }),

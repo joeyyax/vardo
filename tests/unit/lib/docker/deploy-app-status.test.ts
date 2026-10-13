@@ -11,17 +11,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // the exit paths run without the rest of the pipeline.
 // ---------------------------------------------------------------------------
 
-const { dbMock, addEventMock, statusWrites } = vi.hoisted(() => {
+const { dbMock, addEventMock, statusWrites, closedFirst } = vi.hoisted(() => {
   type Write = { table: unknown; values: Record<string, unknown> };
   const statusWrites: Write[] = [];
   const addEventMock = vi.fn().mockResolvedValue("1-0");
+  /** The sweeper closed the row first: the conditional failed write matches nothing. */
+  const closedFirst = { value: false };
 
   // db.update(table).set(values).where(cond)
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       statusWrites.push({ table, values });
-      return { where };
+      const rows = closedFirst.value && values.status === "failed" ? [] : [{ id: "row" }];
+      return { where: vi.fn(() => Object.assign(Promise.resolve(undefined), { returning: async () => rows })) };
     });
     return { set };
   }
@@ -39,7 +41,7 @@ const { dbMock, addEventMock, statusWrites } = vi.hoisted(() => {
     select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),
   };
 
-  return { dbMock, addEventMock, statusWrites };
+  return { dbMock, addEventMock, statusWrites, closedFirst };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -99,6 +101,15 @@ describe("runDeployment app status ownership", () => {
   beforeEach(() => {
     statusWrites.length = 0;
     addEventMock.mockClear();
+    closedFirst.value = false;
+  });
+
+  it("leaves the app status the sweeper set when it closed the row first", async () => {
+    closedFirst.value = true;
+    const result = await runDeployment("dep-1", OPTS);
+
+    expect(result.success).toBe(false);
+    expect(statusSequence()).toEqual(["deploying"]);
   });
 
   it("claims deploying and emits a start event before doing any work", async () => {
