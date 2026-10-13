@@ -281,6 +281,26 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     expect(ids).toEqual(["edge", "new"]);
   });
 
+  it("keeps the newest checks of each domain, not the newest overall", async () => {
+    await sql`insert into domain (id, app_id, domain) values ('d-quiet', 'web', 'quiet.example.com')`;
+    try {
+      for (let i = 0; i < 15; i++) {
+        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`busy${i}`}, 'd1', true, ${new Date(NOW - i * 60_000)})`;
+      }
+      for (let i = 0; i < 3; i++) {
+        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`quiet${i}`}, 'd-quiet', true, ${new Date(NOW - HOUR - i * 60_000)})`;
+      }
+
+      const checks = await monitor.recentChecks(["d1", "d-quiet"], 10);
+
+      expect(checks.filter((c) => c.domainId === "d1").map((c) => c.id)).toEqual(Array.from({ length: 10 }, (_, i) => `busy${i}`));
+      expect(checks.filter((c) => c.domainId === "d-quiet")).toHaveLength(3);
+      expect(await monitor.recentChecks([], 10)).toEqual([]);
+    } finally {
+      await sql`delete from domain where id = 'd-quiet'`;
+    }
+  });
+
   it("serves summaries, hour-of-day and daily reads from the rows", async () => {
     addContainer("web", "c1", NOW - 48 * HOUR, NOW);
     await rollup.rollupHours({ now: NOW });
