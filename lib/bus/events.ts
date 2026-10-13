@@ -281,6 +281,8 @@ export type CronFailedEvent = {
   /** ISO time of the last successful run. */
   lastSuccessAt?: string;
   logTail?: string[];
+  /** Up to the last 24 runs, oldest first, this one included. */
+  recentRuns?: ("success" | "failed")[];
 };
 
 export type VolumeDriftEvent = {
@@ -353,6 +355,8 @@ export type SystemCertExpiringEvent = {
   daysLeft: number;
   expiresAt: string;
   resolver: string;
+  /** The app the domains belong to; only its org gets it. */
+  app?: { id: string; name: string; project?: string };
 };
 
 /** A Git provider integration lacks a permission Vardo needs. */

@@ -5,6 +5,8 @@ import {
   certVerdictAlerts,
   certAlertMessage,
   groupByCertificate,
+  describeResolver,
+  certOwner,
   CERT_EXPIRY_THRESHOLD_DAYS,
   type CertProbe,
 } from "@/lib/system-alerts/cert-expiry";
@@ -190,5 +192,26 @@ describe("groupByCertificate", () => {
       { domain: "b.example.com", fingerprint: null },
     ]);
     expect(groups.size).toBe(2);
+  });
+});
+
+describe("describeResolver", () => {
+  it("names the issuer and challenge behind Traefik's resolver", () => {
+    expect(describeResolver("le")).toEqual({ issuer: "Let's Encrypt", challenge: "TLS" });
+    expect(describeResolver("google-dns")).toEqual({ issuer: "Google Trust Services", challenge: "DNS" });
+    expect(describeResolver("unknown")).toEqual({});
+  });
+});
+
+describe("certOwner", () => {
+  const app = (id: string) => ({ id, name: id, organizationId: "org-1" });
+
+  it("returns the app every domain shares", () => {
+    expect(certOwner([{ owner: app("a") }, { owner: app("a") }])?.id).toBe("a");
+  });
+
+  it("returns none when the certificate spans apps", () => {
+    expect(certOwner([{ owner: app("a") }, { owner: app("b") }])).toBeUndefined();
+    expect(certOwner([])).toBeUndefined();
   });
 });

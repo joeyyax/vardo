@@ -1,32 +1,50 @@
-import type { ScanAppReport, SecurityScanFindingsEvent } from "@/lib/bus/events";
+import type { ScanAppReport, ScanFindingLine, SecurityScanFindingsEvent } from "@/lib/bus/events";
 import { plural, truncate } from "../format";
-import type { MailFact, MailLink, MailTone, NotificationMailBody } from "./components";
+import { nameLink, type MailBlock, type MailRich, type MailTone, type NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
-
-const SEVERITY_LABEL: Record<ScanAppReport["findings"][number]["severity"], string> = {
-  critical: "Critical",
-  warning: "Warning",
-  info: "Info",
-};
 
 const SEVERITY_ORDER = { critical: 0, warning: 1, info: 2 } as const;
 
-/** Description length in a finding's row. */
-const DESCRIPTION_MAX = 140;
+/** Description length in a finding's callout. */
+const DESCRIPTION_MAX = 160;
 
-function findingFacts(app: ScanAppReport, ctx: MailContext): MailFact[] {
-  const href = appPage(ctx, app.appId, "security");
-  return [...app.findings]
-    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-    .map((f) => ({
-      label: SEVERITY_LABEL[f.severity],
-      value: `${f.title}. ${truncate(f.description, DESCRIPTION_MAX)}`,
-      href,
-    }));
+/** What a clean scan looked at. */
+export const SCAN_CHECKS = ["exposed files", "headers", "TLS", "open ports"] as const;
+
+const siteUrl = (domain: string) => `https://${domain}`;
+
+/** "Shop · shop.example.com", the name linked to the app. */
+function appLine(app: ScanAppReport, ctx: MailContext): MailRich {
+  return [nameLink(app.appName, appPage(ctx, app.appId)), ...(app.domain ? [` · ${app.domain}`] : [])];
 }
 
-function appTitle(app: ScanAppReport): string {
-  return app.domain ? `${app.appName} · ${app.domain}` : app.appName;
+function findingBlock(f: ScanFindingLine, href: string): MailBlock {
+  return {
+    kind: "callout",
+    tone: f.severity === "critical" ? "bad" : "warn",
+    title: f.title,
+    body: truncate(f.description, DESCRIPTION_MAX),
+    action: { label: "View the finding", href },
+  };
+}
+
+/** One app's findings: critical and warning callouts, info rolled into a note. */
+function appBlocks(app: ScanAppReport, ctx: MailContext): MailBlock[] {
+  const href = appPage(ctx, app.appId, "security");
+  const sorted = [...app.findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+  const shown = sorted.filter((f) => f.severity !== "info");
+  const info = sorted.filter((f) => f.severity === "info");
+  return [
+    { kind: "section", title: appLine(app, ctx) },
+    ...shown.map((f) => findingBlock(f, href)),
+    ...(info.length ? [{ kind: "note", text: `Also ${plural(info.length, "informational finding")}: ${info.map((f) => f.title).join(", ")}.` } satisfies MailBlock] : []),
+  ];
+}
+
+function scanSource(event: SecurityScanFindingsEvent): string {
+  const of = event.scanned ? ` of ${plural(event.scanned, "app")}` : "";
+  if (event.trigger === "deploy") return "From the scan after the deploy.";
+  return `From the scheduled scan${of}.`;
 }
 
 export function securityScanMail(event: SecurityScanFindingsEvent, ctx: MailContext): NotificationMailBody {
@@ -39,33 +57,37 @@ export function securityScanMail(event: SecurityScanFindingsEvent, ctx: MailCont
   const critical = findings.some((f) => f.severity === "critical") || event.criticalCount > 0;
   const tone: MailTone = total === 0 ? "success" : critical ? "fail" : "warn";
   const [first] = apps;
+  const footer = footerFor(ctx);
 
-  const heading = manual
-    ? total
-      ? `The security scan found ${plural(total, "issue")} on ${first.appName}`
-      : `${first.appName} passed its security scan`
-    : apps.length > 1
-      ? `${plural(total, "new security finding")} on ${plural(apps.length, "app")}`
-      : `${plural(total, "new security finding")} on ${first.appName}`;
+  if (total === 0) {
+    return {
+      tone,
+      status: "No issues",
+      heading: `${first.appName} passed its security scan`,
+      preheader: first.domain ? `Nothing turned up on ${first.domain}.` : "Nothing turned up.",
+      blocks: [
+        { kind: "text", text: first.domain ? ["Nothing turned up on ", nameLink(first.domain, siteUrl(first.domain)), "."] : "Nothing turned up." },
+        { kind: "chips", chips: SCAN_CHECKS.map((text) => ({ text })) },
+      ],
+      action: { label: `Open ${first.appName} security`, href: appPage(ctx, first.appId, "security") },
+      footer,
+    };
+  }
 
-  const paragraphs = manual
-    ? [total ? "Every finding from the scan you started is listed." : "Nothing turned up in files, headers, TLS or ports."]
-    : [
-        "Only findings that are new or changed since each app's last scan are listed.",
-        ...(event.scanned ? [`${plural(event.scanned, "app")} scanned. Apps without anything new are left out.`] : []),
-      ];
-
-  const links: MailLink[] = apps.slice(1).map((a) => ({ label: `${a.appName} security`, href: appPage(ctx, a.appId, "security") }));
+  const reported = apps.filter((a) => a.findings.length);
+  const lead = manual
+    ? "Every finding from the scan you started is listed."
+    : `${scanSource(event)} Only findings that are new since each app's last scan are listed.`;
+  const firstFinding = findings.find((f) => f.severity !== "info") ?? findings[0];
+  const firstApp = reported.find((a) => a.findings.includes(firstFinding)) ?? first;
 
   return {
     tone,
-    status: total === 0 ? "No issues" : manual ? "Findings" : "New findings",
-    heading,
-    preheader: findings[0] ? `${findings[0].title} on ${apps.find((a) => a.findings.includes(findings[0]))?.appName ?? first.appName}` : paragraphs[0],
-    paragraphs,
-    sections: apps.filter((a) => a.findings.length).map((a) => ({ title: appTitle(a), facts: findingFacts(a, ctx) })),
-    action: { label: apps.length > 1 ? `Open ${first.appName} security` : "Open security", href: appPage(ctx, first.appId, "security") },
-    links,
-    footer: footerFor(ctx),
+    status: manual ? "Findings" : "New findings",
+    heading: manual ? `The security scan found ${plural(total, "issue")} on ${first.appName}` : plural(total, "new security finding"),
+    preheader: firstFinding ? `${firstFinding.title} on ${firstApp.appName}` : lead,
+    blocks: [{ kind: "text", text: lead }, ...reported.flatMap((a) => appBlocks(a, ctx))],
+    ...(reported.length ? {} : { action: { label: "Open security", href: appPage(ctx, first.appId, "security") } }),
+    footer,
   };
 }

@@ -483,6 +483,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
         "Executed the cron event 'woocommerce_cleanup_sessions' in 0.012s.",
         "PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/wp-includes/class-wpdb.php on line 2349",
       ],
+      recentRuns: [...Array.from({ length: 23 }, () => "success" as const), "failed" as const],
     },
   },
   {
@@ -733,6 +734,20 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       domains: ["acme.example.org", "www.acme.example.org"],
       daysLeft: 6,
       expiresAt: "2026-10-15T12:00:00.000Z",
+      resolver: "le-dns",
+      app: { id: "app_acme", name: "acme-web", project: "Acme Nonprofit" },
+    },
+  },
+  {
+    name: "system-cert-expired",
+    event: {
+      type: "system.cert-expiring",
+      title: "Certificate expired: legacy.example.net",
+      message: "The TLS certificate for legacy.example.net expired 2 days ago.",
+      domain: "legacy.example.net",
+      domains: ["legacy.example.net"],
+      daysLeft: -2,
+      expiresAt: "2026-10-07T12:00:00.000Z",
       resolver: "le",
     },
   },
