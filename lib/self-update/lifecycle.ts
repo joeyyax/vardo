@@ -145,6 +145,13 @@ async function withChanges<E extends Extract<BusEvent, { type: "system.updated" 
   return { ...event, commits: compare.commits, ...moreCommits(compare.aheadBy, compare.commits.length), ...(compare.url ? { changesUrl: compare.url } : {}) } as E;
 }
 
+/** The fleet rollout that ran this update, when one did. */
+async function rolloutOf(record: UpdateRecord): Promise<{ rolloutId?: string }> {
+  const { getUpdateRun } = await import("./store");
+  const run = await getUpdateRun().catch(() => null);
+  return run?.rolloutId && run.deploymentId === record.id ? { rolloutId: run.rolloutId } : {};
+}
+
 function incidentTitle(record: UpdateRecord): string {
   return `Updating Vardo${record.toVersion ? ` to ${versionShort(record.toVersion)}` : ""}`;
 }
@@ -241,6 +248,7 @@ export function updateFinished(report: FinishedReport, opts: { now?: number } = 
       toSlot: record.toSlot,
       durationSeconds,
       downSeconds: report.downSeconds,
+      ...(await rolloutOf(record)),
     });
     return announce(record, "updated", event, "close", now);
   });
@@ -266,6 +274,7 @@ async function fail(record: UpdateRecord, report: FailedReport, now: number): Pr
     durationSeconds,
     rolledBack: report.rolledBack,
     logTail: report.logTail,
+    ...(await rolloutOf(record)),
   });
   return announce(record, `failed:${report.step}`, event, "close", now);
 }

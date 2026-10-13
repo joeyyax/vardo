@@ -520,7 +520,7 @@ export type SystemShutdownEvent = {
   uptimeSeconds: number;
 };
 
-/** Back after a clean stop. One per boot. */
+/** Back after a stop. One per boot. */
 export type SystemStartedEvent = {
   type: "system.started";
   title: string;
@@ -531,6 +531,10 @@ export type SystemStartedEvent = {
   hostRebooted: boolean;
   /** Why it stopped, from the shutdown marker. */
   reason?: string;
+  /** The stop wasn't clean; a "stopped unexpectedly" notice went out with this one. */
+  unclean?: boolean;
+  /** Containers running before a host reboot that didn't come back. */
+  containers?: MissingContainer[];
 };
 
 /** Back with no clean-shutdown marker: power loss, forced stop or a crash. */
@@ -543,6 +547,7 @@ export type SystemRecoveredUncleanEvent = {
   hostRebooted: boolean;
   /** ISO time of the last heartbeat before the stop. */
   lastHeartbeatAt?: string;
+  containers?: MissingContainer[];
 };
 
 export type SystemUpdateStartedEvent = UpdateChanges & {
@@ -567,6 +572,8 @@ export type SystemUpdatedEvent = UpdateChanges & {
   durationSeconds?: number;
   /** Console downtime during the swap. */
   downSeconds?: number;
+  /** The fleet rollout that ran this update; the rollout reports it. */
+  rolloutId?: string;
 };
 
 export type SystemUpdateFailedEvent = UpdateChanges & {
@@ -582,6 +589,7 @@ export type SystemUpdateFailedEvent = UpdateChanges & {
   durationSeconds?: number;
   rolledBack?: boolean;
   logTail?: string[];
+  rolloutId?: string;
 };
 
 /** An automatic update that didn't start because a pre-flight check failed. */
@@ -636,14 +644,18 @@ export type SystemRestartFailedEvent = VardoRestartScope & {
   message: string;
   error: string;
   durationSeconds?: number;
+  /** Services still not back at the deadline. */
+  notBack?: string[];
 };
+
+export type MissingContainer = { name: string; app?: string; appId?: string; service?: string; state: string };
 
 /** Containers running before a host restart that didn't come back. */
 export type SystemContainersMissingEvent = {
   type: "system.containers-missing";
   title: string;
   message: string;
-  containers: { name: string; app?: string; state: string }[];
+  containers: MissingContainer[];
 };
 
 // Operational events: real-time UI updates, not sent to channels.

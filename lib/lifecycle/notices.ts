@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
-import type { BusEvent, VardoRestartScope } from "@/lib/bus/events";
+import type { BusEvent, MissingContainer, VardoRestartScope } from "@/lib/bus/events";
 import { emitConfirmed } from "@/lib/notifications/dispatch";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { openIncident, resolveIncidents, safely } from "@/lib/incidents/store";
@@ -200,11 +200,11 @@ function restartingNotice(r: RestartRecord): Notice {
   };
 }
 
-function resultNotice(r: RestartRecord, error?: string): Notice {
+function resultNotice(r: RestartRecord, error?: string, notBack?: string[]): Notice {
   const durationSeconds = seconds(r.startedAt, r.finishedAt);
   const took = durationSeconds !== undefined ? ` in ${formatDuration(durationSeconds * 1000)}` : "";
   const event: BusEvent = error
-    ? { type: "system.restart-failed", title: `${capitalize(r.label)} didn't come back`, message: error, error, durationSeconds, ...scope(r) }
+    ? { type: "system.restart-failed", title: `${capitalize(r.label)} didn't come back`, message: error, error, durationSeconds, ...(notBack?.length ? { notBack } : {}), ...scope(r) }
     : { type: "system.restarted", title: `${capitalize(r.label)} restarted`, message: `${capitalize(r.label)} restarted${took}.`, durationSeconds, ...scope(r) };
   return {
     key: `${r.id}:${error ? "failed" : "restarted"}`,
@@ -243,13 +243,13 @@ export function restartStarted(req: RestartRequest, opts: { now?: number; budget
   });
 }
 
-async function finish(records: Record<string, RestartRecord>, record: RestartRecord, now: number, error?: string): Promise<void> {
+async function finish(records: Record<string, RestartRecord>, record: RestartRecord, now: number, error?: string, notBack?: string[]): Promise<void> {
   if (record.state !== "running") return;
   record.state = error ? "failed" : "restarted";
   record.finishedAt = now;
   await saveRestarts(records, now).catch((err) => log.warn("Couldn't record the restart:", err));
   // Sends the start too when nothing did, so the pair stays whole.
-  await send([restartingNotice(record), resultNotice(record, error)]);
+  await send([restartingNotice(record), resultNotice(record, error, notBack)]);
 }
 
 /** Closes a restart with "restarted" or "didn't come back". A restart never recorded gets the whole pair. */
@@ -315,7 +315,7 @@ export function reconcileRestarts(now = Date.now()): Promise<void> {
         }
         if (now >= record.deadlineAt) {
           const minutes = Math.round(RESTART_DEADLINE_MS / 60_000);
-          await finish(records, record, now, `${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} back ${minutes} minutes after the restart.`);
+          await finish(records, record, now, `${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} back ${minutes} minutes after the restart.`, missing);
         }
         continue;
       }
@@ -435,7 +435,13 @@ export async function consoleStopping(plan: StopPlan, info: { version: string; u
   );
 }
 
-function backUp(about: string, boot: Extract<BootClassification, { kind: "clean" | "unclean" }>, version: string, now: number, reason?: string): Notice {
+function backUp(
+  about: string,
+  boot: Extract<BootClassification, { kind: "clean" | "unclean" }>,
+  version: string,
+  now: number,
+  extra: { reason?: string; containers: MissingContainer[] },
+): Notice {
   const down = boot.downSeconds;
   return {
     key: `${about}:back-up`,
@@ -447,15 +453,31 @@ function backUp(about: string, boot: Extract<BootClassification, { kind: "clean"
       version,
       downSeconds: down,
       hostRebooted: boot.hostRebooted,
-      ...(reason ? { reason } : {}),
+      ...(extra.reason ? { reason: extra.reason } : {}),
+      ...(boot.kind === "unclean" ? { unclean: true } : {}),
+      ...(extra.containers.length ? { containers: extra.containers } : {}),
     },
     incident: { kind: STOP_INCIDENT, about, title: "Vardo stopped", action: "close" },
+  };
+}
+
+function missingNotice(containers: MissingContainer[], key: string): Notice {
+  return {
+    key: `${key}:containers-missing`,
+    at: Date.now(),
+    event: {
+      type: "system.containers-missing",
+      title: "Containers didn't come back",
+      message: `${containers.length} container(s) were running before the restart and aren't now.`,
+      containers,
+    },
   };
 }
 
 /**
  * Sends what's left from before the boot, then this boot's notices.
  * `quiet` when an update or a self-deploy handover already explains it.
+ * `missing` checks for containers that didn't come back; the back-up notice waits for it and lists them.
  */
 export async function consoleBooted(input: {
   boot: BootClassification;
@@ -463,20 +485,29 @@ export async function consoleBooted(input: {
   heartbeat: Heartbeat | null;
   version: string;
   quiet: boolean;
+  missing?: () => Promise<MissingContainer[]>;
   now?: number;
 }): Promise<void> {
   const now = input.now ?? Date.now();
   await flushOutbox();
   const { boot } = input;
-  if (input.quiet || boot.kind === "first-boot") return;
+  const missing = async () => (input.missing ? await input.missing().catch(() => []) : []);
+  // Sends what didn't come back on its own when no back-up notice carries it.
+  const missingAlone = async (key: string) => {
+    const containers = await missing();
+    if (containers.length) await send([missingNotice(containers, key)]);
+  };
+  if (boot.kind === "first-boot") return;
+  if (input.quiet) return missingAlone(`boot-${now}`);
 
   if (boot.kind === "clean") {
     const shutdown = input.shutdown;
     if (shutdown?.kind === "restart" && shutdown.id) {
       await restartFinished(shutdown.id, {}, { now });
-      return;
+      return missingAlone(shutdown.id);
     }
-    await send([backUp(shutdown?.id ?? `stop-${shutdown?.at ?? now}`, boot, input.version, now, boot.reason)]);
+    const about = shutdown?.id ?? `stop-${shutdown?.at ?? now}`;
+    await send([backUp(about, boot, input.version, now, { reason: boot.reason, containers: await missing() })]);
     return;
   }
 
@@ -489,10 +520,12 @@ export async function consoleBooted(input: {
       {},
       { now },
     );
-    return;
+    return missingAlone(watchdogId(watchdog));
   }
 
   const about = `unclean-${input.heartbeat?.at ?? now}`;
+  const containers = await missing();
+  // Both go out for webhooks and the incident; the delivery policy emails one of them.
   await send([
     {
       key: `${about}:stopped`,
@@ -505,26 +538,10 @@ export async function consoleBooted(input: {
         downSeconds: boot.downSeconds,
         hostRebooted: boot.hostRebooted,
         lastHeartbeatAt: boot.lastHeartbeatAt,
+        ...(containers.length ? { containers } : {}),
       },
       incident: { kind: STOP_INCIDENT, about, title: "Vardo stopped unexpectedly", action: "open" },
     },
-    backUp(about, boot, input.version, now),
-  ]);
-}
-
-/** Containers running before a host restart that didn't come back. */
-export async function containersMissing(missing: { name: string; app?: string; state: string }[], bootId: string): Promise<void> {
-  if (missing.length === 0) return;
-  await send([
-    {
-      key: `${bootId}:containers-missing`,
-      at: Date.now(),
-      event: {
-        type: "system.containers-missing",
-        title: "Containers didn't come back",
-        message: `${missing.length} container(s) were running before the restart and aren't now.`,
-        containers: missing,
-      },
-    },
+    backUp(about, boot, input.version, now, { containers }),
   ]);
 }

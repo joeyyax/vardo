@@ -55,6 +55,8 @@ vi.mock("@/lib/incidents/store", () => ({
   },
 }));
 vi.mock("@/lib/version", () => ({ fetchCompare: async () => null, moreCommits: () => ({}) }));
+const store = vi.hoisted(() => ({ run: null as { deploymentId: string; rolloutId?: string } | null }));
+vi.mock("@/lib/self-update/store", () => ({ getUpdateRun: async () => store.run }));
 
 const lifecycle = await import("@/lib/self-update/lifecycle");
 const { activeUpdate, awaitResult, ingestUpdateMarker, reconcileUpdate, updateFailed, updateFinished, updateSkipped, updateStarted } = lifecycle;
@@ -76,6 +78,7 @@ beforeEach(() => {
   claims.clear();
   openIncidents.clear();
   emitted.length = 0;
+  store.run = null;
 });
 
 describe("update lifecycle", () => {
@@ -126,6 +129,19 @@ describe("update lifecycle", () => {
     await updateFinished({ ...facts }, { now: T0 + 10_000 });
     await updateStarted(facts, { now: T0 + 20_000 });
     expect(types()).toEqual(["system.updated"]);
+  });
+
+  it("marks the result of an update a rollout ran, so only the rollout emails", async () => {
+    store.run = { deploymentId: facts.id, rolloutId: "rollout_1" };
+    await updateFinished({ ...facts }, { now: T0 + 10_000 });
+    expect(emitted[0].event).toMatchObject({ type: "system.updated", rolloutId: "rollout_1" });
+
+    emitted.length = 0;
+    settings.clear();
+    store.run = { deploymentId: "another-deploy", rolloutId: "rollout_1" };
+    await updateFailed({ ...facts, id: "20261010130000-1", startedAt: T0 + 3_600_000, step: "Health check" }, { now: T0 + 3_700_000 });
+    expect(emitted[0].event.type).toBe("system.update-failed");
+    expect(emitted[0].event).not.toHaveProperty("rolloutId");
   });
 
   it("sends skipped notices", async () => {

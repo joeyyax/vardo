@@ -199,6 +199,32 @@ function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEv
 }
 
 /** Newest first, as GitHub's compare reads after parseCompare. */
+const MISSING = [
+  { name: "search-data-production-green-meilisearch-1", app: "search-data", appId: "app_srch", service: "meilisearch", state: "exited" },
+  { name: "shop-staging-production-blue-worker-1", app: "Shop Staging", appId: "app_stg", service: "worker", state: "created" },
+];
+
+function rollout(type: "system.rollout-finished" | "system.rollout-paused", states: [string, string]): BusEvent {
+  return {
+    type,
+    title: "Vardo rollout",
+    message: "",
+    rolloutId: "rollout_1",
+    targetSha: "4f1a9b2c",
+    targetLabel: "4f1a9b2",
+    members: [
+      { instanceId: "jy0", name: "jy0", priority: "critical", state: states[0], reason: null },
+      {
+        instanceId: "lh1",
+        name: "Long House",
+        priority: "standard",
+        state: states[1],
+        reason: states[1] === "failed" ? "Post-update health check failed; rolled back" : states[1] === "skipped" ? "Skipped by an admin" : null,
+      },
+    ],
+  };
+}
+
 const COMMITS = [
   { sha: "4f1a9b2", subject: "fix(email): one instance name in every subject", author: "Dev Example" },
   { sha: "9c0d1e2", subject: "feat(backups): quiet nightly summaries", author: "Dev Example" },
@@ -914,6 +940,19 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       downSeconds: 149,
       hostRebooted: true,
       reason: "SIGTERM (host shutdown or container stop)",
+      containers: MISSING,
+    },
+  },
+  {
+    name: "system-started-console",
+    event: {
+      type: "system.started",
+      title: "Vardo is back up",
+      message: "Vardo is back up after 38 s.",
+      version: "0.1.0 (e36c2e3)",
+      downSeconds: 38,
+      hostRebooted: false,
+      reason: "vardo stop",
     },
   },
   {
@@ -923,7 +962,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       title: "Vardo stopped unexpectedly",
       message: "No clean-shutdown marker.",
       version: "0.1.0 (e36c2e3)",
-      downSeconds: 412,
+      downSeconds: 1_312,
       hostRebooted: true,
       lastHeartbeatAt: "2026-10-09T16:51:30.000Z",
     },
@@ -960,8 +999,9 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       target: "services",
       label: "the shared services",
       source: "maintenance",
-      error: "vardo-postgres isn't healthy 5 min after the restart.",
+      error: "vardo-postgres isn't back 5 minutes after the restart.",
       durationSeconds: 300,
+      notBack: ["vardo-postgres"],
     },
   },
   {
@@ -1004,7 +1044,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       fromSlot: "blue",
       toSlot: "green",
       step: "Health check",
-      error: "New frontend did not become healthy within 120s. Rolled back to blue.",
+      error: "The new console didn't become healthy within 2 minutes",
       durationSeconds: 301,
       rolledBack: true,
       logTail: [
@@ -1012,8 +1052,8 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
         "  · Stopping old frontend...",
         "  · Starting new frontend...",
         "  [7/8] Health check",
-        "  ! Health check failed — rolling back to blue slot",
-        "  ✗ Update aborted: new frontend did not become healthy within 120s. Rolled back to blue slot.",
+        "  ! Health check failed — rolling back",
+        "  ✗ Update aborted: new frontend did not become healthy within 120s.",
       ],
     },
   },
@@ -1098,10 +1138,10 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       type: "system.containers-missing",
       title: "Containers didn't come back",
       message: "2 containers were running before the restart and aren't now.",
-      containers: [
-        { name: "search-data-production-green-meilisearch-1", app: "search-data", state: "exited" },
-        { name: "shop-staging-production-blue-worker-1", app: "Shop Staging", state: "created" },
-      ],
+      containers: MISSING,
     },
   },
+  { name: "system-rollout-finished", event: rollout("system.rollout-finished", ["verified", "verified"]) },
+  { name: "system-rollout-finished-skipped", event: rollout("system.rollout-finished", ["verified", "skipped"]) },
+  { name: "system-rollout-paused", event: rollout("system.rollout-paused", ["verified", "failed"]) },
 ];
