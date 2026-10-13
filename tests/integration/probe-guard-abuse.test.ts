@@ -146,4 +146,21 @@ describe.skipIf(!conn)("blocklist and allowlist on Postgres", { timeout: MIGRATE
     });
     expect(outcome).toEqual({ status: "refused", reason: "on the allowlist" });
   });
+
+  it("doubles a repeat offender's ban, counting only local bans from the last 30 days", async () => {
+    const ip = "203.0.113.60";
+    const now = new Date();
+    await insert("old", ip, "threshold", new Date(now.getTime() - 31 * 24 * HOUR), new Date(now.getTime() - 31 * 24 * HOUR + HOUR));
+    await insert("list", ip, "blocklist", new Date(now.getTime() - 2 * HOUR), new Date(now.getTime() - HOUR));
+
+    const lengths: number[] = [];
+    let at = now;
+    for (const reason of ["threshold", "trap", "threshold", "threshold", "threshold", "threshold"] as const) {
+      const outcome = await bans.createBan({ ip, reason, hits: 5 }, at);
+      if (outcome.status !== "banned") throw new Error(`not banned: ${JSON.stringify(outcome)}`);
+      lengths.push((outcome.ban.expiresAt.getTime() - at.getTime()) / HOUR);
+      at = new Date(outcome.ban.expiresAt.getTime() + 60_000);
+    }
+    expect(lengths).toEqual([1, 2, 4, 8, 16, 24]);
+  });
 });
