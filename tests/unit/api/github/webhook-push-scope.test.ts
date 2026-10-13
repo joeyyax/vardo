@@ -104,7 +104,7 @@ describe("push webhook scope", () => {
 
     await push(2, sha);
 
-    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha }));
+    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha, pinIntent: "push" }));
   });
 
   it("deploys nothing when the push deleted the branch", async () => {

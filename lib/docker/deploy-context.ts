@@ -98,6 +98,8 @@ export type DeployContext = {
 
   /** A commit on the branch to deploy instead of its tip. */
   pinnedGitSha?: string;
+  /** Why it's pinned: the commit a push named, or one someone chose. */
+  pinIntent?: "push" | "pin";
 
   // Resolved by earlier steps
   app: DeployApp;

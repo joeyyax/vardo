@@ -102,6 +102,8 @@ export type DeployOpts = {
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
   /** Deploy this commit of the branch, not its tip. Git apps only. */
   gitSha?: string;
+  /** Where `gitSha` came from: the commit a push named, or one someone chose. Defaults to "pin". */
+  pinIntent?: "push" | "pin";
   /** Build even when an earlier image matches; "no-cache" skips the layer cache too. */
   rebuild?: RebuildMode;
 };
@@ -492,6 +494,7 @@ export async function runDeployment(
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
       pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
+      pinIntent: opts.pinIntent,
       rebuild,
 
       app: app as DeployContext["app"],

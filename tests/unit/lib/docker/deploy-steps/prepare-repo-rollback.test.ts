@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // prepareRepo wiring for rollback deploys: the clone must end up on the target
-// commit, not the branch tip. Unit tests on checkoutRollbackSha can't catch a
+// commit, not the branch tip. Unit tests on checkoutCommit can't catch a
 // step that never calls it.
 // ---------------------------------------------------------------------------
 
@@ -236,5 +236,29 @@ describe("prepareRepo — rollback", () => {
     await expect(
       prepareRepo(makeCtx({ targetDeploymentId: "dep-old", gitSha: null })),
     ).rejects.toThrow(/no recorded git SHA/);
+  });
+
+  it("says a rollback is a rollback", async () => {
+    gitRouter.fetchable = new Set([SHA]);
+    const ctx = makeCtx({ targetDeploymentId: "dep-old", gitSha: SHA });
+    await prepareRepo(ctx);
+    expect(ctx.logLines.some((l) => l.includes("Rollback: checked out"))).toBe(true);
+  });
+});
+
+describe("prepareRepo — pinned commit", () => {
+  it.each([
+    ["push", "Checked out the pushed commit", /^Pushed commit /],
+    [undefined, "Checked out the pinned commit", /^Pinned commit /],
+  ] as const)("names a %s pin as what it is, never a rollback", async (pinIntent, line, error) => {
+    gitRouter.fetchable = new Set([SHA]);
+    const ctx = { ...makeCtx(), pinnedGitSha: SHA, pinIntent };
+    await prepareRepo(ctx);
+    expect(ctx.logLines.some((l) => l.includes(line))).toBe(true);
+    expect(ctx.logLines.some((l) => l.includes("Rollback"))).toBe(false);
+
+    gitRouter.fetchable = new Set();
+    gitRouter.present = new Set([TIP]);
+    await expect(prepareRepo({ ...makeCtx(), pinnedGitSha: SHA, pinIntent })).rejects.toThrow(error);
   });
 });

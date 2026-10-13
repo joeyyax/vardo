@@ -88,6 +88,7 @@ export async function handlePushEvent(event: PushEvent, scope: EventScope): Prom
         trigger: scope.trigger,
         // The pushed commit, not whatever the branch points at when the deploy clones.
         gitSha: pushedSha(headSha),
+        pinIntent: "push",
       });
       return { app: app.name, deploymentId: result.deploymentId, success: result.success };
     } catch (err) {

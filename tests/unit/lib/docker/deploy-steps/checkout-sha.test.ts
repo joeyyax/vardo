@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkoutRollbackSha, type GitRunner } from "@/lib/docker/deploy-steps/checkout-sha";
+import { checkoutCommit, type GitRunner } from "@/lib/docker/deploy-steps/checkout-sha";
+import { knownFailure } from "@/lib/git-integration/deploy-failure";
 
 const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
 
@@ -34,12 +35,12 @@ function fakeGit(opts: { present?: string[]; fetchable?: string[] } = {}) {
   return { git, calls };
 }
 
-describe("checkoutRollbackSha", () => {
+describe("checkoutCommit", () => {
   it("checks out a commit already in the clone without fetching", async () => {
     const { git, calls } = fakeGit({ present: [SHA] });
     const log = vi.fn();
 
-    await checkoutRollbackSha(git, SHA, log);
+    await checkoutCommit(git, SHA, "rollback", log);
 
     expect(calls.some((c) => c[0] === "fetch")).toBe(false);
     expect(calls).toContainEqual(["checkout", "--force", "--detach", SHA]);
@@ -48,7 +49,7 @@ describe("checkoutRollbackSha", () => {
   it("fetches the commit when the shallow clone lacks it", async () => {
     const { git, calls } = fakeGit({ fetchable: [SHA] });
 
-    await checkoutRollbackSha(git, SHA, vi.fn());
+    await checkoutCommit(git, SHA, "rollback", vi.fn());
 
     expect(calls).toContainEqual(["fetch", "--depth", "1", "origin", SHA]);
     expect(calls).toContainEqual(["checkout", "--force", "--detach", SHA]);
@@ -73,7 +74,7 @@ describe("checkoutRollbackSha", () => {
       return { stdout: "" };
     };
 
-    await checkoutRollbackSha(git, SHA, vi.fn());
+    await checkoutCommit(git, SHA, "rollback", vi.fn());
 
     expect(calls).toContainEqual(["fetch", "--unshallow", "origin"]);
     expect(calls).toContainEqual(["checkout", "--force", "--detach", SHA]);
@@ -82,16 +83,30 @@ describe("checkoutRollbackSha", () => {
   it("throws instead of deploying HEAD when the commit is unreachable", async () => {
     const { git, calls } = fakeGit();
 
-    await expect(checkoutRollbackSha(git, SHA, vi.fn())).rejects.toThrow(
+    await expect(checkoutCommit(git, SHA, "rollback", vi.fn())).rejects.toThrow(
       /not available in the repository/,
     );
     expect(calls.some((c) => c[0] === "checkout")).toBe(false);
   });
 
+  it.each([
+    ["rollback", "[deploy] Rollback: checked out a1b2c3d", /^Rollback target commit /],
+    ["push", "[deploy] Checked out the pushed commit a1b2c3d", /^Pushed commit /],
+    ["pin", "[deploy] Checked out the pinned commit a1b2c3d", /^Pinned commit /],
+  ] as const)("says what a %s checkout is, in its log and its error", async (intent, line, error) => {
+    const log = vi.fn();
+    await checkoutCommit(fakeGit({ present: [SHA] }).git, SHA, intent, log);
+    expect(log).toHaveBeenCalledWith(line);
+
+    const failure = await checkoutCommit(fakeGit().git, SHA, intent, vi.fn()).catch((err: Error) => err.message);
+    expect(failure).toMatch(error);
+    expect(knownFailure(failure as string)).toBe("The commit is no longer in the repository. It may have been force-pushed away.");
+  });
+
   it("rejects a sha that isn't a plain hex object name", async () => {
     const { git, calls } = fakeGit({ present: ["--upload-pack=touch /tmp/pwn"] });
 
-    await expect(checkoutRollbackSha(git, "--upload-pack=touch /tmp/pwn", vi.fn())).rejects.toThrow(
+    await expect(checkoutCommit(git, "--upload-pack=touch /tmp/pwn", "rollback", vi.fn())).rejects.toThrow(
       /Invalid git SHA/,
     );
     expect(calls).toHaveLength(0);

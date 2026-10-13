@@ -1,10 +1,19 @@
-// Pins the shallow deploy clone to a rollback commit, fetching it first when missing.
+// Pins the shallow deploy clone to one commit, fetching it first when missing.
 
 import { assertSafeGitSha } from "../validate";
 import { DeployBlockedError } from "../errors";
 
 /** Injectable git runner. */
 export type GitRunner = (args: string[]) => Promise<{ stdout: string }>;
+
+/** Why the deploy ships this commit: a rollback's target, the commit a push named, or one someone pinned. */
+export type CheckoutIntent = "rollback" | "push" | "pin";
+
+const WHAT: Record<CheckoutIntent, { error: string; log: string }> = {
+  rollback: { error: "Rollback target commit", log: "Rollback: checked out" },
+  push: { error: "Pushed commit", log: "Checked out the pushed commit" },
+  pin: { error: "Pinned commit", log: "Checked out the pinned commit" },
+};
 
 async function hasCommit(git: GitRunner, sha: string): Promise<boolean> {
   try {
@@ -16,9 +25,10 @@ async function hasCommit(git: GitRunner, sha: string): Promise<boolean> {
 }
 
 /** Check out `sha` in the working clone. Throws if it can't be resolved; never fall back to the branch tip. */
-export async function checkoutRollbackSha(
+export async function checkoutCommit(
   git: GitRunner,
   sha: string,
+  intent: CheckoutIntent,
   log: (line: string) => void,
 ): Promise<void> {
   assertSafeGitSha(sha);
@@ -41,11 +51,11 @@ export async function checkoutRollbackSha(
 
   if (!(await hasCommit(git, sha))) {
     throw new DeployBlockedError(
-      `Rollback target commit ${sha} is not available in the repository — ` +
+      `${WHAT[intent].error} ${sha} is not available in the repository — ` +
       `the branch may have been force-pushed or the commit garbage collected`,
     );
   }
 
   await git(["checkout", "--force", "--detach", sha]);
-  log(`[deploy] Rollback: checked out ${sha.slice(0, 7)}`);
+  log(`[deploy] ${WHAT[intent].log} ${sha.slice(0, 7)}`);
 }
