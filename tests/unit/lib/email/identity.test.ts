@@ -8,7 +8,7 @@ import { renderNotificationEmail, notificationMailBody } from "@/lib/email/notif
 import { fromDisplayName } from "@/lib/email/send";
 import { capPreheader, PREHEADER_MAX } from "@/lib/email/templates/components";
 import { splitCommand } from "@/lib/email/templates/deploy-incomplete";
-import { phaseVisual } from "@/lib/email/templates/deploy-facts";
+import { phaseSteps } from "@/lib/email/templates/deploy-facts";
 import { formatDurationRough, versionShort } from "@/lib/email/format";
 
 function fixture<T extends BusEvent["type"]>(name: string): Extract<BusEvent, { type: T }> {
@@ -41,7 +41,7 @@ describe("preheader", () => {
   it("renders one title, the heading, and keeps the preheader out of it", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
     expect(email.html.match(/<title>/g)).toHaveLength(1);
-    expect(email.html).toContain("<title>acme-web is live</title>");
+    expect(email.html).toContain("<title>acme-web deployed</title>");
   });
 
   it("caps at about 90 characters, cut at a word", () => {
@@ -67,27 +67,25 @@ describe("deploy emails", () => {
   it("shows one duration on a success", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
     expect(email.text).not.toContain("timed");
-    expect(email.text).toMatch(/Duration: /);
+    expect(email.text.match(/Took: /g)).toHaveLength(1);
   });
 
   it("marks the phase that failed, even one that never reported a time", () => {
-    const timings = { clone: { ms: 1_000 } } as Parameters<typeof phaseVisual>[0];
-    const visual = phaseVisual(timings, "build", { totalMs: 2_000 })!;
-    if (visual.kind !== "stacked") throw new Error("stacked");
-    expect(visual.segments.map((s) => [s.label, s.tone])).toEqual([
-      ["Clone", 4],
-      ["Build", "fail"],
+    const timings = { clone: { ms: 1_000 } } as Parameters<typeof phaseSteps>[0];
+    const steps = phaseSteps(timings, "build", 2_000)!;
+    expect(steps.map((s) => [s.label, !!s.failed])).toEqual([
+      ["Clone", false],
+      ["Build", true],
     ]);
-    expect(visual.segments[1].value).toBe(1_000);
+    expect(steps[1].value).toBe(1_000);
   });
 
   it("still marks a timed failing phase", () => {
-    const timings = { clone: { ms: 1_000 }, build: { ms: 4_000 }, up: { ms: 500 } } as Parameters<typeof phaseVisual>[0];
-    const visual = phaseVisual(timings, "build")!;
-    if (visual.kind !== "stacked") throw new Error("stacked");
-    expect(visual.segments.map((s) => [s.label, s.tone])).toEqual([
-      ["Clone", 4],
-      ["Build", "fail"],
+    const timings = { clone: { ms: 1_000 }, build: { ms: 4_000 }, up: { ms: 500 } } as Parameters<typeof phaseSteps>[0];
+    const steps = phaseSteps(timings, "build")!;
+    expect(steps.map((s) => [s.label, !!s.failed])).toEqual([
+      ["Clone", false],
+      ["Build", true],
     ]);
   });
 });

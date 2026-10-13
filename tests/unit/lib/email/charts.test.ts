@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { percentages, rampTones, sparkline, visualText } from "@/lib/email/templates/components";
 import { backupColumns, backupDrop } from "@/lib/email/templates/visuals";
-import { phaseVisual } from "@/lib/email/templates/deploy-facts";
+import { phaseSteps } from "@/lib/email/templates/deploy-facts";
 import { hourlyDeltas, loadMailSeries } from "@/lib/email/series";
 import { deployBuckets } from "@/lib/digest/collector";
 import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
@@ -31,29 +31,25 @@ describe("chart math", () => {
 
 describe("phase bar", () => {
   it("ends a failed deploy's bar at the failing phase, in red", () => {
-    const visual = phaseVisual({ clone: t(3000), build: t(40000), pull: t(2000), up: t(1000), healthWait: t(60000) }, "build")!;
-    expect(visual.kind).toBe("stacked");
-    if (visual.kind !== "stacked") return;
-    expect(visual.segments.map((s) => s.label)).toEqual(["Clone", "Build"]);
-    expect(visual.segments.at(-1)?.tone).toBe("fail");
-    expect(visualText(visual)).toContain("Clone 7% · Build 93% ✗");
+    const steps = phaseSteps({ clone: t(3000), build: t(40000), pull: t(2000), up: t(1000), healthWait: t(60000) }, "build")!;
+    expect(steps.map((s) => s.label)).toEqual(["Clone", "Build"]);
+    expect(steps.at(-1)?.failed).toBe(true);
+    expect(visualText({ kind: "phases", steps })).toContain("Clone 3 s · Build 40 s ✗");
   });
 
   it("skips a single untimed phase on success", () => {
-    expect(phaseVisual({ build: t(1000) })).toBeUndefined();
-    expect(phaseVisual(undefined)).toBeUndefined();
+    expect(phaseSteps({ build: t(1000) })).toBeUndefined();
+    expect(phaseSteps(undefined)).toBeUndefined();
   });
 
-  it("gives every phase its own shade", () => {
-    const visual = phaseVisual({ clone: t(1), build: t(1), export: t(1), pull: t(1), up: t(1), healthWait: t(1), cleanup: t(1) })!;
-    if (visual.kind !== "stacked") throw new Error("stacked");
-    const tones = visual.segments.map((s) => s.tone);
-    expect(new Set(tones).size).toBe(7);
+  it("calls the health wait Health", () => {
+    const steps = phaseSteps({ clone: t(1), build: t(1), export: t(1), pull: t(1), up: t(1), healthWait: t(1), cleanup: t(1) })!;
+    expect(steps.map((s) => s.label)).toEqual(["Clone", "Build", "Export", "Pull", "Start", "Health", "Cleanup"]);
     expect(new Set(rampTones(6)).size).toBe(6);
   });
 
   it("stretches the legend across the card", async () => {
-    const email = (await renderNotificationEmail(fixtureEvent("deploy-success"), FIXTURE_CONTEXT))!;
+    const email = (await renderNotificationEmail(fixtureEvent("backup-summary-failed"), FIXTURE_CONTEXT))!;
     expect(email.html).toMatch(/<table[^>]*width="100%"[^>]*style="margin:8px 0 0/);
   });
 });

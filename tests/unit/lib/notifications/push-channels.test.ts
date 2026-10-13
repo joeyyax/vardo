@@ -52,7 +52,7 @@ describe("ntfy", () => {
     expect(h.calls[0].url).toBe("https://ntfy.sh/");
     expect(body()).toMatchObject({
       topic: "vardo-test",
-      title: "node-a · ✗ Shop Staging failed at build",
+      title: "node-a · ✗ Shop Staging failed at build · 9f8e7d6",
       priority: 5,
       tags: ["rocket"],
       markdown: true,
@@ -126,12 +126,12 @@ describe("Discord", () => {
     expect(h.calls[0].url).toBe(`${DISCORD.webhookUrl}?wait=true`);
     const [embed] = body().embeds;
     expect(embed).toMatchObject({
-      title: "node-a · ✗ Shop Staging failed at build",
+      title: "node-a · ✗ Shop Staging failed at build · 9f8e7d6",
       color: 0xe5484d,
       url: expect.stringMatching(/^https:\/\/vardo\.example\.com\/apps\//),
       footer: { text: "node-a · deploy.failed" },
     });
-    expect(embed.description).toMatch(/\[Open deployment log\]\(https:\/\/vardo\.example\.com\//);
+    expect(embed.description).toMatch(/\[Open the deployment\]\(https:\/\/vardo\.example\.com\//);
     expect(embed.fields.length).toBeGreaterThan(0);
     expect(embed.fields[0]).toEqual({ name: expect.any(String), value: expect.any(String), inline: expect.any(Boolean) });
   });
@@ -163,8 +163,8 @@ describe("Telegram", () => {
     expect(receipt).toEqual({ providerStatus: 200, providerMessageIds: ["42"] });
     expect(h.calls[0].url).toBe(`https://api.telegram.org/bot${TELEGRAM.botToken}/sendMessage`);
     expect(body()).toMatchObject({ chat_id: "-1001234567890", parse_mode: "MarkdownV2", disable_notification: false });
-    expect(body().text.startsWith("*node\\-a · ✗ Shop Staging failed at build*\n\n")).toBe(true);
-    expect(body().text).toMatch(/\[Open deployment log\]\(https:\/\/vardo\.example\.com\/apps\/[^)]+\)$/);
+    expect(body().text.startsWith("*node\\-a · ✗ Shop Staging failed at build · 9f8e7d6*\n\n")).toBe(true);
+    expect(body().text).toMatch(/\[Open the deployment\]\(https:\/\/vardo\.example\.com\/apps\/[^)]+\)$/);
   });
 
   it("escapes every reserved character", () => {
@@ -200,9 +200,9 @@ describe("Pushover", () => {
     expect(body()).toMatchObject({
       token: PUSHOVER.appToken,
       user: PUSHOVER.userKey,
-      title: "node-a · ✗ Shop Staging failed at build",
+      title: "node-a · ✗ Shop Staging failed at build · 9f8e7d6",
       priority: 1,
-      url_title: "Open deployment log",
+      url_title: "Open the deployment",
     });
     await new PushoverNotificationChannel(PUSHOVER).send(warning);
     await new PushoverNotificationChannel(PUSHOVER).send({ type: "notification.test", title: "t", message: "m", channelName: "c", organizationId: "o" });

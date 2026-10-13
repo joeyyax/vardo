@@ -51,6 +51,7 @@ export type DeployDetails = {
   /** App slug. `projectName` carries the display name. */
   appName?: string;
   project?: string;
+  projectId?: string;
   environment?: string;
   domains?: string[];
   trigger?: DeployTrigger;
@@ -76,6 +77,12 @@ export type DeploySuccessEvent = DeployDetails & {
   gitSha?: string;
   gitMessage?: string;
   triggeredBy?: string;
+  /** The app's first successful deploy to a production environment. */
+  firstDeploy?: boolean;
+  /** When the app's 72-hour recap sends. Unset until recaps exist. */
+  recapAt?: string;
+  /** Median duration of recent successful deploys. */
+  usualDurationMs?: number;
 };
 
 export type DeployFailedEvent = DeployDetails & {
@@ -124,6 +131,19 @@ export type DeployRollbackEvent = {
   /** Slot serving after the rollback. */
   restoredSlot?: string;
   logTail?: string[];
+  project?: string;
+  projectId?: string;
+  environment?: string;
+  repoUrl?: string;
+  /** The commit that crashed. */
+  gitSha?: string;
+  gitMessage?: string;
+  /** The commit serving again. */
+  servingSha?: string;
+  servingMessage?: string;
+  /** How long the crashed version was live. */
+  liveMs?: number;
+  rolledBackAt?: string;
 };
 
 export type BackupSuccessEvent = {

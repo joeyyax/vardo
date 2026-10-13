@@ -9,7 +9,7 @@ const message = (name: string) => pushMessageFor(EMAIL_FIXTURES.find((f) => f.na
 describe("pushMessageFor", () => {
   it("leads with the instance and the state, like the email subject", () => {
     expect(message("deploy-success").title).toBe("node-a · ✓ acme-web deployed · a1b2c3d");
-    expect(message("deploy-failed-build").title).toBe("node-a · ✗ Shop Staging failed at build");
+    expect(message("deploy-failed-build").title).toBe("node-a · ✗ Shop Staging failed at build · 9f8e7d6");
   });
 
   it("gives a one-line summary", () => {

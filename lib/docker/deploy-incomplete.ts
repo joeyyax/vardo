@@ -53,6 +53,7 @@ export async function announcePostDeployIncomplete(
       reason,
       appName: ctx.app.name,
       project: ctx.projectName,
+      projectId: ctx.app.projectId,
       environment: ctx.envName,
       domains: ctx.app.domains?.map((d) => d.domain),
       trigger: ctx.trigger,

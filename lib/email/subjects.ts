@@ -28,6 +28,11 @@ export function stageLabel(stage: string | undefined): string | undefined {
   return STAGE_LABELS[stage] ?? stage;
 }
 
+/** Post-deploy work that left the previous version running. */
+export function oldVersionStillRunning(reason: string): boolean {
+  return /^the old slot \(\w+\) is still running\b/.test(reason);
+}
+
 function withSha(text: string, sha: string | undefined): string {
   return sha ? `${text} · ${shortSha(sha)}` : text;
 }
@@ -54,14 +59,16 @@ export function subjectLine(event: BusEvent): string {
       return withSha(`✓ ${appLabel(event)} deployed`, event.gitSha);
     case "deploy.failed": {
       const stage = stageLabel(event.failedStage);
-      return `✗ ${appLabel(event)} failed${stage ? ` at ${stage}` : ""}`;
+      const text = `✗ ${appLabel(event)} failed${stage ? ` at ${stage}` : ""}`;
+      if (event.gitSha && (event.failedStage === "build" || event.failedStage === "clone")) return withSha(text, event.gitSha);
+      return event.serving === "previous" ? `${text} · still serving the previous version` : text;
     }
     case "deploy.incomplete":
-      return `⚠ ${appLabel(event)} deployed, post-deploy work unfinished`;
+      return oldVersionStillRunning(event.reason)
+        ? `⚠ ${appLabel(event)} is live · the old version is still running`
+        : `⚠ ${appLabel(event)} is live · cleanup didn't finish`;
     case "deploy.rollback":
-      return event.rollbackSuccess
-        ? `↩ ${appLabel(event)} rolled back${event.restoredSlot ? ` to ${event.restoredSlot}` : ""}`
-        : `✗ ${appLabel(event)} rollback failed`;
+      return event.rollbackSuccess ? `↩ ${appLabel(event)} rolled back to the previous version` : `✗ ${appLabel(event)} rollback failed`;
     case "backup.summary": {
       const label = event.run.label;
       const failed = event.rows.filter((r) => r.outcome === "failed");

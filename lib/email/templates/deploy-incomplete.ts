@@ -1,8 +1,8 @@
 import type { DeployIncompleteEvent } from "@/lib/bus/events";
-import { appLabel } from "../subjects";
-import type { MailFact, NotificationMailBody } from "./components";
+import { appLabel, oldVersionStillRunning } from "../subjects";
+import { nameLink, type MailBlock, type MailInline, type NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
-import { changeFacts, phaseVisual, placeFacts } from "./deploy-facts";
+import { domainsOf, projectFact } from "./deploy-facts";
 
 /** A shell command quoted in the reason, e.g. `docker compose ... up -d`. */
 export function splitCommand(reason: string): { text: string; command?: string; output?: string } {
@@ -24,28 +24,46 @@ export function splitCommand(reason: string): { text: string; command?: string; 
   return { text: reason };
 }
 
+/** The daemon's own words: "tried to kill container, but did not receive an exit event". */
+export function daemonReason(output: string | undefined): string | undefined {
+  const line = output?.split("\n")[0].replace(/^Error response from daemon:\s*/i, "").trim();
+  if (!line) return undefined;
+  return line.split(/:\s+/).at(-1)?.replace(/\.$/, "") || undefined;
+}
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 export function deployIncompleteMail(event: DeployIncompleteEvent, ctx: MailContext): NotificationMailBody {
   const name = appLabel(event);
   const { text, command, output } = splitCommand(event.reason);
+  const oldRunning = oldVersionStillRunning(event.reason);
+  const primary = domainsOf(event)[0];
 
-  const facts: MailFact[] = [{ label: "Unfinished", value: text }, ...placeFacts(event), ...changeFacts(event)];
-  if (event.slot) facts.push({ label: "Serving from", value: event.slot });
+  const lead: MailInline[] = ["The new version passed its health check and is serving"];
+  lead.push(...(primary ? [" ", nameLink(primary, `https://${primary}`), "."] : ["."]));
+  if (oldRunning) lead.push(" Docker didn't stop the old one, so it's still using memory, disk and a port.");
+
+  const blocks: MailBlock[] = [{ kind: "text", text: lead }];
+  if (oldRunning) {
+    const said = daemonReason(output);
+    blocks.push({ kind: "callout", tone: "warn", title: "Stop the old version on the host", body: said ? `Docker reported: ${said}.` : undefined });
+  } else {
+    const title = sentence(command ? text.split(" — ")[0] : text);
+    blocks.push({ kind: "callout", tone: "warn", title, body: command ? "Run the command below on the host to finish it." : undefined });
+    if (output) blocks.push({ kind: "log", lines: output.split("\n") });
+  }
+  if (command) blocks.push({ kind: "log", lines: [command], highlight: [] });
+  const facts = projectFact(event, ctx);
+  if (facts.length) blocks.push({ kind: "facts", facts });
 
   return {
     tone: "warn",
     status: "Needs a look",
-    heading: `${name} is live, but post-deploy work didn't finish`,
-    preheader: text,
-    paragraphs: [
-      "The new release passed its health check and is serving traffic.",
-      "Work that runs after the cutover stopped partway. Until it's finished the old slot may keep running, use disk and hold a port.",
-    ],
-    visuals: [phaseVisual(event.stageTimings)].filter((v) => v !== undefined),
-    facts,
-    log: output ? { title: "Error", lines: output.split("\n") } : undefined,
-    command: command ? { title: "Run on the host to finish it", text: command } : undefined,
-    action: { label: "Open deployment log", href: appPage(ctx, event.appId, "deployments") },
-    links: [{ label: "App", href: appPage(ctx, event.appId) }],
+    heading: oldRunning ? `${name} is live, but the old version didn't stop` : `${name} is live, but cleanup didn't finish`,
+    preheader: oldRunning ? "The new version is serving. The old one is still running." : `The new version is serving. ${sentence(text.split(" — ")[0])}.`,
+    blocks,
+    action: { label: `Open ${name}`, href: appPage(ctx, event.appId) },
+    links: [{ label: "Deployment log", href: appPage(ctx, event.appId, "deployments") }],
     footer: footerFor(ctx),
   };
 }

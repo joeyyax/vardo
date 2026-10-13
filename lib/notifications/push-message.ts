@@ -63,7 +63,8 @@ export function pushMessageFor(event: BusEvent, ctx: MailContext): PushMessage |
     ? body.action
     : candidates.find((l) => l.href.startsWith(`${ctx.baseUrl}/`) || l.href === ctx.baseUrl);
   const summary = truncate(body.preheader ?? body.paragraphs?.[0] ?? event.message ?? "", SUMMARY_MAX);
-  const facts = (body.facts ?? body.sections?.[0]?.facts ?? [])
+  const blockFacts = body.blocks?.flatMap((b) => (b.kind === "facts" ? b.facts : []));
+  const facts = (body.facts ?? (blockFacts?.length ? blockFacts : undefined) ?? body.sections?.[0]?.facts ?? [])
     .filter((f) => f.label.trim() && f.value.trim() && truncate(f.value, SUMMARY_MAX) !== summary)
     .slice(0, FACTS_MAX)
     .map((f) => ({ label: truncate(f.label, 40), value: truncate(f.value, FACT_VALUE_MAX) }));
