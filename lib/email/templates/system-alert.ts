@@ -1,6 +1,7 @@
 import type { BusEvent, UpdateChanges } from "@/lib/bus/events";
 import { formatDuration, plural, truncate } from "../format";
-import type { MailFact, MailLink, NotificationMailBody } from "./components";
+import { describeResolver } from "@/lib/system-alerts/cert-expiry";
+import { linkedList, nameLink, type MailFact, type MailInline, type MailLink, type NotificationMailBody, type StatTile } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 
 /** Release-note lines an update email quotes. */
@@ -39,11 +40,61 @@ export type SystemAlertEvent = Extract<
   }
 >;
 
-function dateLabel(iso: string, timeZone = "UTC"): string {
+/** "Oct 15". */
+function dayLabel(iso: string, timeZone = "UTC"): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? iso
-    : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone });
+}
+
+/** Domains a certificate email links before "and N more". */
+const CERT_DOMAINS_SHOWN = 5;
+
+const CHALLENGE_BLOCKER = {
+  DNS: "usually the Cloudflare API token or the DNS record",
+  TLS: "usually DNS pointing elsewhere or port 443 blocked",
+} as const;
+
+function certExpiringMail(event: Extract<SystemAlertEvent, { type: "system.cert-expiring" }>, ctx: MailContext): NotificationMailBody {
+  const domains = event.domains?.length ? event.domains : [event.domain];
+  const expired = event.daysLeft <= 0;
+  const days = Math.abs(event.daysLeft);
+  const { issuer, challenge } = describeResolver(event.resolver);
+  const app = event.app;
+
+  const blocker = challenge ? `, ${CHALLENGE_BLOCKER[challenge]}` : "";
+  const why = expired
+    ? `Browsers refuse the connection until it renews. ${issuer ? `${issuer} renewal is failing${blocker}.` : "Renewal is failing."}`
+    : `${issuer ?? "Traefik"} renews 30 days ahead, so something is blocking it${blocker}.`;
+
+  const lead: MailInline[] = [];
+  if (domains.length > 1) {
+    const shown = domains.slice(0, CERT_DOMAINS_SHOWN).map((d) => ({ text: d, href: `https://${d}` }));
+    const more = domains.length - shown.length;
+    const list = more ? [...shown.flatMap((d, i) => (i ? [", ", nameLink(d.text, d.href)] : [nameLink(d.text, d.href)])), ` and ${plural(more, "more domain")}`] : linkedList(shown);
+    lead.push("It covers ", ...list, expired ? ". " : " and hasn't renewed. ");
+  } else if (!expired) {
+    lead.push("It hasn't renewed. ");
+  }
+  lead.push(why);
+
+  const tiles: StatTile[] = [
+    expired
+      ? { label: "Expired", value: String(days), unit: days === 1 ? " day ago" : " days ago", sub: dayLabel(event.expiresAt, ctx.timeZone), hot: true }
+      : { label: "Expires", value: String(days), unit: days === 1 ? " day" : " days", sub: dayLabel(event.expiresAt, ctx.timeZone), hot: true },
+    ...(app ? [{ label: "App", value: app.name, href: appPage(ctx, app.id), sub: app.project }] : []),
+  ];
+
+  return {
+    tone: expired ? "fail" : "warn",
+    status: expired ? "Certificate expired" : "Certificate expiring",
+    heading: expired
+      ? `${event.domain}'s certificate expired`
+      : `${event.domain}'s certificate expires in ${plural(event.daysLeft, "day")}`,
+    preheader: why,
+    blocks: [{ kind: "text", text: lead }, { kind: "tiles", tiles }],
+    action: app ? { label: "Check the domain", href: appPage(ctx, app.id, "networking") } : { label: "Open admin", href: consolePage(ctx, "/admin") },
+    footer: footerFor(ctx),
+  };
 }
 
 export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): NotificationMailBody {
@@ -76,23 +127,8 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         action: admin,
         footer,
       };
-    case "system.cert-expiring": {
-      const domains = event.domains?.length ? event.domains : [event.domain];
-      const expired = event.daysLeft <= 0;
-      return {
-        tone: expired ? "fail" : "warn",
-        status: expired ? "Certificate expired" : "Certificate expiring",
-        heading: expired ? `The certificate for ${event.domain} expired` : `The certificate for ${event.domain} expires in ${event.daysLeft} days`,
-        paragraphs: [event.message],
-        facts: [
-          { label: domains.length > 1 ? "Domains" : "Domain", value: domains.join(", ") },
-          { label: "Expires", value: dateLabel(event.expiresAt, ctx.timeZone) },
-          { label: "Issuer", value: event.resolver },
-        ],
-        action: admin,
-        footer,
-      };
-    }
+    case "system.cert-expiring":
+      return certExpiringMail(event, ctx);
     case "system.update-available": {
       const changes = changeSections(event);
       return {

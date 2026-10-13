@@ -57,7 +57,8 @@ export function pushMessageFor(event: BusEvent, ctx: MailContext): PushMessage |
   const body = notificationMailBody(event, ctx);
   if (!body) return null;
 
-  const candidates = [body.action, ...(body.links ?? [])].filter((l) => l !== undefined);
+  const calloutLinks = (body.blocks ?? []).flatMap((b) => (b.kind === "callout" && b.action ? [b.action] : []));
+  const candidates = [body.action, ...(body.links ?? []), ...calloutLinks].filter((l) => l !== undefined);
   // An integration's fix lives on the provider's site.
   const link = event.type === "system.integration-permissions"
     ? body.action

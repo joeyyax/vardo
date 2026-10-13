@@ -143,3 +143,20 @@ export function groupByCertificate<T extends { domain: string; fingerprint: stri
   }
   return groups;
 }
+
+const ISSUERS: Record<string, string> = { le: "Let's Encrypt", google: "Google Trust Services", zerossl: "ZeroSSL" };
+
+/** Issuer and ACME challenge behind a Traefik resolver name like "le-dns". */
+export function describeResolver(resolver: string): { issuer?: string; challenge?: "DNS" | "TLS" } {
+  const dns = resolver.endsWith("-dns");
+  const issuer = ISSUERS[dns ? resolver.slice(0, -4) : resolver];
+  return issuer ? { issuer, challenge: dns ? "DNS" : "TLS" } : {};
+}
+
+export type CertOwner = { id: string; name: string; project?: string; organizationId: string };
+
+/** The app every domain in the group belongs to, or none when they span apps. */
+export function certOwner(group: { owner?: CertOwner }[]): CertOwner | undefined {
+  const first = group[0]?.owner;
+  return first && group.every((g) => g.owner?.id === first.id) ? first : undefined;
+}

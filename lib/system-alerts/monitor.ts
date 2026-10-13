@@ -1,6 +1,7 @@
 import { getSystemHealth } from "@/lib/config/health";
 import { emit } from "@/lib/notifications/dispatch";
 import type { BusEvent } from "@/lib/bus";
+import type { SystemCertExpiringEvent } from "@/lib/bus/events";
 import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
@@ -20,6 +21,7 @@ import {
   evaluateCertExpiry,
   certVerdictAlerts,
   certAlertMessage,
+  certOwner,
   groupByCertificate,
   type CertVerdict,
 } from "./cert-expiry";
@@ -179,7 +181,12 @@ async function checkCertAlerts(): Promise<void> {
   try {
     const rows = await db.query.domains.findMany({
       columns: { id: true, domain: true, certResolver: true, sslEnabled: true },
-      with: { app: { columns: { status: true } } },
+      with: {
+        app: {
+          columns: { id: true, name: true, displayName: true, organizationId: true, status: true },
+          with: { project: { columns: { name: true } } },
+        },
+      },
     });
 
     const targets = rows.filter(
@@ -197,6 +204,12 @@ async function checkCertAlerts(): Promise<void> {
             domainId: d.id,
             domain: d.domain,
             resolver: d.certResolver ?? "unknown",
+            owner: {
+              id: d.app.id,
+              name: d.app.displayName || d.app.name,
+              project: d.app.project?.name,
+              organizationId: d.app.organizationId,
+            },
             fingerprint: probe.status === "ok" ? probe.fingerprint : null,
             verdict: evaluateCertExpiry(probe, Date.now()),
           };
@@ -229,20 +242,23 @@ async function checkCertAlerts(): Promise<void> {
       markFired("cert-expiring", domains[0]);
 
       const { title, message } = certAlertMessage(domains, verdict);
-      await emitSystemIncident(
-        orgIds,
-        {
-          type: "system.cert-expiring",
-          title,
-          message,
-          domain: domains[0],
-          domains,
-          daysLeft: verdict.daysLeft,
-          expiresAt: verdict.expiresAt,
-          resolver: group[0].resolver,
-        },
-        { kind: "system.cert-expiring", about: domains[0], title, severity: verdict.kind === "expired" ? "critical" : "warning" },
-      );
+      const event: SystemCertExpiringEvent = {
+        type: "system.cert-expiring",
+        title,
+        message,
+        domain: domains[0],
+        domains,
+        daysLeft: verdict.daysLeft,
+        expiresAt: verdict.expiresAt,
+        resolver: group[0].resolver,
+      };
+      const problem = { kind: "system.cert-expiring", about: domains[0], title, severity: verdict.kind === "expired" ? "critical" : "warning" } as const;
+      const owner = certOwner(group);
+      if (owner) {
+        const app = { id: owner.id, name: owner.name, ...(owner.project ? { project: owner.project } : {}) };
+        await emitSystemIncident(orgIds.filter((o) => o === owner.organizationId), { ...event, app }, problem);
+      }
+      await emitSystemIncident(orgIds.filter((o) => o !== owner?.organizationId), event, problem);
     }
   } catch (err) {
     log.error("Cert check error:", err);

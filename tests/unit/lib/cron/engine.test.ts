@@ -87,6 +87,13 @@ describe("runCronJob", () => {
     expect(event).toMatchObject({ title: "Cron failed: Site cron", jobType: "url", exitCode: 500, appId: undefined });
   });
 
+  it("sends the recent runs oldest first", async () => {
+    m.runUrl.mockResolvedValue({ success: false, log: "GET → 500", durationMs: 9, httpStatus: 500, attempts: 3, target: "https://example.com/wp-cron.php" });
+    dbMock.query.cronJobRuns.findMany.mockResolvedValue([{ status: "failed" }, { status: "success" }, { status: "success" }]);
+    await runCronJob(orgJob());
+    expect(m.failure.mock.calls[0][1].recentRuns).toEqual(["success", "success", "failed"]);
+  });
+
   it("refuses a command job with no app", async () => {
     const result = await runCronJob(orgJob({ type: "command", command: "id" }));
     expect(result?.status).toBe("failed");

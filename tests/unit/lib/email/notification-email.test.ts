@@ -158,17 +158,26 @@ describe("notification emails", () => {
     expect(app.text).toContain("S3/R2");
   });
 
-  it("gives a failed cron its command, exit code, schedule and units", async () => {
+  it("leads a failed cron with the cause, then recent runs and the output", async () => {
+    const email = (await renderNotificationEmail(fixture("cron-failed"), FIXTURE_CONTEXT))!;
+    expect(email.subject).toBe("node-a · ✗ Cron sync-orders failed on Shop Staging");
+    expect(email.text).toContain("✗ PHP ran out of memory\nIt hit PHP's 128 MB limit in wpdb. Raise memory_limit for WP-CLI or trim what the event loads.");
+    expect(email.text).toContain("Last 24 runs\n✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✗ 23 succeeded, 1 failed");
+    expect(email.text).toContain("  > PHP Fatal error:");
+    expect(email.text).toContain("Schedule: Every 15 minutes · last success Oct 9, 16:45 UTC");
+    expect(email.text).not.toContain("Container:");
+    expect(email.html).toContain('href="https://vardo.example.com/apps/app_shop_staging"');
+  });
+
+  it("falls back to the exit code when the output names no cause", async () => {
     const email = (await renderNotificationEmail(fixture("cron-failed-exit"), FIXTURE_CONTEXT))!;
     expect(email.subject).toBe("node-a · ✗ Cron failure test failed on Shop Docs");
+    expect(email.text).toContain("✗ The command exited with code 3");
     expect(email.text).toContain("Command: echo testing failure path; exit 3");
-    expect(email.text).toContain("Exit code: 3");
-    expect(email.text).toContain("Schedule: every minute (* * * * *)");
-    expect(email.text).toContain("Ran for: 112 ms");
-    expect(email.text).toContain("Container: shop-docs-production-green-web-1");
-    expect(email.text).toContain("Last success: None on record");
+    expect(email.text).toContain("Schedule: Every minute · no success on record");
     expect(email.text).toContain("Output\n    testing failure path");
-    expect(email.text).toContain("Open run history: https://vardo.example.com/apps/app_d0cs/cron");
+    expect(email.text).not.toContain("Last 24 runs");
+    expect(email.text).toContain("Open the cron job: https://vardo.example.com/apps/app_d0cs/cron");
   });
 
   it("sends no email for a backup run starting", async () => {
@@ -195,14 +204,40 @@ describe("notification emails", () => {
     expect(email.text).toContain("View the full run: https://vardo.example.com/backups");
   });
 
-  it("lists each app's new findings with severity and a link to its security tab", async () => {
+  it("lists each app's new findings as callouts linked to its security tab", async () => {
     const email = (await renderNotificationEmail(fixture("security-scan-batch"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Shop · shop.example.com\nCritical: .env is publicly accessible. The file at /.env is served");
-    expect(email.text).toContain("Warning: TLS certificate expires in 9 days. Renewal hasn't succeeded yet.");
-    expect(email.text).toContain("14 apps scanned.");
-    expect(email.text).toContain("Open Shop security: https://vardo.example.com/apps/app_shop/security");
-    expect(email.text).toContain("Acme Docs security: https://vardo.example.com/apps/app_d0cs/security");
-    expect(email.html).toContain('href="https://vardo.example.com/apps/app_d0cs/security"');
+    expect(email.text).toContain("Shop · shop.example.com\n✗ .env is publicly accessible\nThe file at /.env is served");
+    expect(email.text).toContain("⚠ TLS certificate expires in 9 days\nRenewal hasn't succeeded yet.\nView the finding: https://vardo.example.com/apps/app_d0cs/security");
+    expect(email.text).toContain("From the scheduled scan of 14 apps.");
+    expect(email.text.indexOf(".env is publicly")).toBeLessThan(email.text.indexOf("Missing HSTS"));
+    expect(email.html).toContain('href="https://vardo.example.com/apps/app_shop"');
+    expect(email.html).toContain("vd-callout-bad");
+    expect(email.html).toContain("vd-callout-warn");
+  });
+
+  it("shows what a clean scan checked and links the domain", async () => {
+    const email = (await renderNotificationEmail(fixture("security-scan-manual-clean"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Nothing turned up on docs.example.com.");
+    expect(email.text).toContain("exposed files, headers, TLS, open ports");
+    expect(email.html).toContain('href="https://docs.example.com"');
+  });
+
+  it("leads a certificate email with days left and links the app it belongs to", async () => {
+    const email = (await renderNotificationEmail(fixture("system-cert-expiring"), FIXTURE_CONTEXT))!;
+    expect(email.subject).toBe("node-a · ⚠ Certificate expires in 6 d · acme.example.org");
+    expect(email.text).toContain("Let's Encrypt renews 30 days ahead");
+    expect(email.text).toContain("Expires: 6 days (Oct 15)");
+    expect(email.text).toContain("App: acme-web (Acme Nonprofit)");
+    expect(email.text).not.toMatch(/Issuer|\ble\b/);
+    expect(email.html).toContain('href="https://vardo.example.com/apps/app_acme"');
+    expect(email.html).toContain('href="https://www.acme.example.org"');
+  });
+
+  it("says an expired certificate is refused and leaves out an app it doesn't know", async () => {
+    const email = (await renderNotificationEmail(fixture("system-cert-expired"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Browsers refuse the connection until it renews.");
+    expect(email.text).toContain("Expired: 2 days ago (Oct 7)");
+    expect(email.text).not.toContain("App:");
   });
 
   it("keeps raw commits out of the update email", async () => {

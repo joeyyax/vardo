@@ -16,6 +16,9 @@ import { CRON_JOB_APP } from "./columns";
 
 const log = logger.child("cron");
 
+/** Runs a failure email shows as a strip. */
+const RECENT_RUNS = 24;
+
 
 /** An app a cron job can target, plus the stack it belongs to. */
 export type CronTargetApp = ReconcilableApp & {
@@ -262,6 +265,12 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
         orderBy: (r, { desc }) => [desc(r.startedAt)],
         columns: { startedAt: true },
       }).catch(() => undefined);
+      const recent = await db.query.cronJobRuns.findMany({
+        where: eq(cronJobRuns.cronJobId, job.id),
+        orderBy: (r, { desc }) => [desc(r.startedAt)],
+        columns: { status: true },
+        limit: RECENT_RUNS,
+      }).catch(() => []);
       const appName = job.app ? job.app.displayName || job.app.name : undefined;
       const shown = result.target ?? job.command;
       await alerts.noteCronFailure(
@@ -282,6 +291,7 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
           target: shown,
           lastSuccessAt: lastSuccess?.startedAt.toISOString(),
           logTail: result.log.split("\n").filter((l) => l.trim()).slice(-20),
+          recentRuns: recent.map((r) => r.status).reverse(),
         },
         completedAt,
       );
