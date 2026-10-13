@@ -32,6 +32,9 @@ export function blockPattern(block: CustomBlock): string {
 function re2Problem(value: string): string | null {
   let i = 0;
   let afterRepeat = false;
+  // Go refuses nested counted repeats whose counts multiply past the limit. `atom` is what the last atom repeats; `frames` hold each open group's largest product.
+  const frames = [1];
+  let atom = 1;
   while (i < value.length) {
     const c = value[i];
     if (c === "\\") {
@@ -41,11 +44,13 @@ function re2Problem(value: string): string | null {
       if (next === "x") {
         if (!/^[0-9A-Fa-f]{2}/.test(value.slice(i + 2))) return "\\x takes exactly two hex digits";
         i += 4;
+        atom = 1;
         afterRepeat = false;
         continue;
       }
       if (/[A-Za-z]/.test(next) && !SAFE_LETTER_ESCAPES.includes(next)) return `\\${next} isn't supported`;
       i += 2;
+      atom = 1;
       afterRepeat = false;
       continue;
     }
@@ -67,12 +72,22 @@ function re2Problem(value: string): string | null {
       }
       if (!closed) return "unclosed character class";
       i = j + 1;
+      atom = 1;
       afterRepeat = false;
       continue;
     }
     if (c === "(") {
       if (value[i + 1] === "?" && value[i + 2] !== ":") return "only (?: groups are supported";
       i += value[i + 1] === "?" ? 3 : 1;
+      frames.push(1);
+      atom = 1;
+      afterRepeat = false;
+      continue;
+    }
+    if (c === ")") {
+      if (frames.length === 1) return "unbalanced parentheses";
+      atom = frames.pop()!;
+      i += 1;
       afterRepeat = false;
       continue;
     }
@@ -81,7 +96,9 @@ function re2Problem(value: string): string | null {
       if (afterRepeat) return "repeats can't be nested";
       if (counted) {
         const high = Math.max(Number(counted[1]), counted[2] ? Number(counted[2]) : 0);
-        if (high > MAX_REPEAT) return `repeat counts are limited to ${MAX_REPEAT}`;
+        if (high > MAX_REPEAT || atom * high > MAX_REPEAT) return `repeat counts are limited to ${MAX_REPEAT}, nested ones multiplied`;
+        atom *= high || 1;
+        frames[frames.length - 1] = Math.max(frames[frames.length - 1], atom);
       }
       i += counted ? counted[0].length : 1;
       if (value[i] === "?") i += 1;
@@ -89,8 +106,10 @@ function re2Problem(value: string): string | null {
       continue;
     }
     i += 1;
+    atom = 1;
     afterRepeat = false;
   }
+  if (frames.length > 1) return "unclosed group";
   return null;
 }
 

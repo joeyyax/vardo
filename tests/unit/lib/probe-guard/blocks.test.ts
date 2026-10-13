@@ -13,6 +13,7 @@ describe("blockProblem", () => {
     "^/a{1,10}$",
     "^/x\\x41",
     "^/lazy.+?end",
+    "^/(?:a{10}){10}$",
   ])("accepts %s", (value) => {
     expect(blockProblem(regex(value))).toBeNull();
   });
@@ -31,7 +32,9 @@ describe("blockProblem", () => {
     ["empty class", "^/[]a]"],
     ["empty negated class", "^/[^]a]"],
     ["huge repeat", "^/a{1,1001}$"],
+    ["nested repeat counts that multiply past 1000", "^/(?:a{40}){40}$"],
     ["nested repeat", "^/a**"],
+    ["unbalanced parenthesis", "^/a)"],
     ["possessive repeat", "^/a++"],
     ["backtick", "^/a`b"],
     ["control character", "^/a\u0001"],

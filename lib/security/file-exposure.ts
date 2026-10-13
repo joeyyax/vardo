@@ -9,14 +9,15 @@ import type { SecurityFinding } from "./types";
 
 const log = logger.child("security");
 
-/** What a probe saw: status, media type and the first MAX_BODY_BYTES of the body. */
-type ProbeResponse = {
+/** What a probe saw: status, media type, response headers and the first MAX_BODY_BYTES of the body. */
+export type ProbeResponse = {
   status: number;
   contentType: string;
   bytes: Uint8Array;
   text: string;
   length: number;
   hash: string;
+  headers: Headers;
 };
 
 type Probe = {
@@ -112,7 +113,7 @@ async function readPrefix(res: Response, controller: AbortController): Promise<U
   return out;
 }
 
-async function fetchProbe(url: string, policy: OutboundPolicy): Promise<ProbeResponse | null> {
+export async function fetchProbe(url: string, policy: OutboundPolicy): Promise<ProbeResponse | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -127,6 +128,7 @@ async function fetchProbe(url: string, policy: OutboundPolicy): Promise<ProbeRes
       text: new TextDecoder().decode(bytes),
       length: Number.isFinite(declared) && declared > 0 ? declared : bytes.length,
       hash: createHash("sha256").update(bytes).digest("hex"),
+      headers: res.headers,
     };
   } catch {
     return null;

@@ -88,10 +88,16 @@ export function AbuseReportingCard() {
     e.preventDefault();
     setSaving(true);
     try {
+      // Send only the fields this card owns; the API merges over the stored settings.
+      const patch = {
+        reporting: settings.reporting,
+        blocklists: { abuseipdb: settings.blocklists.abuseipdb },
+        ...(newKey ? { apiKey: newKey } : {}),
+      };
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings, ...(newKey ? { apiKey: newKey } : {}) }),
+        body: JSON.stringify(patch),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {

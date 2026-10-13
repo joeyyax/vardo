@@ -4,7 +4,9 @@ import {
   DEFAULT_INSTANCE_PROBE_GUARD,
   appProbeGuardSchema,
   decoyPath,
+  instanceProbeGuardPartialSchema,
   instanceProbeGuardSchema,
+  mergeInstanceProbeGuard,
   normalizeAppProbeGuard,
   normalizeInstanceProbeGuard,
 } from "@/lib/probe-guard/settings";
@@ -63,5 +65,55 @@ describe("instance settings", () => {
     expect(decoyPath(DEFAULT_INSTANCE_PROBE_GUARD)).toBe("/admin-backup/.env");
     expect(decoyPath({ ...DEFAULT_INSTANCE_PROBE_GUARD, traps: { ...DEFAULT_INSTANCE_PROBE_GUARD.traps, decoy: false } })).toBeNull();
     expect(decoyPath({ ...DEFAULT_INSTANCE_PROBE_GUARD, traps: { enabled: true, decoy: true, paths: ["/x.sql"] } })).toBeNull();
+  });
+});
+
+describe("mergeInstanceProbeGuard", () => {
+  const stored = {
+    ...DEFAULT_INSTANCE_PROBE_GUARD,
+    threshold: 7,
+    traps: { enabled: false, paths: ["/old/"], decoy: false },
+    exceptions: ["/kept"],
+    blocks: [{ kind: "prefix" as const, value: "/kept-block" }],
+    securityContact: "old@example.com",
+  };
+
+  it("keeps other fields when only one top-level field is patched", () => {
+    const merged = mergeInstanceProbeGuard(stored, { threshold: 11 });
+    expect(merged.threshold).toBe(11);
+    expect(merged.traps).toEqual(stored.traps);
+    expect(merged.exceptions).toEqual(stored.exceptions);
+    expect(merged.blocks).toEqual(stored.blocks);
+    expect(merged.securityContact).toBe(stored.securityContact);
+  });
+
+  it("merges traps one level deep", () => {
+    const merged = mergeInstanceProbeGuard(stored, { traps: { enabled: true, paths: ["/new/"] } });
+    expect(merged.traps).toEqual({ enabled: true, paths: ["/new/"], decoy: false });
+  });
+
+  it("replaces exceptions and blocks wholesale", () => {
+    const merged = mergeInstanceProbeGuard(stored, { exceptions: ["/new-ex"], blocks: [{ kind: "exact", value: "/new-block" }] });
+    expect(merged.exceptions).toEqual(["/new-ex"]);
+    expect(merged.blocks).toEqual([{ kind: "exact", value: "/new-block" }]);
+  });
+
+  it("rejects unknown top-level and traps fields", () => {
+    expect(() => mergeInstanceProbeGuard(stored, { unknown: true } as never)).toThrow(/Unknown field/);
+    expect(() => mergeInstanceProbeGuard(stored, { traps: { unknown: true } as never })).toThrow(/Unknown traps field/);
+  });
+
+  it("partial schema refuses values outside the full schema's range", () => {
+    const ok = instanceProbeGuardPartialSchema.safeParse({ threshold: 2 });
+    expect(ok.success).toBe(true);
+    const bad = instanceProbeGuardPartialSchema.safeParse({ threshold: 1 });
+    expect(bad.success).toBe(false);
+  });
+
+  it("refuses a merge that makes the full schema invalid", () => {
+    const stored = { ...DEFAULT_INSTANCE_PROBE_GUARD, maxBanHours: 1 };
+    const merged = mergeInstanceProbeGuard(stored, { banMinutes: 600 });
+    const final = instanceProbeGuardSchema.safeParse(merged);
+    expect(final.success).toBe(false);
   });
 });

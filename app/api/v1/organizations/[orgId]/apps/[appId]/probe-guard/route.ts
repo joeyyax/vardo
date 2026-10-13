@@ -10,6 +10,7 @@ import { appProbeGuardSchema, normalizeAppProbeGuard } from "@/lib/probe-guard/s
 import { appLooksLikeWordPress, appServesOwnRobots, guardOverview } from "@/lib/probe-guard/overview";
 import { syncGuardFile } from "@/lib/probe-guard/sync";
 import { pendingSuggestion } from "@/lib/probe-guard/suggestions";
+import { listRecommendations } from "@/lib/probe-guard/recommendations";
 import { getProbeGuardSettings, guardKey } from "@/lib/probe-guard/instance";
 import { isAppAdmin } from "@/lib/auth/admin";
 
@@ -23,7 +24,7 @@ async function readGuard(appId: string, orgId: string) {
   return row;
 }
 
-/** GET — the app's probe guard setting, this week's counts and its active bans. */
+/** GET — the app's probe guard setting, this week's counts, recommendations and its active bans. */
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -31,16 +32,18 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     if (!app) return apiError.forbidden();
     const row = await readGuard(appId, orgId);
     if (!row) return apiError.notFound("app");
-    const [overview, looksLikeWordPress, instance, admin] = await Promise.all([
+    const [overview, looksLikeWordPress, instance, admin, recommendations] = await Promise.all([
       guardOverview(appId),
       appLooksLikeWordPress(appId),
       getProbeGuardSettings(),
       isAppAdmin().catch(() => false),
+      listRecommendations(appId),
     ]);
     const settings = normalizeAppProbeGuard(row.probeGuard);
     return NextResponse.json({
       settings,
       suggestion: pendingSuggestion(settings, looksLikeWordPress),
+      recommendations,
       available: guardKey() !== null,
       traps: instance.traps.enabled ? instance.traps.paths : [],
       canBanPermanently: admin,

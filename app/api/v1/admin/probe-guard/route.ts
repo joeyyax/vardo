@@ -6,7 +6,7 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getProbeGuardSettings, guardKey, setProbeGuardSettings } from "@/lib/probe-guard/instance";
-import { instanceProbeGuardSchema } from "@/lib/probe-guard/settings";
+import { instanceProbeGuardPartialSchema, instanceProbeGuardSchema, mergeInstanceProbeGuard } from "@/lib/probe-guard/settings";
 import { guardOverview } from "@/lib/probe-guard/overview";
 import { syncGuardFile } from "@/lib/probe-guard/sync";
 
@@ -32,15 +32,19 @@ async function handleGet(request: NextRequest) {
   }
 }
 
-/** POST — saves instance settings and rewrites the guard file. */
+/** POST — saves instance settings and rewrites the guard file. Accepts a partial body; merges over the stored settings. */
 async function handlePost(request: NextRequest) {
   try {
     await requireAdminAuth(request);
-    const parsed = instanceProbeGuardSchema.safeParse(await request.json().catch(() => null));
+    const parsed = instanceProbeGuardPartialSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return apiError.validation(parsed.error, { details: true });
-    await setProbeGuardSettings(parsed.data);
+    const current = await getProbeGuardSettings();
+    const merged = mergeInstanceProbeGuard(current, parsed.data);
+    const final = instanceProbeGuardSchema.safeParse(merged);
+    if (!final.success) return apiError.validation(final.error, { details: true });
+    await setProbeGuardSettings(final.data);
     await syncGuardFile().catch(() => {});
-    return NextResponse.json({ ok: true, settings: parsed.data });
+    return NextResponse.json({ ok: true, settings: final.data });
   } catch (error) {
     return handleRouteError(error, "Error saving probe guard settings");
   }

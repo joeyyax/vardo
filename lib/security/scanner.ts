@@ -8,6 +8,9 @@ import { checkFileExposure } from "./file-exposure";
 import { checkSecurityHeaders } from "./headers";
 import { checkTls } from "./tls";
 import { checkExposedPorts } from "./ports";
+import { fingerprintApp } from "./template-fingerprint";
+import { normalizeAppProbeGuard } from "@/lib/probe-guard/settings";
+import { recordRecognized } from "@/lib/probe-guard/recommendations";
 import type { SecurityFinding, ScanTrigger } from "./types";
 
 const log = logger.child("security");
@@ -161,10 +164,22 @@ async function scanApp(opts: RunScanOpts): Promise<ScanOutcome | null> {
     // Scoped to the org for defense in depth.
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, organizationId)),
-      columns: { id: true, name: true, displayName: true, exposedPorts: true },
+      columns: {
+        id: true,
+        name: true,
+        displayName: true,
+        exposedPorts: true,
+        imageName: true,
+        composeContent: true,
+        parentAppId: true,
+        probeGuard: true,
+      },
       with: {
         domains: {
           columns: { domain: true, isPrimary: true, sslEnabled: true },
+        },
+        childApps: {
+          columns: { imageName: true },
         },
       },
     });
@@ -209,6 +224,26 @@ async function scanApp(opts: RunScanOpts): Promise<ScanOutcome | null> {
       ]);
 
       allFindings.push(...fileFindings, ...headerFindings, ...tlsFindings);
+    }
+
+    const guard = normalizeAppProbeGuard(app.probeGuard);
+    const childImages = (app.childApps ?? []).map((c) => c.imageName);
+    const fingerprint = await fingerprintApp({
+      appId: app.id,
+      domain: primaryDomain?.domain ?? null,
+      imageName: app.imageName,
+      composeContent: app.composeContent,
+      childImages,
+      appliedTemplateIds: guard.templates,
+    }).catch((err) => {
+      log.warn(`[${appName}] Template fingerprint failed: ${err instanceof Error ? err.message : err}`);
+      return { recognizedIds: [] as readonly string[] };
+    });
+
+    if (fingerprint.recognizedIds.length > 0) {
+      await recordRecognized(app.id, fingerprint.recognizedIds, guard.templates).catch((err) => {
+        log.warn(`[${appName}] Failed to record recognized templates: ${err instanceof Error ? err.message : err}`);
+      });
     }
 
     const criticalCount = allFindings.filter((f) => f.severity === "critical").length;

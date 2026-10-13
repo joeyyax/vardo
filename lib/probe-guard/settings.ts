@@ -151,3 +151,73 @@ export const banPatchSchema = z.union([
   z.object({ permanent: z.literal(true) }).strict(),
   z.object({ again: z.literal(true) }).strict(),
 ]);
+
+/** Field names of `InstanceProbeGuard` that the API treats as known. Any unknown key in the body fails validation. */
+const INSTANCE_TOP_KEYS = [
+  "threshold",
+  "windowMinutes",
+  "banMinutes",
+  "maxBanHours",
+  "shareBans",
+  "traps",
+  "securityContact",
+  "exceptions",
+  "blocks",
+] as const;
+
+const TRAP_KEYS = ["enabled", "paths", "decoy"] as const;
+
+/** What `InstanceProbeGuard` accepts in a partial POST. Each field is independent; empty body matches all callers. */
+export const instanceProbeGuardPartialSchema = z
+  .object({
+    threshold: z.number().int().min(2).max(100).optional(),
+    windowMinutes: z.number().int().min(1).max(1440).optional(),
+    banMinutes: z.number().int().min(5).max(1440).optional(),
+    maxBanHours: z.number().int().min(1).max(168).optional(),
+    shareBans: z.boolean().optional(),
+    traps: z
+      .object({
+        enabled: z.boolean().optional(),
+        paths: z.array(z.string().trim()).optional(),
+        decoy: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    securityContact: z.union([z.literal(""), z.string().trim().email().max(254)]).optional(),
+    exceptions: z.array(z.string().trim()).optional(),
+    blocks: z.array(customBlockSchema).optional(),
+  })
+  .strict();
+
+export type InstanceProbeGuardPartial = z.infer<typeof instanceProbeGuardPartialSchema>;
+
+/** One-level-deep merge: top-level fields replace, `traps` merges by key. Unknown keys throw. */
+export function mergeInstanceProbeGuard(current: InstanceProbeGuard, patch: InstanceProbeGuardPartial): InstanceProbeGuard {
+  for (const key of Object.keys(patch)) {
+    if (!INSTANCE_TOP_KEYS.includes(key as (typeof INSTANCE_TOP_KEYS)[number])) {
+      throw new Error(`Unknown field "${key}"`);
+    }
+  }
+  const trapsPatch = patch.traps;
+  let traps = current.traps;
+  if (trapsPatch) {
+    for (const key of Object.keys(trapsPatch)) {
+      if (!TRAP_KEYS.includes(key as (typeof TRAP_KEYS)[number])) {
+        throw new Error(`Unknown traps field "${key}"`);
+      }
+    }
+    traps = { ...traps, ...trapsPatch };
+  }
+  const merged: InstanceProbeGuard = {
+    threshold: patch.threshold ?? current.threshold,
+    windowMinutes: patch.windowMinutes ?? current.windowMinutes,
+    banMinutes: patch.banMinutes ?? current.banMinutes,
+    maxBanHours: patch.maxBanHours ?? current.maxBanHours,
+    shareBans: patch.shareBans ?? current.shareBans,
+    traps,
+    securityContact: patch.securityContact ?? current.securityContact,
+    exceptions: patch.exceptions ?? current.exceptions,
+    blocks: patch.blocks ?? current.blocks,
+  };
+  return merged;
+}

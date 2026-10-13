@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Sparkline } from "@/components/app-metrics-card";
 import { ServiceDot } from "./service-dot";
 import type { ResourceStatus, ServiceStatus } from "@/lib/config/health";
 import { Card } from "@/components/ui/card";
+import type { SecurityOverview } from "@/lib/security/overview";
+import { securityHref } from "@/lib/ui/hrefs";
+
+type SecurityCardData = SecurityOverview & { bans: number; bansBreakdown: string; probes: number };
 
 type Stats = {
   userCount: number;
@@ -36,12 +41,115 @@ const statCardConfig = [
   },
 ];
 
+function SecurityCard({ data }: { data: SecurityCardData | null }) {
+  if (!data) {
+    return (
+      <Card variant="surface" className="p-4 mt-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading security status...
+        </div>
+      </Card>
+    );
+  }
+  const { worst, totals } = data;
+  const totalsText =
+    totals.critical === 0 && totals.warning === 0
+      ? "Clean across every app"
+      : `${totals.critical} critical · ${totals.warning} warnings`;
+  const findingsApps = worst.length;
+  return (
+    <Card variant="surface" className="mt-4">
+      <div className="flex items-start justify-between gap-4 border-b px-4 py-3">
+        <div className="space-y-1">
+          <p className="type-h4">Security</p>
+          <p className="text-xs text-muted-foreground">Last scan per app, across every organization.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link className="text-xs underline-offset-2 hover:text-foreground hover:underline" href="/admin/security">
+            Bans & activity
+          </Link>
+          <span className="text-xs text-muted-foreground/40">·</span>
+          <Link className="text-xs underline-offset-2 hover:text-foreground hover:underline" href="/admin/probe-guard">
+            Settings
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-px bg-border sm:grid-cols-3">
+        <Link
+          href="/admin/security"
+          className="bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+        >
+          <p className="text-xs text-muted-foreground">Findings across apps</p>
+          <p className={`type-numeral text-2xl mt-1 ${totals.critical > 0 ? "text-status-error" : totals.warning > 0 ? "text-status-warning" : ""}`}>
+            {totals.critical + totals.warning}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">{totalsText} · {findingsApps} app{findingsApps === 1 ? "" : "s"}</p>
+        </Link>
+        <Link
+          href="/admin/security"
+          className="bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+        >
+          <p className="text-xs text-muted-foreground">Active bans</p>
+          <p className="type-numeral text-2xl mt-1">{data.bans.toLocaleString("en-US")}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{data.bansBreakdown}</p>
+        </Link>
+        <Link
+          href="/admin/security"
+          className="bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+        >
+          <p className="text-xs text-muted-foreground">Probes turned away</p>
+          <p className="type-numeral text-2xl mt-1">{data.probes.toLocaleString("en-US")}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">last 7 days, every app</p>
+        </Link>
+      </div>
+
+      {worst.length > 0 ? (
+        <ul className="divide-y">
+          {worst.map((app) => (
+            <li key={app.appId} className="flex items-center gap-4 px-4 py-3">
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium">{app.appName}</p>
+                  {app.criticalCount > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-status-error-muted px-2 py-0.5 text-xs font-medium text-status-error">
+                      {app.criticalCount} critical
+                    </span>
+                  )}
+                  {app.warningCount > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-status-warning-muted px-2 py-0.5 text-xs font-medium text-status-warning">
+                      {app.warningCount} warning{app.warningCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {app.findings[0]?.description ?? "Open the app for details."}
+                </p>
+              </div>
+              <Link
+                href={securityHref(app.appSlug)}
+                className="shrink-0 text-xs underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Open
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-4 py-3 text-xs text-muted-foreground">No apps have critical or warning findings.</p>
+      )}
+    </Card>
+  );
+}
+
 export function AdminOverview() {
   // Each section loads independently
   const [stats, setStats] = useState<Stats | null>(null);
   const [sparklines, setSparklines] = useState<Record<string, [number, number][]> | null>(null);
   const [resources, setResources] = useState<ResourceStatus[] | null>(null);
   const [services, setServices] = useState<ServiceStatus[] | null>(null);
+  const [security, setSecurity] = useState<SecurityCardData | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/admin/overview")
@@ -53,6 +161,17 @@ export function AdminOverview() {
         setServices(data.services);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/v1/admin/overview/security")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => live && data && setSecurity(data))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, []);
 
   return (
@@ -144,6 +263,8 @@ export function AdminOverview() {
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
         )}
       </div>
+
+      <SecurityCard data={security} />
     </div>
   );
 }

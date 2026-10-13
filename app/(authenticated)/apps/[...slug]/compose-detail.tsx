@@ -90,6 +90,9 @@ import { currentStageLabel } from "@/lib/ui/deploy-stage";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
+import { RECOMMENDED_HEADERS, type SecurityHeaderConfig } from "@/lib/security/response-headers";
+
+const FALLBACK_HEADERS = RECOMMENDED_HEADERS;
 
 const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
@@ -511,18 +514,24 @@ function ComposeSecurity({
   app,
   services,
   orgId,
+  tab,
+  initialSecurityHeaders,
+  securityHeadersLive,
 }: {
   app: App;
   services: ChildApp[];
   orgId: string;
+  tab: "findings" | "settings";
+  initialSecurityHeaders: SecurityHeaderConfig;
+  securityHeadersLive: boolean;
 }) {
   const scannedElsewhere = services.filter((s) => s.domains.length > 0);
 
   return (
     <div className="space-y-8">
-      <AppSecurity appId={app.id} orgId={orgId} />
+      <AppSecurity appId={app.id} orgId={orgId} tab={tab} initialSecurityHeaders={initialSecurityHeaders} securityHeadersLive={securityHeadersLive} />
 
-      {scannedElsewhere.length > 0 && (
+      {tab === "findings" && scannedElsewhere.length > 0 && (
         <div className="space-y-4">
           <div>
             <h3 className="type-h4">Service scans</h3>
@@ -1116,7 +1125,13 @@ export function ComposeDetail({
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     { value: "errors", label: "Errors" },
-                    { value: "security", label: "Security" },
+                  ],
+                },
+                {
+                  label: "Security",
+                  items: [
+                    { value: "security", label: "Findings" },
+                    { value: "security-settings", label: "Settings" },
                   ],
                 },
                 {
@@ -1345,7 +1360,11 @@ export function ComposeDetail({
         )}
 
         <TabsContent value="security" className={tabPanelSurface}>
-          <ComposeSecurity app={app} services={services} orgId={orgId} />
+          <ComposeSecurity app={app} services={services} orgId={orgId} tab="findings" initialSecurityHeaders={app.securityHeaders ?? FALLBACK_HEADERS} securityHeadersLive={app.securityHeadersLive ?? false} />
+        </TabsContent>
+
+        <TabsContent value="security-settings" className={tabPanelSurface}>
+          <ComposeSecurity app={app} services={services} orgId={orgId} tab="settings" initialSecurityHeaders={app.securityHeaders ?? FALLBACK_HEADERS} securityHeadersLive={app.securityHeadersLive ?? false} />
         </TabsContent>
 
         <TabsContent value="volumes" className={tabPanelSurface}>

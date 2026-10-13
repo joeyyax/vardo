@@ -1,0 +1,302 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, RefreshCw, Shield, ShieldAlert, ShieldCheck, AlertTriangle, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { RangePicker } from "@/components/range-picker";
+import { GuardHistory } from "@/components/probe-guard/guard-history";
+import { toast } from "@/lib/messenger";
+import { RelativeTime } from "@/components/relative-time";
+import { Term } from "@/components/term";
+import { findingAnchors } from "@/lib/ui/security-anchor";
+import { useHashTarget } from "@/hooks/use-hash-target";
+import { entityLinkClass } from "@/components/entity-link";
+import { cn } from "@/lib/utils";
+import { GUARD_RANGES, type GuardRange } from "@/lib/probe-guard/range";
+import type { SecurityFinding } from "@/lib/db/schema/security";
+
+type Scan = {
+  id: string;
+  status: "running" | "completed" | "failed";
+  trigger: "deploy" | "scheduled" | "manual";
+  findings: SecurityFinding[] | null;
+  criticalCount: number;
+  warningCount: number;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+type BindMounts = { outsideRoots: string[]; canAllow: boolean };
+
+type SecurityData = { scans: Scan[]; bindMounts: BindMounts };
+
+function severityIcon(severity: SecurityFinding["severity"]) {
+  switch (severity) {
+    case "critical":
+      return <ShieldAlert className="size-4 shrink-0 text-status-error" aria-hidden="true" />;
+    case "warning":
+      return <AlertTriangle className="size-4 shrink-0 text-status-warning" aria-hidden="true" />;
+    case "info":
+      return <Info className="size-4 shrink-0 text-status-info" aria-hidden="true" />;
+  }
+}
+
+function severityClass(severity: SecurityFinding["severity"]) {
+  switch (severity) {
+    case "critical":
+      return "bg-status-error-muted";
+    case "warning":
+      return "bg-status-warning-muted";
+    case "info":
+      return "bg-status-info-muted";
+  }
+}
+
+function FindingCard({ finding, anchor, linked }: { finding: SecurityFinding; anchor?: string; linked?: boolean }) {
+  return (
+    <div
+      id={anchor}
+      className={cn(
+        "flex scroll-mt-28 items-start gap-3 rounded-lg px-4 py-3",
+        severityClass(finding.severity),
+        linked && "shadow-[inset_2px_0_0_var(--brass)]",
+      )}
+    >
+      {severityIcon(finding.severity)}
+      <div className="flex-1 min-w-0 space-y-0.5">
+        <p className="text-sm font-medium leading-snug">
+          {anchor ? (
+            <a href={`#${anchor}`} className={entityLinkClass} title="Link to this finding">
+              {finding.title}
+            </a>
+          ) : (
+            finding.title
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground leading-relaxed">{finding.description}</p>
+        {finding.detail && (
+          <p className="text-xs font-mono text-muted-foreground/70 mt-1">{finding.detail}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScanSummary({ scan, anchored = false, linked = null }: { scan: Scan; anchored?: boolean; linked?: string | null }) {
+  const findings = scan.findings ?? [];
+  const critical = findings.filter((f) => f.severity === "critical");
+  const warning = findings.filter((f) => f.severity === "warning");
+  const info = findings.filter((f) => f.severity === "info");
+  const ordered = [...critical, ...warning, ...info];
+  const anchors = anchored ? findingAnchors(ordered) : null;
+  const scannedAt = scan.completedAt ?? scan.startedAt;
+  const triggerLabel = scan.trigger === "deploy" ? "after deploy" : scan.trigger === "scheduled" ? "scheduled" : "manual";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          {scan.status === "running" && <span className="text-status-info">Scan running...</span>}
+          {scan.status === "failed" && <span className="text-status-error">Scan failed</span>}
+          {scan.status === "completed" && findings.length === 0 && (
+            <span className="flex items-center gap-1.5 text-status-success">
+              <ShieldCheck className="size-4" aria-hidden="true" />
+              No findings
+            </span>
+          )}
+          {scan.status === "completed" && findings.length > 0 && (
+            <span>
+              {scan.criticalCount > 0 && (
+                <span className="text-status-error font-medium mr-2">
+                  {scan.criticalCount} <Term id="severity-critical">critical</Term>
+                </span>
+              )}
+              {scan.warningCount > 0 && (
+                <span className="text-status-warning font-medium mr-2">
+                  {scan.warningCount} <Term id="severity-warning">warning</Term>
+                </span>
+              )}
+              {info.length > 0 && (
+                <span className="text-muted-foreground">
+                  {info.length} <Term id="severity-info">info</Term>
+                </span>
+              )}
+            </span>
+          )}
+        </span>
+        <span className="text-xs">
+          <RelativeTime date={scannedAt} /> &middot; {triggerLabel}
+        </span>
+      </div>
+      {findings.length > 0 && (
+        <div className="space-y-2">
+          {ordered.map((finding, i) => (
+            <FindingCard
+              key={`${finding.type}-${finding.title}-${i}`}
+              finding={finding}
+              anchor={anchors?.[i]}
+              linked={!!anchors && anchors[i] === linked}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function requestScans(url: string): Promise<SecurityData> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Couldn't load");
+    const data = await res.json();
+    return { scans: data.scans, bindMounts: data.bindMounts ?? { outsideRoots: [], canAllow: false } };
+  } catch {
+    toast.error("Couldn't load security scans");
+    return { scans: [], bindMounts: { outsideRoots: [], canAllow: false } };
+  }
+}
+
+const RANGE_OPTIONS = GUARD_RANGES.map((r) => ({ value: r, label: r }));
+
+/** Latest scan results with scan history folded, then probe activity with a range picker. */
+export function SecurityFindings({ orgId, appId }: { orgId: string; appId: string }) {
+  const [scans, setScans] = useState<Scan[] | null>(null);
+  const [bindMounts, setBindMounts] = useState<BindMounts>({ outsideRoots: [], canAllow: false });
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [range, setRange] = useState<GuardRange>("7d");
+  const linked = useHashTarget(!loading);
+
+  const scansUrl = `/api/v1/organizations/${orgId}/apps/${appId}/security`;
+
+  const applyScans = useCallback((data: SecurityData) => {
+    setScans(data.scans);
+    setBindMounts(data.bindMounts);
+    setLoading(false);
+  }, []);
+
+  const fetchScans = useCallback(async () => {
+    applyScans(await requestScans(scansUrl));
+  }, [scansUrl, applyScans]);
+
+  useEffect(() => {
+    let cancelled = false;
+    requestScans(scansUrl).then((data) => {
+      if (!cancelled) applyScans(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [scansUrl, applyScans]);
+
+  useEffect(() => {
+    if (!scans || scans[0]?.status !== "running") return;
+    const timer = setInterval(() => void fetchScans(), 5_000);
+    return () => clearInterval(timer);
+  }, [scans, fetchScans]);
+
+  const handleScan = useCallback(async () => {
+    setScanning(true);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/security/scan`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Scan failed");
+        return;
+      }
+      toast.success("Scan complete");
+      await fetchScans();
+    } catch {
+      toast.error("Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }, [orgId, appId, fetchScans]);
+
+  const latest = scans?.[0] ?? null;
+  const historyUrl = `/api/v1/organizations/${orgId}/apps/${appId}/probe-guard/history`;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-sm text-muted-foreground max-w-prose">
+          Scans run automatically after each deploy and daily. They surface exposed files, missing security headers, open sensitive ports and TLS issues.
+        </p>
+        <Button size="sm" variant="outline" onClick={handleScan} disabled={scanning} className="shrink-0">
+          {scanning ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <RefreshCw className="mr-1.5 size-4" />}
+          Scan now
+        </Button>
+      </div>
+
+      {bindMounts.outsideRoots.length > 0 && (
+        <BindMountWarnings bindMounts={bindMounts} />
+      )}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+          <Loader2 className="size-4 animate-spin" />
+          Loading scan history...
+        </div>
+      ) : !latest ? (
+        <Card className="flex flex-col items-center gap-3 py-12 text-center">
+          <Shield className="size-8 text-muted-foreground/30" />
+          <div className="space-y-1">
+            <p className="type-h4">No scans yet</p>
+            <p className="text-xs text-muted-foreground">
+              Scans run automatically after the first deploy. Click &ldquo;Scan now&rdquo; to run one manually.
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          <ScanSummary scan={latest} anchored linked={linked} />
+
+          {scans && scans.length > 1 && (
+            <details className="rounded-lg border bg-card px-4 py-3 group">
+              <summary className="flex cursor-pointer items-center justify-between text-sm font-medium">
+                <span>Scan history <span className="text-xs text-muted-foreground font-normal">&middot; {scans.length - 1} earlier</span></span>
+                <span className="text-xs text-muted-foreground group-open:hidden">Show</span>
+                <span className="text-xs text-muted-foreground hidden group-open:inline">Hide</span>
+              </summary>
+              <div className="mt-3 space-y-4">
+                {scans.slice(1).map((scan) => (
+                  <div key={scan.id} className="opacity-60">
+                    <ScanSummary scan={scan} />
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">Probe activity</h3>
+          <RangePicker options={RANGE_OPTIONS} value={range} onChange={setRange} label="Range" />
+        </div>
+        <GuardHistory endpoint={historyUrl} banUrl={(id) => `${historyUrl.replace(/\/history$/, "")}/bans/${id}`} />
+      </div>
+    </div>
+  );
+}
+
+function BindMountWarnings({ bindMounts }: { bindMounts: BindMounts }) {
+  return (
+    <div className="space-y-2">
+      {bindMounts.outsideRoots.map((path) => (
+        <div key={path} className="flex items-start gap-3 rounded-lg bg-status-warning-muted px-4 py-3">
+          <AlertTriangle className="size-4 shrink-0 text-status-warning" aria-hidden="true" />
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <p className="text-sm font-medium leading-snug">Bind mount outside the allowed host roots</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              It keeps working because the app already mounted it. New mounts outside the roots are refused.
+            </p>
+            <p className="text-xs font-mono text-muted-foreground/70 mt-1 break-all">{path}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -85,6 +85,9 @@ import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
+import { RECOMMENDED_HEADERS } from "@/lib/security/response-headers";
+
+const FALLBACK_HEADERS = RECOMMENDED_HEADERS;
 
 
 import type { AppDetailProps, Environment } from "./types";
@@ -720,7 +723,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     { value: "errors", label: "Errors" },
-                    { value: "security", label: "Security" },
+                  ],
+                },
+                {
+                  label: "Security",
+                  items: [
+                    { value: "security", label: "Findings" },
+                    { value: "security-settings", label: "Settings" },
                   ],
                 },
                 {
@@ -958,7 +967,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
 
         <TabsContent value="security" className={tabPanelSurface}>
-          <AppSecurity appId={app.id} orgId={orgId} />
+          <AppSecurity appId={app.id} orgId={orgId} tab="findings" initialSecurityHeaders={app.securityHeaders ?? FALLBACK_HEADERS} securityHeadersLive={app.securityHeadersLive ?? false} />
+        </TabsContent>
+
+        <TabsContent value="security-settings" className={tabPanelSurface}>
+          <AppSecurity appId={app.id} orgId={orgId} tab="settings" initialSecurityHeaders={app.securityHeaders ?? FALLBACK_HEADERS} securityHeadersLive={app.securityHeadersLive ?? false} />
         </TabsContent>
 
         <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
