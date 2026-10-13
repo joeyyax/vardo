@@ -61,7 +61,10 @@ describe("archive encryption", () => {
   it("refuses the wrong master key", async () => {
     const sealed = await seal(randomBytes(1000));
 
-    await expect(decryptArchiveFile(sealed, join(dir, "back"), "e".repeat(64))).rejects.toBeInstanceOf(ArchiveDecryptError);
+    await expect(decryptArchiveFile(sealed, join(dir, "back"), "e".repeat(64))).rejects.toMatchObject({
+      name: "ArchiveDecryptError",
+      wrongKey: true,
+    });
   });
 
   it("refuses an archive with a flipped byte", async () => {
@@ -70,7 +73,10 @@ describe("archive encryption", () => {
     bytes[bytes.length - 20] ^= 1;
     await writeFile(sealed, bytes);
 
-    await expect(decryptArchiveFile(sealed, join(dir, "back"), KEY)).rejects.toBeInstanceOf(ArchiveDecryptError);
+    await expect(decryptArchiveFile(sealed, join(dir, "back"), KEY)).rejects.toMatchObject({
+      name: "ArchiveDecryptError",
+      wrongKey: false,
+    });
   });
 
   it("refuses a truncated archive", async () => {
@@ -78,7 +84,10 @@ describe("archive encryption", () => {
     const bytes = await readFile(sealed);
     await writeFile(sealed, bytes.subarray(0, bytes.length - 70_000));
 
-    await expect(decryptArchiveFile(sealed, join(dir, "back"), KEY)).rejects.toBeInstanceOf(ArchiveDecryptError);
+    await expect(decryptArchiveFile(sealed, join(dir, "back"), KEY)).rejects.toMatchObject({
+      name: "ArchiveDecryptError",
+      wrongKey: false,
+    });
   });
 });
 

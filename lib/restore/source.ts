@@ -102,7 +102,7 @@ export async function checkSystemBackup(
       archive = await decryptArchiveFile(sealed, dump, masterKey).then(
         () => "opens" as const,
         (err) => {
-          if (err instanceof ArchiveDecryptError) return "refused" as const;
+          if (err instanceof ArchiveDecryptError && err.wrongKey) return "refused" as const;
           throw err;
         },
       );

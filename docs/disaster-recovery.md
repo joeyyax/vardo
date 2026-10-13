@@ -66,7 +66,7 @@ sudo vardo backup key > key.txt
 age -d -i key.txt 2026-10-06T02-00-00-000Z.tar.gz.age | tar -xz
 ```
 
-`vardo backup key` reads the master key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The age key opens archives only. It doesn't reveal the master key, so it can't decrypt env vars. Keep it as private as the archives: anyone holding both can read them. A corrupt, truncated or tampered archive fails instead of writing partial output.
+`vardo backup key` reads the master key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The age key opens archives only. It doesn't reveal the master key, so it can't decrypt env vars. Keep it as private as the archives: anyone holding both can read them. age stops with an error on a corrupt, truncated or tampered archive. Discard anything tar extracted before the error.
 
 Archives written before the switch to age used an in-house format and no longer restore. Delete them from the target.
 

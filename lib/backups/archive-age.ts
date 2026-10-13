@@ -18,14 +18,21 @@ const AGE_MAGIC = Buffer.from("age-encryption.org/v1\n", "ascii");
 /** First bytes of an archive in the retired in-house format. */
 const LEGACY_MAGIC = Buffer.from("VARDOENC", "ascii");
 
+/** age's error when no identity opens the file. */
+const NO_MATCH = "no identity matched";
+
 export class ArchiveDecryptError extends Error {
-  constructor(message: string) {
+  /** True when the key doesn't open the archive; false when the archive is damaged or unreadable. */
+  readonly wrongKey: boolean;
+
+  constructor(message: string, wrongKey = false) {
     super(message);
     this.name = "ArchiveDecryptError";
+    this.wrongKey = wrongKey;
   }
 }
 
-/** The public age recipient (`age1...`) for the master key's identity. */
+/** The public age recipient (`age1...`) for the master key's identity. Keep it private: anyone holding it can write archives that restore. */
 export function deriveArchiveRecipient(masterKey: string): Promise<string> {
   return identityToRecipient(deriveArchiveIdentity(masterKey));
 }
@@ -50,7 +57,9 @@ export function createArchiveDecryptor(identity: string): Duplex {
     try {
       yield* Readable.fromWeb((await decrypter.decrypt(toWeb(source))) as never);
     } catch (err) {
-      throw new ArchiveDecryptError(`Archive could not be decrypted: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes(NO_MATCH)) throw new ArchiveDecryptError("This key doesn't open the archive.", true);
+      throw new ArchiveDecryptError(`The archive is damaged and can't be decrypted: ${message}`);
     }
   });
 }
