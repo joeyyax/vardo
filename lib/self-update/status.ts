@@ -2,6 +2,7 @@ import pkg from "@/package.json";
 import { db } from "@/lib/db";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { formatVersion } from "@/lib/lifecycle/self-deploy";
+import { getGitHubCheckError, type GitHubCheckError } from "@/lib/github-api";
 import { getBuildSha, getChannelUpdate, type ChannelUpdate } from "@/lib/version";
 import { effectiveChannel, type UpdateChannel, type UpdatePolicy } from "./policy";
 import { isRunActive } from "./decide";
@@ -17,6 +18,8 @@ export type UpdateStatus = {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   update: ChannelUpdate | null;
+  /** Why the last GitHub check failed. Null when it worked. */
+  checkError: GitHubCheckError | null;
   run: UpdateRun | null;
   runActive: boolean;
   active: ActiveUpdate | null;
@@ -41,7 +44,7 @@ export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<U
   return {
     selfDeploy: isSelfDeployLayout(),
     current: { version: formatVersion(pkg.version, sha) ?? pkg.version, sha },
-    policy, channel, update, run, runActive: isRunActive(run), active,
+    policy, channel, update, checkError: update ? null : getGitHubCheckError(), run, runActive: isRunActive(run), active,
     rollout, rolloutCoordinator,
     protocolReady: peers.every((peer) => peer.connectionType !== "direct" || peer.type !== "persistent" || !!parseRolloutCapability(peer.vardoUpdate)),
     hostCommand: "sudo vardo update",

@@ -218,7 +218,14 @@ export function UpdatesCard() {
                   Up to date
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground">Couldn&apos;t check GitHub for updates.</p>
+                <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    Couldn&apos;t check GitHub for updates
+                    {status.checkError ? `: ${status.checkError.message}` : ""}.
+                    {status.checkError?.resetsAt ? ` Checks resume ${when(status.checkError.resetsAt)}.` : ""}
+                  </span>
+                </p>
               )}
 
               {status.active && !status.runActive && (
