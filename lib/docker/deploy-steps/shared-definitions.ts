@@ -4,8 +4,8 @@
 import { createHash } from "crypto";
 import { readFile, rename, writeFile } from "fs/promises";
 
-/** Keys a fingerprint skips: labels, scheduling weights and keys compose leaves out of its own hash. */
-const SKIPPED_KEYS = ["labels", "cpu_shares", "oom_score_adj", "mem_reservation", "profiles", "build", "pull_policy", "depends_on"];
+/** Keys a fingerprint skips: labels, scheduling weights, the stop grace period and keys compose leaves out of its own hash. */
+const SKIPPED_KEYS = ["labels", "cpu_shares", "oom_score_adj", "mem_reservation", "stop_grace_period", "profiles", "build", "pull_policy", "depends_on"];
 
 /** In the app's environment dir, beside the slots. */
 export const SHARED_DEFINITIONS_FILE = "shared-definitions.json";

@@ -127,7 +127,7 @@ type DriftResult = {
   states: Map<string, DriftState>;
   staleRoutes: Set<string>;
   error?: string;
-  /** Unchanged apart from labels, scheduling weights or how limits are written. */
+  /** Unchanged apart from labels, scheduling weights, the stop grace period or how limits are written. */
   labelsOnly: Set<string>;
   /** Same hash, but an inline config or secret in the container differs from the compose file's. */
   contentChanged: Set<string>;
@@ -423,7 +423,7 @@ export function describeSharedOutcome(outcome: SharedOutcome): string {
   switch (outcome.result) {
     case "unchanged":
       return outcome.labelsOnly
-        ? `[deploy] Shared service ${outcome.service}: unchanged (only labels, CPU weights or how limits are written differ)`
+        ? `[deploy] Shared service ${outcome.service}: unchanged (only labels, CPU weights, stop grace period or how limits are written differ)`
         : `[deploy] Shared service ${outcome.service}: unchanged`;
     case "recreated":
       return outcome.contentChanged

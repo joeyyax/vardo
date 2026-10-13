@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeCompose, getRoutedServices } from "@/lib/docker/compose-normalize";
+import { composeStopTimeout } from "@/lib/docker/stop-timeout";
 import { analyzeCompose } from "@/lib/docker/compose-analyze";
 import type { ComposeFile } from "@/lib/docker/compose";
 
@@ -202,6 +203,47 @@ describe("normalizeCompose", () => {
       expect(result.services.web.restart).toBe("unless-stopped");
       expect(result.services.db.restart).toBe("unless-stopped");
       expect(result.services.job.restart).toBe("on-failure");
+    });
+  });
+
+  describe("data engine stop grace period", () => {
+    const normalize = (services: Record<string, Partial<ComposeFile["services"][string]>>) =>
+      normalizeCompose(makeCompose(services), { keepHostPorts: true });
+
+    it("gives a data engine without one a long grace period", () => {
+      const { compose, changes } = normalize({
+        db: { image: "postgres:17" },
+        mysql: { image: "docker.io/library/mysql:8.4" },
+        cache: { image: "redis:7" },
+      });
+      for (const name of ["db", "mysql", "cache"]) {
+        expect(compose.services[name].stop_grace_period).toBe("120s");
+      }
+      expect(changes.filter((c) => c.field === "stop_grace_period")).toHaveLength(3);
+    });
+
+    it("keeps a grace period the compose file sets, interpolated or not", () => {
+      const { compose, changes } = normalize({
+        db: { image: "postgres:17", stop_grace_period: "5s" },
+        mongo: { image: "mongo:7", stop_grace_period: "${MONGO_GRACE:-3m}" },
+      });
+      expect(compose.services.db.stop_grace_period).toBe("5s");
+      expect(compose.services.mongo.stop_grace_period).toBe("${MONGO_GRACE:-3m}");
+      expect(changes.filter((c) => c.field === "stop_grace_period")).toHaveLength(0);
+    });
+
+    it("leaves app and build-only services on Docker's default", () => {
+      const { compose } = normalize({
+        web: { image: "nginx:latest" },
+        api: { build: { context: "." } },
+      });
+      expect(compose.services.web.stop_grace_period).toBeUndefined();
+      expect(compose.services.api.stop_grace_period).toBeUndefined();
+    });
+
+    it("stretches the compose stop timeout past the injected grace period", () => {
+      const { compose } = normalize({ web: { image: "nginx:latest" }, db: { image: "postgres:17" } });
+      expect(composeStopTimeout(compose.services)).toBeGreaterThan(120_000);
     });
   });
 

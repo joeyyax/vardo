@@ -209,6 +209,8 @@ services:
     x-vardo-shared: true
     image: postgres:17
     restart: unless-stopped
+    # Fast shutdown writes a checkpoint; Docker's 10s default can cut it off.
+    stop_grace_period: 120s
     mem_limit: ${VARDO_POSTGRES_MEM:-1g}
     environment:
       POSTGRES_USER: host

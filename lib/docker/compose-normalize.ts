@@ -2,7 +2,7 @@
 
 import type { ComposeFile } from "./compose";
 import { parsePortString, stripHostPorts } from "./compose";
-import { selectRoutedService } from "./routed-service";
+import { isDataEngine, selectRoutedService } from "./routed-service";
 
 export type NormalizeChange = {
   service: string;
@@ -30,6 +30,8 @@ export type NormalizeOptions = {
 /** Restart policies Docker accepts. */
 const VALID_RESTART = /^(no|always|unless-stopped|on-failure(:\d+)?)$/;
 const DEFAULT_RESTART = "unless-stopped";
+/** Time a data engine gets to flush and shut down cleanly; Docker's default is 10s. */
+const DATA_ENGINE_STOP_GRACE = "120s";
 
 /** Services routed via Traefik: the one serving the app's port, when the app has a domain. */
 export function getRoutedServices(
@@ -57,6 +59,7 @@ export function normalizeCompose(
   }
 
   result = normalizeRestart(result, opts.restartPolicy ?? DEFAULT_RESTART, changes);
+  result = normalizeStopGrace(result, changes);
 
   return { compose: result, changes };
 }
@@ -140,5 +143,22 @@ function normalizeRestart(
     }
   }
 
+  return { ...compose, services };
+}
+
+/** Give data engines a long stop grace period unless the compose file sets its own. */
+function normalizeStopGrace(compose: ComposeFile, changes: NormalizeChange[]): ComposeFile {
+  const services = { ...compose.services };
+  for (const [name, svc] of Object.entries(services)) {
+    if (svc.stop_grace_period || !isDataEngine(svc)) continue;
+    services[name] = { ...svc, stop_grace_period: DATA_ENGINE_STOP_GRACE };
+    changes.push({
+      service: name,
+      field: "stop_grace_period",
+      action: "added",
+      after: DATA_ENGINE_STOP_GRACE,
+      reason: "Stop grace period set — data engines need time to flush on shutdown",
+    });
+  }
   return { ...compose, services };
 }
