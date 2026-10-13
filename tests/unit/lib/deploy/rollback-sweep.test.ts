@@ -227,7 +227,8 @@ describe("sweepRollbackWatches", () => {
       "app-1",
       "my-app",
       false,
-      expect.stringContaining("blue"),
+      expect.stringContaining("no previous version"),
+      { deploymentId: DEPLOY_ID },
     );
   });
 

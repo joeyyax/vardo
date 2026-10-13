@@ -23,6 +23,7 @@ import { deployRolledBack } from "@/lib/git-integration/github-feedback";
 import { execFileAsync } from "@/lib/utils/exec";
 import { assertSlotWithinApp } from "./slot-guard";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { repoWebUrl } from "@/lib/email/format";
 
 const log = logger.child("rollback-monitor");
 
@@ -190,7 +191,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       rollbackLog(`[rollback] ERROR: ${message}`);
       stage("restore", "failed");
       await finish("failed", "error");
-      await sendRollbackNotification(organizationId, appId, appName, false);
+      await sendRollbackNotification(organizationId, appId, appName, false, undefined, { deploymentId });
       return false;
     }
 
@@ -242,7 +243,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
 
       stage("restore", "failed");
       await finish("failed", "error");
-      await sendRollbackNotification(organizationId, appId, appName, false);
+      await sendRollbackNotification(organizationId, appId, appName, false, undefined, { deploymentId });
       return false;
     }
     stage("restore", "success");
@@ -301,7 +302,8 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
         appId,
         appName,
         false,
-        `Rolled back to ${previousSlot}, but that slot is not running. Manual intervention required.`,
+        `Rolled back, but the previous version isn't running. Manual intervention required.`,
+        { deploymentId },
       );
       return false;
     }
@@ -343,7 +345,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       },
     }).catch(() => {});
 
-    await sendRollbackNotification(organizationId, appId, appName, true, undefined, { deploymentId, restoredSlot: previousSlot });
+    await sendRollbackNotification(organizationId, appId, appName, true, undefined, { deploymentId, restoredSlot: previousSlot, serving: restored, detectedAt: startedAt });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -357,9 +359,35 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       appName,
       false,
       `Rollback failed: ${message}. Manual intervention required.`,
+      { deploymentId },
     );
     return false;
   }
+}
+
+/** The crashed deploy's commit, project and how long it was live. */
+async function rollbackDetails(appId: string, deploymentId: string, detectedAt: number) {
+  const [crashed, app] = await Promise.all([
+    db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { gitSha: true, gitMessage: true, finishedAt: true },
+      with: { environment: { columns: { name: true } } },
+    }),
+    db.query.apps.findFirst({
+      where: eq(apps.id, appId),
+      columns: { gitUrl: true, projectId: true },
+      with: { project: { columns: { name: true } } },
+    }),
+  ]);
+  return {
+    gitSha: crashed?.gitSha ?? undefined,
+    gitMessage: crashed?.gitMessage ?? undefined,
+    liveMs: crashed?.finishedAt ? Math.max(0, detectedAt - crashed.finishedAt.getTime()) : undefined,
+    environment: crashed?.environment?.name ?? undefined,
+    project: app?.project?.name ?? undefined,
+    projectId: app?.projectId ?? undefined,
+    repoUrl: repoWebUrl(app?.gitUrl) ?? undefined,
+  };
 }
 
 export async function sendRollbackNotification(
@@ -368,12 +396,17 @@ export async function sendRollbackNotification(
   appName: string,
   success: boolean,
   message?: string,
-  detail?: { deploymentId?: string; restoredSlot?: string },
+  detail?: { deploymentId?: string; restoredSlot?: string; serving?: { gitSha: string | null; gitMessage: string | null } | null; detectedAt?: number },
 ): Promise<void> {
   try {
     const { emit } = await import("@/lib/notifications/dispatch");
+    const { serving, detectedAt, ...rest } = detail ?? {};
+    const about = rest.deploymentId ? await rollbackDetails(appId, rest.deploymentId, detectedAt ?? Date.now()).catch(() => ({})) : {};
     emit(organizationId, {
-      ...detail,
+      ...rest,
+      ...about,
+      ...(serving?.gitSha ? { servingSha: serving.gitSha, servingMessage: serving.gitMessage ?? undefined } : {}),
+      rolledBackAt: new Date().toISOString(),
       type: "deploy.rollback",
       title: success
         ? `Auto-rollback: ${appName}`
@@ -382,7 +415,7 @@ export async function sendRollbackNotification(
         message ??
         (success
           ? `Containers stopped after deploy. Rolled back to previous version.`
-          : `Containers stopped after deploy and the previous version could not be restored. Manual intervention required.`),
+          : `The previous version couldn't be restored. Manual intervention required.`),
       projectName: appName,
       appId,
       rollbackSuccess: success,

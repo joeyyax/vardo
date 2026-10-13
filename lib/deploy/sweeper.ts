@@ -548,7 +548,8 @@ async function checkRollbackWatch(
         candidate.appId,
         candidate.appName,
         false,
-        `Containers stopped within the post-deploy grace period, but the ${standbySlot} slot has nothing to roll back to. Manual intervention required.`,
+        `There's no previous version to roll back to. Manual intervention required.`,
+        { deploymentId: candidate.deploymentId },
       );
     }
     return;

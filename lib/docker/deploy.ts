@@ -3,7 +3,7 @@ import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and, inArray, isNotNull, ne } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, ne, desc } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
@@ -795,7 +795,7 @@ export async function keepProvenSlot(ctx: DeployContext, reached: DeployStage): 
 }
 
 export type DeployNotice = {
-  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[]; gitUrl?: string | null; gitBranch?: string | null };
+  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[]; gitUrl?: string | null; gitBranch?: string | null; projectId?: string | null };
   deploymentId: string;
   success: boolean;
   durationMs: number;
@@ -824,6 +824,39 @@ async function servingAfterFailure(appId: string, deploymentId: string, environm
   return previous ? "previous" : "none";
 }
 
+/** Recent successful deploys "usual" needs before it shows. */
+const USUAL_MIN_SAMPLES = 3;
+
+/** Whether this is the app's first successful production deploy, and its median recent duration. */
+async function successHistory(
+  appId: string,
+  deploymentId: string,
+  environmentId: string | null,
+): Promise<{ firstDeploy: boolean; usualDurationMs?: number }> {
+  const rows = await db.query.deployments.findMany({
+    where: and(
+      eq(deployments.appId, appId),
+      eq(deployments.status, "success"),
+      ne(deployments.id, deploymentId),
+      ...(environmentId ? [eq(deployments.environmentId, environmentId)] : []),
+    ),
+    orderBy: [desc(deployments.startedAt)],
+    limit: 10,
+    columns: { durationMs: true, trigger: true },
+  });
+  const env = environmentId
+    ? await db.query.environments.findFirst({ where: eq(environments.id, environmentId), columns: { type: true } })
+    : null;
+  const durations = rows
+    .filter((r) => r.trigger !== "rollback" && (r.durationMs ?? 0) > 0)
+    .map((r) => r.durationMs!)
+    .sort((a, b) => a - b);
+  return {
+    firstDeploy: rows.length === 0 && (env?.type ?? "production") === "production",
+    usualDurationMs: durations.length >= USUAL_MIN_SAMPLES ? durations[Math.floor(durations.length / 2)] : undefined,
+  };
+}
+
 export async function sendDeployNotification(notice: DeployNotice) {
   const { deploymentId, success, durationMs, errorMessage, ctx } = notice;
   try {
@@ -840,7 +873,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
     if (!app.name) {
       const row = await db.query.apps.findFirst({
         where: eq(apps.id, app.id),
-        columns: { name: true, displayName: true, gitUrl: true, gitBranch: true },
+        columns: { name: true, displayName: true, gitUrl: true, gitBranch: true, projectId: true },
         with: { domains: { columns: { domain: true } } },
       });
       if (row) app = { ...app, ...row, domains: row.domains };
@@ -855,6 +888,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
     const details = {
       appName: app.name || undefined,
       project: ctx?.projectName,
+      projectId: app.projectId ?? undefined,
       environment: ctx?.envName,
       domains: domainList,
       trigger: notice.trigger ?? deployment?.trigger,
@@ -876,6 +910,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
     const incidentField = incident ? { incident } : {};
 
     if (success) {
+      const history = await successHistory(app.id, deploymentId, deployment?.environmentId ?? null).catch(() => ({ firstDeploy: false }));
       emit(organizationId, {
         type: "deploy.success",
         title: `Deploy successful: ${displayName}`,
@@ -888,6 +923,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
         gitSha,
         gitMessage,
         triggeredBy: triggeredByName,
+        ...history,
         ...details,
         ...incidentField,
       });
