@@ -29,7 +29,7 @@ vi.mock("@/lib/mcp/scope", async (orig) => ({
 vi.mock("@/lib/time-zone-settings", () => ({ getOrgTimeZone: async () => "UTC" }));
 vi.mock("@/lib/backups/org-backup", () => ({ orgBackupScope: () => undefined }));
 vi.mock("@/lib/backups/system-storage", () => ({ readSystemBackupJob: h.systemJob }));
-vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", runBackup: h.runBackup, runSucceeded: (r: { outcome: string }[]) => r.every((x) => x.outcome === "success") }));
+vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", runBackup: h.runBackup }));
 
 import { registerBackupStatusTools } from "@/lib/mcp/tools/backup-status";
 import { registerRunBackup } from "@/lib/mcp/tools/run-backup";
@@ -168,19 +168,12 @@ describe("vardo_run_backup", () => {
     expect(h.runBackup).not.toHaveBeenCalled();
   });
 
-  it("runs the job manually and returns each volume's outcome", async () => {
+  it("starts the job manually without waiting for it", async () => {
     h.jobFindFirst.mockResolvedValue({ id: "j1", organizationId: "org-1" });
-    h.runBackup.mockResolvedValue([
-      { backupId: "b1", appId: "a1", volumeName: "data", outcome: "success", sizeBytes: 10, storagePath: "s3://bucket/key", durationMs: 5 },
-      { backupId: "b2", appId: "a1", volumeName: "uploads", outcome: "failed", sizeBytes: 0, storagePath: "", error: "boom", durationMs: 7 },
-    ]);
-    const res = await runTool()({ jobId: "j1" });
+    h.runBackup.mockReturnValue(new Promise(() => {}));
+    const body = toolBody(await runTool()({ jobId: "j1" }));
     expect(h.runBackup).toHaveBeenCalledWith("j1", { trigger: "manual" });
-    const body = toolBody(res);
-    expect(body.success).toBe(false);
-    expect(body.results).toHaveLength(2);
-    expect(body.results[1]).toMatchObject({ volumeName: "uploads", outcome: "failed", error: "boom" });
-    expect(res.content[0].text).not.toContain("s3://bucket/key");
+    expect(body).toMatchObject({ status: "started", jobId: "j1" });
   });
 
   it("fails while the backups feature is off", async () => {
