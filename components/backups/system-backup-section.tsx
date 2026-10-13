@@ -29,7 +29,7 @@ type SystemRun = {
   startedAt: string;
   finishedAt: string | null;
   storagePath: string | null;
-  archiveKeyFingerprint: string | null;
+  encrypted: boolean;
   log: string | null;
 };
 

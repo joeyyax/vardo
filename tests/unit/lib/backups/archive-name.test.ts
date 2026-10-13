@@ -7,33 +7,28 @@ import {
 } from "@/lib/backups/archive-name";
 
 describe("archiveExtension", () => {
-  it("marks encrypted archives with .enc", () => {
-    expect(archiveExtension("tar", true)).toBe("tar.gz.enc");
-    expect(archiveExtension("dump", true)).toBe("dump.gz.enc");
-  });
-
-  it("keeps plaintext archives on their plain extension", () => {
-    expect(archiveExtension("tar", false)).toBe("tar.gz");
-    expect(archiveExtension("dump", false)).toBe("dump.gz");
+  it("names every new archive with .age", () => {
+    expect(archiveExtension("tar")).toBe("tar.gz.age");
+    expect(archiveExtension("dump")).toBe("dump.gz.age");
   });
 });
 
 describe("formatFromArchiveName", () => {
   it.each([
     ["acme/web/data/2026-10-09T20-50-17-323Z.tar.gz", "tar"],
-    ["acme/web/data/2026-10-09T20-50-17-323Z.tar.gz.enc", "tar"],
+    ["acme/web/data/2026-10-09T20-50-17-323Z.tar.gz.age", "tar"],
     ["vardo-system/postgres/2026-10-09T03-00-00-000Z.dump.gz", "dump"],
-    ["vardo-system/postgres/2026-10-09T03-00-00-000Z.dump.gz.enc", "dump"],
+    ["vardo-system/postgres/2026-10-09T03-00-00-000Z.dump.gz.age", "dump"],
     ["acme/web/data/notes.txt", null],
-    ["acme/web/data/x.enc", null],
+    ["acme/web/data/x.age", null],
   ])("reads %s as %s", (name, format) => {
     expect(formatFromArchiveName(name)).toBe(format);
   });
 });
 
 describe("plainArchiveName", () => {
-  it("strips only a trailing .enc", () => {
-    expect(plainArchiveName("x.tar.gz.enc")).toBe("x.tar.gz");
+  it("strips only a trailing .age", () => {
+    expect(plainArchiveName("x.tar.gz.age")).toBe("x.tar.gz");
     expect(plainArchiveName("x.tar.gz")).toBe("x.tar.gz");
   });
 });

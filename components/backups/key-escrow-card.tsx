@@ -27,23 +27,24 @@ const VARIANT = {
 } as const;
 
 const KEY_COMMAND = "vardo key";
+const RECOVERY_KEY_COMMAND = "vardo backup key";
 
-function CopyCommand() {
+function CopyCommand({ command = KEY_COMMAND }: { command?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    if (!(await copyToClipboard(KEY_COMMAND))) return;
+    if (!(await copyToClipboard(command))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
 
   return (
     <span className="inline-flex items-center gap-1 align-middle">
-      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">{KEY_COMMAND}</code>
+      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">{command}</code>
       <button
         type="button"
         onClick={copy}
-        aria-label={`Copy ${KEY_COMMAND}`}
+        aria-label={`Copy ${command}`}
         title="Copy"
         className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brass"
       >
@@ -94,6 +95,11 @@ export function KeyEscrowCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
         <p className="text-sm text-muted-foreground">
           To restore on a new server you&apos;ll need this key and the sign-in secret. Neither is stored in a backup.
           Run <CopyCommand /> on this server to show both, and save them in your password manager.
+        </p>
+
+        <p className="text-sm text-muted-foreground">
+          To open an archive without Vardo, save the recovery key with <CopyCommand command={RECOVERY_KEY_COMMAND} /> and
+          run <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">age -d -i key.txt archive.tar.gz.age | tar -xz</code>.
         </p>
 
         {state.fingerprint ? (

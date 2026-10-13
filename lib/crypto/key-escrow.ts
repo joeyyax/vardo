@@ -194,7 +194,7 @@ export function describeKeyEscrow(state: KeyEscrowState): KeyEscrowDescription {
       detail:
         `${probe.undecryptable} of ${probe.encrypted} encrypted items won't open with this server's key. ` +
         "Put back the key they were encrypted with, then restart. Without it they can't be recovered.",
-      technical: "Running ENCRYPTION_MASTER_KEY can't decrypt them.",
+      technical: "The current ENCRYPTION_MASTER_KEY can't decrypt them.",
     };
   }
 

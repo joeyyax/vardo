@@ -41,7 +41,7 @@ A mismatch, or any value the running key cannot decrypt, is logged at error leve
    sudo ./install.sh --restore
    ```
 
-2. Open the setup page and choose **Restore from backup**. Pick a system backup and enter the master key. Nothing is restored until the backup's Key ID matches the key and its two-factor secrets open with the auth secret.
+2. Open the setup page and choose **Restore from backup**. Pick a system backup and enter the master key. Nothing is restored until the key opens the backup and its two-factor secrets open with the auth secret.
 3. Vardo's database comes back first. Sign in with an account from the backup to follow the apps as they restore and redeploy, in priority order.
 4. Backup and cron jobs stay paused. Resume them from the same page once the old host is off, or both write to the same bucket.
 
@@ -53,18 +53,25 @@ Nothing recovers the env vars. Re-enter them per app; everything else in the bac
 
 ## Restoring a single app's data
 
-Every archive is encrypted with its own key, wrapped by the master key, so app volume and database archives need the master key too. Restore them from the app's Backups tab; downloads and restore drills decrypt on the server. Archives written before encryption have no header and restore as they are.
+Restore app volumes and databases from the app's Backups tab. Downloads and restore drills decrypt on the server, so a downloaded archive is a plain `.tar.gz` or `.dump.gz`.
 
-Encrypted archives end in `.enc` on the target (`.tar.gz.enc`, `.dump.gz.enc`); archive tools can't open them as they are. Archives written before the suffix keep their plain names but are still encrypted. To open one without Vardo running, copy it off the target and decrypt it on the host:
+## Opening an archive without Vardo
+
+Archives are encrypted with [age](https://age-encryption.org) to a key derived from `ENCRYPTION_MASTER_KEY`, so any age client opens them. Every archive is encrypted and ends in `.age` on the target (`.tar.gz.age`, `.dump.gz.age`). A backup fails rather than upload plaintext when `ENCRYPTION_MASTER_KEY` is missing.
+
+Print the age key from the host, then decrypt with the stock `age` tool:
 
 ```bash
-sudo vardo backup decrypt 2026-10-06T02-00-00-000Z.tar.gz.enc data.tar.gz
+sudo vardo backup key > key.txt
+age -d -i key.txt 2026-10-06T02-00-00-000Z.tar.gz.age | tar -xz
 ```
 
-The command reads the key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The archive header carries everything else, so no database is needed. A corrupt, truncated or tampered archive fails instead of writing partial output.
+`vardo backup key` reads the master key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The age key opens archives only. It doesn't reveal the master key, so it can't decrypt env vars. Keep it as private as the archives: anyone holding both can read them. age stops with an error on a corrupt, truncated or tampered archive. Discard anything tar extracted before the error.
+
+Archives written before the switch to age used an in-house format and no longer restore. Delete them from the target.
 
 ## What a backup does not contain
 
-- The encryption master key. Without it, no archive decrypts.
+- The encryption master key. Without it, no encrypted archive opens.
 - Container images — pulled from your registry on deploy.
 - `/opt/vardo/.env` itself, including `DB_PASSWORD` and `BETTER_AUTH_SECRET`. Losing the auth secret signs everyone out; losing the master key is the unrecoverable one.

@@ -2,14 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { encryptArchiveFile, readArchiveKeyId } from "@/lib/backups/archive-crypto";
-import { fingerprintMasterKey } from "@/lib/crypto/key-fingerprint";
 import { LocalBackupStorage } from "@/lib/backups/storage-local";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
 
-const KEY = "a".repeat(64);
 let dir: string;
 
 beforeEach(async () => {
@@ -17,19 +14,6 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
-});
-
-describe("readArchiveKeyId", () => {
-  it("reads the Key ID an encrypted archive was written with", async () => {
-    await writeFile(join(dir, "plain"), "x".repeat(5000));
-    await encryptArchiveFile(join(dir, "plain"), join(dir, "sealed"), KEY);
-    expect(await readArchiveKeyId(join(dir, "sealed"))).toBe(fingerprintMasterKey(KEY));
-  });
-
-  it("returns null for a plaintext archive", async () => {
-    await writeFile(join(dir, "plain"), "x".repeat(5000));
-    expect(await readArchiveKeyId(join(dir, "plain"))).toBeNull();
-  });
 });
 
 describe("LocalBackupStorage.list", () => {

@@ -8,8 +8,8 @@ export type RestoreTest =
   | { kind: "unsupported"; detail: string | null };
 
 /** Whether the archive was written encrypted and is still stored. */
-export function isEncryptedRun(run: { storagePath: string | null; archiveKeyFingerprint?: string | null }): boolean {
-  return !!run.storagePath && !!run.archiveKeyFingerprint;
+export function isEncryptedRun(run: { storagePath: string | null; encrypted?: boolean }): boolean {
+  return !!run.storagePath && !!run.encrypted;
 }
 
 /** Whether a restore drill has proven this backup restorable. */

@@ -141,10 +141,8 @@ export const backups = pgTable("backup", {
   sourceKind: text("source_kind"),
   // Master key fingerprint on Vardo's own database dump only. Restore refuses a mismatch with the running key.
   keyFingerprint: text("key_fingerprint"),
-  // The archive's data key wrapped by the master key (base64). Null for a plaintext archive and once pruned.
-  archiveKey: text("archive_key"),
-  // Fingerprint of the key that wrapped archiveKey.
-  archiveKeyFingerprint: text("archive_key_fingerprint"),
+  // Whether the stored archive is age-encrypted under the master key. False for a plaintext archive.
+  encrypted: boolean("encrypted").notNull().default(false),
   // Paths this archive left out, relative to the volume root. Restore keeps the live copies.
   // Recorded per archive and never re-derived, or dropped patterns lose data.
   excludedPaths: jsonb("excluded_paths").$type<string[]>(),

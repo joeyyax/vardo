@@ -416,7 +416,7 @@ const entries = {
   },
   "backup-encrypted": {
     term: "Encrypted",
-    what: "Encrypted with this server's recovery key. Restoring on another server needs that key.",
+    what: "Encrypted with age. Opens with any age client using the key from `vardo backup key`. Restoring on another server needs the recovery key.",
   },
 
   // Domains

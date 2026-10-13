@@ -19,9 +19,9 @@ import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 import {
   createArchiveEncryptor,
   decryptArchiveFile,
-  isEncryptedArchiveFile,
-  type ArchiveKey,
-} from "./archive-crypto";
+  deriveArchiveRecipient,
+  readArchiveKind,
+} from "./archive-age";
 import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
@@ -316,7 +316,7 @@ export function backupWorkDir(backupId: string): string {
 
 /**
  * Stream an archive from its producer through checksum, gzip check and encryption into storage.
- * Plaintext only when no master key is configured. Nothing is committed unless every check passes.
+ * Always encrypted; fails without ENCRYPTION_MASTER_KEY. Nothing is committed unless every check passes.
  */
 async function streamArchive(opts: {
   producer: ArchiveProducer;
@@ -332,7 +332,7 @@ async function streamArchive(opts: {
   afterExit?: (stats: ArchiveStats) => Promise<void>;
   /** Upper bound on the archive's size, when known. */
   expectedBytes?: number | null;
-}): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
+}): Promise<{ sizeBytes: number; checksum: string }> {
   const { producer, label, storage, storageKey, logFn } = opts;
   const inspector = createArchiveInspector({
     label,
@@ -348,15 +348,9 @@ async function streamArchive(opts: {
   stages.push(inspector);
 
   const masterKey = process.env.ENCRYPTION_MASTER_KEY;
-  let archiveKey: ArchiveKey | null = null;
-  if (masterKey) {
-    const encryptor = createArchiveEncryptor(masterKey);
-    archiveKey = encryptor.key;
-    stages.push(encryptor.stream);
-    logFn(`Encrypting under master key ${archiveKey.keyFingerprint}`);
-  } else {
-    logFn("WARNING: ENCRYPTION_MASTER_KEY is not set — uploading the archive unencrypted");
-  }
+  if (!masterKey) throw new Error("ENCRYPTION_MASTER_KEY is not set, so the archive can't be encrypted");
+  stages.push(createArchiveEncryptor(await deriveArchiveRecipient(masterKey)));
+  logFn("Encrypting the archive with age");
 
   logFn(`Streaming to ${storageKey}`);
   const startedAt = Date.now();
@@ -384,7 +378,7 @@ async function streamArchive(opts: {
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
   logFn(`Checksum: sha256:${stats.sha256.slice(0, 16)}...`);
   logFn(`Upload complete (${uploaded.value.sizeBytes} bytes, ${stats.bytes} before encryption) in ${seconds}s`);
-  return { sizeBytes: uploaded.value.sizeBytes, checksum: stats.sha256, archiveKey };
+  return { sizeBytes: uploaded.value.sizeBytes, checksum: stats.sha256 };
 }
 
 /** The empty-source marker the streaming script leaves in the work dir. */
@@ -409,7 +403,7 @@ async function streamTarBackup(opts: {
   storageKey: string;
   logFn: (msg: string) => void;
   expectedBytes?: number | null;
-}): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null; excludedPaths: string[]; sourceWasEmpty: boolean }> {
+}): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; sourceWasEmpty: boolean }> {
   const { workDir, label } = opts;
   const findArgv = opts.singleFile ? [] : buildFindExclusionArgv(opts.excludePatterns);
   const script = opts.singleFile ? [buildFileStreamScript()] : [buildTarStreamScript(), "vardo-backup", ...findArgv];
@@ -469,7 +463,7 @@ async function storedArchiveBytes(storage: BackupStorage, storagePath: string, r
 /** Refuse before downloading when staging, or the restore's destination, can't hold the archive. */
 async function checkDiskSpace(opts: {
   storage: BackupStorage;
-  backup: { storagePath: string; archiveKey: string | null; sizeBytes: number | null };
+  backup: { storagePath: string; encrypted: boolean; sizeBytes: number | null };
   /** Host path a file restore writes into. */
   targetHostPath?: string | null;
   log: (msg: string) => void;
@@ -480,7 +474,7 @@ async function checkDiskSpace(opts: {
     log("WARNING: the archive's size is unknown; skipping the free-space check");
     return;
   }
-  const staging = stagingNeed(archiveBytes, !!backup.archiveKey);
+  const staging = stagingNeed(archiveBytes, backup.encrypted);
   const needs: SpaceNeed[] = [
     { label: "staging filesystem", path: BACKUPS_DIR, neededBytes: staging.bytes, freeBytes: await localFreeBytes(BACKUPS_DIR), why: staging.why },
   ];
@@ -497,10 +491,10 @@ async function checkDiskSpace(opts: {
   assertSpace(needs, log);
 }
 
-/** Download an archive into `destPath`, decrypted. Plaintext passes through unless the row says encrypted. */
+/** Download an archive into `destPath`, decrypted. A plaintext file passes through unless the row says encrypted. */
 async function fetchArchive(
   storage: BackupStorage,
-  backup: { storagePath: string; archiveKey: string | null },
+  backup: { storagePath: string; encrypted: boolean },
   destPath: string,
   logFn: (msg: string) => void = () => {},
 ): Promise<{ encrypted: boolean }> {
@@ -508,15 +502,14 @@ async function fetchArchive(
   try {
     await storage.download(backup.storagePath, sealedPath);
 
-    if (!backup.archiveKey && !(await isEncryptedArchiveFile(sealedPath))) {
+    if ((await readArchiveKind(sealedPath)) === "plain") {
+      if (backup.encrypted) throw new Error("Archive is not encrypted, but this backup was recorded as encrypted");
       await rename(sealedPath, destPath);
       logFn("Archive is unencrypted");
       return { encrypted: false };
     }
 
-    await decryptArchiveFile(sealedPath, destPath, process.env.ENCRYPTION_MASTER_KEY, {
-      requireEncrypted: !!backup.archiveKey,
-    });
+    await decryptArchiveFile(sealedPath, destPath, process.env.ENCRYPTION_MASTER_KEY);
     logFn("Archive decrypted and authenticated");
     return { encrypted: true };
   } finally {
@@ -532,7 +525,7 @@ export async function backupVolumeTar(
   storage: BackupStorage,
   logFn: (msg: string) => void,
   excludePatterns: string[] = [],
-): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; archiveKey: ArchiveKey | null }> {
+): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[] }> {
   const workDir = backupWorkDir(backupId);
   await ensureDir(workDir);
 
@@ -580,7 +573,7 @@ async function backupVolumeDump(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
+): Promise<{ sizeBytes: number; checksum: string }> {
   return streamArchive({
     producer,
     compress: true,
@@ -733,7 +726,6 @@ async function backupBindTar(
   checksum: string;
   kind: BindSourceKind;
   excludedPaths: string[];
-  archiveKey: ArchiveKey | null;
 }> {
   const workDir = backupWorkDir(backupId);
   await ensureDir(workDir);
@@ -1126,7 +1118,7 @@ async function runBackupUntracked(
     }
 
     const strategy: ArchiveStrategy = vol.backupStrategy === "dump" ? "dump" : "tar";
-    const ext = archiveExtension(strategy, Boolean(process.env.ENCRYPTION_MASTER_KEY));
+    const ext = archiveExtension(strategy);
     const storageKey = vol.appName && vol.orgSlug
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
@@ -1153,7 +1145,7 @@ async function runBackupUntracked(
     try {
       log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
 
-      let result: { sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null };
+      let result: { sizeBytes: number; checksum: string };
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
       let excludedPaths: string[] = [];
@@ -1232,8 +1224,7 @@ async function runBackupUntracked(
           sizeBytes: result.sizeBytes,
           storagePath: storageKey,
           checksum: `sha256:${result.checksum}`,
-          archiveKey: result.archiveKey?.wrappedKey ?? null,
-          archiveKeyFingerprint: result.archiveKey?.keyFingerprint ?? null,
+          encrypted: true,
           resolvedSource,
           sourceKind,
           excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,
@@ -1619,7 +1610,7 @@ export async function pruneBackups(jobId: string): Promise<number> {
   if (pruneIds.length > 0) {
     await db
       .update(backups)
-      .set({ status: "pruned", archiveKey: null })
+      .set({ status: "pruned" })
       .where(inArray(backups.id, pruneIds));
   }
 
@@ -1840,14 +1831,14 @@ async function restoreBackupUnmarked(
     // 1. Download
     await checkDiskSpace({
       storage,
-      backup: { storagePath: backup.storagePath, archiveKey: backup.archiveKey, sizeBytes: backup.sizeBytes },
+      backup: { storagePath: backup.storagePath, encrypted: backup.encrypted, sizeBytes: backup.sizeBytes },
       targetHostPath: strategy === "tar" ? (vol?.type === "bind" ? vol.source : await dockerDataRoot()) : null,
       log,
     });
     log(`Downloading backup from ${backup.storagePath}`);
     const { encrypted } = await fetchArchive(
       storage,
-      { storagePath: backup.storagePath, archiveKey: backup.archiveKey },
+      { storagePath: backup.storagePath, encrypted: backup.encrypted },
       archivePath,
       log,
     );
@@ -2088,7 +2079,7 @@ export async function getBackupDownloadUrl(
     throw new Error("Backup has no storage path");
   }
 
-  if (backup.archiveKey) return null;
+  if (backup.encrypted) return null;
 
   const storage = createBackupStorage(backup.target);
 
@@ -2120,12 +2111,12 @@ export async function downloadBackupToTemp(
   try {
     await checkDiskSpace({
       storage,
-      backup: { storagePath: backup.storagePath, archiveKey: backup.archiveKey, sizeBytes: backup.sizeBytes },
+      backup: { storagePath: backup.storagePath, encrypted: backup.encrypted, sizeBytes: backup.sizeBytes },
       log: logFn ?? (() => {}),
     });
     await fetchArchive(
       storage,
-      { storagePath: backup.storagePath, archiveKey: backup.archiveKey },
+      { storagePath: backup.storagePath, encrypted: backup.encrypted },
       destPath,
       logFn,
     );

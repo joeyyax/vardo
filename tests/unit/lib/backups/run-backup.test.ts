@@ -209,6 +209,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  vi.stubEnv("ENCRYPTION_MASTER_KEY", "a".repeat(64));
   inserted.length = 0;
   updated.length = 0;
   committed.length = 0;
