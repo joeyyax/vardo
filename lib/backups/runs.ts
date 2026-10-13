@@ -440,6 +440,7 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
 export async function loadStaleVolumes(organizationId: string, now: number) {
   const rows = await db
     .select({
+      appId: backups.appId,
       appName: sql<string | null>`coalesce(max(${apps.displayName}), ${backups.appName})`,
       volumeName: backups.volumeName,
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
@@ -450,17 +451,32 @@ export async function loadStaleVolumes(organizationId: string, now: number) {
     .groupBy(backups.appId, backups.appName, backups.volumeName);
   return rows
     .filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS))
-    .map((r) => ({ appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
+    .map((r) => ({ appId: r.appId, appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
 }
 
 type RunRow = typeof backupRuns.$inferSelect;
 
+/** Stale volumes a run's summary lists: the org's for a nightly run, otherwise only those of the apps the run covered. */
+export function staleForRun<T extends { appId: string | null }>(
+  run: { kind: string; plan: BackupRunPlan; items: BackupResultItem[] },
+  stale: T[],
+): T[] {
+  if (run.kind === "nightly") return stale;
+  const covered = new Set([
+    ...run.plan.apps.map((a) => a.appId),
+    ...(run.plan.jobs.flatMap((j) => j.appIds ?? [])),
+    ...run.items.map((i) => i.appId),
+  ]);
+  return stale.filter((v) => covered.has(v.appId));
+}
+
 async function sendSummary(run: RunRow, now: number): Promise<void> {
-  const [settings, history, staleVolumes] = await Promise.all([
+  const [settings, history, orgStale] = await Promise.all([
     readOrgNotificationSettings(run.organizationId),
     loadHistory(run.organizationId, run.items, now),
     loadStaleVolumes(run.organizationId, now),
   ]);
+  const staleVolumes = staleForRun(run, orgStale).map(({ appId: _appId, ...v }) => v);
   const rows = summarizeResults(run.items, history);
   const unfinished = unfinishedJobs(run);
   if (rows.length === 0 && unfinished.length === 0) return;

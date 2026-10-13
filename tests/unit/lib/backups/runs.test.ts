@@ -29,7 +29,7 @@ vi.mock("@/lib/notifications/observations", () => ({ fireAlert: mocks.fire, sett
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
 
 import { dbMock } from "@/tests/helpers/db";
-const { describeTarget, finishBackupRuns, recordBackupResults, startManualRun } = await import("@/lib/backups/runs");
+const { describeTarget, finishBackupRuns, recordBackupResults, staleForRun, startManualRun } = await import("@/lib/backups/runs");
 
 const MIN = 60_000;
 const t0 = Date.parse("2026-10-10T02:00:00Z");
@@ -301,5 +301,68 @@ describe("startManualRun", () => {
 
   it("skips an instance-level job", async () => {
     expect(await startManualRun({ id: "j1", name: "System", organizationId: null }, new Date(t0))).toBeNull();
+  });
+});
+
+describe("stale volumes in a summary", () => {
+  const stale = [
+    { appId: "a1", appName: "Shop", volumeName: "data", lastSuccessAt: null },
+    { appId: "a9", appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
+  ];
+
+  const runRow = (over: Record<string, unknown>) => ({
+    id: "r1",
+    organizationId: "org1",
+    jobsDone: ["j1"],
+    deadlineAt: new Date(t0 + 60 * MIN),
+    startedAt: new Date(t0),
+    estimatedMs: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    dbMock.reset();
+    vi.clearAllMocks();
+    mocks.settings.mockResolvedValue({ categories: { backups: true, backupSummaries: false, host: true, apps: true }, nightlyBackupTime: "02:00" });
+    // The stale query joins apps; the history query doesn't.
+    (dbMock.db as Record<string, unknown>).select = vi.fn(() => {
+      let stalePass = false;
+      const chain: Record<string, unknown> = {};
+      for (const m of ["from", "where", "orderBy", "groupBy"]) chain[m] = () => chain;
+      chain.leftJoin = () => ((stalePass = true), chain);
+      chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(stalePass ? stale.map((s) => ({ ...s, lastSuccess: null })) : []);
+      return chain;
+    });
+  });
+
+  it("lists only a single job's own apps", () => {
+    const run = { kind: "job", plan: { jobs: [{ jobId: "j1", jobName: "Auto: Shop" }], apps: [], target: null }, items: [item()] };
+    expect(staleForRun(run, stale).map((s) => s.appId)).toEqual(["a1"]);
+    expect(staleForRun({ ...run, kind: "nightly" }, stale)).toHaveLength(2);
+  });
+
+  it("sends nothing for a job that succeeded beside another app's stale volume", async () => {
+    const claimed = runRow({
+      kind: "job",
+      runKey: "manual:j1:1",
+      label: "Auto: search-data",
+      plan: { jobs: [{ jobId: "j1", jobName: "Auto: search-data" }], apps: [], target: null },
+      items: [item({ appId: "a2", appName: "search-data" })],
+    });
+    dbMock.query.backupRuns.findMany.mockResolvedValue([claimed]);
+    dbMock.updateReturns([claimed]);
+    await finishBackupRuns(t0 + 10 * MIN);
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the org's stale list in a nightly summary", async () => {
+    const claimed = runRow({ kind: "nightly", runKey: "nightly:2026-10-10", label: "Nightly backups", plan: plan(["j1"]), items: [item()] });
+    dbMock.query.backupRuns.findMany.mockResolvedValue([claimed]);
+    dbMock.updateReturns([claimed]);
+    await finishBackupRuns(t0 + 10 * MIN);
+    expect(mocks.emit.mock.calls[0][1].staleVolumes).toEqual([
+      { appName: "Shop", volumeName: "data", lastSuccessAt: null },
+      { appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
+    ]);
   });
 });
