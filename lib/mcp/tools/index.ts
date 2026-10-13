@@ -30,6 +30,12 @@ import { registerEmailSettingsTools } from "./email-settings";
 import { registerDomainTools } from "./domains";
 import { registerInstanceStatusTools } from "./instance-status";
 import { registerUpdateNow } from "./update-now";
+import { registerListAttention } from "./list-attention";
+import { registerBackupStatusTools } from "./backup-status";
+import { registerRunBackup } from "./run-backup";
+import { registerListDeployments } from "./list-deployments";
+import { registerListActivity } from "./list-activity";
+import { registerSecuritySummary } from "./security-summary";
 
 /** Registers all MCP tools on the server. */
 export function registerAllTools(
@@ -66,4 +72,10 @@ export function registerAllTools(
   registerDomainTools(server, context);
   registerInstanceStatusTools(server, context);
   registerUpdateNow(server, context);
+  registerListAttention(server, context);
+  registerBackupStatusTools(server, context);
+  registerRunBackup(server, context);
+  registerListDeployments(server, context);
+  registerListActivity(server, context);
+  registerSecuritySummary(server, context);
 }
