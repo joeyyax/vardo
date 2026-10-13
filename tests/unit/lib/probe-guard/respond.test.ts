@@ -83,6 +83,32 @@ describe("handleGuardRequest", () => {
     expect(body.length).toBeLessThan(100);
   });
 
+  it("answers a browser with a small page that names the status and leaks nothing", async () => {
+    const { deps } = setup({ humor: false });
+    const accept = { accept: "text/html,application/xhtml+xml,*/*;q=0.8", "user-agent": "scanner/1.0" };
+    const res = await handleGuardRequest("probe", req("/wp-login.php", { app: "secret-app-id", headers: accept }), deps);
+    const body = await res.text();
+    expect(res.status).toBe(403);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(body).toContain("<title>403 Forbidden</title>");
+    expect(body).toContain("This item is unavailable.");
+    expect(body).not.toMatch(/<script/i);
+    for (const leak of ["shop.example.com", "secret-app-id", "scanner", "wp-login", IP]) expect(body).not.toContain(leak);
+  });
+
+  it("words a ban and a missing page for people, and keeps text for non-browsers", async () => {
+    const { deps } = setup({ humor: false });
+    const html = { accept: "text/html" };
+    const banned = await (await handleGuardRequest("banned", req("/", { headers: html }), deps)).text();
+    expect(banned).toContain("Access from your address is unavailable right now.");
+    const missing = await (await handleGuardRequest("probe", req("/.env", { headers: html }), deps)).text();
+    expect(missing).toContain("<title>404 Not Found</title>");
+    expect(missing).toContain("The page you requested is unavailable.");
+    const api = await handleGuardRequest("probe", req("/.env", { headers: { accept: "application/json" } }), deps);
+    expect(await api.text()).toBe("Not Found\n");
+  });
+
   it("bans at the threshold and not before", async () => {
     const { deps, bans } = setup({ threshold: 3 });
     for (let i = 0; i < 2; i++) await handleGuardRequest("probe", req("/.git/config"), deps);
