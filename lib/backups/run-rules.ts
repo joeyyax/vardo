@@ -62,6 +62,25 @@ export function nightlyRunKey(time: string, now: Date, tz: string = UTC): string
   return `nightly:${zonedDateKey(now, tz)}`;
 }
 
+/** How long after its time a nightly run a stopped console missed still starts. */
+export const NIGHTLY_CATCH_UP_MS = 6 * 60 * 60_000;
+
+/** The key of the latest nightly run due before `now`'s minute and within `windowMs`. Null otherwise. */
+export function missedNightlyKey(time: string, now: Date, tz: string = UTC, windowMs = NIGHTLY_CATCH_UP_MS): string | null {
+  const m = NIGHTLY_TIME.exec(time);
+  if (!m) return null;
+  const minute = Math.floor(now.getTime() / 60_000) * 60_000;
+  const today = zonedParts(now, tz);
+  for (const daysBack of [0, 1]) {
+    const d = new Date(Date.UTC(today.year, today.month - 1, today.day - daysBack));
+    const day = { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    const due = zonedTimeToUtc({ ...day, hour: Number(m[1]), minute: Number(m[2]) }, tz);
+    if (due.getTime() >= minute) continue;
+    return minute - due.getTime() <= windowMs ? `nightly:${zonedDateKey(due, tz)}` : null;
+  }
+  return null;
+}
+
 /** Per volume outside its own timing: lease, row writes, container start. */
 export const VOLUME_OVERHEAD_MS = 2_000;
 /** Per job: loading it, retention pruning, reporting. */

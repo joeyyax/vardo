@@ -21,6 +21,7 @@ import {
   LONG_RUN_MS,
   MANUAL_RUN_PREFIX,
   MAX_SUMMARY_ROWS,
+  missedNightlyKey,
   nightlyRunKey,
   runDeadline,
   runIsDone,
@@ -225,18 +226,29 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
     .innerJoin(organizations, eq(organizations.id, backupJobs.organizationId))
     .where(and(eq(backupJobs.enabled, true), eq(backupJobs.nightly, true)));
   const instanceTimeZone = jobs.length ? await getInstanceTimeZone() : UTC;
-  const byOrg = new Map<string, { key: string; jobIds: string[] }>();
+  const byOrg = new Map<string, { key: string; missed: boolean; jobIds: string[] }>();
   for (const job of jobs) {
-    const key = nightlyRunKey(job.time, now, resolveTimeZone(job.timeZone, instanceTimeZone));
-    if (!key || !job.organizationId) continue;
-    const entry = byOrg.get(job.organizationId) ?? { key, jobIds: [] };
+    if (!job.organizationId) continue;
+    const tz = resolveTimeZone(job.timeZone, instanceTimeZone);
+    const onTime = nightlyRunKey(job.time, now, tz);
+    const key = onTime ?? missedNightlyKey(job.time, now, tz);
+    if (!key) continue;
+    const entry = byOrg.get(job.organizationId) ?? { key, missed: !onTime, jobIds: [] };
     entry.jobIds.push(job.id);
     byOrg.set(job.organizationId, entry);
   }
 
   const runOf = new Map<string, string>();
-  for (const [organizationId, { key, jobIds }] of byOrg) {
+  for (const [organizationId, { key, missed, jobIds }] of byOrg) {
     try {
+      // A run a stopped console missed starts once, as the whole nightly run.
+      if (missed) {
+        const opened = await db.query.backupRuns.findFirst({
+          where: and(eq(backupRuns.organizationId, organizationId), eq(backupRuns.runKey, key)),
+          columns: { id: true },
+        });
+        if (opened) continue;
+      }
       const plan = await planJobs(jobIds);
       const estimatedMs = await estimatePlan(organizationId, plan, now.getTime());
       const runId = await openRun({ organizationId, kind: "nightly", runKey: key, label: "Nightly backups", plan, estimatedMs, now: now.getTime() });
