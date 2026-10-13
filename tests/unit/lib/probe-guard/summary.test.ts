@@ -4,6 +4,7 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 
 import { banReasonLine, guardSummary, probeSummary, type BanDetail } from "@/lib/probe-guard/summary";
 import { banDetailFrom, summarizeProbePaths, type DetailEvent } from "@/lib/probe-guard/ban-detail";
+import { pathLabeler } from "@/lib/probe-guard/labels";
 
 const IP = "203.0.113.20";
 const banAt = new Date("2026-01-01T12:00:00Z");
@@ -13,10 +14,12 @@ function repeat(path: string, n: number): string[] {
   return Array.from({ length: n }, () => path);
 }
 
+const probes = (paths: string[]) => paths.map((path) => ({ path, appId: null }));
+
 describe("summarizeProbePaths", () => {
   it("counts categories and paths, most frequent first", () => {
     const paths = [...repeat("/_ignition/execute-solution", 28), ...repeat("/.env", 4), ...repeat("/api/.env", 2), "/.git/config"];
-    const { categories, paths: top } = summarizeProbePaths(paths);
+    const { categories, paths: top } = summarizeProbePaths(probes(paths));
     expect(categories).toEqual([
       { label: "Laravel Ignition exploit (RCE)", count: 28 },
       { label: "env files", count: 6 },
@@ -28,11 +31,16 @@ describe("summarizeProbePaths", () => {
 
   it("caps the path list", () => {
     const paths = Array.from({ length: 30 }, (_, i) => `/.env.${i}`);
-    expect(summarizeProbePaths(paths, 10).paths).toHaveLength(10);
+    expect(summarizeProbePaths(probes(paths), undefined, 10).paths).toHaveLength(10);
+  });
+
+  it("files an app's turn-away entries under their own labels", () => {
+    const labelFor = pathLabeler(new Map([["app1", [{ kind: "prefix" as const, value: "/telescope", template: "laravel" }]]]));
+    expect(summarizeProbePaths([{ path: "/telescope", appId: "app1" }], labelFor).categories).toEqual([{ label: "Laravel", count: 1 }]);
   });
 
   it("files unmatched paths under other paths", () => {
-    expect(summarizeProbePaths(["/hello"]).categories).toEqual([{ label: "other paths", count: 1 }]);
+    expect(summarizeProbePaths(probes(["/hello"])).categories).toEqual([{ label: "other paths", count: 1 }]);
   });
 });
 
@@ -89,6 +97,7 @@ describe("banDetailFrom", () => {
     ip: IP,
     kind: "probe",
     path,
+    appId: null,
     createdAt: new Date(banAt.getTime() - minutesBefore * MIN),
     ...over,
   });

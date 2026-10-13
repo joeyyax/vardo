@@ -9,6 +9,8 @@ import { trapsSince } from "./events";
 import { dailyHits, hourlyHits, ruleHits, type DayCount, type RuleHitCounts } from "./hits";
 import { getProbeGuardSettings } from "./instance";
 import { banReports } from "./overview";
+import { pathLabeler } from "./labels";
+import { guardBlocks } from "./sync";
 import { rangeBuckets, rangeLabel, rangePhrase, rangeStart, type GuardRange } from "./range";
 import { approximateNote, banStatus, detailsStartNote, fallbackUntil, probeCategories, ruleHitRows, type AppCategories, type BanStatus, type RuleHit } from "./history-view";
 import type { BanDetail, ProbeCount } from "./summary";
@@ -148,8 +150,10 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
       : Promise.resolve([] as { ip: string }[]),
   ]);
   const banned = new Set(activeIps.map((r) => r.ip));
-  const { byApp } = probeCategories(pathRows);
-  const rules = ruleHitRows({ counts: counted.counts, events: earlierRows, details: details.values() });
+  const blocks = await guardBlocks([...pathRows, ...earlierRows].flatMap((r) => (r.appId ? [r.appId] : []))).catch(() => new Map());
+  const labelFor = pathLabeler(blocks);
+  const { byApp } = probeCategories(pathRows, labelFor);
+  const rules = ruleHitRows({ counts: counted.counts, events: earlierRows, details: details.values(), labelFor });
   const eventHits = earlierRows.reduce((s, r) => s + r.count, 0);
   const recorded = pathRows.reduce((s, r) => s + r.count, 0);
 

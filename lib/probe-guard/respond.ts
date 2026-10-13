@@ -1,7 +1,9 @@
 // The console's answer to a request Traefik's guard routers sent over: count, ban when due, then a short reply.
 
 import { logger } from "@/lib/logger";
-import { OTHER_RULE_ID, matchProbe } from "./rules";
+import { matchProbe } from "./rules";
+import { hitRuleId } from "./labels";
+import type { CustomBlock } from "./blocks";
 import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, errorPage, responseBody, wantsHtml } from "./responses";
 import { normalizeIp, reachesThreshold } from "./ban-policy";
 import { attributeBlock, type BanRef, type BlockMatch } from "./block-source";
@@ -44,6 +46,8 @@ export type GuardDeps = {
   banLookup?: (ips: readonly string[]) => Promise<(ip: string) => BanRef | undefined>;
   /** Counts a blocked request. Must not throw or wait. */
   recordBlock?: (ip: string, match: BlockMatch) => void;
+  /** The turn-away entries an app answers, to count a hit under the entry it tripped. */
+  blocksFor?: (appId: string) => Promise<readonly CustomBlock[]>;
   /** Queues an exploit attempt for abuse reporting. */
   queueReport?: (ip: string) => Promise<unknown>;
 };
@@ -158,7 +162,9 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const status = match?.rule.status ?? 403;
     if (allowed) return deny(request, status);
     if (match?.rule.report === "exploit") void deps.queueReport?.(ip)?.catch(() => {});
-    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000, match?.rule.id ?? OTHER_RULE_ID).catch(() => 0);
+    const blocks = !match && appId ? await deps.blocksFor?.(appId).catch(() => []) : undefined;
+    const ruleId = match?.rule.id ?? hitRuleId(path, blocks);
+    const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000, ruleId).catch(() => 0);
     if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });
     return deny(request, status);

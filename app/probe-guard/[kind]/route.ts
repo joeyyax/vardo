@@ -8,7 +8,8 @@ import { getProbeGuardSettings, hasGuardKey } from "@/lib/probe-guard/instance";
 import { recordHit } from "@/lib/probe-guard/hits";
 import { createBan } from "@/lib/probe-guard/bans";
 import { activeCanaries, markUsed, markerFor, recordEvent } from "@/lib/probe-guard/events";
-import { appForHost } from "@/lib/probe-guard/sync";
+import { appForHost, guardBlocks } from "@/lib/probe-guard/sync";
+import type { CustomBlock } from "@/lib/probe-guard/blocks";
 import { renderAppRobots } from "@/lib/probe-guard/robots";
 import { banLookup, blockedRangeFor, isAllowlisted } from "@/lib/probe-guard/client-lists";
 import { recordBlock } from "@/lib/probe-guard/blocked";
@@ -32,6 +33,18 @@ async function existingApp(id: string | null): Promise<string | null> {
   return row ? id : null;
 }
 
+const blockCache = new Map<string, { blocks: CustomBlock[]; at: number }>();
+
+/** An app's turn-away entries, cached like the app check. */
+async function blocksFor(id: string): Promise<CustomBlock[]> {
+  const hit = blockCache.get(id);
+  if (hit && Date.now() - hit.at < KNOWN_TTL_MS) return hit.blocks;
+  const blocks = (await guardBlocks([id])).get(id) ?? [];
+  if (blockCache.size > 1000) blockCache.clear();
+  blockCache.set(id, { blocks, at: Date.now() });
+  return blocks;
+}
+
 const deps: GuardDeps = {
   hasKey: (value) => hasGuardKey(value),
   settings: getProbeGuardSettings,
@@ -49,6 +62,7 @@ const deps: GuardDeps = {
   banLookup,
   recordBlock,
   queueReport: queueAbuseReport,
+  blocksFor,
 };
 
 async function handle(request: Request, { params }: { params: Promise<{ kind: string }> }): Promise<Response> {

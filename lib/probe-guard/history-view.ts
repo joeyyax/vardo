@@ -1,7 +1,7 @@
 // Pure pieces of the Security page's range view: ban status, probe categories and the details-start note. Client-safe.
 
 import { isPermanent } from "./permanent";
-import { probeLabel, ruleLabel } from "./rules";
+import { hitLabel, pathLabeler } from "./labels";
 import type { BanDetail, ProbeCount } from "./summary";
 
 export type BanStatusKind = "active" | "expired" | "lifted" | "permanent";
@@ -26,12 +26,15 @@ function sorted(counts: Map<string, number>): ProbeCount[] {
 }
 
 /** Probe counts by rule label, overall and per app, from path counts. */
-export function probeCategories(rows: readonly PathAppCount[]): { categories: ProbeCount[]; byApp: AppCategories[] } {
+export function probeCategories(
+  rows: readonly PathAppCount[],
+  labelFor: (path: string, appId: string | null) => string = pathLabeler(),
+): { categories: ProbeCount[]; byApp: AppCategories[] } {
   const all = new Map<string, number>();
   const perApp = new Map<string | null, Map<string, number>>();
   for (const r of rows) {
     if (!r.path || r.count <= 0) continue;
-    const label = probeLabel(r.path);
+    const label = labelFor(r.path, r.appId);
     all.set(label, (all.get(label) ?? 0) + r.count);
     const app = perApp.get(r.appId) ?? new Map<string, number>();
     app.set(label, (app.get(label) ?? 0) + r.count);
@@ -61,11 +64,13 @@ export function ruleHitRows(opts: {
   counts: Readonly<Record<string, number>>;
   events: readonly PathAppCount[];
   details: Iterable<BanDetail | null | undefined>;
+  labelFor?: (path: string, appId: string | null) => string;
 }): RuleHit[] {
+  const labelFor = opts.labelFor ?? pathLabeler();
   const hits = new Map<string, number>();
   const add = (label: string, n: number) => hits.set(label, (hits.get(label) ?? 0) + n);
-  for (const [id, n] of Object.entries(opts.counts)) if (n > 0) add(ruleLabel(id), n);
-  for (const e of opts.events) if (e.path && e.count > 0) add(probeLabel(e.path), e.count);
+  for (const [id, n] of Object.entries(opts.counts)) if (n > 0) add(hitLabel(id), n);
+  for (const e of opts.events) if (e.path && e.count > 0) add(labelFor(e.path, e.appId), e.count);
   const bans = new Map<string, number>();
   for (const d of opts.details) for (const label of new Set(d?.categories.map((c) => c.label))) bans.set(label, (bans.get(label) ?? 0) + 1);
   return [...hits]

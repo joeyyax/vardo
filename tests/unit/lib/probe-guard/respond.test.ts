@@ -58,6 +58,18 @@ function req(path: string, opts: { key?: string | null; app?: string; headers?: 
 }
 
 describe("handleGuardRequest", () => {
+  it("counts a hit on an app's turn-away entry under that entry", async () => {
+    const ruleIds: string[] = [];
+    const { deps } = setup({}, {
+      recordHit: async (_ip, _app, _w, ruleId) => (ruleIds.push(ruleId), 1),
+      blocksFor: async () => [{ kind: "prefix", value: "/internal" }, { kind: "prefix", value: "/telescope", template: "laravel" }],
+    });
+    await handleGuardRequest("probe", req("/internal/x", { app: "app1" }), deps);
+    await handleGuardRequest("probe", req("/telescope", { app: "app1" }), deps);
+    await handleGuardRequest("probe", req("/.env", { app: "app1" }), deps);
+    expect(ruleIds).toEqual(["custom", "template:laravel", "dotenv"]);
+  });
+
   it("answers a plain 404 without Traefik's key", async () => {
     const { deps, bans } = setup();
     const res = await handleGuardRequest("probe", req("/.env", { key: null }), deps);
