@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // postDeploy — bounding the build cache
@@ -33,6 +33,11 @@ const { dbMock, emitMock, pruneBuildCacheMock, queueDrained, lockAcquired } =
   });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+// postDeploy fires these and returns; stubbed so none of them outlives the test.
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
+vi.mock("@/lib/security/scanner", () => ({ runSecurityScan: vi.fn() }));
+vi.mock("@/lib/backups/initial-backup", () => ({ armInitialBackupQuietly: vi.fn() }));
+vi.mock("@/lib/docker/image-updates/stateful-probe", () => ({ probeAppStateful: vi.fn() }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },
 }));
@@ -145,6 +150,40 @@ function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
     ...overrides,
   } as DeployContext;
 }
+
+/** Delayed work postDeploy schedules: requested, never run. */
+const deferred: number[] = [];
+
+// The security scan waits 30s on an unref'd timer; dropped here so it can't fire after this file ends.
+beforeEach(() => {
+  deferred.length = 0;
+  const realSetTimeout = globalThis.setTimeout;
+  vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...args: unknown[]) => {
+    if ((ms ?? 0) < 30_000) return realSetTimeout(fn, ms, ...args);
+    deferred.push(ms!);
+    return { unref() { return this; }, ref() { return this; }, hasRef: () => false, refresh() { return this; } };
+  }) as unknown as typeof setTimeout);
+});
+
+afterEach(() => {
+  vi.mocked(globalThis.setTimeout).mockRestore();
+});
+
+describe("post-deploy background work", () => {
+  it("leaves nothing running once it returns", async () => {
+    const { runSecurityScan } = await import("@/lib/security/scanner");
+    const { armInitialBackupQuietly } = await import("@/lib/backups/initial-backup");
+    const { probeAppStateful } = await import("@/lib/docker/image-updates/stateful-probe");
+
+    await postDeploy(makeContext());
+    await new Promise((r) => setImmediate(r));
+
+    expect(deferred).toEqual([30_000]);
+    expect(runSecurityScan).not.toHaveBeenCalled();
+    expect(armInitialBackupQuietly).toHaveBeenCalled();
+    expect(probeAppStateful).toHaveBeenCalled();
+  });
+});
 
 describe("post-deploy build cache prune", () => {
   beforeEach(() => {
