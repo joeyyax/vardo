@@ -1,6 +1,6 @@
 // Builds the guard file from the database and writes it. Every writer renders the whole file from current rows.
 
-import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, domains, probeBans, probeCanaries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -23,6 +23,7 @@ import { getInstanceConfig } from "@/lib/system-settings";
 import { banRenderOrder } from "./ban-policy";
 import { blockableRanges } from "./blocklist/import";
 import { PERMANENT_UNTIL } from "./permanent";
+import type { CustomBlock } from "./blocks";
 
 const log = logger.child("probe-guard");
 
@@ -63,6 +64,17 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
       robotsTxt: guard.robotsTxt,
     }];
   });
+}
+
+/** Turn-away entries each app answers: the instance's, then its own. */
+export async function guardBlocks(appIds: readonly string[]): Promise<Map<string, CustomBlock[]>> {
+  const ids = [...new Set(appIds)];
+  if (ids.length === 0) return new Map();
+  const [instance, rows] = await Promise.all([
+    getProbeGuardSettings(),
+    db.select({ id: apps.id, probeGuard: apps.probeGuard }).from(apps).where(inArray(apps.id, ids)),
+  ]);
+  return new Map(rows.map((r) => [r.id, [...instance.blocks, ...normalizeAppProbeGuard(r.probeGuard).blocks]]));
 }
 
 /** Permanent bans first, then the newest local ones, then blocklist bans by confidence. */
