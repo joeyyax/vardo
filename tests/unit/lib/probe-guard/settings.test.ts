@@ -25,18 +25,18 @@ describe("app settings", () => {
 });
 
 describe("instance settings", () => {
-  it("default to humor on, sharing off", () => {
+  it("default to sharing off", () => {
     const s = normalizeInstanceProbeGuard(undefined);
-    expect(s.humor).toBe(true);
     expect(s.shareBans).toBe(false);
     expect(s.threshold).toBe(5);
     expect(s.windowMinutes).toBe(10);
   });
 
-  it("ignore the retired delay setting in stored settings", () => {
-    const s = normalizeInstanceProbeGuard({ ...DEFAULT_INSTANCE_PROBE_GUARD, threshold: 9, tarpitMs: 2000 });
+  it("ignore retired settings in stored settings", () => {
+    const s = normalizeInstanceProbeGuard({ ...DEFAULT_INSTANCE_PROBE_GUARD, threshold: 9, tarpitMs: 2000, humor: true });
     expect(s.threshold).toBe(9);
     expect("tarpitMs" in s).toBe(false);
+    expect("humor" in s).toBe(false);
   });
 
   it("refuse a first ban longer than the longest", () => {

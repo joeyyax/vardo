@@ -1,84 +1,7 @@
-// Bodies for turned-away probes. Short, friendly and free of anything about the app, its stack or Vardo.
+// Bodies for turned-away requests. Generic on purpose: nothing about the app, its stack or why.
 
-import type { ProbeCategory } from "./rules";
+const STATUS_NAME: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
 
-export type ResponseKind = ProbeCategory | "trap" | "canary" | "banned";
-
-const LINES: Record<ResponseKind, readonly string[]> = {
-  secrets: [
-    "Nice try. The .env is in another castle.",
-    "No secrets here. Only this sentence.",
-    "The keys are under the doormat. Just not this doormat.",
-  ],
-  vcs: [
-    "Nothing to check out here.",
-    "This repository has no history with you.",
-    "git log: no commits by you, ever.",
-  ],
-  wordpress: [
-    "This is not the WordPress you're looking for.",
-    "No WordPress here. Not even a little bit.",
-    "wp-admin has left the building.",
-  ],
-  "db-admin": [
-    "418: I'm a teapot, not a phpMyAdmin.",
-    "The database admin is out to lunch. Indefinitely.",
-  ],
-  cgi: [
-    "The cgi-bin was recycled years ago.",
-    "This bin is empty.",
-  ],
-  framework: [
-    "No debug console here. Just this one line.",
-    "Nothing to execute but this sentence.",
-  ],
-  "server-info": [
-    "Status: politely declining.",
-    "Server status: minding its own business.",
-  ],
-  backup: [
-    "The backup of the backup is also not here.",
-    "Fresh out of config files.",
-  ],
-  traversal: [
-    "../../../nope",
-    "You can climb the directory tree all day. It ends here.",
-  ],
-  router: [
-    "Wrong number. This isn't a router.",
-    "No modem here. Just a polite refusal.",
-  ],
-  trap: [
-    "Nothing here but dust bunnies.",
-    "This room is empty. It always was.",
-  ],
-  canary: [
-    "Those credentials are as fake as they look.",
-    "That key opens nothing.",
-  ],
-  banned: [
-    "Taking a short break from you. Try again later.",
-    "This door is closed for now.",
-  ],
-};
-
-/** Lines for the console's own 404, revealed when the ghost is clicked. */
-export const NOT_FOUND_LINES = [
-  "there's nothing here",
-  "this page went out haunting",
-  "not even a ghost of a page",
-  "boo. also, 404.",
-] as const;
-export const PLAIN_NOT_FOUND = "there's nothing here";
-
-export function notFoundLine(humor: boolean, pick: () => number = Math.random): string {
-  if (!humor) return PLAIN_NOT_FOUND;
-  return NOT_FOUND_LINES[Math.min(NOT_FOUND_LINES.length - 1, Math.floor(pick() * NOT_FOUND_LINES.length))];
-}
-
-const PLAIN: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
-
-// What a person sees when humor is off. Generic on purpose: nothing about the app, its stack or why.
 const UNAVAILABLE: Record<number, string> = {
   403: "This item is unavailable.",
   404: "The page you requested is unavailable.",
@@ -103,53 +26,44 @@ export function wantsHtml(accept: string | null): boolean {
   return !!accept && /\btext\/html\b/i.test(accept);
 }
 
-const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ESCAPES[c]);
+/** The plain-text body for a turned-away request. */
+export function responseBody(status: number): string {
+  return `${STATUS_NAME[status] ?? "Forbidden"}\n`;
 }
 
-/** Every line, for tests and review. */
-export function allLines(): string[] {
-  return Object.values(LINES).flat();
-}
-
-/** The body for a turned-away request. `pick` returns 0 to 1, Math.random by default. */
-export function responseBody(kind: ResponseKind, status: number, humor: boolean, pick: () => number = Math.random): string {
-  if (!humor) return `${PLAIN[status] ?? "Forbidden"}\n`;
-  const lines = LINES[kind];
-  return `${lines[Math.min(lines.length - 1, Math.floor(pick() * lines.length))]}\n`;
-}
+// The console's palette (app/brand.css): warm ground, brass trim, muted body text. System fonts, since the
+// page can't load any.
+const PAGE_STYLE = `
+:root{color-scheme:light dark;--bg:oklch(95.8% .005 85);--fg:oklch(18% .012 75);--muted:oklch(44% .013 78);--brass:oklch(48% .098 72)}
+@media (prefers-color-scheme:dark){:root{--bg:oklch(16% .008 75);--fg:oklch(93% .006 85);--muted:oklch(68% .012 80);--brass:oklch(74% .085 82)}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:clamp(1.5rem,6vw,4rem);background:var(--bg);color:var(--fg);font:1rem/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:28rem;padding-bottom:6vh}
+.code{display:flex;align-items:center;gap:.75rem;margin:0 0 1.25rem;font-size:.8125rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);font-variant-numeric:tabular-nums}
+.code:before{content:"";width:1.5rem;height:1px;background:currentColor}
+h1{margin:0 0 .75rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.1;font-weight:680;letter-spacing:-.025em}
+.message{margin:0;color:var(--muted);text-wrap:pretty}
+`.trim();
 
 /** A small standalone page for a turned-away browser request: the status, its official name and one line. */
-export function errorPage(kind: ResponseKind, status: number, humor: boolean, pick: () => number = Math.random): string {
-  const title = PLAIN[status] ?? "Forbidden";
-  const message = humor
-    ? responseBody(kind, status, true, pick).trimEnd()
-    : kind === "banned"
-      ? UNAVAILABLE_BANNED
-      : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
+export function errorPage(status: number, opts: { banned?: boolean } = {}): string {
+  const name = STATUS_NAME[status] ?? "Forbidden";
+  const message = opts.banned ? UNAVAILABLE_BANNED : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<title>${status} ${title}</title>
-<style>
-:root{color-scheme:light dark}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:Canvas;color:CanvasText}
-main{padding:2rem;max-width:28rem;text-align:center}
-h1{margin:0;font-size:4rem;font-weight:300;letter-spacing:-.02em;opacity:.35}
-h2{margin:.25rem 0 1rem;font-size:1.25rem;font-weight:600}
-p{margin:0;opacity:.7}
-</style>
+<title>${status} ${name}</title>
+<style>${PAGE_STYLE}</style>
 </head>
 <body>
 <main>
-<h1>${status}</h1>
-<h2>${title}</h2>
-<p>${escapeHtml(message)}</p>
+<p class="code">Error ${status}</p>
+<h1>${name}</h1>
+<p class="message">${message}</p>
 </main>
 </body>
 </html>

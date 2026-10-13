@@ -1,8 +1,8 @@
-// The console's answer to a request Traefik's guard routers sent over: count, ban when due, then a short plain-text reply.
+// The console's answer to a request Traefik's guard routers sent over: count, ban when due, then a short reply.
 
 import { logger } from "@/lib/logger";
 import { OTHER_RULE_ID, matchProbe } from "./rules";
-import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, errorPage, responseBody, wantsHtml, type ResponseKind } from "./responses";
+import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, errorPage, responseBody, wantsHtml } from "./responses";
 import { normalizeIp, reachesThreshold } from "./ban-policy";
 import { attributeBlock, type BanRef, type BlockMatch } from "./block-source";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from "./canary";
@@ -48,12 +48,12 @@ export type GuardDeps = {
 };
 
 /** A turned-away request: a small page for browsers, plain text for everything else. */
-function deny(request: Request, kind: ResponseKind, status: number, humor: boolean): Response {
+function deny(request: Request, status: number, opts: { banned?: boolean } = {}): Response {
   const head = request.method.toUpperCase() === "HEAD";
   if (wantsHtml(request.headers.get("accept"))) {
-    return new Response(head ? null : errorPage(kind, status, humor), { status, headers: HTML_RESPONSE_HEADERS });
+    return new Response(head ? null : errorPage(status, opts), { status, headers: HTML_RESPONSE_HEADERS });
   }
-  return new Response(head ? null : responseBody(kind, status, humor), { status, headers: RESPONSE_HEADERS });
+  return new Response(head ? null : responseBody(status), { status, headers: RESPONSE_HEADERS });
 }
 
 /** The original path Traefik's replacePath kept, without its query. */
@@ -95,11 +95,10 @@ async function countBanned(ip: string, headers: Headers, deps: GuardDeps): Promi
 export async function handleGuardRequest(kind: GuardKind, request: Request, deps: GuardDeps): Promise<Response> {
   const method = request.method.toUpperCase();
   // Without Traefik's key this isn't a guarded request; answer like any missing page.
-  if (!deps.hasKey(request.headers.get(KEY_HEADER))) return deny(request, "trap", 404, false);
+  if (!deps.hasKey(request.headers.get(KEY_HEADER))) return deny(request, 404);
 
   try {
     const settings = await deps.settings();
-    const humor = settings.humor;
     const ip = await deps.clientIp(request.headers);
     const appHeader = request.headers.get(APP_HEADER);
     const appId = appHeader && APP_ID_RE.test(appHeader) ? appHeader : null;
@@ -107,14 +106,14 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
 
     if (kind === "banned") {
       if (!(await deps.allowed?.(ip).catch(() => false))) await countBanned(ip, request.headers, deps).catch(() => {});
-      return deny(request, "banned", 403, humor);
+      return deny(request, 403, { banned: true });
     }
 
     const allowed = kind !== "robots" && !!(await deps.allowed?.(ip).catch(() => false));
     const range = !allowed && kind !== "robots" ? await deps.blockedRange?.(ip).catch(() => null) : null;
     if (range) {
       deps.recordBlock?.(ip, { source: "spamhaus", range });
-      return deny(request, "banned", 403, humor);
+      return deny(request, 403, { banned: true });
     }
 
     if (kind === "robots") {
@@ -125,7 +124,7 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     }
 
     if (kind === "trap") {
-      if (allowed) return deny(request, "trap", 404, humor);
+      if (allowed) return deny(request, 404);
       await deps.recordEvent({ kind: "trap", ip, path, appId });
       await deps.ban({ ip, reason: "trap", appId, hits: 1 });
       if (path === decoyPath(settings)) {
@@ -133,11 +132,11 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
         await deps.recordEvent({ kind: "canary_fetch", ip, path, canaryId: id, appId });
         return new Response(method === "HEAD" ? null : renderDecoyEnv(marker), { status: 200, headers: RESPONSE_HEADERS });
       }
-      return deny(request, "trap", 404, humor);
+      return deny(request, 404);
     }
 
     if (kind === "canary") {
-      if (allowed) return deny(request, "canary", 403, humor);
+      if (allowed) return deny(request, 403);
       const markers = await deps.activeMarkers();
       const found = carriedMarker(request.headers, new URL(request.url), markers.map((m) => m.marker));
       const canary = found ? markers.find((m) => m.marker === found) : undefined;
@@ -147,20 +146,19 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
         await deps.recordEvent({ kind: "canary_used", ip, canaryId: canary.id, appId: app?.id ?? null });
         await deps.ban({ ip, reason: "canary", appId: app?.id ?? null, hits: 1 });
       }
-      return deny(request, "canary", 403, humor);
+      return deny(request, 403);
     }
 
     const match = matchProbe(path);
     const status = match?.rule.status ?? 403;
-    const category: ResponseKind = match?.rule.category ?? "framework";
-    if (allowed) return deny(request, category, status, humor);
+    if (allowed) return deny(request, status);
     if (match?.rule.report === "exploit") void deps.queueReport?.(ip)?.catch(() => {});
     const hits = await deps.recordHit(ip, appId, settings.windowMinutes * 60_000, match?.rule.id ?? OTHER_RULE_ID).catch(() => 0);
     if (recordsProbeEvent(hits)) await deps.recordEvent({ kind: "probe", ip, path, appId }).catch(() => {});
     if (reachesThreshold(hits, settings)) await deps.ban({ ip, reason: "threshold", appId, hits });
-    return deny(request, category, status, humor);
+    return deny(request, status);
   } catch (err) {
     log.warn("Probe guard request failed:", err);
-    return deny(request, "framework", 403, false);
+    return deny(request, 403);
   }
 }

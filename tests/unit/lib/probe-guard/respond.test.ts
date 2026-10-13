@@ -84,7 +84,7 @@ describe("handleGuardRequest", () => {
   });
 
   it("answers a browser with a small page that names the status and leaks nothing", async () => {
-    const { deps } = setup({ humor: false });
+    const { deps } = setup();
     const accept = { accept: "text/html,application/xhtml+xml,*/*;q=0.8", "user-agent": "scanner/1.0" };
     const res = await handleGuardRequest("probe", req("/wp-login.php", { app: "secret-app-id", headers: accept }), deps);
     const body = await res.text();
@@ -98,7 +98,7 @@ describe("handleGuardRequest", () => {
   });
 
   it("words a ban and a missing page for people, and keeps text for non-browsers", async () => {
-    const { deps } = setup({ humor: false });
+    const { deps } = setup();
     const html = { accept: "text/html" };
     const banned = await (await handleGuardRequest("banned", req("/", { headers: html }), deps)).text();
     expect(banned).toContain("Access from your address is unavailable right now.");
@@ -117,8 +117,8 @@ describe("handleGuardRequest", () => {
     expect(bans).toEqual([{ ip: IP, reason: "threshold", appId: null, hits: 3 }]);
   });
 
-  it("falls back to plain text with humor off", async () => {
-    const { deps } = setup({ humor: false });
+  it("answers a client that doesn't ask for a page with the status name as text", async () => {
+    const { deps } = setup();
     expect(await (await handleGuardRequest("probe", req("/.env"), deps)).text()).toBe("Not Found\n");
     expect(await (await handleGuardRequest("probe", req("/HNAP1"), deps)).text()).toBe("Forbidden\n");
   });
