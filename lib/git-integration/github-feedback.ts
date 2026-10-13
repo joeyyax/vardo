@@ -10,6 +10,7 @@ import {
   deploymentPayload,
   deploymentStatusPayload,
   failureText,
+  IN_FLIGHT,
   mergedMarker,
   overallState,
   previewMarker,
@@ -297,6 +298,8 @@ export type FeedbackDeps = {
   readSha: (deploymentId: string) => Promise<string | null>;
   /** The commit the rollback of this deploy restored. */
   readServingSha?: (deploymentId: string, appId: string) => Promise<string | null>;
+  /** The deployment row's status. */
+  readStatus?: (deploymentId: string) => Promise<string | null>;
   instance: () => Promise<InstanceInfo>;
   /** Installation that covers the repo for these orgs; null orgs trusts GitHub's answer alone. */
   resolveInstallation: (repo: string, organizationIds: string[] | null) => Promise<number | null>;
@@ -484,10 +487,14 @@ export function createFeedback(deps: FeedbackDeps) {
     return [key, state];
   }
 
-  /** Records an app's row on its PR comment and schedules an edit. */
-  async function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null) {
-    if (!info.pr || isBlocked(info.appId)) return;
+  /** Records an app's row on its PR comment and schedules an edit. `ownOnly` writes only over this deploy's in-flight row. */
+  async function setPreviewRow(info: DeployInfo, row: Omit<PreviewRow, "app">, sha?: string | null, ownOnly = false): Promise<boolean> {
+    if (!info.pr || isBlocked(info.appId)) return false;
     const [key, state] = await prState(info.pr.repo, info.pr.number);
+    if (ownOnly) {
+      const current = state.rows.get(info.appName);
+      if (!current || current.deploymentId !== info.deploymentId || !IN_FLIGHT.includes(current.state)) return false;
+    }
     state.appIds.add(info.appId);
     state.orgIds.add(info.organizationId);
     const changed: PreviewRow[] = [];
@@ -505,13 +512,14 @@ export function createFeedback(deps: FeedbackDeps) {
         }
       }
     }
-    const mine: PreviewRow = { app: info.appName, ...row };
+    const mine: PreviewRow = { app: info.appName, deploymentId: info.deploymentId, ...row };
     state.rows.set(info.appName, mine);
     changed.push(mine);
     await persist(`the PR comment state of ${info.pr.repo}#${info.pr.number}`, (s) =>
       s.savePr(key, { ...(newSha ? { sha: state.sha } : {}), rows: changed, appIds: [info.appId], orgIds: [info.organizationId] }),
     );
-    return pushPrComment(key, state, info.pr.repo, info.pr.number);
+    await pushPrComment(key, state, info.pr.repo, info.pr.number);
+    return true;
   }
 
   async function postCommitStatus(info: DeployInfo, sha: string, state: CommitState, description: string) {
@@ -549,7 +557,14 @@ export function createFeedback(deps: FeedbackDeps) {
     return info.environment === "preview" && !!info.pr && info.pr.repo.toLowerCase() === info.repo.toLowerCase();
   }
 
-  async function mergedRow(info: DeployInfo, sha: string, row: Omit<ProductionRow, "app" | "sha">, attempt = 0): Promise<void> {
+  /** `keepLive` leaves a Live row for the app as it is. */
+  async function mergedRow(
+    info: DeployInfo,
+    sha: string,
+    row: Omit<ProductionRow, "app" | "sha">,
+    opts: { keepLive?: boolean; attempt?: number } = {},
+  ): Promise<void> {
+    const attempt = opts.attempt ?? 0;
     if (!info.repo || info.environment !== "production" || info.trigger === "rollback" || isBlocked(info.appId)) return;
     const key = `${info.repo.toLowerCase()}@${sha}`;
     let state = merges.get(key);
@@ -564,6 +579,7 @@ export function createFeedback(deps: FeedbackDeps) {
       if (saved.commentId) state.commentId = saved.commentId;
       for (const [app, r] of saved.rows) state.rows.set(app, r);
     }
+    if (opts.keepLive && state.rows.get(info.appName)?.state === "live") return;
     const mine: ProductionRow = { app: info.appName, sha, ...row };
     state.rows.set(info.appName, mine);
     await persist(`the merged comment state of ${key}`, (s) => s.saveMerged(key, { rows: [mine] }));
@@ -578,7 +594,7 @@ export function createFeedback(deps: FeedbackDeps) {
         }, { propagate: true });
       } catch (err) {
         // The comment is a final state: look again once GitHub allows it.
-        if (isBackoff(err) && attempt < FINAL_RETRIES) defer(backedOffUntil(gh.installationId) || now() + 1000, () => mergedRow(info, sha, row, attempt + 1));
+        if (isBackoff(err) && attempt < FINAL_RETRIES) defer(backedOffUntil(gh.installationId) || now() + 1000, () => mergedRow(info, sha, row, { ...opts, attempt: attempt + 1 }));
         return;
       }
       if (!ok || merged.pr === undefined) return;
@@ -735,33 +751,69 @@ export function createFeedback(deps: FeedbackDeps) {
     }
   }
 
+  type Ended = {
+    error: string;
+    /** Commit and deployment status text. */
+    summary: string;
+    mergedState: "failed" | "rolled_back";
+    durationMs?: number | null;
+    /** The restored version is running. */
+    serving?: boolean;
+    /** Writes only while the deploy is still failed and its PR row is still its own and in flight. */
+    ownOnly?: boolean;
+  };
+
+  /** A deploy whose end its own process didn't report. */
+  async function endedElsewhere(deploymentId: string, end: Ended): Promise<void> {
+    const info = await deps.loadInfo(deploymentId, "", null);
+    if (!info || !info.enabled || !info.repo) return;
+    if (end.ownOnly && deps.readStatus && (await deps.readStatus(deploymentId)) !== "failed") return;
+    const sha = await deps.readSha(deploymentId);
+    const instance = await deps.instance();
+    const logUrl = deployPageUrl(instance.consoleUrl, info.appId, deploymentId);
+    const appUrl = appPageUrl(instance.consoleUrl, info.appId);
+    // An own-only write leaves the heading's SHA alone; a newer push may own it.
+    const wrote = await setPreviewRow(info, { state: "failed", error: end.error, logUrl, appUrl }, end.ownOnly ? null : sha, end.ownOnly);
+    if (end.ownOnly && info.pr && !wrote) return;
+    if (!sha) return;
+    await postCommitStatus(info, sha, "failure", end.summary);
+    if (wantsDeployment(info)) {
+      const gh = await withClient(info.repo, [info.organizationId]);
+      if (gh) {
+        await guarded([info.appId], info.organizationId, `Deployment status on ${info.repo}`, async () => {
+          const id = await findGhDeployment(gh, info, sha);
+          if (!id) return;
+          await gh.request("POST", `/repos/${info.repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: "failure", description: end.summary, logUrl }));
+        }, { final: true, conn: gh });
+      }
+    }
+    const servingSha = end.serving ? await deps.readServingSha?.(deploymentId, info.appId).catch(() => null) : null;
+    await mergedRow(info, sha, {
+      state: end.mergedState,
+      error: end.error,
+      durationMs: end.durationMs,
+      logUrl,
+      appUrl,
+      ...(servingSha ? { servingSha } : {}),
+    }, { keepLive: end.ownOnly });
+  }
+
   /** A deploy that went live was rolled back afterwards. `serving` when the restored version is running. */
   async function deployRolledBack(deploymentId: string, opts: { serving?: boolean } = {}): Promise<void> {
     const reason = "Rolled back after the deploy";
     try {
-      const info = await deps.loadInfo(deploymentId, "", null);
-      if (!info || !info.enabled || !info.repo) return;
-      const sha = await deps.readSha(deploymentId);
-      const instance = await deps.instance();
-      const logUrl = deployPageUrl(instance.consoleUrl, info.appId, deploymentId);
-      const appUrl = appPageUrl(instance.consoleUrl, info.appId);
-      await setPreviewRow(info, { state: "failed", error: reason, logUrl, appUrl }, sha);
-      if (!sha) return;
-      await postCommitStatus(info, sha, "failure", reason);
-      if (wantsDeployment(info)) {
-        const gh = await withClient(info.repo, [info.organizationId]);
-        if (gh) {
-          await guarded([info.appId], info.organizationId, `Deployment status on ${info.repo}`, async () => {
-            const id = await findGhDeployment(gh, info, sha);
-            if (!id) return;
-            await gh.request("POST", `/repos/${info.repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: "failure", description: reason, logUrl }));
-          }, { final: true, conn: gh });
-        }
-      }
-      const servingSha = opts.serving ? await deps.readServingSha?.(deploymentId, info.appId).catch(() => null) : null;
-      await mergedRow(info, sha, { state: "rolled_back", error: reason, logUrl, appUrl, servingSha });
+      await endedElsewhere(deploymentId, { error: reason, summary: reason, mergedState: "rolled_back", serving: opts.serving });
     } catch (err) {
       log.warn(`Rollback feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** The sweeper failed a deploy whose process stopped reporting. */
+  async function deployTimedOut(deploymentId: string, error: string, durationMs?: number | null): Promise<void> {
+    try {
+      await endedElsewhere(deploymentId, { error, summary: failureText(error) ?? "Deploy failed", mergedState: "failed", durationMs, ownOnly: true });
+    } catch (err) {
+      log.warn(`Timeout feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -809,7 +861,7 @@ export function createFeedback(deps: FeedbackDeps) {
     }
   }
 
-  return { trackDeploy, deployRolledBack, previewRemoved, previewLive };
+  return { trackDeploy, deployRolledBack, deployTimedOut, previewRemoved, previewLive };
 }
 
 /** The merged pull request whose merge produced this commit. */
@@ -978,6 +1030,14 @@ async function readSha(deploymentId: string): Promise<string | null> {
   return row?.gitSha ?? null;
 }
 
+async function readStatus(deploymentId: string): Promise<string | null> {
+  const { db } = await import("@/lib/db");
+  const { deployments } = await import("@/lib/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const row = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { status: true } });
+  return row?.status ?? null;
+}
+
 /** The SHA on the rollback row the monitor wrote for this deploy. */
 async function readServingSha(deploymentId: string, appId: string): Promise<string | null> {
   const { db } = await import("@/lib/db");
@@ -1021,6 +1081,7 @@ const feedback = createFeedback({
   loadInfo,
   readSha,
   readServingSha,
+  readStatus,
   instance: loadInstance,
   resolveInstallation: cachedInstallation,
   client: installationClient,
@@ -1032,5 +1093,6 @@ const feedback = createFeedback({
 
 export const trackDeploy = feedback.trackDeploy;
 export const deployRolledBack = feedback.deployRolledBack;
+export const deployTimedOut = feedback.deployTimedOut;
 export const previewRemoved = feedback.previewRemoved;
 export const previewLive = feedback.previewLive;

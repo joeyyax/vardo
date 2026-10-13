@@ -12,6 +12,8 @@ export type PreviewRow = {
   logUrl?: string | null;
   /** The app's console page, when the console is public. */
   appUrl?: string | null;
+  /** The deploy that wrote the row. */
+  deploymentId?: string;
 };
 
 export type ProductionState = "live" | "failed" | "rolled_back";
@@ -41,7 +43,7 @@ const STATE_LABEL: Record<PreviewState | ProductionState, string> = {
   rolled_back: "Rolled back",
 };
 
-const IN_FLIGHT: PreviewState[] = ["queued", "building", "deploying"];
+export const IN_FLIGHT: PreviewState[] = ["queued", "building", "deploying"];
 
 export const shortSha = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) : null);
 

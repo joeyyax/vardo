@@ -21,6 +21,7 @@ const settle = async () => {
 const APPS: Record<string, { appId: string; appName: string }> = {
   "dep-web": { appId: "app-web", appName: "web" },
   "dep-api": { appId: "app-api", appName: "api" },
+  "dep-api-2": { appId: "app-api", appName: "api" },
 };
 
 function info(deploymentId: string, over: Partial<DeployInfo>): DeployInfo {
@@ -53,6 +54,9 @@ function processFeedback(redis: FakeRedis, over: Partial<DeployInfo>, calls: Cal
       if (method === "GET" && /\/issues\/\d+\/comments/.test(path)) return [] as T;
       if (method === "POST" && /\/issues\/\d+\/comments$/.test(path)) return { id: 900 } as T;
       if (method === "POST" && /\/deployments$/.test(path)) return { id: 500 } as T;
+      if (method === "GET" && /\/deployments\?/.test(path)) {
+        return Object.keys(APPS).map((id, i) => ({ id: 600 + i, payload: { vardo: { deployment: id } } })) as T;
+      }
       return undefined as T;
     },
   };
@@ -152,6 +156,131 @@ describe("PR comment state across processes", () => {
     deploy(web.feedback, "dep-web");
     await settle();
     expect(lastBody(calls, 4)).toContain("**Preview live at `abcdef1`**");
+  });
+});
+
+describe("a deploy the sweeper timed out", () => {
+  const preview = { environment: "preview" as const, pr: { repo: "acme/widget", number: 4 } };
+  const TIMEOUT = "Deployment timed out after 45 minutes";
+  const READABLE = "The deploy took longer than the 45 minute limit.";
+
+  /** Starts a deploy that never reports its end, as when its process dies. */
+  function strand(feedback: ReturnType<typeof createFeedback>, deploymentId: string) {
+    const t = feedback.trackDeploy(deploymentId, { trigger: "webhook" });
+    for (const s of ["clone", "compose", "build"]) t.stage(s, "running");
+  }
+
+  const githubWrites = (calls: Call[]) => calls.filter((c) => c.method !== "GET");
+
+  it("fails its PR row, commit status and deployment with the readable text", async () => {
+    const web = processFeedback(redis, preview, []);
+    deploy(web.feedback, "dep-web");
+    strand(web.feedback, "dep-api");
+    await settle();
+
+    const sweeperCalls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, sweeperCalls, { readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 2_700_000);
+    await settle();
+
+    const body = lastBody(sweeperCalls, 4);
+    expect(body).toContain("**Preview failed at `abcdef1`**");
+    expect(body).toContain(`| api | Failed · ${READABLE} | [Log](https://console.example.com/apps/app-api/deployments/dep-api)`);
+    expect(body).toContain("| web | Live |");
+    expect(sweeperCalls.find((c) => c.path === `/repos/acme/widget/statuses/${SHA}`)?.body).toMatchObject({
+      state: "failure",
+      context: "vardo/api",
+      description: READABLE,
+    });
+    expect(sweeperCalls.find((c) => c.path === "/repos/acme/widget/deployments/601/statuses")?.body).toMatchObject({
+      state: "failure",
+      description: READABLE,
+    });
+  });
+
+  it("fails the merged PR's row in production", async () => {
+    const web = processFeedback(redis, {}, []);
+    deploy(web.feedback, "dep-web");
+    strand(web.feedback, "dep-api");
+    await settle();
+
+    const sweeperCalls: Call[] = [];
+    const sweeper = processFeedback(redis, {}, sweeperCalls, { readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 2_700_000);
+    await settle();
+    const body = lastBody(sweeperCalls, 8);
+    expect(body).toContain(`| api | Failed · ${READABLE} |`);
+    expect(body).toContain("| web | Live |");
+  });
+
+  it("stays quiet for an app without GitHub feedback", async () => {
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { loadInfo: async () => null, readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1);
+    await settle();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("leaves a row the deploy already took Live", async () => {
+    const web = processFeedback(redis, preview, []);
+    deploy(web.feedback, "dep-api");
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1);
+    await settle();
+    expect(githubWrites(calls)).toHaveLength(0);
+  });
+
+  it("leaves the merged PR's Live row in production", async () => {
+    const web = processFeedback(redis, {}, []);
+    deploy(web.feedback, "dep-api");
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, {}, calls, { readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1);
+    await settle();
+    expect(commentEdits(calls, 8)).toHaveLength(0);
+  });
+
+  it("does nothing once the deployment row is no longer failed", async () => {
+    const web = processFeedback(redis, preview, []);
+    strand(web.feedback, "dep-api");
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { readStatus: async () => "success" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1);
+    await settle();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("leaves a newer deploy's row alone", async () => {
+    const web = processFeedback(redis, preview, []);
+    strand(web.feedback, "dep-api");
+    await settle();
+    strand(web.feedback, "dep-api-2");
+    await settle();
+
+    const calls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, calls, { readStatus: async () => "failed" });
+    await sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1);
+    await settle();
+    expect(githubWrites(calls)).toHaveLength(0);
+  });
+
+  it("never throws when GitHub fails", async () => {
+    const web = processFeedback(redis, preview, []);
+    strand(web.feedback, "dep-api");
+    await settle();
+    const sweeper = processFeedback(redis, preview, [], {
+      readStatus: async () => "failed",
+      client: async () => ({ request: async () => { throw new Error("network"); } }),
+    });
+    await expect(sweeper.feedback.deployTimedOut("dep-api", TIMEOUT, 1)).resolves.toBeUndefined();
+    await settle();
   });
 });
 

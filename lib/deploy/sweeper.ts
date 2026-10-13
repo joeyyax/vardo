@@ -27,6 +27,7 @@ import {
   slotContainerIds,
   slotIsDown,
 } from "@/lib/docker/rollback-monitor";
+import { deployTimedOut } from "@/lib/git-integration/github-feedback";
 import {
   evaluateWatch,
   MAX_GRACE_PERIOD_SECONDS,
@@ -216,7 +217,8 @@ export async function sweepStuckDeployments(): Promise<void> {
       const supersededByLiveDeploy = liveness.active !== null;
 
       const now = new Date();
-      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
+      const timeoutMessage = `Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
+      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] ${timeoutMessage}`;
       const updatedLog = deploy.log
         ? `${deploy.log}\n${timeoutLine}`
         : timeoutLine;
@@ -239,6 +241,11 @@ export async function sweepStuckDeployments(): Promise<void> {
 
       // The deploy finished on its own between the liveness read and here.
       if (failed.length === 0) continue;
+
+      // GitHub statuses and PR comments. Fire-and-forget; never throws.
+      Promise.resolve()
+        .then(() => deployTimedOut(deploy.id, timeoutMessage, durationMs))
+        .catch((err) => log.warn(`Timeout feedback for ${deploy.id} failed:`, err));
 
       const app = appMap.get(deploy.appId);
 
@@ -269,7 +276,7 @@ export async function sweepStuckDeployments(): Promise<void> {
         addEvent(app.organizationId, {
           type: "deploy.status",
           title: "Deploy timed out",
-          message: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+          message: timeoutMessage,
           appId: deploy.appId,
           deploymentId: deploy.id,
           status: "error",
@@ -297,7 +304,7 @@ export async function sweepStuckDeployments(): Promise<void> {
             projectName,
             appId: deploy.appId,
             deploymentId: deploy.id,
-            errorMessage: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+            errorMessage: timeoutMessage,
             appName: app.name,
             durationMs,
           });
