@@ -193,6 +193,10 @@ export type BackupSummaryRow = {
   /** Much larger than last run, as a percentage. */
   /** A routine skip: a stopped app or a source that can't be captured. */
   expected?: boolean;
+  /** Opted in, but app config the engine leaves out. Not backed up and not a failure. */
+  config?: boolean;
+  /** ISO time of the last successful backup before this run. */
+  lastGoodAt?: string;
 };
 
 /** One app's backups in a run. */
@@ -237,6 +241,8 @@ export type BackupSummaryEvent = {
     actualMs: number;
     /** Jobs that hadn't reported when the deadline passed. */
     unfinished?: string[];
+    /** Unfinished job name to the one app it backs up. */
+    unfinishedAppIds?: Record<string, string>;
     /** A scheduled run emailing because something needs a look: the email lists only the problems. */
     problemsOnly?: boolean;
   };
@@ -255,7 +261,7 @@ export type BackupSummaryEvent = {
   /** Backups grouped by app, by display name. */
   apps?: BackupSummaryApp[];
   /** Volumes backed up this week with no success in 48 hours. */
-  staleVolumes?: { appName: string; volumeName: string; lastSuccessAt: string | null }[];
+  staleVolumes?: { appId?: string | null; appName: string; volumeName: string; lastSuccessAt: string | null }[];
 };
 
 export type CronFailedEvent = {
@@ -762,6 +768,11 @@ export type AlertView = {
   table?: { columns: string[]; rows: AlertTableRow[]; note?: string };
   /** The button, when it isn't the app or metrics page. */
   action?: { label: string; path: string };
+  /** One problem, shown as a callout after the lead. */
+  callout?: { title: string; body?: string };
+  /** A fact table; the alert's app name links. `since` adds the start time under this label. */
+  facts?: { label: string; value: string }[];
+  sinceLabel?: string;
 };
 
 /** Alerts that fired in one pass, coalesced into one notice per org. */

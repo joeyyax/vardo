@@ -4,13 +4,13 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, backupJobApps, backupJobs, backupJobVolumes, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
-import type { AlertItem } from "@/lib/bus/events";
 import { formatDuration } from "@/lib/email/format";
 import { logger } from "@/lib/logger";
 import { emit } from "@/lib/notifications/dispatch";
 import { fireAlert, settleAlerts } from "@/lib/notifications/observations";
 import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
+import { backupFailureItem } from "./failure-alert";
 import { isUncapturedSource } from "./coverage";
 import { UTC } from "@/lib/time-zone";
 import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
@@ -323,34 +323,42 @@ export async function startRestoreRun(backup: {
   });
 }
 
-function failureItem(item: BackupResultItem): AlertItem {
-  const where = item.appName && item.appName !== item.volumeName ? `${item.appName} / ${item.volumeName}` : item.volumeName;
-  const title = {
-    backup: `Backup of ${where} failed`,
-    drill: `Restore drill failed for ${where}`,
-    restore: `Restore of ${where} failed`,
-    import: `Import into ${where} failed`,
-  }[item.kind];
-  const next =
-    item.kind === "drill"
-      ? "The archive may not restore. Run a fresh backup and check it before you need it."
-      : item.kind === "backup"
-        ? "The last good backup is still there. Fix the cause, then run the job again."
-        : "Nothing was changed past the point it failed. Check the log, then try again.";
-  return {
-    type: "backup.failure",
-    about: failureSubject(item),
-    severity: "critical",
-    title,
-    detail: `${item.error ?? "It failed without an error message."} ${next}`,
-    appId: item.appId ?? undefined,
-    appName: item.appName ?? undefined,
-    facts: [
-      ...(item.jobName ? [{ label: "Job", value: item.jobName }] : []),
-      { label: "Volume", value: item.volumeName },
-    ],
-    since: item.at,
-  };
+/** Each failed backup volume's last successful backup time by `appId:volume`, null for none. Empty when the lookup fails. */
+async function lastGoodBackups(organizationId: string, items: BackupResultItem[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const failed = items.filter((i) => i.kind === "backup" && i.outcome === "failed");
+  if (failed.length === 0) return out;
+  try {
+    const rows = await db
+      .select({
+        appId: backups.appId,
+        volumeName: backups.volumeName,
+        at: sql<Date | null>`max(${backups.finishedAt})`.mapWith((v) => (v ? new Date(v) : null)),
+      })
+      .from(backups)
+      .where(
+        and(
+          eq(backups.organizationId, organizationId),
+          eq(backups.status, "success"),
+          inArray(backups.volumeName, [...new Set(failed.map((i) => i.volumeName))]),
+        ),
+      )
+      .groupBy(backups.appId, backups.volumeName);
+    const found = new Map(rows.map((r) => [volumeKey(r.appId, r.volumeName ?? ""), r.at?.toISOString() ?? null]));
+    for (const i of failed) out.set(volumeKey(i.appId, i.volumeName), found.get(volumeKey(i.appId, i.volumeName)) ?? null);
+  } catch (err) {
+    log.warn(`Couldn't look up last good backups for org ${organizationId}:`, err);
+  }
+  return out;
+}
+
+async function orgTimeZone(organizationId: string): Promise<string> {
+  try {
+    const org = await db.query.organizations.findFirst({ where: eq(organizations.id, organizationId), columns: { timeZone: true } });
+    return resolveTimeZone(org?.timeZone, await getInstanceTimeZone());
+  } catch {
+    return UTC;
+  }
 }
 
 /** Items with each app's display name in place of whatever the producer had. */
@@ -376,8 +384,13 @@ export async function recordBackupResults(
   try {
     items = await withDisplayNames(items);
     const at = new Date(now);
-    for (const item of items.filter((i) => i.outcome === "failed")) {
-      await fireAlert(organizationId, "backup.failure", failureItem(item), at);
+    const failed = items.filter((i) => i.outcome === "failed");
+    if (failed.length) {
+      const [lastGood, timeZone] = await Promise.all([lastGoodBackups(organizationId, failed), orgTimeZone(organizationId)]);
+      for (const item of failed) {
+        const key = volumeKey(item.appId, item.volumeName);
+        await fireAlert(organizationId, "backup.failure", backupFailureItem(item, { lastGoodAt: lastGood.has(key) ? lastGood.get(key) : undefined, timeZone }), at);
+      }
     }
     await settleAlerts(organizationId, "backup.failure", items.filter((i) => i.outcome === "success").map(failureSubject), at);
 
@@ -399,14 +412,19 @@ export async function markJobDone(runId: string, jobId: string): Promise<void> {
     .where(and(eq(backupRuns.id, runId), isNull(backupRuns.finishedAt)));
 }
 
-/** Earlier successful sizes per volume, oldest first, leaving out this run's own archives. */
-async function loadHistory(organizationId: string, items: BackupResultItem[], now: number): Promise<Map<string, number[]>> {
+/** Earlier successful sizes per volume, oldest first, and when the latest finished, leaving out this run's own archives. */
+async function loadHistory(
+  organizationId: string,
+  items: BackupResultItem[],
+  now: number,
+): Promise<{ history: Map<string, number[]>; lastGood: Map<string, string> }> {
   const backed = items.filter((i) => i.kind === "backup");
   const history = new Map<string, number[]>();
-  if (backed.length === 0) return history;
+  const lastGood = new Map<string, string>();
+  if (backed.length === 0) return { history, lastGood };
   const exclude = backed.flatMap((i) => (i.backupId ? [i.backupId] : []));
   const rows = await db
-    .select({ appId: backups.appId, volumeName: backups.volumeName, size: backups.sizeBytes })
+    .select({ appId: backups.appId, volumeName: backups.volumeName, size: backups.sizeBytes, finishedAt: backups.finishedAt })
     .from(backups)
     .where(
       and(
@@ -420,11 +438,12 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
     .orderBy(desc(backups.startedAt));
   for (const row of rows) {
     const key = volumeKey(row.appId, row.volumeName ?? "");
+    if (!lastGood.has(key) && row.finishedAt) lastGood.set(key, row.finishedAt.toISOString());
     const sizes = history.get(key) ?? [];
     if (sizes.length < HISTORY_RUNS) sizes.unshift(row.size ?? 0);
     history.set(key, sizes);
   }
-  return history;
+  return { history, lastGood };
 }
 
 /** Apps a scheduled run still takes: switched on, not retired and in an enabled job of their org or the instance. */
@@ -534,21 +553,28 @@ export function staleForRun<T extends { appId: string | null }>(
   return stale.filter((v) => covered.has(v.appId));
 }
 
+/** Unfinished job name to its app, for jobs that back up one. */
+function unfinishedAppIds(plan: BackupRunPlan, unfinished: string[]): Record<string, string> | undefined {
+  const names = new Set(unfinished);
+  const out = Object.fromEntries(plan.jobs.flatMap((j) => (names.has(j.jobName) && j.appIds?.length === 1 ? [[j.jobName, j.appIds[0]]] : [])));
+  return Object.keys(out).length ? out : undefined;
+}
+
 async function sendSummary(run: RunRow, now: number): Promise<void> {
-  const [settings, history, orgStale] = await Promise.all([
+  const [settings, { history, lastGood }, orgStale] = await Promise.all([
     readOrgNotificationSettings(run.organizationId),
     loadHistory(run.organizationId, run.items, now),
     loadStaleVolumes(run.organizationId, now),
   ]);
-  const staleVolumes = staleForRun(run, orgStale).map(({ appId: _appId, ...v }) => v);
-  const rows = summarizeResults(run.items, history);
+  const staleVolumes = staleForRun(run, orgStale);
+  const rows = summarizeResults(run.items, history, lastGood);
   const unfinished = unfinishedJobs(run);
   if (rows.length === 0 && unfinished.length === 0) return;
   const { send, problemsOnly } = summaryEmails(run, rows, staleVolumes.length, unfinished.length, settings.categories.backupSummaries);
   // A clean scheduled run goes to the digest.
   if (!send) return;
 
-  const backed = rows.filter((r) => r.kind === "backup");
+  const backed = rows.filter((r) => r.kind === "backup" && !r.config);
   const succeeded = backed.filter((r) => r.outcome === "success").length;
   const failed = rows.filter((r) => r.outcome === "failed").length;
   emit(run.organizationId, {
@@ -561,6 +587,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
       estimatedMs: run.estimatedMs,
       actualMs: now - run.startedAt.getTime(),
       unfinished: unfinished.length ? unfinished : undefined,
+      unfinishedAppIds: unfinished.length ? unfinishedAppIds(run.plan, unfinished) : undefined,
       ...(problemsOnly ? { problemsOnly: true } : {}),
     },
     windowStart: run.startedAt.toISOString(),

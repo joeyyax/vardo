@@ -64,7 +64,9 @@ export function pushMessageFor(event: BusEvent, ctx: MailContext): PushMessage |
     ? body.action
     : candidates.find((l) => l.href.startsWith(`${ctx.baseUrl}/`) || l.href === ctx.baseUrl);
   const summary = truncate(body.preheader ?? body.paragraphs?.[0] ?? event.message ?? "", SUMMARY_MAX);
-  const blockFacts = body.blocks?.flatMap((b) => (b.kind === "facts" ? b.facts : []));
+  const tableFacts = body.blocks?.flatMap((b) => (b.kind === "facts" ? b.facts : [])) ?? [];
+  const tileFacts = body.blocks?.flatMap((b) => (b.kind === "tiles" ? b.tiles.map((t) => ({ label: t.label, value: `${t.value}${t.unit ?? ""}` })) : [])) ?? [];
+  const blockFacts = tableFacts.length ? tableFacts : tileFacts;
   const facts = (body.facts ?? (blockFacts?.length ? blockFacts : undefined) ?? body.sections?.[0]?.facts ?? [])
     .filter((f) => f.label.trim() && f.value.trim() && truncate(f.value, SUMMARY_MAX) !== summary)
     .slice(0, FACTS_MAX)

@@ -948,6 +948,8 @@ async function runBackupUntracked(
   const volumesToBackup: VolumeToBackup[] = [];
   // Sources left out by durability class.
   const excludedSources: { name: string; appName: string | null; reason: string }[] = [];
+  // Opted-in binds the engine leaves out as config, for the run's summary.
+  const configSkipped: ConfigSkip[] = [];
 
   for (const bja of jobApps) {
     const app = bja.app;
@@ -960,9 +962,14 @@ async function runBackupUntracked(
 
     for (const vol of persistentVols) {
       // Not covered by the job: no row and no archive.
-      const excluded = exclusionReason(vol.durability) ?? (await skipsAsConfig(vol));
+      const durabilityReason = exclusionReason(vol.durability);
+      const configReason = durabilityReason ? null : await skipsAsConfig(vol);
+      const excluded = durabilityReason ?? configReason;
       if (excluded) {
         excludedSources.push({ name: vol.name, appName: app.name, reason: excluded });
+        if (configReason && vol.backupSelection === "include") {
+          configSkipped.push({ appId: app.id, appName: app.displayName ?? app.name, orgId: app.organizationId, volumeName: vol.name, reason: configReason });
+        }
         continue;
       }
 
@@ -1019,6 +1026,11 @@ async function runBackupUntracked(
   }
 
   if (volumesToBackup.length === 0) {
+    if (configSkipped.length) {
+      await recordRunResults(job, [], [], { holdFailures: false, runId: options.runId ?? null, configSkipped }).catch((err) =>
+        log.error("Backup notification error:", err),
+      );
+    }
     // Every source was classified out. Refresh lastRunAt or the stale-backup check flags this forever.
     if (excludedSources.length > 0) {
       const finishedRunAt = new Date();
@@ -1384,7 +1396,7 @@ async function runBackupUntracked(
     }
 
     if (!onlyPaused) {
-      await recordRunResults(job, results, volumesToBackup, { holdFailures: !notifyOnFailure, runId: options.runId ?? null });
+      await recordRunResults(job, results, volumesToBackup, { holdFailures: !notifyOnFailure, runId: options.runId ?? null, configSkipped });
     }
   } catch (err) {
     log.error("Backup notification error:", err);
@@ -1399,12 +1411,14 @@ async function runBackupUntracked(
   return results;
 }
 
+type ConfigSkip = { appId: string; appName: string; orgId: string; volumeName: string; reason: string };
+
 /** Each org's share of a run: failures as they happen, everything into the run's summary. */
 async function recordRunResults(
   job: { id: string; name: string; organizationId: string | null },
   results: BackupResult[],
   sources: VolumeToBackup[],
-  opts: { holdFailures: boolean; runId: string | null },
+  opts: { holdFailures: boolean; runId: string | null; configSkipped?: ConfigSkip[] },
 ): Promise<void> {
   const { recordBackupResults } = await import("./runs");
   const sourceByKey = new Map(sources.map((v) => [`${v.appId ?? ""}:${v.name}`, v]));
@@ -1430,6 +1444,24 @@ async function recordRunResults(
       error: r.error,
       backupId: r.backupId,
       ...(r.outcome === "skipped" && (r.paused || r.undeclared || r.uncaptured) ? { expected: true } : {}),
+      at,
+    });
+    byOrg.set(orgId, items);
+  }
+  for (const c of opts.configSkipped ?? []) {
+    const orgId = job.organizationId ?? c.orgId;
+    const items = byOrg.get(orgId) ?? [];
+    items.push({
+      kind: "backup",
+      appId: c.appId,
+      appName: c.appName,
+      volumeName: c.volumeName,
+      jobId: job.id,
+      jobName: job.name,
+      outcome: "skipped",
+      error: c.reason,
+      expected: true,
+      config: true,
       at,
     });
     byOrg.set(orgId, items);

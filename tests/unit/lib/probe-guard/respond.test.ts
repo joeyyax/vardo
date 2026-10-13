@@ -134,7 +134,7 @@ describe("handleGuardRequest", () => {
     it("tells a banned visitor when the ban ends and nothing about why", async () => {
       const { deps } = setup({}, ban(in45()));
       const body = await (await handleGuardRequest("banned", req("/wp-login.php", { app: "secret-app-id", headers: html }), deps)).text();
-      expect(body).toMatch(/Access from your address is unavailable until \d\d:\d\d UTC\./);
+      expect(body).toMatch(/Access from your address is unavailable until (\w{3} \d{1,2}, )?\d\d:\d\d UTC\./);
       for (const leak of ["threshold", "trap", "canary", "blocklist", "wp-login", "secret-app-id", BAN_ID, IP]) expect(body).not.toContain(leak);
     });
 

@@ -114,6 +114,10 @@ function itemBlocks(item: AlertItem, ctx: MailContext): MailBlock[] {
 
   if (view.reassure) blocks.push({ kind: "reassure", strong: view.reassure.strong, text: view.reassure.text });
   for (const p of view.lead ?? [item.detail, ...(item.next ? [item.next] : [])]) blocks.push({ kind: "text", text: linkNames(p, names) });
+  if (view.callout) {
+    const { title, body } = view.callout;
+    blocks.push({ kind: "callout", tone: item.severity === "critical" ? "bad" : "warn", title: linkNames(title, names), body: body && linkNames(body, names) });
+  }
   if (item.gauge) {
     const { percent, warn, critical } = item.gauge;
     blocks.push({ kind: "gauge", percent, warn, critical, label: view.gaugeLabel });
@@ -135,6 +139,9 @@ function itemBlocks(item: AlertItem, ctx: MailContext): MailBlock[] {
     });
     if (view.table.note) blocks.push({ kind: "note", text: view.table.note });
   }
+  const since = view.sinceLabel && item.since ? [{ label: view.sinceLabel, value: timeLabel(item.since, ctx.timeZone) }] : [];
+  const facts = [...(view.facts ?? []), ...since];
+  if (facts.length) blocks.push({ kind: "facts", facts: facts.map((f) => ({ ...f, rich: linkNames(f.value, names) })) });
   return blocks;
 }
 

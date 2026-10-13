@@ -3,6 +3,7 @@
 import { HostSampleBuffer, hostObservations, type HostContext, type MemoryUser } from "@/lib/alerts/host";
 import { anomalyItem } from "@/lib/anomaly/items";
 import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
+import { backupFailureItem } from "@/lib/backups/failure-alert";
 import { summarizeApps, summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
 
@@ -123,8 +124,22 @@ const OBSERVABILITY: BackupResultItem[] = OBSERVABILITY_SIZES.map(([volumeName, 
   at: `2026-10-09T02:${String(3 + i).padStart(2, "0")}:00.000Z`,
 }));
 
+/** Shop Staging's uploads came out a fraction of their usual size. */
+const STAGING_UPLOADS: BackupResultItem = {
+  kind: "backup",
+  appId: "app_shop_staging",
+  appName: "Shop Staging",
+  volumeName: "uploads",
+  jobName: "Auto: Shop Staging",
+  outcome: "success",
+  sizeBytes: 100 * MiB,
+  durationMs: 6_000,
+  at: "2026-10-09T02:27:00.000Z",
+};
+
 const HISTORY = new Map([
   ...NIGHTLY_HISTORY,
+  [volumeKey("app_shop_staging", "uploads"), [1_800, 1_810, 1_790, 1_840, 1_900, 1_850].map((m) => m * MiB)],
   ...OBSERVABILITY_SIZES.map(([volumeName, , last]): [string, number[]] => [
     volumeKey("app_0bs", volumeName),
     [0.97, 0.98, 0.99, 1].map((f) => Math.round(last * f)),
@@ -153,14 +168,18 @@ const AGENT_PATHS = [
 ];
 
 const AGENTS_STALE = AGENT_PATHS.map((volumeName, i) => ({
+  appId: "app_agents",
   appName: "agents",
   volumeName,
   lastSuccessAt: i % 3 ? "2026-10-07T09:00:00.000Z" : null,
 }));
 
+/** Each volume's last good backup: the night before. */
+const LAST_GOOD = new Map([...HISTORY.keys()].map((key): [string, string] => [key, "2026-10-08T02:04:00.000Z"]));
+
 function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>, history = HISTORY): BackupSummaryEvent {
-  const rows = summarizeResults(items, history);
-  const backups = rows.filter((r) => r.kind === "backup");
+  const rows = summarizeResults(items, history, LAST_GOOD);
+  const backups = rows.filter((r) => r.kind === "backup" && !r.config);
   return {
     type: "backup.summary",
     title: "Nightly backups finished",
@@ -395,20 +414,42 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       title: "Backup of Shop / mysql-data failed",
       message: "Backup of Shop / mysql-data failed",
       alerts: [
-        {
-          type: "backup.failure",
-          about: "backup:app_shop:mysql-data",
-          severity: "critical",
-          title: "Backup of Shop / mysql-data failed",
-          detail: "mysqldump: Got error: 2013: Lost connection to server during query. The last good backup is still there. Fix the cause, then run the job again.",
-          appId: "app_shop",
-          appName: "Shop",
-          facts: [
-            { label: "Job", value: "Auto: Shop" },
-            { label: "Volume", value: "mysql-data" },
-          ],
-          since: "2026-10-09T02:06:00.000Z",
-        },
+        backupFailureItem(
+          {
+            kind: "backup",
+            appId: "app_shop",
+            appName: "Shop",
+            volumeName: "mysql-data",
+            jobName: "Auto: Shop",
+            outcome: "failed",
+            error: "mysqldump: Got error: 2013: Lost connection to server during query when dumping table `wp_options` at row: 4211",
+            at: "2026-10-09T02:06:00.000Z",
+          },
+          { lastGoodAt: "2026-10-08T02:04:00.000Z" },
+        ),
+      ],
+    },
+  },
+  {
+    name: "backup-failure-unexplained",
+    event: {
+      type: "alert.fired",
+      title: "Backup of Acme Data / uploads failed",
+      message: "Backup of Acme Data / uploads failed",
+      alerts: [
+        backupFailureItem(
+          {
+            kind: "backup",
+            appId: "app_acme",
+            appName: "Acme Data",
+            volumeName: "uploads",
+            jobName: "Uploads, weekly",
+            outcome: "failed",
+            error: "tar: ./cache/sess_8f2a: file changed as we read it\ntar: exiting with failure status due to previous errors",
+            at: "2026-10-09T02:16:00.000Z",
+          },
+          { lastGoodAt: null },
+        ),
       ],
     },
   },
@@ -425,9 +466,41 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
   },
   {
     name: "backup-summary-problems",
-    event: backupSummary([...NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)), ...OBSERVABILITY], {
-      run: { kind: "nightly", label: "Nightly backups", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000, problemsOnly: true },
-    }),
+    event: backupSummary(
+      [
+        ...NIGHTLY.map((i) =>
+          i.volumeName === "mysql-data"
+            ? { ...i, outcome: "failed" as const, sizeBytes: 0, error: "mysqldump: Got error: 2013: Lost connection to server during query" }
+            : i,
+        ),
+        STAGING_UPLOADS,
+        ...OBSERVABILITY,
+      ],
+      {
+        run: {
+          kind: "nightly",
+          label: "Nightly backups",
+          estimatedMs: 33 * 60_000,
+          actualMs: 61 * 60_000,
+          problemsOnly: true,
+          unfinished: ["Search Data", "Uptime Kuma", "Mailpit", "Plausible", "Gitea", "Umami", "n8n", "agents"].map((app) => `Auto: ${app}`),
+          unfinishedAppIds: { "Auto: Uptime Kuma": "app_kuma", "Auto: agents": "app_agents" },
+        },
+        windowEnd: "2026-10-09T03:01:00.000Z",
+        staleVolumes: AGENTS_STALE,
+      },
+    ),
+  },
+  {
+    name: "backup-summary-config",
+    event: backupSummary(
+      [
+        ...NIGHTLY,
+        { kind: "backup", appId: "app_srch", appName: "Search", volumeName: "meili-config.toml", jobName: "auto-app_srch", outcome: "skipped", error: "Single config file", expected: true, config: true, at: "2026-10-09T02:20:00.000Z" },
+        { kind: "backup", appId: "app_mail", appName: "Mailpit", volumeName: "mailpit-data", jobName: "auto-app_mail", outcome: "skipped", error: "App is stopped", expected: true, at: "2026-10-09T02:21:00.000Z" },
+      ],
+      { run: { kind: "job", label: "Backup of Shop and Search", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000 } },
+    ),
   },
   {
     name: "backup-summary-timed-out",

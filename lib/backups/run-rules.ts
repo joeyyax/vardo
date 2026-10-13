@@ -20,6 +20,8 @@ export type BackupResultItem = {
   backupId?: string;
   /** A skip that's routine: the app is stopped, or the source can't be or needn't be captured. */
   expected?: boolean;
+  /** Opted in, but app config the engine leaves out. */
+  config?: boolean;
   /** ISO time the result came in. */
   at: string;
 };
@@ -140,7 +142,11 @@ const OUTCOME_ORDER = { failed: 0, skipped: 2, success: 3 } as const;
  * One row per kind, app and volume, the latest result winning. Failures first, then
  * backups that shrank, then the rest by app.
  */
-export function summarizeResults(items: BackupResultItem[], history: Map<string, number[]>): BackupSummaryRow[] {
+export function summarizeResults(
+  items: BackupResultItem[],
+  history: Map<string, number[]>,
+  lastGood: Map<string, string> = new Map(),
+): BackupSummaryRow[] {
   const rows = new Map<string, BackupSummaryRow>();
   for (const item of [...items].sort((a, b) => a.at.localeCompare(b.at))) {
     const key = `${item.kind}:${volumeKey(item.appId, item.volumeName)}`;
@@ -156,6 +162,7 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
       durationMs: item.durationMs ?? 0,
       error: item.error,
       ...(item.outcome === "skipped" && item.expected ? { expected: true } : {}),
+      ...(item.config ? { config: true } : {}),
       runs,
     });
   }
@@ -163,6 +170,8 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
   const out: BackupSummaryRow[] = [];
   for (const row of rows.values()) {
     if (row.kind === "backup") {
+      const good = lastGood.get(volumeKey(row.appId, row.volumeName));
+      if (good) row.lastGoodAt = good;
       const past = history.get(volumeKey(row.appId, row.volumeName));
       if (past?.length) {
         row.history = past;
@@ -185,7 +194,7 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
 /** Backup rows rolled up per app, by name. */
 export function summarizeApps(rows: BackupSummaryRow[]): BackupSummaryApp[] {
   const apps = new Map<string, BackupSummaryApp & { now: number; before: number }>();
-  for (const row of rows.filter((r) => r.kind === "backup")) {
+  for (const row of rows.filter((r) => r.kind === "backup" && !r.config)) {
     const key = row.appId ?? row.appName;
     const app = apps.get(key) ?? { appId: row.appId, appName: row.appName, volumes: 0, failed: 0, skipped: 0, sizeBytes: 0, now: 0, before: 0 };
     app.volumes++;

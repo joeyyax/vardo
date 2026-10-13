@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { percentages, rampTones, sparkline, visualText } from "@/lib/email/templates/components";
+import { createElement } from "react";
+import { render } from "react-email";
+import { NotificationMail, percentages, rampTones, sparkline, visualText, type NotificationMailBody } from "@/lib/email/templates/components";
+import { footerFor } from "@/lib/email/templates/context";
 import { backupColumns, backupDrop } from "@/lib/email/templates/visuals";
 import { phaseSteps } from "@/lib/email/templates/deploy-facts";
 import { hourlyDeltas, loadMailSeries } from "@/lib/email/series";
@@ -49,8 +52,14 @@ describe("phase bar", () => {
   });
 
   it("stretches the legend across the card", async () => {
-    const email = (await renderNotificationEmail(fixtureEvent("backup-summary-failed"), FIXTURE_CONTEXT))!;
-    expect(email.html).toMatch(/<table[^>]*width="100%"[^>]*style="margin:8px 0 0/);
+    const body: NotificationMailBody = {
+      tone: "info",
+      status: "Run",
+      heading: "Run",
+      visuals: [{ kind: "stacked", segments: [{ label: "Succeeded", value: 5, tone: "success" }, { label: "Failed", value: 1, tone: "fail" }] }],
+      footer: footerFor(FIXTURE_CONTEXT),
+    };
+    expect(await render(createElement(NotificationMail, body))).toMatch(/<table[^>]*width="100%"[^>]*style="margin:8px 0 0/);
   });
 });
 
@@ -63,9 +72,17 @@ describe("gauge", () => {
 
 describe("fact table", () => {
   it("stacks long labels over their values", async () => {
-    const email = (await renderNotificationEmail(fixtureEvent("backup-summary-timed-out"), FIXTURE_CONTEXT))!;
-    expect(email.html).toContain("agents / home-worker-.claude-.credentials.json</p>");
-    expect(email.html).toContain("width:110px");
+    const body: NotificationMailBody = {
+      tone: "warn",
+      status: "Stale",
+      heading: "Stale",
+      facts: [{ label: "agents / home-worker-.claude-.credentials.json", value: "Never succeeded" }],
+      sections: [{ title: "Run", facts: [{ label: "Took", value: "1 h 1 min" }] }],
+      footer: footerFor(FIXTURE_CONTEXT),
+    };
+    const html = await render(createElement(NotificationMail, body));
+    expect(html).toContain("agents / home-worker-.claude-.credentials.json</p>");
+    expect(html).toContain("width:110px");
   });
 });
 
@@ -87,11 +104,11 @@ describe("backup size history", () => {
 
   it("warns in the subject and body", async () => {
     const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary-shrunk")!;
-    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("node-a · ⚠ Nightly backups · Shop much smaller than usual");
+    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("node-a · ⚠ Nightly backups · 2 need you");
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual");
-    expect(email.text).toContain("Shop / mysql-data, last 7 runs (older → this run · 100 MiB)\n██████▁");
-    expect(email.text).toContain("Search / meili-data: No success since 2026-10-06");
+    expect(email.text).toContain("⚠ Shop / mysql-data is 95% smaller than usual\n100 MiB tonight, usually 1.8 GiB.");
+    expect(email.text).toContain("██████▁\nLast 7 nights");
+    expect(email.text).toContain("Search / meili-data: last success Oct 6 at 07:12 UTC.");
   });
 
   it("charts only what needs a look", async () => {
