@@ -50,4 +50,11 @@ describe("findRetiredArchives", () => {
     expect(deletable).toEqual([]);
     expect(jobs[0]).toMatchObject({ jobId: null, replaced: false });
   });
+
+  it("deletes every retired archive with includeUnreplaced", async () => {
+    h.rows = [retired("a", null, "data"), retired("b", "j1", "uploads")];
+    const { jobs, deletable } = await findRetiredArchives({ includeUnreplaced: true });
+    expect(deletable.map((d) => d.id)).toEqual(["a", "b"]);
+    expect(jobs.every((j) => !j.replaced)).toBe(true);
+  });
 });

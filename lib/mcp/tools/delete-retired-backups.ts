@@ -14,15 +14,16 @@ export function registerDeleteRetiredBackups(server: McpServer, context: McpAuth
 
   server.tool(
     "vardo_delete_retired_backups",
-    "Delete backups in the retired .enc format, across every org and the system database. Only deletes a job's volume once it has a successful .age backup; the rest are listed as kept. Dry run unless dryRun is false. Needs a token with the admin scope.",
+    "Delete backups in the retired .enc format, across every org and the system database. Nothing can restore them. By default only deletes a job's volume once it has a successful .age backup; includeUnreplaced deletes the rest too. Dry run unless dryRun is false. Needs a token with the admin scope.",
     {
       dryRun: z.boolean().default(true).describe("List what would be deleted without deleting it"),
+      includeUnreplaced: z.boolean().default(false).describe("Also delete archives with no .age backup to replace them"),
     },
-    async ({ dryRun }) => {
+    async ({ dryRun, includeUnreplaced }) => {
       if (!(await canAdminInstance(context))) return failure(ADMIN_FORBIDDEN_MESSAGE);
       if (!(await isFeatureEnabledAsync("backups"))) return failure("Backups are turned off on this instance");
 
-      const { jobs, deletable } = await findRetiredArchives();
+      const { jobs, deletable } = await findRetiredArchives({ includeUnreplaced });
       const result = dryRun ? { deleted: 0, kept: 0 } : await deleteBackups(deletable);
       return text({
         dryRun,
