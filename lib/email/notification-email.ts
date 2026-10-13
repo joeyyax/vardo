@@ -20,6 +20,7 @@ import { healthDigestMail } from "./templates/health-digest";
 import { lifecycleMail } from "./templates/lifecycle";
 import { rolloutMail } from "./templates/rollout";
 import { alertFiredMail, alertResolvedMail } from "./templates/alerts";
+import { appRecapMail } from "./templates/app-recap";
 
 export type { MailContext } from "./templates/context";
 
@@ -96,6 +97,8 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
       return rolloutMail(event, ctx);
     case "digest.health":
       return healthDigestMail(event, ctx);
+    case "digest.app-recap":
+      return appRecapMail(event, ctx);
     default:
       return genericMail(event, ctx);
   }

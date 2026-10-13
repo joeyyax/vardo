@@ -67,6 +67,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "cron-tick", roles: BOTH, singleton: true, critical: true, feature: "cron", load: async () => (await import("@/lib/cron/scheduler")).cronTickLoop },
   { name: "cron-daily", roles: BOTH, singleton: true, feature: "cron", load: async () => (await import("@/lib/cron/scheduler")).cronDailyLoop },
   { name: "digest", roles: BOTH, singleton: true, feature: "digest", load: async () => (await import("@/lib/digest/scheduler")).digestLoop },
+  { name: "app-recaps", roles: BOTH, singleton: true, feature: "notifications", load: async () => (await import("@/lib/recaps/scheduler")).recapLoop },
   { name: "notification-retry", roles: BOTH, singleton: true, feature: "notifications", load: async () => (await import("@/lib/notifications/scheduler")).notificationRetryLoop },
   { name: "integration-check", roles: BOTH, singleton: true, load: async () => (await import("@/lib/integrations/check")).integrationCheckLoop },
 

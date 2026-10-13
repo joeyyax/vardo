@@ -39,7 +39,7 @@ export const EVENT_CATEGORIES = {
     "system.restart-failed",
     "system.containers-missing",
   ],
-  digest: ["digest.health"],
+  digest: ["digest.health", "digest.app-recap"],
 } as const;
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
@@ -79,7 +79,7 @@ export type DeploySuccessEvent = DeployDetails & {
   triggeredBy?: string;
   /** The app's first successful deploy to a production environment. */
   firstDeploy?: boolean;
-  /** When the app's 72-hour recap sends. Unset until recaps exist. */
+  /** When the app's 72-hour recap sends. Set once it's scheduled. */
   recapAt?: string;
   /** Median duration of recent successful deploys. */
   usualDurationMs?: number;
@@ -508,6 +508,50 @@ export type DigestHealthEvent = {
   projects: DigestProjectRow[];
 };
 
+/** One new app's numbers for its 72-hour or 30-day recap. Bytes are bytes; CPU is percent of one core. */
+export type AppRecap = {
+  appId: string;
+  appName: string;
+  projectId?: string;
+  projectName?: string;
+  kind: "72h" | "30d";
+  /** First successful production deploy. */
+  deployedAt: string;
+  since: string;
+  until: string;
+  deploys: { total: number; failed: number };
+  /** 30-day only: deploys per local day, oldest first. */
+  deploysByDay?: { succeeded: number; failed: number }[];
+  /** Successful production builds. Null when every deploy pulled a prebuilt image. */
+  build: { avgMs: number; fastestMs: number; earlyAvgMs?: number } | null;
+  uptime: { ratio: number; downMinutes: number } | null;
+  crashes: number;
+  oomKills: number;
+  cpu: { avg: number; peak: number } | null;
+  /** `daysNearLimit` counts local days whose peak came within 10% of the limit. */
+  memory: { avg: number; peak: number; peakAt: string; limit: number | null; daysNearLimit?: number } | null;
+  network: { rx: number; tx: number } | null;
+  /** Mean activity per local hour, 24 values. */
+  hours?: number[];
+  volumes: { name: string; sizeBytes: number | null; unprotected: boolean }[];
+  ports: string[];
+  processes: string[];
+  backups: { schedule: string; lastAt?: string; nights?: ("ok" | "fail" | "none")[] } | null;
+  /** Open findings in the latest security scan. */
+  scanFindings: number;
+  /** 30-day only. */
+  imageUpdates?: number;
+};
+
+/** Recaps due the same day in one org, sent as one email. */
+export type DigestAppRecapEvent = {
+  type: "digest.app-recap";
+  title: string;
+  message: string;
+  orgName: string;
+  recaps: AppRecap[];
+};
+
 // Vardo's own lifecycle, sent to orgs with an instance admin.
 
 /** The console got SIGTERM. Best effort; the process may exit first. */
@@ -845,6 +889,7 @@ export type BusEvent = EventEnvelope & (
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent
   | DigestHealthEvent
+  | DigestAppRecapEvent
   | SystemShutdownEvent
   | SystemStartedEvent
   | SystemRecoveredUncleanEvent
