@@ -14,6 +14,7 @@ const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock,
       update: vi.fn().mockImplementation(() => ({
         set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       })),
+      query: { deployments: { findFirst: vi.fn(async () => ({ status: "running" })) } },
     };
 
     // The source calls promisify(execFile), which resolves through execFile's
@@ -66,6 +67,7 @@ vi.mock("@/lib/docker/deploy-steps/bind-mount-ownership", () => ({
 }));
 
 import { swap } from "@/lib/docker/deploy-steps/swap";
+import { DeployClosedElsewhereError } from "@/lib/docker/errors";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
 import { createStageTimings } from "@/lib/docker/stage-timings";
@@ -312,6 +314,40 @@ describe("swap — cutover pin", () => {
   });
 });
 
+describe("swap — what the log says about traffic", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    order.length = 0;
+    dockerHealthy();
+  });
+
+  it("says the held old slot keeps serving, then that traffic moved at the stop", async () => {
+    cutoverMock.holdSlot.mockImplementationOnce(async () => ({ held: true, release: async () => {} }));
+    const ctx = await swap(context());
+    expect(ctx.logLines).toContain("[deploy] green is up alongside blue, which keeps serving until the cutover");
+    expect(ctx.logLines.some((l) => l.includes("Traffic routed") || l.includes("Traffic moved"))).toBe(false);
+
+    await ctx.stopOldSlot!();
+    expect(ctx.logLines).toContain("[deploy] Traffic moved to green; blue stopped");
+  });
+
+  it("says the slots share traffic when Traefik never confirmed the hold", async () => {
+    const ctx = await swap(context());
+    expect(ctx.logLines).toContain("[deploy] green is up and sharing traffic with blue until it stops");
+  });
+
+  it("says traffic went to the new slot when the old one stopped before it started", async () => {
+    const ctx = await swap(context({ compose: composeFile({ ports: true }) }));
+    expect(ctx.logLines).toContain("[deploy] Traffic routed to green");
+    expect(ctx.logLines.some((l) => l.includes("Traffic moved"))).toBe(false);
+  });
+
+  it("says traffic went to the new slot on a first deploy", async () => {
+    const ctx = await swap(context({ activeSlot: null }));
+    expect(ctx.logLines).toContain("[deploy] Traffic routed to green");
+  });
+});
+
 describe("swap — hold pin on the old slot", () => {
   const isNewSlotUp = (a: string[]) => a.includes("up") && a.includes("app-production-green");
   const isNewSlotDown = (a: string[]) => a.includes("down") && a.includes("app-production-green");
@@ -363,6 +399,25 @@ describe("swap — hold pin on the old slot", () => {
 
     expect(order).toEqual(["clear-pin", "hold", "up", "pin", "demote", "unpin"]);
     expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("drops a healthy new slot and keeps the old one when the sweeper closed the row first", async () => {
+    dockerRecording("running");
+    dbMock.query.deployments.findFirst.mockResolvedValueOnce({ status: "failed" });
+    const ctx = context();
+    await expect(swap(ctx)).rejects.toBeInstanceOf(DeployClosedElsewhereError);
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
+    expect(ctx.stopOldSlot).toBeUndefined();
+    expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("cuts over as usual while the row is still running", async () => {
+    dockerRecording("running");
+    const ctx = await swap(context());
+    expect(dbMock.query.deployments.findFirst).toHaveBeenCalled();
+    expect(order).not.toContain("down");
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("releases the hold after tearing down a new slot that fails its health check", async () => {

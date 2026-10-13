@@ -27,6 +27,7 @@ import {
   slotContainerIds,
   slotIsDown,
 } from "@/lib/docker/rollback-monitor";
+import { deployTimedOut, queuedDeployCancelled } from "@/lib/git-integration/github-feedback";
 import {
   evaluateWatch,
   MAX_GRACE_PERIOD_SECONDS,
@@ -216,7 +217,8 @@ export async function sweepStuckDeployments(): Promise<void> {
       const supersededByLiveDeploy = liveness.active !== null;
 
       const now = new Date();
-      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
+      const timeoutMessage = `Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
+      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] ${timeoutMessage}`;
       const updatedLog = deploy.log
         ? `${deploy.log}\n${timeoutLine}`
         : timeoutLine;
@@ -239,6 +241,11 @@ export async function sweepStuckDeployments(): Promise<void> {
 
       // The deploy finished on its own between the liveness read and here.
       if (failed.length === 0) continue;
+
+      // GitHub statuses and PR comments. Fire-and-forget; never throws.
+      Promise.resolve()
+        .then(() => deployTimedOut(deploy.id, timeoutMessage, durationMs))
+        .catch((err) => log.warn(`Timeout feedback for ${deploy.id} failed:`, err));
 
       const app = appMap.get(deploy.appId);
 
@@ -269,7 +276,7 @@ export async function sweepStuckDeployments(): Promise<void> {
         addEvent(app.organizationId, {
           type: "deploy.status",
           title: "Deploy timed out",
-          message: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+          message: timeoutMessage,
           appId: deploy.appId,
           deploymentId: deploy.id,
           status: "error",
@@ -297,7 +304,7 @@ export async function sweepStuckDeployments(): Promise<void> {
             projectName,
             appId: deploy.appId,
             deploymentId: deploy.id,
-            errorMessage: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+            errorMessage: timeoutMessage,
             appName: app.name,
             durationMs,
           });
@@ -376,7 +383,7 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
       const message = `Deployment ${deploy.reason} and was cancelled`;
       const line = `[${now.toISOString()}] [CANCELLED] ${message}`;
 
-      await db
+      const cancelled = await db
         .update(deployments)
         .set({
           status: "cancelled",
@@ -386,9 +393,18 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
         })
         .where(
           and(eq(deployments.id, deploy.id), eq(deployments.status, "queued")),
-        );
+        )
+        .returning({ id: deployments.id });
+
+      // It left the queue between the read and here.
+      if (cancelled.length === 0) continue;
 
       await removeFromQueue(deploy.id).catch(() => {});
+
+      // GitHub statuses and PR comments. Fire-and-forget; never throws.
+      Promise.resolve()
+        .then(() => queuedDeployCancelled(deploy.id, message))
+        .catch((err) => log.warn(`Queue cancel feedback for ${deploy.id} failed:`, err));
 
       const app = appMap.get(deploy.appId);
       if (app) {

@@ -41,7 +41,7 @@ import {
   buildGitSshCommand,
 } from "@/lib/crypto/deploy-key";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "../compat";
-import { checkoutRollbackSha } from "./checkout-sha";
+import { checkoutCommit } from "./checkout-sha";
 import { withRegistryAuth } from "../registry-auth";
 import {
   APP_UID,
@@ -629,18 +629,19 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
               `Rollback target ${ctx.rollback.targetDeploymentId} has no recorded git SHA — cannot roll back to it`,
             );
           }
-          await checkoutRollbackSha(
+          await checkoutCommit(
             (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
             ctx.rollback.gitSha,
+            "rollback",
             log,
           );
         } else if (ctx.pinnedGitSha) {
-          await checkoutRollbackSha(
+          await checkoutCommit(
             (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
             ctx.pinnedGitSha,
+            ctx.pinIntent ?? "pin",
             log,
           );
-          log(`[deploy] Pinned to ${ctx.pinnedGitSha.slice(0, 7)}`);
         }
       } finally {
         if (sshKeyFile) {

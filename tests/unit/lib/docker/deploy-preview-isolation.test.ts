@@ -33,7 +33,7 @@ const { dbMock, statusWrites, captured, envRows, groupEnvHosts } = vi.hoisted(()
     update: vi.fn().mockImplementation((table: unknown) => ({
       set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
         statusWrites.push({ table, values });
-        return { where: vi.fn().mockResolvedValue(undefined) };
+        return { where: vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] })) };
       }),
     })),
     query: {

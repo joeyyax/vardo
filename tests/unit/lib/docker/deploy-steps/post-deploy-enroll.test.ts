@@ -20,7 +20,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock,
   const queueDrained = vi.fn().mockResolvedValue(true);
 
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
+    const where = vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] }));
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       writes.push({ table, values });
       return { where };
@@ -48,6 +48,10 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock,
 vi.mock("@/lib/backups/enroll", () => ({ enrollNewApp, enrollNewVolumes }));
 // Background work outlives a test; a real logger then writes after teardown.
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
+// postDeploy fires these and returns; stubbed so none of them outlives the test.
+vi.mock("@/lib/security/scanner", () => ({ runSecurityScan: vi.fn() }));
+vi.mock("@/lib/backups/initial-backup", () => ({ armInitialBackupQuietly: vi.fn() }));
+vi.mock("@/lib/docker/image-updates/stateful-probe", () => ({ probeAppStateful: vi.fn() }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },

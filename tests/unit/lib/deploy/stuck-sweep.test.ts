@@ -95,6 +95,7 @@ vi.mock("@/lib/docker/deploy-concurrency", () => ({
   reconcileActiveCounter: vi.fn(),
   reconcileQueue: vi.fn(),
 }));
+vi.mock("@/lib/git-integration/github-feedback", () => ({ deployTimedOut: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("id") }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
@@ -109,6 +110,8 @@ import { sweepStuckDeployments } from "@/lib/deploy/sweeper";
 import { stopProject } from "@/lib/docker/deploy";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { slotIsDown } from "@/lib/docker/rollback-monitor";
+import { deployTimedOut } from "@/lib/git-integration/github-feedback";
+import { addEvent } from "@/lib/stream/producer";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -321,5 +324,37 @@ describe("sweepStuckDeployments", () => {
     await sweepStuckDeployments();
 
     expect(stopProject).not.toHaveBeenCalled();
+    expect(deployTimedOut).not.toHaveBeenCalled();
+  });
+
+  it("reports the timeout to GitHub with the message the mapper reads", async () => {
+    seenRunning(PAST_BUDGET_MS);
+    queueSelects();
+
+    await sweepStuckDeployments();
+    await new Promise((r) => setImmediate(r));
+
+    const minutes = DEPLOY_TIMEOUT_MS / 60_000;
+    expect(deployTimedOut).toHaveBeenCalledWith(DEPLOY_ID, `Deployment timed out after ${minutes} minutes`, DEPLOY_TIMEOUT_MS);
+  });
+
+  it("keeps sweeping when GitHub feedback throws or rejects", async () => {
+    vi.mocked(redisMock.redis.get).mockImplementation(async (key: string) => redisMock._store.get(key) ?? null);
+    const second = { ...RUNNING_ROW, id: "deploy-2" };
+    seenRunning(PAST_BUDGET_MS);
+    redisMock._store.set("deploy:sweep:running-since:deploy-2", String(Date.now() - PAST_BUDGET_MS));
+    vi.mocked(deployTimedOut)
+      .mockImplementationOnce(() => { throw new Error("boom"); })
+      .mockRejectedValueOnce(new Error("down"));
+    dbMock._updateReturning.push([{ id: DEPLOY_ID }], [], [{ id: "deploy-2" }]);
+    queueSelects([RUNNING_ROW, second]);
+
+    await expect(sweepStuckDeployments()).resolves.toBeUndefined();
+    await new Promise((r) => setImmediate(r));
+
+    expect(deployTimedOut).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(deployTimedOut).mock.calls.map((c) => c[0])).toEqual([DEPLOY_ID, "deploy-2"]);
+    // The rest of each sweep still ran.
+    expect(vi.mocked(addEvent).mock.calls.map((c) => (c[1] as { deploymentId: string }).deploymentId)).toEqual([DEPLOY_ID, "deploy-2"]);
   });
 });

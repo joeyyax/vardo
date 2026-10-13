@@ -26,12 +26,23 @@ export type EventScope = {
   onMatched?: (apps: MatchedApp[]) => void | Promise<void>;
 };
 
+/** A push's `after` when it names a commit; a branch deletion sends all zeros. */
+export function pushedSha(sha: string | null | undefined): string | undefined {
+  return sha && /^[0-9a-f]{40}$/i.test(sha) && !/^0+$/.test(sha) ? sha : undefined;
+}
+
 /** Auto-deploy apps whose git URL and branch match the push. */
 export async function handlePushEvent(event: PushEvent, scope: EventScope): Promise<NextResponse> {
   const { repoFullName, branch, headSha } = event;
   log.info(
     `Push to ${repoFullName}:${branch}${event.pusher ? ` by ${event.pusher}` : ""} — ${headSha?.slice(0, 7)} ${event.commitMessage?.split("\n")[0] ?? ""}${scope.trigger === "relay" ? " (relayed)" : ""}`,
   );
+
+  // Nothing to deploy. A PR's preview is removed by its pull_request close, not by this push.
+  if (event.deleted || (headSha && /^0+$/.test(headSha))) {
+    log.info(`Branch ${repoFullName}:${branch} deleted; nothing to deploy`);
+    return NextResponse.json({ ok: true, skipped: "branch deleted" });
+  }
 
   const orgs = await scope.resolveOrgs();
   if ("skipped" in orgs) {
@@ -75,6 +86,9 @@ export async function handlePushEvent(event: PushEvent, scope: EventScope): Prom
         appId: app.id,
         organizationId: app.organizationId,
         trigger: scope.trigger,
+        // The pushed commit, not whatever the branch points at when the deploy clones.
+        gitSha: pushedSha(headSha),
+        pinIntent: "push",
       });
       return { app: app.name, deploymentId: result.deploymentId, success: result.success };
     } catch (err) {

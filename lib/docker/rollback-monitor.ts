@@ -315,7 +315,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       .update(deployments)
       .set({ status: "rolled_back" })
       .where(eq(deployments.id, deploymentId));
-    void deployRolledBack(deploymentId);
+    void deployRolledBack(deploymentId, { serving: true });
 
     rollbackLog(`[rollback] ${appName} is serving from ${previousSlot} again`);
     stage("done", "success");

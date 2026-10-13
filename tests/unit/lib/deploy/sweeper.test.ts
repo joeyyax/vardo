@@ -62,6 +62,10 @@ vi.mock("@/lib/docker/deploy-cancel", () => ({
   deployWorker: vi.fn().mockResolvedValue("gone"),
   publishKillSignal: vi.fn(),
 }));
+vi.mock("@/lib/git-integration/github-feedback", () => ({
+  deployTimedOut: vi.fn().mockResolvedValue(undefined),
+  queuedDeployCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) },
 }));
@@ -75,6 +79,8 @@ import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { removeFromQueue } from "@/lib/docker/deploy-concurrency";
 import { deployWorker } from "@/lib/docker/deploy-cancel";
+import { queuedDeployCancelled } from "@/lib/git-integration/github-feedback";
+import { knownFailure } from "@/lib/git-integration/deploy-failure";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,6 +106,8 @@ const TEST_APP = {
 };
 
 const updates: Record<string, unknown>[] = [];
+/** Rows each conditional update's returning() yields, in order. */
+const returningQueue: unknown[][] = [];
 
 // Queued five minutes ago: past the orphan threshold, inside the queue timeout.
 const RECENT_DEPLOY = {
@@ -125,8 +133,12 @@ function resetMocks() {
   });
   // Restore the update mock
   updates.length = 0;
+  returningQueue.length = 0;
   vi.mocked(dbMock.update).mockImplementation(() => {
-    const where = vi.fn().mockResolvedValue(undefined);
+    // Awaitable, with returning() for the conditional cancel.
+    const where = vi.fn().mockImplementation(() =>
+      Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => returningQueue.shift() ?? [{ id: "row" }]) }),
+    );
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       updates.push(values);
       return { where };
@@ -263,5 +275,54 @@ describe("sweepStuckQueuedDeployments for a deploy whose process died", () => {
 
     expect(deployWorker).not.toHaveBeenCalled();
     expect(updates[0]).toMatchObject({ status: "cancelled" });
+  });
+});
+
+describe("sweepStuckQueuedDeployments on GitHub", () => {
+  beforeEach(resetMocks);
+
+  it("reports an orphaned deploy as cancelled before it started", async () => {
+    queueSelectResults([RECENT_DEPLOY], [TEST_APP]);
+
+    await sweepStuckQueuedDeployments();
+    await new Promise((r) => setImmediate(r));
+
+    expect(queuedDeployCancelled).toHaveBeenCalledTimes(1);
+    const [id, message] = vi.mocked(queuedDeployCancelled).mock.calls[0];
+    expect(id).toBe(RECENT_DEPLOY.id);
+    expect(knownFailure(message)).toBe("The deploy was cancelled before it started.");
+  });
+
+  it("reports a deploy stuck past the queue timeout with its limit", async () => {
+    queueSelectResults([TEST_DEPLOY], [TEST_APP]);
+
+    await sweepStuckQueuedDeployments();
+    await new Promise((r) => setImmediate(r));
+
+    const message = vi.mocked(queuedDeployCancelled).mock.calls[0][1];
+    expect(knownFailure(message)).toBe(`The deploy waited in the queue longer than ${(2 * DEPLOY_TIMEOUT_MS) / 60_000} minutes and was cancelled.`);
+  });
+
+  it("does nothing more for a deploy that left the queue meanwhile", async () => {
+    queueSelectResults([RECENT_DEPLOY], [TEST_APP]);
+    returningQueue.push([]);
+
+    await sweepStuckQueuedDeployments();
+    await new Promise((r) => setImmediate(r));
+
+    expect(queuedDeployCancelled).not.toHaveBeenCalled();
+    expect(addEvent).not.toHaveBeenCalled();
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps sweeping when GitHub feedback throws", async () => {
+    const second = { ...TEST_DEPLOY, id: "deploy-queued-2" };
+    queueSelectResults([TEST_DEPLOY, second], [TEST_APP]);
+    vi.mocked(queuedDeployCancelled).mockImplementationOnce(() => { throw new Error("boom"); });
+
+    await expect(sweepStuckQueuedDeployments()).resolves.toBeUndefined();
+    await new Promise((r) => setImmediate(r));
+
+    expect(vi.mocked(addEvent).mock.calls.map((c) => (c[1] as { deploymentId: string }).deploymentId)).toEqual([TEST_DEPLOY.id, second.id]);
   });
 });

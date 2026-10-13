@@ -14,7 +14,7 @@ const backupDrain = vi.hoisted(() => ({
   backupDrainTimeoutMs: () => 20 * 60_000,
 }));
 
-const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, drainMock, endDrainMock } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst, drainMock, endDrainMock } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
   type Write = { table: unknown; values: Record<string, unknown> };
@@ -24,13 +24,15 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFail
   const emitMock = vi.fn();
   const queueDrained = vi.fn().mockResolvedValue(true);
   const commitFails = { value: false };
+  /** The sweeper closed the row first: the conditional success write matches nothing. */
+  const closedFirst = { value: false };
 
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       if (commitFails.value && values.status === "success") throw new Error("connection terminated");
       writes.push({ table, values });
-      return { where };
+      const rows = closedFirst.value && values.status === "success" ? [] : [{ id: "row" }];
+      return { where: vi.fn(() => Object.assign(Promise.resolve(undefined), { returning: async () => rows })) };
     });
     return { set };
   }
@@ -44,11 +46,15 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFail
     },
   };
 
-  return { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, drainMock, endDrainMock };
+  return { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst, drainMock, endDrainMock };
 });
 
 // Background work outlives a test; a real logger then writes after teardown.
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
+// postDeploy fires these and returns; stubbed so none of them outlives the test.
+vi.mock("@/lib/security/scanner", () => ({ runSecurityScan: vi.fn() }));
+vi.mock("@/lib/backups/initial-backup", () => ({ armInitialBackupQuietly: vi.fn() }));
+vi.mock("@/lib/docker/image-updates/stateful-probe", () => ({ probeAppStateful: vi.fn() }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },
@@ -110,6 +116,7 @@ vi.mock("child_process", () => ({
 }));
 
 import { postDeploy } from "@/lib/docker/deploy-steps/post-deploy";
+import { DeployClosedElsewhereError } from "@/lib/docker/errors";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import { deployments, apps } from "@/lib/db/schema";
 import { syncComposeServices } from "@/lib/docker/compose-sync";
@@ -193,6 +200,7 @@ describe("postDeploy tail work", () => {
     execCalls.length = 0;
     execFails.stop = false;
     commitFails.value = false;
+    closedFirst.value = false;
     vi.mocked(removeContainer).mockClear();
     emitMock.mockClear();
     queueDrained.mockResolvedValue(true);
@@ -309,6 +317,47 @@ describe("postDeploy tail work", () => {
     expect(stopOldSlot).not.toHaveBeenCalled();
     expect(removeContainer).not.toHaveBeenCalled();
     expect(execCalls.some((c) => c.includes(" stop"))).toBe(false);
+  });
+
+  it("drops the new slot and leaves the old one serving when the sweeper closed the row first", async () => {
+    closedFirst.value = true;
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot });
+    vi.mocked(addEvent).mockClear();
+    vi.mocked(sendDeployNotification).mockClear();
+
+    await expect(postDeploy(ctx)).rejects.toBeInstanceOf(DeployClosedElsewhereError);
+
+    expect(stopOldSlot).not.toHaveBeenCalled();
+    expect(execCalls.some((c) => c.includes("-p app-production-blue down"))).toBe(true);
+    expect(ctx.succeeded).toBeFalsy();
+    expect(writes.some((w) => w.table === apps)).toBe(false);
+    expect(addEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Deploy succeeded" }));
+    expect(sendDeployNotification).not.toHaveBeenCalled();
+  });
+
+  it("keeps a new slot with nothing to return to, without the app status or success announcements", async () => {
+    closedFirst.value = true;
+    const ctx = makeContext();
+    vi.mocked(addEvent).mockClear();
+    vi.mocked(recordActivity).mockClear();
+    vi.mocked(sendDeployNotification).mockClear();
+
+    await postDeploy(ctx);
+
+    expect(writes.some((w) => w.table === apps)).toBe(false);
+    expect(addEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Deploy succeeded" }));
+    expect(recordActivity).not.toHaveBeenCalledWith(expect.objectContaining({ action: "deployment.succeeded" }));
+    expect(sendDeployNotification).not.toHaveBeenCalled();
+    expect(ctx.logLines.some((l) => l.includes("closed elsewhere first"))).toBe(true);
+    expect(ctx.succeeded).toBe(true);
+  });
+
+  it("sets the app active and announces success when its own write commits", async () => {
+    vi.mocked(sendDeployNotification).mockClear();
+    await postDeploy(makeContext());
+    expect(writes.some((w) => w.table === apps && w.values.status === "active")).toBe(true);
+    expect(sendDeployNotification).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
   it("waits for this process's other deploys before a self-deploy stops its own slot", async () => {

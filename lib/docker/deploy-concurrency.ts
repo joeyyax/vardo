@@ -73,15 +73,52 @@ export async function enqueueAndTryAcquire(deploymentId: string): Promise<boolea
   }
 }
 
+/** How often a waiting deploy reads its place in line. */
+const POSITION_POLL_MS = 2_000;
+
+/** Deploys ahead of this one in the queue: 0 is next. Null when it isn't queued or Redis can't say. */
+export async function queuePosition(deploymentId: string): Promise<number | null> {
+  const place = await readQueuePlace(deploymentId);
+  return typeof place === "number" ? place : null;
+}
+
+/** Deploys ahead, "absent" when Redis says it isn't queued, "unknown" when Redis didn't answer. */
+async function readQueuePlace(deploymentId: string): Promise<number | "absent" | "unknown"> {
+  try {
+    const index = await redis.lpos(QUEUE_KEY, deploymentId);
+    return typeof index === "number" ? index : "absent";
+  } catch {
+    return "unknown";
+  }
+}
+
+export const REMOVED_FROM_QUEUE_MESSAGE = "Deploy was removed from the concurrency queue before it started";
+
 /** Poll until this deployment heads the queue with a free slot, then take it. Throws on abort or timeout, leaving the queue. */
 export async function waitForConcurrencySlot(
   deploymentId: string,
   signal?: AbortSignal,
+  onPosition?: (ahead: number) => void,
 ): Promise<void> {
   const limit = getConcurrencyLimit();
   const deadline = Date.now() + QUEUE_TIMEOUT_MS;
+  let lastPosition: number | null = null;
+  let positionReadAt = 0;
 
   while (true) {
+    if (Date.now() - positionReadAt >= POSITION_POLL_MS) {
+      positionReadAt = Date.now();
+      const place = await readQueuePlace(deploymentId);
+      // Taken out of the list, as by the sweeper: it can never reach the head.
+      if (place === "absent") throw new Error(REMOVED_FROM_QUEUE_MESSAGE);
+      if (typeof place === "number" && place !== lastPosition) {
+        lastPosition = place;
+        try {
+          onPosition?.(place);
+        } catch { /* a listener never stalls the queue */ }
+      }
+    }
+
     if (signal?.aborted) {
       await removeFromQueue(deploymentId).catch(() => {});
       throw new Error("Deploy cancelled while waiting in concurrency queue");

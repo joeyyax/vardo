@@ -8,8 +8,9 @@ import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
-import { DeployBlockedError } from "./errors";
+import { DeployBlockedError, DeployClosedElsewhereError, DeployQueueAbortedError } from "./errors";
 import { trackDeploy } from "@/lib/git-integration/github-feedback";
+import type { QueuePlace } from "@/lib/git-integration/github-feedback-render";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 import {
   enqueueAndTryAcquire,
@@ -324,9 +325,19 @@ export async function deployWorker(deploymentId: string): Promise<"live" | "gone
   }
 }
 
+/** What GitHub hears about a deploy that threw before it ran: a user cancel, a supersede, or the error itself. */
+export function thrownOutcome(err: unknown): { status: "cancelled" | "superseded"; error?: string; closedElsewhere?: boolean } {
+  if (err instanceof DeployClosedElsewhereError) return { status: "cancelled", closedElsewhere: true };
+  if (err instanceof DeployQueueAbortedError) return { status: err.reason === "superseded" ? "superseded" : "cancelled" };
+  return { status: "cancelled", error: err instanceof Error ? err.message : String(err) };
+}
+
 /** Entry point for all deploys: create the record, cancel or wait for any in-progress deploy of the app (across processes), then run. */
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
+
+  // GitHub statuses and PR comments. Fire-and-forget; never throws.
+  const feedback = trackDeploy(newDeploymentId, { trigger: opts.trigger, gitSha: opts.gitSha });
 
   // A self-deploy is about to stop this process. Checked before the registry, which would supersede a deploy it must wait for.
   if (draining) {
@@ -337,6 +348,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       .set({ status: "cancelled", log: `[${now.toISOString()}] [CANCELLED] ${message}`, finishedAt: now })
       .where(eq(deployments.id, newDeploymentId))
       .catch((dbErr) => log.warn("Failed to record refused deployment:", dbErr));
+    feedback.finish({ status: "cancelled", error: message });
     throw new DeployBlockedError(message);
   }
 
@@ -347,8 +359,6 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   }, ACTIVE_HEARTBEAT_MS);
   workerRenew.unref?.();
 
-  // GitHub statuses and PR comments. Fire-and-forget; never throws.
-  const feedback = trackDeploy(newDeploymentId, { trigger: opts.trigger, gitSha: opts.gitSha });
   const onStage = opts.onStage;
 
   try {
@@ -358,11 +368,11 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
         feedback.stage(stage, status);
         onStage?.(stage, status);
       },
-    });
+    }, (place) => feedback.queued(place));
     feedback.finish(result);
     return result;
   } catch (err) {
-    feedback.finish({ status: "cancelled" });
+    feedback.finish(thrownOutcome(err));
     throw err;
   } finally {
     clearInterval(workerRenew);
@@ -387,7 +397,7 @@ function oneClaimAtATime<T>(scope: string, fn: () => Promise<T>): Promise<T> {
 }
 
 /** Takes the scope's Redis key with NX, superseding or waiting out its owner. Overwrites at the deadline, as a dead owner would have let it lapse. */
-async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (line: string) => void): Promise<void> {
+async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (line: string) => void, onWait?: () => void): Promise<void> {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   const value = JSON.stringify({ deploymentId, stage: "clone" });
   let signalled: string | null = null;
@@ -406,6 +416,7 @@ async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (
     }
     if (!announced) {
       onLog?.("[queue] Waiting for the deploy already running for this app");
+      onWait?.();
       announced = true;
     }
     if (Date.now() >= deadline) {
@@ -416,7 +427,7 @@ async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (
   }
 }
 
-async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Promise<DeployResult> {
+async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts, onQueue?: (place: QueuePlace) => void): Promise<DeployResult> {
   const scope = await deployScope(opts.appId, opts.environmentId);
 
   const controller = new AbortController();
@@ -438,11 +449,12 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
       if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
         localExisting.controller.abort({ supersededBy: newDeploymentId });
       }
+      onQueue?.("app");
       await localExisting.done.catch(() => {});
     }
 
     // 2. Deploy owned by another process. Its lease renews only while its process lives, so a dead owner clears itself.
-    await claimActiveInRedis(scope, newDeploymentId, opts.onLog);
+    await claimActiveInRedis(scope, newDeploymentId, opts.onLog, () => onQueue?.("app"));
 
     // 3. Register this deploy locally.
     localRegistry.set(scope, active);
@@ -476,7 +488,7 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
       opts.onLog?.(
         `[queue] Waiting for a concurrency slot (${limit} max simultaneous deploy${limit === 1 ? "" : "s"})`,
       );
-      await waitForConcurrencySlot(newDeploymentId, controller.signal);
+      await waitForConcurrencySlot(newDeploymentId, controller.signal, onQueue);
       opts.onLog?.("[queue] Concurrency slot acquired — starting deploy");
     }
     concurrencySlotHeld = true;
@@ -518,7 +530,7 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
       await removeFromQueue(newDeploymentId).catch(() => {});
       const now = new Date();
       const errorMessage = err instanceof Error ? err.message : String(err);
-      await db
+      const closedHere = await db
         .update(deployments)
         .set({
           status: "cancelled",
@@ -526,7 +538,21 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Pr
           finishedAt: now,
         })
         .where(and(eq(deployments.id, newDeploymentId), eq(deployments.status, "queued")))
-        .catch((dbErr) => log.warn("Failed to update cancelled deployment status:", dbErr));
+        .returning({ id: deployments.id })
+        .then((rows) => rows.length > 0)
+        .catch((dbErr) => {
+          log.warn("Failed to update cancelled deployment status:", dbErr);
+          return true;
+        });
+      // The sweeper closed it first and reported it; this process stays quiet.
+      if (!closedHere) throw new DeployClosedElsewhereError(null);
+      // Say why it aborted, so GitHub can tell a supersede or a user's cancel from a failure.
+      const reason = controller.signal.aborted
+        ? (controller.signal.reason as { supersededBy?: string; killed?: boolean } | undefined)
+        : undefined;
+      if (reason?.supersededBy || reason?.killed) {
+        throw new DeployQueueAbortedError(errorMessage, reason.supersededBy ? "superseded" : "killed");
+      }
     }
     throw err;
   } finally {

@@ -19,6 +19,8 @@ export type PushEvent = {
   installationId: number | null;
   pusher?: string | null;
   commitMessage?: string | null;
+  /** The push deleted the branch. Relays carry it as an all-zero head SHA. */
+  deleted?: boolean;
 };
 
 export type PullRequestEvent = {
@@ -62,6 +64,7 @@ export function eventFromGithub(eventName: string | null, payload: unknown, deli
       installationId: install,
       pusher: str(obj(p.pusher)?.name) || str(obj(p.sender)?.login),
       commitMessage: str(obj(p.head_commit)?.message),
+      deleted: p.deleted === true,
     };
   }
 

@@ -19,7 +19,7 @@ import { pointCurrentAt } from "./active-slot";
 import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
-import { DeployBlockedError } from "./errors";
+import { DeployBlockedError, DeployClosedElsewhereError } from "./errors";
 import { assertSlotWithinApp } from "./slot-guard";
 import { assertDiskHeadroom } from "./disk-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
@@ -102,6 +102,8 @@ export type DeployOpts = {
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
   /** Deploy this commit of the branch, not its tip. Git apps only. */
   gitSha?: string;
+  /** Where `gitSha` came from: the commit a push named, or one someone chose. Defaults to "pin". */
+  pinIntent?: "push" | "pin";
   /** Build even when an earlier image matches; "no-cache" skips the layer cache too. */
   rebuild?: RebuildMode;
 };
@@ -117,6 +119,8 @@ export type DeployResult = {
   error?: string;
   /** Post-deploy work that did not finish on a deploy that succeeded. */
   postDeployError?: string;
+  /** Another process, such as the sweeper, closed the row first and reported it. */
+  closedElsewhere?: boolean;
 };
 
 export async function createDeployment(opts: DeployOpts): Promise<string> {
@@ -248,10 +252,18 @@ export async function runDeployment(
   let ownsAppStatus = false;
 
   try {
-    await db
+    // Only while still queued: the sweeper may have cancelled it while it waited.
+    const claimed = await db
       .update(deployments)
       .set({ status: "running" })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+      .returning({ id: deployments.id })
+      .then((rows) => rows.length > 0);
+    if (!claimed) {
+      log("[deploy] Not started: the deployment was closed while it waited in the queue");
+      await streamLogger.flush();
+      return { deploymentId, success: false, log: logLines.join("\n"), durationMs: 0, status: "cancelled", closedElsewhere: true };
+    }
 
     if (opts.groupEnvironmentId && !opts.environmentId) {
       throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
@@ -482,6 +494,7 @@ export async function runDeployment(
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
       pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
+      pinIntent: opts.pinIntent,
       rebuild,
 
       app: app as DeployContext["app"],
@@ -562,6 +575,14 @@ export async function runDeployment(
       ctx.releaseHold = undefined;
     }
 
+    // The sweeper closed the row and reported it; the step already dropped the new slot.
+    if (error instanceof DeployClosedElsewhereError) {
+      log(`[deploy] Stopped: ${error.message}. The old slot keeps serving`);
+      stage(runningStage() ?? pendingStage(), "failed");
+      await streamLogger.flush();
+      return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled", closedElsewhere: true };
+    }
+
     // Cut over and serving; only post-deploy work failed. Row, status and stream stand.
     if (ctx?.succeeded) {
       await recordPostDeployIncomplete(ctx, message);
@@ -599,7 +620,7 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(eq(deployments.id, deploymentId));
+          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
@@ -627,7 +648,7 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(eq(deployments.id, deploymentId));
+          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
 
         // Guarded so a newer deploy keeps ownership; the reconciler corrects "stopped" from Docker.
         if (ownsAppStatus) {
@@ -698,12 +719,15 @@ export async function runDeployment(
     }
 
     fail();
-    await db
+    // A row the sweeper already closed keeps its record and the app status it set.
+    const recorded = await db
       .update(deployments)
       .set({ status: "failed", log: logLines.join("\n"), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])))
+      .returning({ id: deployments.id })
+      .then((rows) => rows.length > 0);
 
-    if (ownsAppStatus) {
+    if (ownsAppStatus && recorded) {
       await db
         .update(apps)
         .set(statusChange(keptNewSlot ? "active" : "error"))
