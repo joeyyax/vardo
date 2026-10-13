@@ -333,6 +333,21 @@ describe("stale volumes in a summary", () => {
       chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(stalePass ? stale.map((s) => ({ ...s, lastSuccess: null })) : []);
       return chain;
     });
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+    ]);
+  });
+
+  it("leaves out volumes no job backs up any more", async () => {
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { appId: "a1", name: "data", type: "named", persistent: true, durability: "rebuildable", backupStrategy: "tar", backupSelection: null, source: null },
+      { appId: "a9", name: "pgdata", type: "bind", persistent: true, durability: null, backupStrategy: "tar", backupSelection: null, source: "/srv/pg" },
+    ]);
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    expect(await loadStaleVolumes("org1", t0)).toEqual([]);
+    dbMock.query.volumes.findMany.mockResolvedValue([]);
+    expect(await loadStaleVolumes("org1", t0)).toEqual([]);
   });
 
   it("lists only a single job's own apps", () => {

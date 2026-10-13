@@ -436,7 +436,19 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
   return history;
 }
 
-/** Volumes backed up this week with no success in 48 hours. */
+/** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
+async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (appIds.length === 0) return out;
+  const vols = await db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) });
+  for (const v of vols) {
+    if (!isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
+    out.add(volumeKey(v.appId, v.name));
+  }
+  return out;
+}
+
+/** Volumes backed up this week, still backed up, with no success in 48 hours. */
 export async function loadStaleVolumes(organizationId: string, now: number) {
   const rows = await db
     .select({
@@ -449,8 +461,11 @@ export async function loadStaleVolumes(organizationId: string, now: number) {
     .leftJoin(apps, eq(apps.id, backups.appId))
     .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
     .groupBy(backups.appId, backups.appName, backups.volumeName);
-  return rows
-    .filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS))
+  const stale = rows.filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS));
+  // A volume the engine now skips, or a deploy removed, leaves rows behind for the week.
+  const current = await stillBackedUp([...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))]);
+  return stale
+    .filter((r) => !r.appId || current.has(volumeKey(r.appId, r.volumeName!)))
     .map((r) => ({ appId: r.appId, appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
 }
 
