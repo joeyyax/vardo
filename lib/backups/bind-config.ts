@@ -74,6 +74,13 @@ export async function configBindReason(
   return null;
 }
 
+/** Volumes with the reason the engine leaves each out as config, null for the rest. */
+export async function withConfigReasons<
+  V extends { type: "named" | "bind"; source: string | null; backupStrategy: string; durability: string | null },
+>(vols: V[]): Promise<(V & { configReason: string | null })[]> {
+  return Promise.all(vols.map(async (v) => ({ ...v, configReason: await skipsAsConfig(v) })));
+}
+
 /** Whether a selected volume is checked-out config the engine leaves out. Dumps and `stateful` volumes always back up. */
 export async function skipsAsConfig(vol: {
   type: "named" | "bind";

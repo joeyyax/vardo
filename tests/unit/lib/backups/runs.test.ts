@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({ emit: vi.fn(), fire: vi.fn(), settle: vi.fn(),
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
 vi.mock("@/lib/notifications/observations", () => ({ fireAlert: mocks.fire, settleAlerts: mocks.settle }));
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
+vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: async () => null, setSystemSetting: vi.fn() }));
 
 import { dbMock } from "@/tests/helpers/db";
 const { describeTarget, finishBackupRuns, recordBackupResults, staleForRun, startManualRun } = await import("@/lib/backups/runs");
@@ -203,15 +204,15 @@ describe("recordBackupResults", () => {
     expect(mocks.fire.mock.calls[0][2]).toMatchObject({ title: "Backup of Acme Data / data failed", appName: "Acme Data" });
   });
 
-  it("folds a result outside any run into the org's open run", async () => {
+  it("keeps a result outside any run out of another run's summary", async () => {
     dbMock.query.backupRuns.findFirst.mockResolvedValue({ id: "open" });
-    await recordBackupResults("org1", [item()], {}, t0);
-    expect(dbMock.updates).toHaveLength(1);
+    await recordBackupResults("org1", [item({ kind: "drill" }), item({ jobId: "requeued" })], {}, t0);
+    expect(dbMock.updates).toHaveLength(0);
   });
 
-  it("drops a success when no run is open; the digest still counts it", async () => {
-    dbMock.query.backupRuns.findFirst.mockResolvedValue(undefined);
-    await recordBackupResults("org1", [item()], {}, t0);
+  it("still emails a failure that has no run", async () => {
+    await recordBackupResults("org1", [item({ outcome: "failed", error: "boom" })], { runId: null }, t0);
+    expect(mocks.fire).toHaveBeenCalledTimes(1);
     expect(dbMock.updates).toHaveLength(0);
   });
 });
@@ -310,6 +311,19 @@ describe("stale volumes in a summary", () => {
     { appId: "a9", appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
   ];
 
+  const groupedBy: unknown[][] = [];
+  const app = (id: string, displayName: string, over: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    organizationId: "org1",
+    status: "active",
+    backupsEnabled: null,
+    organization: { backupsEnabled: null },
+    ...over,
+  });
+  const link = (appId: string, enabled = true) => ({ appId, backupJob: { organizationId: "org1", enabled } });
+  let staleRows = stale;
+
   const runRow = (over: Record<string, unknown>) => ({
     id: "r1",
     organizationId: "org1",
@@ -324,18 +338,23 @@ describe("stale volumes in a summary", () => {
     dbMock.reset();
     vi.clearAllMocks();
     mocks.settings.mockResolvedValue({ categories: { backups: true, backupSummaries: false, host: true, apps: true }, nightlyBackupTime: "02:00" });
-    // The stale query joins apps; the history query doesn't.
+    // The stale query groups; the history query doesn't.
+    groupedBy.length = 0;
     (dbMock.db as Record<string, unknown>).select = vi.fn(() => {
       let stalePass = false;
       const chain: Record<string, unknown> = {};
-      for (const m of ["from", "where", "orderBy", "groupBy"]) chain[m] = () => chain;
-      chain.leftJoin = () => ((stalePass = true), chain);
-      chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(stalePass ? stale.map((s) => ({ ...s, lastSuccess: null })) : []);
+      for (const m of ["from", "where", "orderBy"]) chain[m] = () => chain;
+      chain.groupBy = (...cols: unknown[]) => ((stalePass = true), groupedBy.push(cols), chain);
+      chain.then = (resolve: (rows: unknown[]) => unknown) =>
+        resolve(stalePass ? staleRows.map(({ appName, ...s }) => ({ ...s, recordedName: appName, lastSuccess: null })) : []);
       return chain;
     });
+    staleRows = stale;
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop"), app("a9", "Other")]);
+    dbMock.query.backupJobApps.findMany.mockResolvedValue([link("a1"), link("a9")]);
     dbMock.query.volumes.findMany.mockResolvedValue([
-      { appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
-      { appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v1", appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v9", appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
     ]);
   });
 
@@ -348,6 +367,29 @@ describe("stale volumes in a summary", () => {
     expect(await loadStaleVolumes("org1", t0)).toEqual([]);
     dbMock.query.volumes.findMany.mockResolvedValue([]);
     expect(await loadStaleVolumes("org1", t0)).toEqual([]);
+  });
+
+  it("leaves out an app with backups switched off or no enabled job", async () => {
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop", { backupsEnabled: false }), app("a9", "Other")]);
+    dbMock.query.backupJobApps.findMany.mockResolvedValue([link("a1"), link("a9", false)]);
+    expect(await loadStaleVolumes("org1", t0)).toEqual([]);
+  });
+
+  it("keeps a volume its own job takes, whatever the app's switch says", async () => {
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop", { backupsEnabled: false }), app("a9", "Other", { status: "missing" })]);
+    dbMock.query.backupJobVolumes.findMany.mockResolvedValue([{ volumeId: "v1", backupJob: { enabled: true } }]);
+    expect((await loadStaleVolumes("org1", t0)).map((v) => v.volumeName)).toEqual(["data"]);
+  });
+
+  it("groups by app ID and names the app as it's called now", async () => {
+    staleRows = [{ appId: "a1", appName: "shop-old", volumeName: "data", lastSuccessAt: null }];
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop")]);
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    const { backups } = await import("@/lib/db/schema");
+    expect(await loadStaleVolumes("org1", t0)).toEqual([{ appId: "a1", appName: "Shop", volumeName: "data", lastSuccessAt: null }]);
+    expect(groupedBy[0]).toEqual([backups.appId, backups.volumeName]);
   });
 
   it("lists only a single job's own apps", () => {

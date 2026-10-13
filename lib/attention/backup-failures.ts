@@ -22,12 +22,14 @@ const rerun = (row: BackupOutcome) => !!row.log && RERUN_NOTES.some((note) => ro
 
 /**
  * The most recent standing failure per app. A failure stands only while it is the latest outcome for its
- * app and volume: a later success, a run in progress or a requeue clears it.
+ * app and volume: a later success, a run in progress or a requeue clears it. With `covered`, only those
+ * `appId:volume` keys count.
  */
-export function standingBackupFailures(rows: BackupOutcome[]): BackupOutcome[] {
+export function standingBackupFailures(rows: BackupOutcome[], covered?: Set<string>): BackupOutcome[] {
   const latest = new Map<string, BackupOutcome>();
   for (const row of rows) {
     if (NOT_AN_OUTCOME.has(row.status)) continue;
+    if (covered && !covered.has(`${row.appId ?? ""}:${row.volumeName ?? ""}`)) continue;
     const owner = row.appId ?? `job:${row.jobId ?? row.id}`;
     const key = `${owner}:${row.volumeName ?? ""}`;
     const held = latest.get(key);

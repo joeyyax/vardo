@@ -107,7 +107,11 @@ async function loadFailedBackups(appIds: string[]) {
     })
     .from(backups)
     .where(and(gte(backups.startedAt, since), inArray(backups.appId, appIds)));
-  return standingBackupFailures(rows);
+  // A volume no job backs up any more can't recover, so its last failure doesn't stand.
+  const failing = [...new Set(rows.flatMap((r) => (r.status === "failed" && r.appId ? [r.appId] : [])))];
+  if (failing.length === 0) return [];
+  const { stillBackedUp } = await import("@/lib/backups/runs");
+  return standingBackupFailures(rows, await stillBackedUp(failing));
 }
 
 /** Jobs that have captured nothing for several schedule intervals, read from the jobs, not the apps. */

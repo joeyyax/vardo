@@ -3,7 +3,7 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backupJobVolumes, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
 import type { AlertItem } from "@/lib/bus/events";
 import { formatDuration } from "@/lib/email/format";
 import { logger } from "@/lib/logger";
@@ -364,7 +364,7 @@ async function withDisplayNames(items: BackupResultItem[]): Promise<BackupResult
 
 /**
  * Takes results as they come: failures email now through the throttle, a success clears its
- * failure, and everything lands in its run or the org's open run for the summary.
+ * failure, and results with a run land in it for the summary. The digest counts the rest.
  */
 export async function recordBackupResults(
   organizationId: string,
@@ -381,20 +381,11 @@ export async function recordBackupResults(
     }
     await settleAlerts(organizationId, "backup.failure", items.filter((i) => i.outcome === "success").map(failureSubject), at);
 
-    const runId =
-      opts.runId ??
-      (
-        await db.query.backupRuns.findFirst({
-          where: and(eq(backupRuns.organizationId, organizationId), isNull(backupRuns.finishedAt)),
-          orderBy: [desc(backupRuns.startedAt)],
-          columns: { id: true },
-        })
-      )?.id;
-    if (!runId) return;
+    if (!opts.runId) return;
     await db
       .update(backupRuns)
       .set({ items: sql`${backupRuns.items} || ${JSON.stringify(items)}::jsonb` })
-      .where(and(eq(backupRuns.id, runId), isNull(backupRuns.finishedAt)));
+      .where(and(eq(backupRuns.id, opts.runId), isNull(backupRuns.finishedAt)));
   } catch (err) {
     log.error(`Couldn't record backup results for org ${organizationId}:`, err);
   }
@@ -436,37 +427,95 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
   return history;
 }
 
+/** Apps a scheduled run still takes: switched on, not retired and in an enabled job of their org or the instance. */
+async function appsStillScheduled(appIds: string[]): Promise<Set<string>> {
+  const { getSystemBackupsDefault, resolveBackupSwitch } = await import("./switch");
+  const [rows, links, systemDefault] = await Promise.all([
+    db.query.apps.findMany({
+      where: inArray(apps.id, appIds),
+      columns: { id: true, organizationId: true, status: true, backupsEnabled: true },
+      with: { organization: { columns: { backupsEnabled: true } } },
+    }),
+    db.query.backupJobApps.findMany({
+      where: inArray(backupJobApps.appId, appIds),
+      with: { backupJob: { columns: { organizationId: true, enabled: true } } },
+    }),
+    getSystemBackupsDefault().catch(() => true),
+  ]);
+  const orgOf = new Map((rows ?? []).map((a) => [a.id, a.organizationId]));
+  const inJob = new Set(
+    (links ?? [])
+      .filter((l) => l.backupJob.enabled && (l.backupJob.organizationId === null || l.backupJob.organizationId === orgOf.get(l.appId)))
+      .map((l) => l.appId),
+  );
+  return new Set(
+    (rows ?? [])
+      .filter((a) => a.status !== "missing" && inJob.has(a.id))
+      .filter((a) => resolveBackupSwitch(a.backupsEnabled, a.organization?.backupsEnabled, systemDefault).enabled)
+      .map((a) => a.id),
+  );
+}
+
 /** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
-async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
+export async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
   const out = new Set<string>();
   if (appIds.length === 0) return out;
-  const vols = await db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) });
+  const [vols, scheduled] = await Promise.all([
+    db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) }),
+    appsStillScheduled(appIds),
+  ]);
+  const linked = vols.length
+    ? await db.query.backupJobVolumes.findMany({
+        where: inArray(backupJobVolumes.volumeId, vols.map((v) => v.id)),
+        with: { backupJob: { columns: { enabled: true } } },
+      })
+    : [];
+  const direct = new Set((linked ?? []).filter((l) => l.backupJob.enabled).map((l) => l.volumeId));
   for (const v of vols) {
-    if (!isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
+    if (exclusionReason(v.durability)) continue;
+    // A job linked to the volume itself takes it whatever the app's switch says.
+    if (direct.has(v.id)) {
+      out.add(volumeKey(v.appId, v.name));
+      continue;
+    }
+    if (!v.appId || !scheduled.has(v.appId)) continue;
+    if (!isBackupSelected(v) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
     out.add(volumeKey(v.appId, v.name));
   }
   return out;
 }
 
-/** Volumes backed up this week, still backed up, with no success in 48 hours. */
+/** Volumes backed up this week that a job still backs up, with no success in 48 hours. */
 export async function loadStaleVolumes(organizationId: string, now: number) {
+  // Grouped by app ID alone, so a rename doesn't split a volume in two.
   const rows = await db
     .select({
       appId: backups.appId,
-      appName: sql<string | null>`coalesce(max(${apps.displayName}), ${backups.appName})`,
+      recordedName: sql<string | null>`max(${backups.appName})`,
       volumeName: backups.volumeName,
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
     })
     .from(backups)
-    .leftJoin(apps, eq(apps.id, backups.appId))
     .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
-    .groupBy(backups.appId, backups.appName, backups.volumeName);
+    .groupBy(backups.appId, backups.volumeName);
   const stale = rows.filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS));
+  const appIds = [...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))];
   // A volume the engine now skips, or a deploy removed, leaves rows behind for the week.
-  const current = await stillBackedUp([...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))]);
+  const [current, names] = await Promise.all([
+    stillBackedUp(appIds),
+    appIds.length
+      ? db.query.apps.findMany({ where: inArray(apps.id, appIds), columns: { id: true, displayName: true } })
+      : [],
+  ]);
+  const nameOf = new Map((names ?? []).map((a) => [a.id, a.displayName]));
   return stale
     .filter((r) => !r.appId || current.has(volumeKey(r.appId, r.volumeName!)))
-    .map((r) => ({ appId: r.appId, appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
+    .map((r) => ({
+      appId: r.appId,
+      appName: (r.appId && nameOf.get(r.appId)) || r.recordedName || r.volumeName!,
+      volumeName: r.volumeName!,
+      lastSuccessAt: r.lastSuccess?.toISOString() ?? null,
+    }));
 }
 
 type RunRow = typeof backupRuns.$inferSelect;
