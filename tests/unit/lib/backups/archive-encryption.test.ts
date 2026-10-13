@@ -302,7 +302,7 @@ describe("restoreBackup — encrypted and legacy archives", () => {
     const result = await restoreBackup("bk-1");
 
     expect(result.success).toBe(false);
-    expect(result.log).toMatch(/could not be decrypted/);
+    expect(result.log).toMatch(/damaged and can't be decrypted/);
     expect(restoreRan()).toBe(false);
   });
 
@@ -314,7 +314,7 @@ describe("restoreBackup — encrypted and legacy archives", () => {
     const result = await restoreBackup("bk-1");
 
     expect(result.success).toBe(false);
-    expect(result.log).toMatch(/could not be decrypted/);
+    expect(result.log).toMatch(/doesn't open the archive/);
     expect(restoreRan()).toBe(false);
   });
 
