@@ -48,6 +48,10 @@ describe("pushMessageFor", () => {
     expect(pushMessageFor(progress, ctx)).toBeNull();
   });
 
+  it("falls back to tiles when the email has no fact table", () => {
+    expect(message("backup-summary").facts.length).toBeGreaterThan(0);
+  });
+
   it("caps the facts", () => {
     for (const { event } of EMAIL_FIXTURES) expect(pushMessageFor(event, ctx)?.facts.length ?? 0).toBeLessThanOrEqual(6);
   });
