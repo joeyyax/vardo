@@ -1,6 +1,6 @@
 // Host process problems as level-triggered incidents: opened once while the condition holds, resolved when it clears.
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, like } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { incidents } from "@/lib/db/schema";
 import { incidentKey } from "./key";
@@ -43,4 +43,23 @@ export async function syncHostProblem(problem: HostProblem, active: boolean, rec
   }
   await resolveSystemIncident(orgIds, problem.kind, problem.about, recovered);
   return "resolved";
+}
+
+export type OpenHostIncident = { key: string; kind: string; title: string; severity: string; openedAt: Date; updatedAt: Date };
+
+/** Open `host.*` incidents, one per key. Each is recorded in every admin org, so they're collapsed. */
+export async function listOpenHostIncidents(): Promise<OpenHostIncident[]> {
+  const rows = await db
+    .select({
+      key: incidents.key,
+      kind: incidents.kind,
+      title: incidents.title,
+      severity: incidents.severity,
+      openedAt: incidents.openedAt,
+      updatedAt: incidents.updatedAt,
+    })
+    .from(incidents)
+    .where(and(eq(incidents.state, "open"), like(incidents.kind, "host.%")))
+    .orderBy(desc(incidents.openedAt));
+  return [...new Map(rows.map((r) => [r.key, r])).values()];
 }
