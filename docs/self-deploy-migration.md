@@ -78,6 +78,10 @@ Nothing listens on the network for this. Only root and the console's own user ca
 
 `vardo update` never runs the legacy swap on a self-deploy instance, and leaves `.env` alone apart from install-time options given with it (`--set`, `--trusted-proxies` and the rest).
 
+### The `vardo` command
+
+`/usr/local/bin/vardo` is a shim that runs `scripts/vardo-cli.sh` from `production/current`, then `env/current`, then `/opt/vardo`. A deploy updates the CLI with the console; the shim never changes. `install.sh` rewrites it on install, update and rebuild.
+
 ### Notifications
 
 A deploy of the `vardo` app writes `/opt/vardo/lifecycle/update.json` the way the legacy update does, with `kind: "self-deploy"`. The same events go out:
