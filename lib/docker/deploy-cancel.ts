@@ -8,7 +8,7 @@ import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
-import { DeployBlockedError } from "./errors";
+import { DeployBlockedError, DeployQueueAbortedError } from "./errors";
 import { trackDeploy } from "@/lib/git-integration/github-feedback";
 import type { QueuePlace } from "@/lib/git-integration/github-feedback-render";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
@@ -325,9 +325,18 @@ export async function deployWorker(deploymentId: string): Promise<"live" | "gone
   }
 }
 
+/** What GitHub hears about a deploy that threw before it ran: a user cancel, a supersede, or the error itself. */
+export function thrownOutcome(err: unknown): { status: "cancelled" | "superseded"; error?: string } {
+  if (err instanceof DeployQueueAbortedError) return { status: err.reason === "superseded" ? "superseded" : "cancelled" };
+  return { status: "cancelled", error: err instanceof Error ? err.message : String(err) };
+}
+
 /** Entry point for all deploys: create the record, cancel or wait for any in-progress deploy of the app (across processes), then run. */
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
+
+  // GitHub statuses and PR comments. Fire-and-forget; never throws.
+  const feedback = trackDeploy(newDeploymentId, { trigger: opts.trigger, gitSha: opts.gitSha });
 
   // A self-deploy is about to stop this process. Checked before the registry, which would supersede a deploy it must wait for.
   if (draining) {
@@ -338,6 +347,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       .set({ status: "cancelled", log: `[${now.toISOString()}] [CANCELLED] ${message}`, finishedAt: now })
       .where(eq(deployments.id, newDeploymentId))
       .catch((dbErr) => log.warn("Failed to record refused deployment:", dbErr));
+    feedback.finish({ status: "cancelled", error: message });
     throw new DeployBlockedError(message);
   }
 
@@ -348,8 +358,6 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   }, ACTIVE_HEARTBEAT_MS);
   workerRenew.unref?.();
 
-  // GitHub statuses and PR comments. Fire-and-forget; never throws.
-  const feedback = trackDeploy(newDeploymentId, { trigger: opts.trigger, gitSha: opts.gitSha });
   const onStage = opts.onStage;
 
   try {
@@ -363,7 +371,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     feedback.finish(result);
     return result;
   } catch (err) {
-    feedback.finish({ status: "cancelled" });
+    feedback.finish(thrownOutcome(err));
     throw err;
   } finally {
     clearInterval(workerRenew);
@@ -530,6 +538,13 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts, onQ
         })
         .where(and(eq(deployments.id, newDeploymentId), eq(deployments.status, "queued")))
         .catch((dbErr) => log.warn("Failed to update cancelled deployment status:", dbErr));
+      // Say why it aborted, so GitHub can tell a supersede or a user's cancel from a failure.
+      const reason = controller.signal.aborted
+        ? (controller.signal.reason as { supersededBy?: string; killed?: boolean } | undefined)
+        : undefined;
+      if (reason?.supersededBy || reason?.killed) {
+        throw new DeployQueueAbortedError(errorMessage, reason.supersededBy ? "superseded" : "killed");
+      }
     }
     throw err;
   } finally {

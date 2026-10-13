@@ -6,6 +6,14 @@ export class DeployClosedElsewhereError extends Error {
   }
 }
 
+/** A queued deploy aborted before it started, superseded by a newer deploy or killed by a user. */
+export class DeployQueueAbortedError extends Error {
+  constructor(message: string, readonly reason: "superseded" | "killed") {
+    super(message);
+    this.name = "DeployQueueAbortedError";
+  }
+}
+
 /** Deploy blocked by a policy check. deploy.ts rethrows these instead of swallowing them. */
 export class DeployBlockedError extends Error {
   constructor(message: string) {

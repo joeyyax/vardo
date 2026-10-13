@@ -790,9 +790,12 @@ export function createFeedback(deps: FeedbackDeps) {
               await deploymentStatus(i, "failure", summary);
               if (sha) await mergedRow(i, sha, { state: "failed", durationMs: result.durationMs, error: reason, logUrl, appUrl });
             } else if (result.status === "cancelled") {
-              await setPreviewRow(i, { state: "failed", error: "Cancelled", logUrl, appUrl }, sha);
-              if (sha) await postCommitStatus(i, sha, "error", "Cancelled");
-              await deploymentStatus(i, "error", "Cancelled");
+              // No error is a user's cancel; an error is why the deploy couldn't run.
+              const error = result.error || "Cancelled";
+              const summary = failureText(error) ?? "Cancelled";
+              await setPreviewRow(i, { state: "failed", error, logUrl, appUrl }, sha);
+              if (sha) await postCommitStatus(i, sha, "error", result.error ? summary : "Cancelled");
+              await deploymentStatus(i, "error", result.error ? summary : "Cancelled");
             } else {
               if (sha) await postCommitStatus(i, sha, "error", "Superseded by a newer deploy");
               await deploymentStatus(i, "inactive", "Superseded by a newer deploy");

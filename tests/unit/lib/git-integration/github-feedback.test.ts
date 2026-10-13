@@ -386,6 +386,24 @@ describe("deploy feedback", () => {
     expect(calls.slice(before).filter((c) => c.method !== "GET")).toHaveLength(0);
   });
 
+  it("says why a deploy couldn't run, apart from a user's cancel", async () => {
+    const preview = info({ environment: "preview", pr: { repo: "acme/widget", number: 4 }, trigger: "manual", pinnedSha: "1111111aaaa" });
+    const timedOut = harness({ info: preview });
+    timedOut.feedback.trackDeploy("dep-1", { trigger: "manual", gitSha: "1111111aaaa" })
+      .finish({ status: "cancelled", error: "Deploy queue timeout — waited too long for a concurrency slot" });
+    await settle();
+    const readable = "The deploy waited too long for a free deploy slot and didn't start.";
+    const last = timedOut.calls.filter((c) => c.path.includes("/statuses/1111111aaaa")).at(-1)?.body;
+    expect(last).toMatchObject({ state: "error", description: readable });
+    const comment = (timedOut.calls.filter((c) => /\/issues\/(4\/comments$|comments\/\d+)/.test(c.path) && c.method !== "GET").at(-1)?.body as { body: string }).body;
+    expect(comment).toContain(readable);
+
+    const cancelled = harness({ info: preview });
+    cancelled.feedback.trackDeploy("dep-1", { trigger: "manual", gitSha: "1111111aaaa" }).finish({ status: "cancelled" });
+    await settle();
+    expect(cancelled.calls.filter((c) => c.path.includes("/statuses/1111111aaaa")).at(-1)?.body).toMatchObject({ state: "error", description: "Cancelled" });
+  });
+
   it("goes silent on stages once another process closed the row", async () => {
     const { feedback, calls } = harness({ deps: { readStatus: async () => "failed" } });
     const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
