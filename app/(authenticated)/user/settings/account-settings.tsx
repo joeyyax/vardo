@@ -1299,10 +1299,10 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
               <Card
                 variant="inset"
                 key={token.id}
-                className="flex items-center justify-between p-3"
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-3"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-sm font-medium truncate">{token.name}</p>
                     <Badge
                       variant="outline"
@@ -1338,11 +1338,11 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                     )}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-3">
                   {(canGrantAdmin || token.adminAccess) && (
                     <Label
                       htmlFor={`admin-${token.id}`}
-                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                      className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground"
                     >
                       Instance admin
                       <Switch
@@ -1358,7 +1358,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                   {(canGrantAdmin || token.linkedInstances) && (
                     <Label
                       htmlFor={`linked-${token.id}`}
-                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                      className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground"
                     >
                       Linked instances
                       <Switch
@@ -1373,7 +1373,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                   )}
                   <Label
                     htmlFor={`cross-org-${token.id}`}
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                    className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground"
                   >
                     All my organizations
                     <Switch

@@ -542,7 +542,7 @@ export function InstancesSettings() {
                             <p className="text-sm font-medium truncate">
                               {peer.name}
                             </p>
-                            <Badge variant="outline" className="px-1.5 py-0 shrink-0">
+                            <Badge variant="outline" className="shrink-0">
                               {peer.type}
                             </Badge>
                             {peer.connectionType === "visible" && (
@@ -555,24 +555,24 @@ export function InstancesSettings() {
                               </Badge>
                             )}
                             {peer.tunnelError && (
-                              <Badge variant="destructive" className="px-1.5 py-0 shrink-0" title={peer.tunnelError}>
+                              <Badge variant="destructive" className="shrink-0" title={peer.tunnelError}>
                                 tunnel down
                               </Badge>
                             )}
                             {peer.acceptMcp && (
-                              <Badge variant="outline" className="px-1.5 py-0 shrink-0" title={ACCEPT_MCP_WARNING}>
+                              <Badge variant="outline" className="shrink-0" title={ACCEPT_MCP_WARNING}>
                                 MCP
                               </Badge>
                             )}
                             {peer.acceptWebhookRelay && (
-                              <Badge variant="outline" className="px-1.5 py-0 shrink-0" title={ACCEPT_RELAY_WARNING}>
+                              <Badge variant="outline" className="shrink-0" title={ACCEPT_RELAY_WARNING}>
                                 Relays
                               </Badge>
                             )}
                             {(Object.keys(LINK_TOGGLES) as LinkToggle[]).map(
                               (key) =>
                                 peer[key] && (
-                                  <Badge key={key} variant="outline" className="px-1.5 py-0 shrink-0" title={LINK_TOGGLES[key].warning}>
+                                  <Badge key={key} variant="outline" className="shrink-0" title={LINK_TOGGLES[key].warning}>
                                     {LINK_TOGGLES[key].badge}
                                   </Badge>
                                 ),
