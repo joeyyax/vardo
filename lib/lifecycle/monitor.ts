@@ -12,6 +12,7 @@ import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { getBuildSha } from "@/lib/version";
+import type { MissingContainer } from "@/lib/bus/events";
 import { formatVersion } from "./self-deploy";
 import {
   classifyBoot,
@@ -99,7 +100,13 @@ async function runningManagedContainers(): Promise<SnapshotContainer[]> {
   const containers = await listContainers();
   return containers
     .filter((c) => c.labels["vardo.managed"] === "true")
-    .map((c) => ({ id: c.id, name: c.name, app: c.labels["vardo.project"] || undefined }));
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      app: c.labels["vardo.project"] || undefined,
+      appId: c.labels["vardo.project.id"] || undefined,
+      service: c.labels["com.docker.compose.service"] || undefined,
+    }));
 }
 
 async function beat(): Promise<void> {
@@ -139,7 +146,8 @@ async function watchUpdate(): Promise<void> {
   }
 }
 
-async function checkMissingContainers(before: SnapshotContainer[]): Promise<void> {
+/** Containers from before the boot that aren't running and should be. Empty when the check fails. */
+async function findMissingContainers(before: SnapshotContainer[]): Promise<MissingContainer[]> {
   try {
     const { listAllContainers, inspectContainer } = await import("@/lib/docker/client");
     const all = await listAllContainers();
@@ -154,12 +162,11 @@ async function checkMissingContainers(before: SnapshotContainer[]): Promise<void
         })),
     );
     const missing = missingContainers(before, now);
-    if (missing.length === 0) return;
-    log.warn(`${missing.length} container(s) didn't come back: ${missing.map((c) => c.name).join(", ")}`);
-    const { containersMissing } = await import("./notices");
-    await containersMissing(missing.map((c) => ({ name: c.name, app: c.app, state: c.state })), `boot-${processStartedAt}`);
+    if (missing.length) log.warn(`${missing.length} container(s) didn't come back: ${missing.map((c) => c.name).join(", ")}`);
+    return missing.map(({ name, app, appId, service, state }) => ({ name, app, appId, service, state }));
   } catch (err) {
     log.error("Missing container check failed:", err);
+    return [];
   }
 }
 
@@ -260,13 +267,15 @@ export async function startLifecycleMonitor(): Promise<void> {
     if (handover) log.info("Boot: took over from a console still running, no restart to report");
     quiet = !!announced || handover;
   }
-  const { consoleBooted } = await import("./notices");
-  await consoleBooted({ boot, shutdown, heartbeat, version: versionLabel(), quiet }).catch((err) => log.error("Boot notices failed:", err));
-
+  // After a host reboot the back-up notice waits for the missing-container check and lists what didn't come back.
   const before = heartbeat?.containers ?? [];
-  if (boot.kind !== "first-boot" && boot.hostRebooted && before.length > 0) {
-    setTimeout(() => {
-      checkMissingContainers(before).catch(() => {});
-    }, MISSING_CHECK_DELAY_MS).unref();
-  }
+  const missing =
+    boot.kind !== "first-boot" && boot.hostRebooted && before.length > 0
+      ? () => sleep(MISSING_CHECK_DELAY_MS).then(() => findMissingContainers(before))
+      : undefined;
+  const { consoleBooted } = await import("./notices");
+  const booted = consoleBooted({ boot, shutdown, heartbeat, version: versionLabel(), quiet, missing }).catch((err) =>
+    log.error("Boot notices failed:", err),
+  );
+  if (!missing) await booted;
 }

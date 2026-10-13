@@ -178,7 +178,44 @@ describe("stop and start", () => {
     });
     expect(types()).toEqual(["system.recovered-unclean", "system.started"]);
     expect(emitted[0].event).toMatchObject({ title: "Vardo stopped unexpectedly", lastHeartbeatAt: new Date(T0).toISOString(), incident: { transition: "opened" } });
-    expect(emitted[1].event).toMatchObject({ incident: { transition: "resolved" } });
+    expect(emitted[1].event).toMatchObject({ unclean: true, incident: { transition: "resolved" } });
+    expect(emitted[1].event).not.toHaveProperty("containers");
+  });
+
+  it("lists containers that didn't come back in the back-up notice instead of a separate one", async () => {
+    const lost = [{ name: "search-1", app: "search-data", appId: "app_srch", service: "meilisearch", state: "exited" }];
+    await consoleBooted({
+      boot: { kind: "clean", downSeconds: 120, hostRebooted: true, reason: "vardo stop" },
+      shutdown: null,
+      heartbeat: null,
+      version: "0.1.0",
+      quiet: false,
+      missing: async () => lost,
+      now: T0,
+    });
+    expect(types()).toEqual(["system.started"]);
+    expect(emitted[0].event).toMatchObject({ containers: lost });
+  });
+
+  it("puts what didn't come back on both notices of an unclean stop and flags the back-up one", async () => {
+    const lost = [{ name: "worker-1", app: "Shop Staging", state: "created" }];
+    await consoleBooted({
+      boot: { kind: "unclean", downSeconds: 120, hostRebooted: true, lastHeartbeatAt: new Date(T0).toISOString() },
+      shutdown: null,
+      heartbeat: { at: T0, hostBootAt: null, version: "0.1.0" },
+      version: "0.1.0",
+      quiet: false,
+      missing: async () => lost,
+      now: T0 + 120_000,
+    });
+    expect(types()).toEqual(["system.recovered-unclean", "system.started"]);
+    expect(emitted[0].event).toMatchObject({ containers: lost });
+    expect(emitted[1].event).toMatchObject({ containers: lost, unclean: true });
+  });
+
+  it("sends what didn't come back on its own when the boot sends no back-up notice", async () => {
+    await consoleBooted({ boot: clean(), shutdown: null, heartbeat: null, version: "0.1.0", quiet: true, missing: async () => [{ name: "a-1", state: "exited" }], now: T0 });
+    expect(types()).toEqual(["system.containers-missing"]);
   });
 
   it("sends nothing for a boot an update or handover explains, but still empties the outbox", async () => {
@@ -224,6 +261,7 @@ describe("restarts from the app", () => {
     await reconcileRestarts(T0 + notices.RESTART_DEADLINE_MS);
     expect(types()).toEqual(["system.restarting", "system.restart-failed"]);
     expect(String(emitted[1].event.error)).toContain("postgres isn't back");
+    expect(emitted[1].event.notBack).toEqual(["postgres"]);
   });
 
   it("closes a console restart on the next boot", async () => {

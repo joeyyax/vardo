@@ -38,7 +38,12 @@ vi.mock("@/lib/notifications/dispatch", () => ({
   emit: (orgId: string, event: { type: string }) => emitted.push({ orgId, event }),
   emitConfirmed: async (orgId: string, event: { type: string }) => void emitted.push({ orgId, event }),
 }));
-vi.mock("@/lib/docker/client", () => ({ listContainers: async () => [], listAllContainers: async () => [] }));
+const docker = vi.hoisted(() => ({ all: [] as { id: string; state: string }[] }));
+vi.mock("@/lib/docker/client", () => ({
+  listContainers: async () => [],
+  listAllContainers: async () => docker.all,
+  inspectContainer: async () => ({ restartPolicy: "unless-stopped" }),
+}));
 const shutdownHooks = vi.hoisted(() => ({ current: null as ((closer: () => unknown) => void) | null }));
 vi.mock("@/lib/shutdown", () => ({
   closeOnShutdown: (closer: () => unknown) => {
@@ -107,6 +112,7 @@ beforeEach(() => {
   files.clear();
   claims.clear();
   emitted.length = 0;
+  docker.all = [];
   delete (globalThis as { __vardo_lifecycle?: boolean }).__vardo_lifecycle;
 });
 
@@ -200,6 +206,26 @@ describe("update event flow", () => {
     await startLifecycleMonitor();
     expect(emitted.map((e) => e.event.type)).toEqual(["system.started"]);
     expect(emitted[0].event).toMatchObject({ title: "Vardo is back up", incident: { id: "inc_stop-1" } });
+  });
+
+  it("holds back up after a host reboot until the container check, then sends one notice listing what didn't come back", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const container = { id: "c1", name: "search-1", app: "search-data", appId: "app_srch", service: "meilisearch" };
+      settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 120_000, hostBootAt: 1_000, version: "x", containers: [container] }));
+      settings.set("lifecycle_shutdown", JSON.stringify({ at: Date.now() - 100_000, reason: "Stop signal", version: "x", id: "stop-2", kind: "stop" }));
+      docker.all = [{ id: "c1", state: "exited" }];
+      await startLifecycleMonitor();
+      expect(emitted).toEqual([]);
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      await vi.waitFor(() => expect(emitted.map((e) => e.event.type)).toEqual(["system.started"]));
+      expect(emitted[0].event).toMatchObject({
+        hostRebooted: true,
+        containers: [{ name: "search-1", app: "search-data", appId: "app_srch", service: "meilisearch", state: "exited" }],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("boots without a shutdown marker as stopped unexpectedly, then back up", async () => {

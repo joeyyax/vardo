@@ -27,6 +27,13 @@ export function deliveryClass(type: BusEventType): DeliveryClass {
 
 type Settings = { categories: Partial<Record<NotificationCategory, boolean>> };
 
+/** Vardo back within this long was a quick restart: one "back up" email, no "stopped" one. */
+export const QUICK_RESTART_SECONDS = 10 * 60;
+
+function longStop(downSeconds: number | undefined): boolean {
+  return downSeconds === undefined || downSeconds >= QUICK_RESTART_SECONDS;
+}
+
 /** Whether an event goes out by email. Digest-only events still email when a person started them or the org opted in. */
 export function emailsEvent(event: BusEvent, settings: Settings): boolean {
   switch (event.type) {
@@ -37,6 +44,22 @@ export function emailsEvent(event: BusEvent, settings: Settings): boolean {
       return event.gaveUp || !event.success;
     case "alert.resolved":
       return !event.quiet;
+    // Only outcomes email: the boot, the restart or the update result says what happened.
+    case "system.shutdown":
+    case "system.restarting":
+    case "system.update-started":
+    case "system.rollout-started":
+    case "system.rollout-busy":
+      return false;
+    case "system.restarted":
+      return event.target !== "services";
+    case "system.started":
+      return !(event.unclean && longStop(event.downSeconds));
+    case "system.recovered-unclean":
+      return longStop(event.downSeconds);
+    case "system.updated":
+    case "system.update-failed":
+      return !event.rolloutId;
     default:
       return deliveryClass(event.type) !== "digest";
   }

@@ -1,7 +1,7 @@
 // Pure lifecycle logic: boot classification, update markers and missing containers.
 
 /** A Vardo-managed container that was running at heartbeat time. */
-export type SnapshotContainer = { id: string; name: string; app?: string };
+export type SnapshotContainer = { id: string; name: string; app?: string; appId?: string; service?: string };
 
 /** Written every 30 s while the console runs. Times are epoch ms. */
 export type Heartbeat = {
