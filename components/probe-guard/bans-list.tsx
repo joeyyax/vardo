@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { RelativeTime } from "@/components/relative-time";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/lib/messenger";
+import { banRef, displayRef, matchesRef } from "@/lib/probe-guard/ban-ref";
 import { banReasonLine, type BanDetail } from "@/lib/probe-guard/summary";
 import { isPermanent } from "@/lib/probe-guard/permanent";
 import { reporterLink } from "@/lib/probe-guard/reporting/links";
@@ -69,6 +71,7 @@ export function BansList({
   emptyText?: string;
 }) {
   const [pending, setPending] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   async function send(ban: BanItem, init: RequestInit, done: string, failed: string, url = banUrl(ban.id)) {
     setPending(ban.id);
@@ -116,65 +119,84 @@ export function BansList({
 
   if (bans.length === 0) return <p className="text-xs text-muted-foreground">{emptyText}</p>;
 
+  const needle = query.trim();
+  const shown = needle ? bans.filter((ban) => matchesRef(ban.id, ban.createdAt, needle) || ban.ip.includes(needle)) : bans;
+
   return (
-    <ul className="divide-y rounded-lg border">
-      {bans.map((ban) => {
-        const permanent = isPermanent(ban.expiresAt);
-        const busy = pending === ban.id;
-        const ended = ban.status?.kind === "expired" || ban.status?.kind === "lifted";
-        return (
-          <li key={ban.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
-            <div className="min-w-0 flex-1 basis-60 space-y-0.5">
-              <p className="font-mono text-sm">{ban.ip}</p>
-              <BanReason ban={ban} permanent={permanent} ended={ended} showCreated={showCreated} />
-              <BlockedLine ban={ban} />
-              <ReportedLink ban={ban} />
-            </div>
-            {ended && (canBanAgain || allowUrl) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {canBanAgain && (
-                  <Button size="sm" variant="outline" onClick={() => void banAgain(ban)} disabled={busy}>
-                    {busy ? <Loader2 className="size-4 animate-spin" /> : "Ban again"}
-                  </Button>
-                )}
-                {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
+    <div className="space-y-2">
+      <Input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Find by reference or address, like 403-13-K7M2"
+        aria-label="Find a ban by reference or address"
+        className="h-8 max-w-sm text-xs"
+      />
+      <ul className="divide-y rounded-lg border">
+        {shown.map((ban) => {
+          const permanent = isPermanent(ban.expiresAt);
+          const busy = pending === ban.id;
+          const ended = ban.status?.kind === "expired" || ban.status?.kind === "lifted";
+          return (
+            <li key={ban.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2">
+              <div className="min-w-0 flex-1 basis-60 space-y-0.5">
+                <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-sm">
+                  {ban.ip}
+                  <span className="text-xs text-muted-foreground" title="Reference shown to the banned visitor">
+                    {displayRef(403, banRef(ban.id, ban.createdAt))}
+                  </span>
+                </p>
+                <BanReason ban={ban} permanent={permanent} ended={ended} showCreated={showCreated} />
+                <BlockedLine ban={ban} />
+                <ReportedLink ban={ban} />
               </div>
-            )}
-            {!ended && (canUnban || allowUrl || (canBanPermanently && !permanent)) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
-                {canBanPermanently && !permanent && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" disabled={busy}>
-                        Ban permanently
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent size="sm">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Ban {ban.ip} permanently?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          It stays banned until someone unbans it.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => void banPermanently(ban)}>Ban permanently</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-                {canUnban && (
-                  <Button size="sm" variant="outline" onClick={() => void unban(ban)} disabled={busy}>
-                    {busy ? <Loader2 className="size-4 animate-spin" /> : "Unban"}
-                  </Button>
-                )}
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+              {ended && (canBanAgain || allowUrl) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {canBanAgain && (
+                    <Button size="sm" variant="outline" onClick={() => void banAgain(ban)} disabled={busy}>
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : "Ban again"}
+                    </Button>
+                  )}
+                  {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
+                </div>
+              )}
+              {!ended && (canUnban || allowUrl || (canBanPermanently && !permanent)) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {allowUrl && <AllowButton ip={ban.ip} busy={busy} onConfirm={() => void allow(ban)} />}
+                  {canBanPermanently && !permanent && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="outline" disabled={busy}>
+                          Ban permanently
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent size="sm">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Ban {ban.ip} permanently?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            It stays banned until someone unbans it.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => void banPermanently(ban)}>Ban permanently</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  {canUnban && (
+                    <Button size="sm" variant="outline" onClick={() => void unban(ban)} disabled={busy}>
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : "Unban"}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {shown.length === 0 && <p className="text-xs text-muted-foreground">No ban matches that reference or address.</p>}
+    </div>
   );
 }
 

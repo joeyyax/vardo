@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, bannedMessage, errorPage, responseBody, wantsHtml } from "@/lib/probe-guard/responses";
+import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, bannedMessage, errorPage, responseBody, shownRef, wantsHtml } from "@/lib/probe-guard/responses";
 
 // Anything that would name the app, its stack, versions or Vardo itself.
 const REVEALING = /vardo|traefik|next\.?js|node|nginx|apache|docker|postgres|redis|ubuntu|debian|version|v\d+\.\d+|\d+\.\d+\.\d+/i;
@@ -34,13 +34,12 @@ describe("bannedMessage", () => {
   const HOUR = 60 * MIN;
 
   it.each([
-    [18 * HOUR, "until 22:00 UTC (about 18 hours)."],
-    [23 * HOUR, "until Oct 14, 03:00 UTC (about 23 hours)."],
-    [30_000, "until 04:00 UTC (about a minute)."],
-    [45 * MIN, "until 04:45 UTC (about 45 minutes)."],
-    [60 * MIN, "until 05:00 UTC (about an hour)."],
-    [30 * HOUR, "until Oct 14, 10:00 UTC (about 30 hours)."],
-    [72 * HOUR, "until Oct 16, 04:00 UTC (about 3 days)."],
+    [30_000, "until 04:00 UTC."],
+    [45 * MIN, "until 04:45 UTC."],
+    [60 * MIN, "until 05:00 UTC."],
+    [18 * HOUR, "until 22:00 UTC."],
+    [23 * HOUR, "until Oct 14, 03:00 UTC."],
+    [72 * HOUR, "until Oct 16, 04:00 UTC."],
   ])("ends %i ms out: %s", (ms, tail) => {
     expect(bannedMessage(after(ms), now)).toBe(`Access from your address is unavailable ${tail}`);
   });
@@ -76,6 +75,35 @@ describe("errorPage", () => {
     expect(visibleText(errorPage(403, { banned: true }))).toBe("error: 403 Forbidden Access from your address is unavailable right now.");
   });
 
+  describe("reference", () => {
+    const now = new Date("2026-10-13T04:00:00Z");
+    const until = new Date("2026-10-13T04:45:00Z");
+    const MESSAGE = "Access from your address is unavailable until 04:45 UTC.";
+
+    it("joins the status on the label line, selectable in one click", () => {
+      const page = errorPage(403, { banned: true, until, ref: "13-K7M2", now });
+      expect(visibleText(page)).toBe(`error: 403-13-K7M2 Forbidden ${MESSAGE}`);
+      expect(page).toContain('<span class="v"><span class="n">403</span><span class="p">-</span><span class="n">13-K7M2</span></span>');
+    });
+
+    it("is left off without a running ban, and for anything that isn't a ban page", () => {
+      const shown = (opts: Parameters<typeof errorPage>[1]) => shownRef(403, opts ?? {}) !== null;
+      expect(shown({ banned: true, until, ref: "13-K7M2", now })).toBe(true);
+      expect(shown({ banned: true, ref: "13-K7M2", now })).toBe(false);
+      expect(shown({ banned: true, until: new Date(now.getTime() - 1000), ref: "13-K7M2", now })).toBe(false);
+      expect(shown({ until, ref: "13-K7M2", now })).toBe(false);
+      expect(shown({ banned: true, until, now })).toBe(false);
+      expect(errorPage(403, { banned: true, ref: "13-K7M2", now })).not.toContain("13-K7M2");
+    });
+
+    it("only renders a value in the shape banRef() makes", () => {
+      for (const bad of ["<script>x</script>", "13-k7m2", "13-K0M2", "K7M2", '13-K7M2"><b>']) {
+        expect(shownRef(403, { banned: true, until, ref: bad, now }), bad).toBeNull();
+        expect(errorPage(403, { banned: true, until, ref: bad, now })).not.toContain("<script");
+      }
+    });
+  });
+
   it("uses no color but black, white and gray", () => {
     const css = errorPage(403).match(/<style>([\s\S]*?)<\/style>/)![1];
     const colors = [...css.matchAll(/#([0-9a-f]{3,6})\b/gi)].map((m) => m[1].toLowerCase());
@@ -93,9 +121,11 @@ describe("errorPage", () => {
     }
   });
 
-  it("loads nothing and runs nothing, so its CSP stays closed", () => {
-    const html = errorPage(403);
-    expect(html).not.toMatch(/<script|<link|<img|<iframe|@import|@font-face|url\(|https?:\/\//i);
+  it("loads nothing and runs nothing, with or without a reference, so its CSP stays closed", () => {
+    const refPage = errorPage(403, { banned: true, until: new Date(Date.now() + 60_000), ref: "13-K7M2" });
+    for (const html of [errorPage(403), refPage]) {
+      expect(html).not.toMatch(/<script|<link|<img|<iframe|<button|@import|@font-face|url\(|https?:\/\/|\son[a-z]+=/i);
+    }
     const csp = HTML_RESPONSE_HEADERS["Content-Security-Policy"];
     expect(csp).toContain("default-src 'none'");
     expect(csp).not.toMatch(/font-src|img-src|script-src|connect-src/);

@@ -1,5 +1,6 @@
 // Bodies for turned-away requests. Generic on purpose: nothing about the app, its stack or why.
 
+import { isBanRef, displayRef } from "./ban-ref";
 import { isPermanent } from "./permanent";
 
 const STATUS_NAME: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
@@ -20,21 +21,11 @@ function utcClock(at: Date, now: Date): string {
   return sameDay ? time : `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${time}`;
 }
 
-function untilNow(ms: number): string {
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes <= 1) return "about a minute";
-  if (minutes < 60) return `about ${minutes} minutes`;
-  const hours = Math.round(minutes / 60);
-  if (hours === 1) return "about an hour";
-  if (hours < 48) return `about ${hours} hours`;
-  return `about ${Math.round(hours / 24)} days`;
-}
-
 /** The banned line: when the ban ends if it's known and still ahead, otherwise the generic wording. Says nothing about why. */
 export function bannedMessage(until?: Date, now: Date = new Date()): string {
   if (!until || !(until.getTime() > now.getTime())) return UNAVAILABLE_BANNED;
   if (isPermanent(until)) return "Access from your address is unavailable, and there is no end date.";
-  return `Access from your address is unavailable until ${utcClock(until, now)} (${untilNow(until.getTime() - now.getTime())}).`;
+  return `Access from your address is unavailable until ${utcClock(until, now)}.`;
 }
 
 export const RESPONSE_HEADERS = {
@@ -73,12 +64,23 @@ main{max-width:28rem;padding-bottom:6vh}
 .n{color:var(--num);font-weight:600}
 h1{margin:0 0 .75rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.1;font-weight:680;letter-spacing:-.025em}
 .message{margin:0;color:var(--muted);text-wrap:pretty}
+.v{user-select:all}
 `.trim();
 
+/** The reference to show, as "403-13-K7M2": only for a ban that is still running, in the shape banRef() makes. */
+export function shownRef(status: number, opts: { banned?: boolean; until?: Date; ref?: string; now?: Date }): string | null {
+  const live = !!opts.until && opts.until.getTime() > (opts.now ?? new Date()).getTime();
+  return opts.banned && live && opts.ref && isBanRef(opts.ref) ? displayRef(status, opts.ref) : null;
+}
+
 /** A small standalone page for a turned-away browser request: the status, its official name and one line. */
-export function errorPage(status: number, opts: { banned?: boolean; until?: Date; now?: Date } = {}): string {
+export function errorPage(status: number, opts: { banned?: boolean; until?: Date; ref?: string; now?: Date } = {}): string {
   const name = STATUS_NAME[status] ?? "Forbidden";
   const message = opts.banned ? bannedMessage(opts.until, opts.now) : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
+  const ref = shownRef(status, opts);
+  const label = ref
+    ? `<p class="code"><span class="k">error</span><span class="p">:</span> <span class="v"><span class="n">${status}</span><span class="p">-</span><span class="n">${opts.ref}</span></span></p>`
+    : `<p class="code"><span class="k">error</span><span class="p">:</span> <span class="n">${status}</span></p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -91,7 +93,7 @@ export function errorPage(status: number, opts: { banned?: boolean; until?: Date
 </head>
 <body>
 <main>
-<p class="code"><span class="k">error</span><span class="p">:</span> <span class="n">${status}</span></p>
+${label}
 <h1>${name}</h1>
 <p class="message">${message}</p>
 </main>
