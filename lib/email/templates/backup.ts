@@ -89,7 +89,6 @@ function failedCallout(row: BackupSummaryRow, ctx: MailContext): MailBlock {
   const line = firstErrorLine(row.error);
   const body: MailInline[] = cause ? [cause] : line ? [{ text: line, mono: true }, "."] : ["It failed without an error message."];
   if (row.kind === "backup" && row.lastGoodAt) body.push(` Its last good backup, from ${dayAt(row.lastGoodAt, tz)}, is still there.`);
-  body.push(" This was emailed when it happened.");
   const title: MailInline[] =
     row.kind === "backup" ? [...rowName(row, ctx), " failed"] : [FAILED_TITLE[row.kind][0], ...rowName(row, ctx), FAILED_TITLE[row.kind][1]];
   return {
