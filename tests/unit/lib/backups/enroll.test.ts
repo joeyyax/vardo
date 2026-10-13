@@ -68,7 +68,10 @@ vi.mock("@/lib/db", async () => {
 });
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: featureEnabled }));
 vi.mock("@/lib/utils/exec", () => ({ execFileAsync: execMock }));
-vi.mock("fs/promises", () => ({ readFile: async () => { throw new Error("no host proc"); } }));
+vi.mock("fs/promises", () => ({
+  readFile: async () => { throw new Error("no host proc"); },
+  stat: async (path: string) => ({ isFile: () => /\.sql$/.test(path) }),
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -197,6 +200,24 @@ describe("enrollNewApp", () => {
     expect((await enrollNewApp({ ...APP, measure: true })).status).toBe("covered");
     expect(state.volumes.find((v) => v.id === "config")?.backupSelection).toBe("include");
     expect(state.volumes.find((v) => v.id === "models")?.backupSelection).toBe("exclude");
+  });
+
+  it("leaves a single config file under the apps directory out", async () => {
+    const { PROJECTS_DIR } = await import("@/lib/paths");
+    state.volumes = [
+      volume({ id: "pgdata" }),
+      volume({
+        id: "initdb",
+        type: "bind",
+        source: `${PROJECTS_DIR}/cronlite/initdb/001_schema.sql`,
+        mountPath: "/docker-entrypoint-initdb.d/001_schema.sql",
+        persistent: false,
+      }),
+    ];
+
+    expect((await enrollNewApp(APP)).status).toBe("covered");
+    expect(state.volumes.find((v) => v.id === "pgdata")?.backupSelection).toBe("include");
+    expect(state.volumes.find((v) => v.id === "initdb")?.backupSelection).toBe("exclude");
   });
 });
 

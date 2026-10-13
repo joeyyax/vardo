@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
-import { MANUAL_TRIGGER, runBackup, runSucceeded } from "@/lib/backups/engine";
+import { runSucceeded } from "@/lib/backups/engine";
+import { startManualBackup } from "@/lib/backups/manual-run";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -34,7 +35,9 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("backup job");
     }
 
-    const results = await runBackup(jobId, { trigger: MANUAL_TRIGGER });
+    const start = await startManualBackup(jobId);
+    if (!start.started) return NextResponse.json({ error: "This backup job is already running.", code: "BACKUP_IN_PROGRESS" }, { status: 409 });
+    const results = await start.done;
 
     return NextResponse.json({
       success: runSucceeded(results),

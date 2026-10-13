@@ -21,6 +21,7 @@ import {
   LONG_RUN_MS,
   MANUAL_RUN_PREFIX,
   MAX_SUMMARY_ROWS,
+  missedNightlyKey,
   nightlyRunKey,
   runDeadline,
   runIsDone,
@@ -225,18 +226,29 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
     .innerJoin(organizations, eq(organizations.id, backupJobs.organizationId))
     .where(and(eq(backupJobs.enabled, true), eq(backupJobs.nightly, true)));
   const instanceTimeZone = jobs.length ? await getInstanceTimeZone() : UTC;
-  const byOrg = new Map<string, { key: string; jobIds: string[] }>();
+  const byOrg = new Map<string, { key: string; missed: boolean; jobIds: string[] }>();
   for (const job of jobs) {
-    const key = nightlyRunKey(job.time, now, resolveTimeZone(job.timeZone, instanceTimeZone));
-    if (!key || !job.organizationId) continue;
-    const entry = byOrg.get(job.organizationId) ?? { key, jobIds: [] };
+    if (!job.organizationId) continue;
+    const tz = resolveTimeZone(job.timeZone, instanceTimeZone);
+    const onTime = nightlyRunKey(job.time, now, tz);
+    const key = onTime ?? missedNightlyKey(job.time, now, tz);
+    if (!key) continue;
+    const entry = byOrg.get(job.organizationId) ?? { key, missed: !onTime, jobIds: [] };
     entry.jobIds.push(job.id);
     byOrg.set(job.organizationId, entry);
   }
 
   const runOf = new Map<string, string>();
-  for (const [organizationId, { key, jobIds }] of byOrg) {
+  for (const [organizationId, { key, missed, jobIds }] of byOrg) {
     try {
+      // A run a stopped console missed starts once, as the whole nightly run.
+      if (missed) {
+        const opened = await db.query.backupRuns.findFirst({
+          where: and(eq(backupRuns.organizationId, organizationId), eq(backupRuns.runKey, key)),
+          columns: { id: true },
+        });
+        if (opened) continue;
+      }
       const plan = await planJobs(jobIds);
       const estimatedMs = await estimatePlan(organizationId, plan, now.getTime());
       const runId = await openRun({ organizationId, kind: "nightly", runKey: key, label: "Nightly backups", plan, estimatedMs, now: now.getTime() });
@@ -265,7 +277,7 @@ export async function startJobRun(job: { id: string; name: string; organizationI
   });
 }
 
-/** Opens a run for a job someone started by hand, so its summary reports whatever it found. */
+/** Opens a run for a job someone started by hand, so its results stay out of another run's summary. */
 export async function startManualRun(
   job: { id: string; name: string; organizationId: string | null },
   now: Date,
@@ -424,10 +436,23 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
   return history;
 }
 
-/** Volumes backed up this week with no success in 48 hours. */
+/** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
+async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (appIds.length === 0) return out;
+  const vols = await db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) });
+  for (const v of vols) {
+    if (!isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
+    out.add(volumeKey(v.appId, v.name));
+  }
+  return out;
+}
+
+/** Volumes backed up this week, still backed up, with no success in 48 hours. */
 export async function loadStaleVolumes(organizationId: string, now: number) {
   const rows = await db
     .select({
+      appId: backups.appId,
       appName: sql<string | null>`coalesce(max(${apps.displayName}), ${backups.appName})`,
       volumeName: backups.volumeName,
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
@@ -436,19 +461,37 @@ export async function loadStaleVolumes(organizationId: string, now: number) {
     .leftJoin(apps, eq(apps.id, backups.appId))
     .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
     .groupBy(backups.appId, backups.appName, backups.volumeName);
-  return rows
-    .filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS))
-    .map((r) => ({ appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
+  const stale = rows.filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS));
+  // A volume the engine now skips, or a deploy removed, leaves rows behind for the week.
+  const current = await stillBackedUp([...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))]);
+  return stale
+    .filter((r) => !r.appId || current.has(volumeKey(r.appId, r.volumeName!)))
+    .map((r) => ({ appId: r.appId, appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
 }
 
 type RunRow = typeof backupRuns.$inferSelect;
 
+/** Stale volumes a run's summary lists: the org's for a nightly run, otherwise only those of the apps the run covered. */
+export function staleForRun<T extends { appId: string | null }>(
+  run: { kind: string; plan: BackupRunPlan; items: BackupResultItem[] },
+  stale: T[],
+): T[] {
+  if (run.kind === "nightly") return stale;
+  const covered = new Set([
+    ...run.plan.apps.map((a) => a.appId),
+    ...(run.plan.jobs.flatMap((j) => j.appIds ?? [])),
+    ...run.items.map((i) => i.appId),
+  ]);
+  return stale.filter((v) => covered.has(v.appId));
+}
+
 async function sendSummary(run: RunRow, now: number): Promise<void> {
-  const [settings, history, staleVolumes] = await Promise.all([
+  const [settings, history, orgStale] = await Promise.all([
     readOrgNotificationSettings(run.organizationId),
     loadHistory(run.organizationId, run.items, now),
     loadStaleVolumes(run.organizationId, now),
   ]);
+  const staleVolumes = staleForRun(run, orgStale).map(({ appId: _appId, ...v }) => v);
   const rows = summarizeResults(run.items, history);
   const unfinished = unfinishedJobs(run);
   if (rows.length === 0 && unfinished.length === 0) return;

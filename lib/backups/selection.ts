@@ -78,6 +78,8 @@ export type SelectionContext = {
   /** Measured size. Undefined means not measured; null means measuring failed. */
   sizeBytes?: number | null;
   maxBytes?: number;
+  /** Why a bind source is checked-out config, from configBindReason. */
+  configReason?: string | null;
 };
 
 function under(path: string, prefix: string): boolean {
@@ -162,6 +164,7 @@ export function classifyVolume(vol: SelectableVolume, ctx: SelectionContext): Se
   if (vol.type === "bind") {
     const ruled = bindRule(vol, ctx);
     if (ruled) return ruled;
+    if (ctx.configReason) return { verdict: "exclude", reason: ctx.configReason };
   }
 
   for (const rule of NAME_RULES) {

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, describeIssue, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backups } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { MANUAL_TRIGGER, runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
+import { startManualBackup } from "@/lib/backups/manual-run";
 import { ensureAutoBackupJob, resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { resolveAppBackupSwitch } from "@/lib/backups/switch";
 import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
@@ -142,30 +142,19 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return fail("NO_BACKUP_JOB", "Couldn't resolve a backup job for this app", 500);
     }
 
-    // A second concurrent run would tar the same volume twice.
-    if (!parsed.data.force) {
-      const inFlight = await db.query.backups.findFirst({
-        where: and(
-          eq(backups.jobId, job.id),
-          inArray(backups.status, ["pending", "running"]),
-          gt(backups.startedAt, new Date(Date.now() - STALE_RUN_MS)),
-        ),
-        columns: { id: true, startedAt: true, volumeName: true },
-      });
-
-      if (inFlight) {
-        return fail("BACKUP_IN_PROGRESS", "A backup is already running for this app", 409, {
-          jobId: job.id,
-          startedAt: inFlight.startedAt.toISOString(),
-        });
-      }
-    }
-
     const startedAt = new Date();
 
+    // Scoped to this app since a shared job also covers its siblings. A second concurrent run would tar the same volume twice.
+    const start = await startManualBackup(job.id, { appIds: [app.id], force: parsed.data.force });
+    if (!start.started) {
+      return fail("BACKUP_IN_PROGRESS", "A backup is already running for this app", 409, {
+        jobId: job.id,
+        ...(start.startedAt ? { startedAt: start.startedAt.toISOString() } : {}),
+      });
+    }
+
     // Not awaited: a volume backup can take minutes, so the client polls history.
-    // Scoped to this app since a shared job also covers its siblings.
-    void runBackup(job.id, { appIds: [app.id], trigger: MANUAL_TRIGGER }).catch((err) => {
+    start.done.catch((err) => {
       log.error(`Manual backup failed for app ${app.name} (job ${job.id}):`, err);
     });
 

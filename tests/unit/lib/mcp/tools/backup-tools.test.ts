@@ -13,11 +13,16 @@ const h = vi.hoisted(() => ({
   select: vi.fn(),
   systemJob: vi.fn(),
   runBackup: vi.fn(),
+  backupFindFirst: vi.fn(),
+  acquireLock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: h.instanceAdmin }));
 vi.mock("@/lib/db", () => ({
-  db: { select: h.select, query: { backupJobs: { findMany: h.jobsFindMany, findFirst: h.jobFindFirst } } },
+  db: {
+    select: h.select,
+    query: { backupJobs: { findMany: h.jobsFindMany, findFirst: h.jobFindFirst }, backups: { findFirst: h.backupFindFirst } },
+  },
 }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: h.featureOn }));
 vi.mock("@/lib/mcp/scope", async (orig) => ({
@@ -29,7 +34,8 @@ vi.mock("@/lib/mcp/scope", async (orig) => ({
 vi.mock("@/lib/time-zone-settings", () => ({ getOrgTimeZone: async () => "UTC" }));
 vi.mock("@/lib/backups/org-backup", () => ({ orgBackupScope: () => undefined }));
 vi.mock("@/lib/backups/system-storage", () => ({ readSystemBackupJob: h.systemJob }));
-vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", runBackup: h.runBackup }));
+vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", STALE_RUN_MS: 3_600_000, runBackup: h.runBackup }));
+vi.mock("@/lib/redis-lock", () => ({ acquireLock: h.acquireLock, releaseLock: async () => true }));
 
 import { registerBackupStatusTools } from "@/lib/mcp/tools/backup-status";
 import { registerRunBackup } from "@/lib/mcp/tools/run-backup";
@@ -61,6 +67,8 @@ beforeEach(() => {
   h.featureOn.mockResolvedValue(true);
   h.reachable = ["org-1"];
   h.canAccessOrg.mockResolvedValue(true);
+  h.acquireLock.mockResolvedValue("token");
+  h.backupFindFirst.mockResolvedValue(undefined);
   h.jobsFindMany.mockResolvedValue([job]);
   h.systemJob.mockResolvedValue({
     job: { id: "sys", name: "Vardo database", schedule: "0 3 * * *", enabled: true, lastRunAt: T, target: { name: "S3", type: "s3" } },
@@ -174,6 +182,18 @@ describe("vardo_run_backup", () => {
     const body = toolBody(await runTool()({ jobId: "j1" }));
     expect(h.runBackup).toHaveBeenCalledWith("j1", { trigger: "manual" });
     expect(body).toMatchObject({ status: "started", jobId: "j1" });
+  });
+
+  it("refuses a second start while the job is running", async () => {
+    h.jobFindFirst.mockResolvedValue({ id: "j1", organizationId: "org-1" });
+    h.acquireLock.mockResolvedValueOnce("token").mockResolvedValueOnce(null);
+    h.runBackup.mockReturnValue(new Promise(() => {}));
+    expect(toolBody(await runTool()({ jobId: "j1" })).status).toBe("started");
+    expect((await runTool()({ jobId: "j1" })).isError).toBe(true);
+    h.acquireLock.mockResolvedValueOnce("token");
+    h.backupFindFirst.mockResolvedValueOnce({ startedAt: T });
+    expect((await runTool()({ jobId: "j1" })).isError).toBe(true);
+    expect(h.runBackup).toHaveBeenCalledTimes(1);
   });
 
   it("fails while the backups feature is off", async () => {

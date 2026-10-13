@@ -36,6 +36,7 @@ vi.mock("@/lib/backups/auto-backup", () => ({
 }));
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
+vi.mock("@/lib/redis-lock", () => ({ acquireLock: async () => "token", releaseLock: async () => true }));
 
 const { POST } = await import(
   "@/app/api/v1/organizations/[orgId]/apps/[appId]/backup-now/route"

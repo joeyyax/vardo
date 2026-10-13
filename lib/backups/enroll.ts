@@ -9,6 +9,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { logger } from "@/lib/logger";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { ensureAutoBackupJob, ensureAutoBackupJobOnTarget, resolveBackupTarget } from "./auto-backup";
+import { skipsAsConfig } from "./bind-config";
 import { isBackupSelected } from "./durability";
 import { resolveAppBackupSwitch } from "./switch";
 import {
@@ -28,6 +29,7 @@ const MEASURE_TIMEOUT_MS = 30_000;
 
 export type PlannedVolume = SelectableVolume & {
   sizeBytes: number | null | undefined;
+  configReason: string | null;
   decision: SelectionDecision;
 };
 
@@ -100,13 +102,15 @@ export async function planAppVolumes(
   const planned: PlannedVolume[] = [];
   for (const row of selected) {
     const vol = row as SelectableVolume;
-    let decision = classifyVolume(vol, { otherBinds, hostMounts });
+    // The engine skips config at run time, so enrolling it would claim coverage it never gets.
+    const configReason = vol.type === "bind" && !vol.backupSelection ? await skipsAsConfig(vol) : null;
+    let decision = classifyVolume(vol, { otherBinds, hostMounts, configReason });
     let sizeBytes: number | null | undefined;
     if (opts.measure && decision.verdict === "include" && !row.backupSelection) {
       sizeBytes = await measureVolumeBytes(vol, app.name);
-      decision = classifyVolume(vol, { otherBinds, hostMounts, sizeBytes });
+      decision = classifyVolume(vol, { otherBinds, hostMounts, sizeBytes, configReason });
     }
-    planned.push({ ...vol, sizeBytes, decision });
+    planned.push({ ...vol, sizeBytes, configReason, decision });
   }
   return planned;
 }
@@ -321,7 +325,7 @@ export async function listUncoveredApps(
     for (const vol of plan) {
       const sizeBytes = sizes.has(vol.id) ? sizes.get(vol.id)! : null;
       const decision = sizes.has(vol.id)
-        ? classifyVolume(vol, { otherBinds, hostMounts, sizeBytes })
+        ? classifyVolume(vol, { otherBinds, hostMounts, sizeBytes, configReason: vol.configReason })
         : vol.decision;
       rows.push({
         id: vol.id,

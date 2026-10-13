@@ -62,6 +62,25 @@ export function nightlyRunKey(time: string, now: Date, tz: string = UTC): string
   return `nightly:${zonedDateKey(now, tz)}`;
 }
 
+/** How long after its time a nightly run a stopped console missed still starts. */
+export const NIGHTLY_CATCH_UP_MS = 6 * 60 * 60_000;
+
+/** The key of the latest nightly run due before `now`'s minute and within `windowMs`. Null otherwise. */
+export function missedNightlyKey(time: string, now: Date, tz: string = UTC, windowMs = NIGHTLY_CATCH_UP_MS): string | null {
+  const m = NIGHTLY_TIME.exec(time);
+  if (!m) return null;
+  const minute = Math.floor(now.getTime() / 60_000) * 60_000;
+  const today = zonedParts(now, tz);
+  for (const daysBack of [0, 1]) {
+    const d = new Date(Date.UTC(today.year, today.month - 1, today.day - daysBack));
+    const day = { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    const due = zonedTimeToUtc({ ...day, hour: Number(m[1]), minute: Number(m[2]) }, tz);
+    if (due.getTime() >= minute) continue;
+    return minute - due.getTime() <= windowMs ? `nightly:${zonedDateKey(due, tz)}` : null;
+  }
+  return null;
+}
+
 /** Per volume outside its own timing: lease, row writes, container start. */
 export const VOLUME_OVERHEAD_MS = 2_000;
 /** Per job: loading it, retention pruning, reporting. */
@@ -199,15 +218,24 @@ export function needsAttention(rows: BackupSummaryRow[], staleVolumes: number, u
 /** Run keys of runs someone started by hand. */
 export const MANUAL_RUN_PREFIX = "manual:";
 
-/** A manual job or a restore always reports; a scheduled run emails only when something needs a look, unless the org opted in. */
+/**
+ * A restore always reports. A nightly run emails when something needs a look, or every night if the org opted in.
+ * A single job emails only for a problem its live failure emails didn't cover.
+ */
 export function summaryEmails(
-  run: { kind: string; runKey: string },
+  run: { kind: string },
   rows: BackupSummaryRow[],
   staleVolumes: number,
   unfinished: number,
   alwaysSummary: boolean,
 ): { send: boolean; problemsOnly: boolean } {
-  const scheduled = run.kind === "nightly" || (run.kind === "job" && !run.runKey.startsWith(MANUAL_RUN_PREFIX));
-  if (!scheduled || alwaysSummary) return { send: true, problemsOnly: false };
-  return { send: needsAttention(rows, staleVolumes, unfinished), problemsOnly: true };
+  if (run.kind === "nightly") {
+    if (alwaysSummary) return { send: true, problemsOnly: false };
+    return { send: needsAttention(rows, staleVolumes, unfinished), problemsOnly: true };
+  }
+  if (run.kind === "job") {
+    const unreported = rows.filter((r) => r.outcome !== "failed");
+    return { send: needsAttention(unreported, staleVolumes, unfinished), problemsOnly: true };
+  }
+  return { send: true, problemsOnly: false };
 }
