@@ -19,7 +19,7 @@ import { pointCurrentAt } from "./active-slot";
 import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
-import { DeployBlockedError } from "./errors";
+import { DeployBlockedError, DeployClosedElsewhereError } from "./errors";
 import { assertSlotWithinApp } from "./slot-guard";
 import { assertDiskHeadroom } from "./disk-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
@@ -570,6 +570,14 @@ export async function runDeployment(
     if (ctx?.releaseHold) {
       await ctx.releaseHold().catch(() => {});
       ctx.releaseHold = undefined;
+    }
+
+    // The sweeper closed the row and reported it; the step already dropped the new slot.
+    if (error instanceof DeployClosedElsewhereError) {
+      log(`[deploy] Stopped: ${error.message}. The old slot keeps serving`);
+      stage(runningStage() ?? pendingStage(), "failed");
+      await streamLogger.flush();
+      return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled", closedElsewhere: true };
     }
 
     // Cut over and serving; only post-deploy work failed. Row, status and stream stand.

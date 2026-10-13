@@ -77,6 +77,7 @@ vi.mock("@/lib/docker/rollback-target", () => ({
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 
 import { runDeployment } from "@/lib/docker/deploy";
+import { DeployClosedElsewhereError } from "@/lib/docker/errors";
 import { apps } from "@/lib/db/schema";
 
 const OPTS = {
@@ -115,6 +116,16 @@ describe("runDeployment app status ownership", () => {
     expect(statusSequence()).toEqual([]);
     expect(addEventMock).not.toHaveBeenCalled();
     expect(onStage).not.toHaveBeenCalled();
+  });
+
+  it("stops without failure announcements when a step finds the row closed elsewhere", async () => {
+    dbMock.query.apps.findFirst.mockRejectedValueOnce(new DeployClosedElsewhereError("failed"));
+    const result = await runDeployment("dep-1", OPTS);
+
+    expect(result).toMatchObject({ status: "cancelled", closedElsewhere: true });
+    expect(statusSequence()).toEqual(["deploying"]);
+    expect(addEventMock.mock.calls.map((c) => (c[1] as { title: string }).title)).not.toContain("Deploy failed");
+    expect(statusWrites.some((w) => w.values.status === "failed")).toBe(false);
   });
 
   it("leaves the app status the sweeper set when it closed the row first", async () => {

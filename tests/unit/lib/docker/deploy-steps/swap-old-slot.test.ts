@@ -14,6 +14,7 @@ const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock,
       update: vi.fn().mockImplementation(() => ({
         set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       })),
+      query: { deployments: { findFirst: vi.fn(async () => ({ status: "running" })) } },
     };
 
     // The source calls promisify(execFile), which resolves through execFile's
@@ -66,6 +67,7 @@ vi.mock("@/lib/docker/deploy-steps/bind-mount-ownership", () => ({
 }));
 
 import { swap } from "@/lib/docker/deploy-steps/swap";
+import { DeployClosedElsewhereError } from "@/lib/docker/errors";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
 import { createStageTimings } from "@/lib/docker/stage-timings";
@@ -363,6 +365,25 @@ describe("swap — hold pin on the old slot", () => {
 
     expect(order).toEqual(["clear-pin", "hold", "up", "pin", "demote", "unpin"]);
     expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("drops a healthy new slot and keeps the old one when the sweeper closed the row first", async () => {
+    dockerRecording("running");
+    dbMock.query.deployments.findFirst.mockResolvedValueOnce({ status: "failed" });
+    const ctx = context();
+    await expect(swap(ctx)).rejects.toBeInstanceOf(DeployClosedElsewhereError);
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
+    expect(ctx.stopOldSlot).toBeUndefined();
+    expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("cuts over as usual while the row is still running", async () => {
+    dockerRecording("running");
+    const ctx = await swap(context());
+    expect(dbMock.query.deployments.findFirst).toHaveBeenCalled();
+    expect(order).not.toContain("down");
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("releases the hold after tearing down a new slot that fails its health check", async () => {

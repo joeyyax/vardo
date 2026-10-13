@@ -112,6 +112,7 @@ vi.mock("child_process", () => ({
 }));
 
 import { postDeploy } from "@/lib/docker/deploy-steps/post-deploy";
+import { DeployClosedElsewhereError } from "@/lib/docker/errors";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import { deployments, apps } from "@/lib/db/schema";
 import { syncComposeServices } from "@/lib/docker/compose-sync";
@@ -314,10 +315,26 @@ describe("postDeploy tail work", () => {
     expect(execCalls.some((c) => c.includes(" stop"))).toBe(false);
   });
 
-  it("keeps a record the sweeper closed first: no app status, no success announcements", async () => {
+  it("drops the new slot and leaves the old one serving when the sweeper closed the row first", async () => {
     closedFirst.value = true;
     const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
     const ctx = makeContext({ activeSlot: "green", stopOldSlot });
+    vi.mocked(addEvent).mockClear();
+    vi.mocked(sendDeployNotification).mockClear();
+
+    await expect(postDeploy(ctx)).rejects.toBeInstanceOf(DeployClosedElsewhereError);
+
+    expect(stopOldSlot).not.toHaveBeenCalled();
+    expect(execCalls.some((c) => c.includes("-p app-production-blue down"))).toBe(true);
+    expect(ctx.succeeded).toBeFalsy();
+    expect(writes.some((w) => w.table === apps)).toBe(false);
+    expect(addEvent).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Deploy succeeded" }));
+    expect(sendDeployNotification).not.toHaveBeenCalled();
+  });
+
+  it("keeps a new slot with nothing to return to, without the app status or success announcements", async () => {
+    closedFirst.value = true;
+    const ctx = makeContext();
     vi.mocked(addEvent).mockClear();
     vi.mocked(recordActivity).mockClear();
     vi.mocked(sendDeployNotification).mockClear();
@@ -329,9 +346,7 @@ describe("postDeploy tail work", () => {
     expect(recordActivity).not.toHaveBeenCalledWith(expect.objectContaining({ action: "deployment.succeeded" }));
     expect(sendDeployNotification).not.toHaveBeenCalled();
     expect(ctx.logLines.some((l) => l.includes("closed elsewhere first"))).toBe(true);
-    // The new slot is serving: the tail still runs.
     expect(ctx.succeeded).toBe(true);
-    expect(stopOldSlot).toHaveBeenCalled();
   });
 
   it("sets the app active and announces success when its own write commits", async () => {

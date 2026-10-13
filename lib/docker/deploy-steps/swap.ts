@@ -1,7 +1,7 @@
 // Deploy steps 6-9: network, old-slot stop, compose up, health check and container names.
 
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
+import { apps, deployments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { join } from "path";
 import { connect } from "net";
@@ -50,6 +50,7 @@ import { isDeployQueueDrained } from "../deploy-concurrency";
 import { withFailedStepOutput } from "../build-failure";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { exportMsFromBuildOutput } from "../stage-timings";
+import { DeployClosedElsewhereError } from "../errors";
 
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
@@ -73,6 +74,16 @@ export function deferSlotStop(canOverlapSlots: boolean, appName: string): boolea
  * Whether the old slot can be routed away from before it stops: only when both slots are up.
  * A self-deploy leaves its pin behind; the next deploy or instant rollback clears it.
  */
+/** The deployment row's status, or null when the database can't say. */
+async function deploymentStatus(deploymentId: string): Promise<string | null> {
+  try {
+    const row = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { status: true } });
+    return row?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function canPinCutover(canOverlapSlots: boolean): boolean {
   return canOverlapSlots;
 }
@@ -982,6 +993,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           .filter(Boolean)
           .join("\n"),
       );
+    }
+
+    // Last check before traffic can move: a row the sweeper closed doesn't cut over.
+    const status = await deploymentStatus(ctx.deploymentId);
+    if (status !== null && status !== "running") {
+      log(`[deploy] The deployment was closed as ${status} while ${newSlot} warmed up; tearing it down`);
+      await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      ).catch(() => {});
+      await restoreOldSlot("the deployment closing elsewhere");
+      throw new DeployClosedElsewhereError(status);
     }
   } catch (err) {
     // Every failure before the cutover hands routing back to the old slot's labels.

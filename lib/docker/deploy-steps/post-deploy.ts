@@ -35,7 +35,10 @@ import { backupDrainTimeoutMs, drainBackupsForStop, endBackupDrain } from "@/lib
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
-import { BUILD_CACHE_MAX_BYTES, ROLLBACK_IMAGES_RETAINED } from "../constants";
+import { BUILD_CACHE_MAX_BYTES, COMPOSE_DOWN_TIMEOUT, ROLLBACK_IMAGES_RETAINED } from "../constants";
+import { DeployClosedElsewhereError } from "../errors";
+import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 import { PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS } from "../prune-lock";
 import { markDeployForReclaim } from "../host-reclaim/state";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
@@ -387,10 +390,21 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     .returning({ id: deployments.id })
     .then((rows) => rows.length > 0);
 
+  // The old slot still runs, so traffic hasn't moved for good: keep it and drop the new slot.
+  if (!recorded && ctx.stopOldSlot) {
+    log(`[deploy] The deployment was closed elsewhere first; tearing down ${newSlot} and leaving ${activeSlot} serving`);
+    await execFileAsync(
+      "docker",
+      ["compose", ...ctx.composeFileArgs, "-p", ctx.newProjectName, "down", "--remove-orphans"],
+      { env: dockerEnv(), cwd: ctx.slotDir, timeout: COMPOSE_DOWN_TIMEOUT },
+    ).catch(() => {});
+    throw new DeployClosedElsewhereError(null);
+  }
+
   // Committed, or serving under a record closed elsewhere. Nothing below may take the new slot down when it throws.
   ctx.succeeded = true;
   if (!recorded) {
-    log(`[deploy] ${newSlot} is serving, but the deployment was closed elsewhere first, as by the sweeper; keeping that record`);
+    log(`[deploy] ${newSlot} is serving with no old slot to return to, but the deployment was closed elsewhere first; keeping that record`);
   }
 
   if (recorded && !ctx.envIsolated) {
