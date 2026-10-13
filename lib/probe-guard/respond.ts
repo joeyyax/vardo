@@ -48,7 +48,7 @@ export type GuardDeps = {
 };
 
 /** A turned-away request: a small page for browsers, plain text for everything else. */
-function deny(request: Request, status: number, opts: { banned?: boolean } = {}): Response {
+function deny(request: Request, status: number, opts: { banned?: boolean; until?: Date } = {}): Response {
   const head = request.method.toUpperCase() === "HEAD";
   if (wantsHtml(request.headers.get("accept"))) {
     return new Response(head ? null : errorPage(status, opts), { status, headers: HTML_RESPONSE_HEADERS });
@@ -82,13 +82,15 @@ function traefikPeer(headers: Headers): string | null {
   return headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() || null;
 }
 
-/** Counts a banned-router request against the ban or range that explains it. */
-async function countBanned(ip: string, headers: Headers, deps: GuardDeps): Promise<void> {
-  if (!deps.recordBlock) return;
+/** Counts a banned-router request against the ban or range that explains it. Returns the ban, if one does. */
+async function countBanned(ip: string, headers: Headers, deps: GuardDeps): Promise<BanRef | undefined> {
   const candidates = [...new Set([ip, traefikPeer(headers) ?? ""].map(normalizeIp).filter((c): c is string => !!c))];
   const banFor = (await deps.banLookup?.(candidates)) ?? (() => undefined);
-  const ranges = new Map(await Promise.all(candidates.map(async (c) => [c, (await deps.blockedRange?.(c)) ?? null] as const)));
-  deps.recordBlock(ip, attributeBlock(candidates, banFor, (c) => ranges.get(c) ?? null));
+  if (deps.recordBlock) {
+    const ranges = new Map(await Promise.all(candidates.map(async (c) => [c, (await deps.blockedRange?.(c)) ?? null] as const)));
+    deps.recordBlock(ip, attributeBlock(candidates, banFor, (c) => ranges.get(c) ?? null));
+  }
+  return candidates.map(banFor).find((ban) => ban !== undefined);
 }
 
 /** Handles one guarded request. Never throws and never says anything about the app. */
@@ -105,8 +107,9 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     const path = originalPath(request.headers);
 
     if (kind === "banned") {
-      if (!(await deps.allowed?.(ip).catch(() => false))) await countBanned(ip, request.headers, deps).catch(() => {});
-      return deny(request, 403, { banned: true });
+      const allowed = await deps.allowed?.(ip).catch(() => false);
+      const ban = allowed ? undefined : await countBanned(ip, request.headers, deps).catch(() => undefined);
+      return deny(request, 403, { banned: true, until: ban?.expiresAt });
     }
 
     const allowed = kind !== "robots" && !!(await deps.allowed?.(ip).catch(() => false));

@@ -109,6 +109,42 @@ describe("handleGuardRequest", () => {
     expect(await api.text()).toBe("Not Found\n");
   });
 
+  describe("banned page", () => {
+    const html = { accept: "text/html" };
+    const ban = (expiresAt: Date) => ({ banLookup: async () => (ip: string) => (ip === IP ? { id: "b1", blocklist: false, expiresAt } : undefined) });
+    const in45 = () => new Date(Date.now() + 45 * 60_000);
+
+    it("tells a banned visitor when the ban ends and nothing about why", async () => {
+      const { deps } = setup({}, ban(in45()));
+      const body = await (await handleGuardRequest("banned", req("/wp-login.php", { app: "secret-app-id", headers: html }), deps)).text();
+      expect(body).toMatch(/Access from your address is unavailable until \d\d:\d\d UTC \(about 45 minutes\)\./);
+      for (const leak of ["threshold", "trap", "canary", "blocklist", "wp-login", "secret-app-id", IP]) expect(body).not.toContain(leak);
+    });
+
+    it("says a permanent ban has no end date", async () => {
+      const { deps } = setup({}, ban(new Date("9999-12-31T00:00:00.000Z")));
+      const body = await (await handleGuardRequest("banned", req("/", { headers: html }), deps)).text();
+      expect(body).toContain("there is no end date");
+    });
+
+    it("keeps the generic line when no active ban explains the block", async () => {
+      const none = setup({}, { banLookup: async () => () => undefined });
+      expect(await (await handleGuardRequest("banned", req("/", { headers: html }), none.deps)).text()).toContain("unavailable right now.");
+      const lapsed = setup({}, ban(new Date(Date.now() - 1000)));
+      expect(await (await handleGuardRequest("banned", req("/", { headers: html }), lapsed.deps)).text()).toContain("unavailable right now.");
+    });
+
+    it("shows an allowlisted address nothing about a ban", async () => {
+      const { deps } = setup({}, { ...ban(in45()), allowed: async () => true });
+      expect(await (await handleGuardRequest("banned", req("/", { headers: html }), deps)).text()).toContain("unavailable right now.");
+    });
+
+    it("leaves the plain-text answer for non-browsers alone", async () => {
+      const { deps } = setup({}, ban(in45()));
+      expect(await (await handleGuardRequest("banned", req("/"), deps)).text()).toBe("Forbidden\n");
+    });
+  });
+
   it("bans at the threshold and not before", async () => {
     const { deps, bans } = setup({ threshold: 3 });
     for (let i = 0; i < 2; i++) await handleGuardRequest("probe", req("/.git/config"), deps);

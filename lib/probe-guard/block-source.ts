@@ -8,7 +8,7 @@ export const BLOCK_SOURCES = ["local", "abuseipdb", "spamhaus"] as const;
 export type BlockSource = (typeof BLOCK_SOURCES)[number] | "other";
 
 export type BlockMatch = { source: BlockSource; banId?: string; range?: string };
-export type BanRef = { id: string; blocklist: boolean };
+export type BanRef = { id: string; blocklist: boolean; expiresAt: Date };
 
 function v4Value(addr: string): bigint | null {
   const parts = addr.split(".").map(Number);
