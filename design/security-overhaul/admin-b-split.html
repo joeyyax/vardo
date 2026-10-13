@@ -79,7 +79,7 @@ section[id] { scroll-margin-top: 16px; }</style></head>
     <!-- CONFIG -->
     <div class="panel" data-panel="cfg">
       <div class="stack"><h2>Probe guard</h2><p class="muted">Rules, lists and reporting behind the guard. Each section saves on its own.</p></div>
-      <nav class="jump" aria-label="On this page"><a href="#c-bans">Bans</a><a href="#c-traps">Traps</a><a href="#c-never">Never ban</a><a href="#c-abuse">AbuseIPDB</a><a href="#c-drop">Spamhaus</a><a href="#c-resp">Responses</a><a href="#c-bind">Bind mounts</a></nav>
+      <nav class="jump" aria-label="On this page"><a href="#c-bans">Bans</a><a href="#c-traps">Traps</a><a href="#c-never">Never ban</a><a href="#c-abuse">AbuseIPDB</a><a href="#c-drop">Spamhaus</a><a href="#c-resp">Disclosure</a><a href="#c-bind">Bind mounts</a></nav>
 
       <section id="c-bans" class="card">
         <div class="card-h"><div><h3>Bans</h3><p class="xs muted">Apps can opt out, not change these.</p></div></div>
@@ -118,8 +118,8 @@ section[id] { scroll-margin-top: 16px; }</style></head>
       <section id="c-drop" class="card"><div class="card-h"><div><h3>Spamhaus DROP</h3><p class="xs muted">Hijacked and criminal networks, fetched daily.</p></div><input class="switch" type="checkbox" checked aria-label="Spamhaus DROP"></div><div style="height:16px"></div></section>
 
       <section id="c-resp" class="card">
-        <div class="card-h"><div><h3>Responses and disclosure</h3></div></div>
-        <div class="card-b"><div class="toggle"><div class="copy"><label>Humor in probe responses</label></div><input class="switch" type="checkbox" checked></div>
+        <div class="card-h"><div><h3>Disclosure</h3></div></div>
+        <div class="card-b">
           <div class="field" style="max-width:380px"><label>Security contact</label><input class="input" placeholder="security@example.com"></div></div>
         <div class="card-f"><span class="xs muted">Saved</span><button class="btn sm" disabled>Save</button></div>
       </section>
