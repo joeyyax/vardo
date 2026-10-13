@@ -28,7 +28,34 @@ export const SLOT_READS = {
 export type SlotRead = keyof typeof SLOT_READS;
 export type SlotSeries = Record<SlotRead, LabeledSeries[]>;
 
-export type RollupApp = ScopedApp & { organizationId: string };
+/** `defaultEnvironment` is the environment whose containers count; a stack child takes its parent's. */
+export type RollupApp = ScopedApp & { organizationId: string; defaultEnvironment?: string | null };
+
+/** Name a deploy without an environment runs under. */
+const FALLBACK_ENVIRONMENT = "production";
+const SLOTS = new Set(["blue", "green", "shared"]);
+
+/** `env` from `env-<slot>-…`. Null for the legacy unscoped `<slot>-…` layout. */
+function slotEnvironment(rest: string): string | null {
+  const env = /^(.+?)-(?:blue|green|shared)-/.exec(rest)?.[1];
+  return env && !SLOTS.has(env) ? env : null;
+}
+
+/** Environment a series ran under: its label, else a suffixed compose project, else its container name. Null when none is named. */
+export function seriesEnvironment(series: LabeledSeries, appName: string): string | null {
+  if (series.environment) return series.environment;
+  const prefix = `${appName}-`;
+  // Unlabeled shared services store under their compose project, `<app>-<env>-shared`.
+  if (series.project.startsWith(prefix)) return slotEnvironment(`${series.project.slice(prefix.length)}-`);
+  const name = series.containerName ?? "";
+  return name.startsWith(prefix) ? slotEnvironment(name.slice(prefix.length)) : null;
+}
+
+/** Whether a series belongs to the app's default environment. Series naming none count. */
+function isProductionSeries(series: LabeledSeries, appName: string, defaultEnvironment?: string | null): boolean {
+  const env = seriesEnvironment(series, appName);
+  return env === null || env === FALLBACK_ENVIRONMENT || env === defaultEnvironment;
+}
 
 export type RollupCheck = {
   appId: string;
@@ -90,7 +117,10 @@ export function addHistograms(into: number[], from: number[]): number[] {
   return into;
 }
 
-/** Which series each app owns. A parent with stack children keeps only services no child claims. */
+/**
+ * Which series each app owns: its default environment's only.
+ * A parent with stack children keeps only services no child claims.
+ */
 function scopeFilters(apps: RollupApp[]): Map<string, (all: LabeledSeries[]) => LabeledSeries[]> {
   const knownAppNames = new Set(apps.filter((a) => !a.parentAppId).map((a) => a.name));
   const childServices = new Map<string, Set<string>>();
@@ -106,9 +136,10 @@ function scopeFilters(apps: RollupApp[]): Map<string, (all: LabeledSeries[]) => 
     // A child without a service would take the whole stack and count it twice.
     if (app.parentAppId && !app.composeService) continue;
     const scope: ResourceScope = appResourceScope(app, knownAppNames);
+    const appName = scope.appNames[0]!;
     const claimed = childServices.get(app.id);
     filters.set(app.id, (all) => {
-      const own = seriesInScope(all, scope);
+      const own = seriesInScope(all, scope).filter((s) => isProductionSeries(s, appName, app.defaultEnvironment));
       return claimed ? own.filter((s) => s.service === null || !claimed.has(s.service)) : own;
     });
   }

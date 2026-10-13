@@ -28,6 +28,10 @@ export type LabeledSeries = {
   service: string | null;
   /** Short container id, empty on per-project series. */
   container: string;
+  /** `environment` label, read only when selected. Null on series written before it existed. */
+  environment?: string | null;
+  /** `containerName` label, read only when selected. */
+  containerName?: string;
   points: [number, number][];
 };
 
@@ -79,13 +83,16 @@ export function parseSeries(result: unknown): LabeledSeries[] {
     }
     points.sort((a, b) => a[0] - b[0]);
 
-    out.push({
+    const series: LabeledSeries = {
       key,
       project: labels.project ?? "",
       service: labels.service ? labels.service : null,
       container: labels.container ?? "",
       points,
-    });
+    };
+    if ("environment" in labels) series.environment = labels.environment || null;
+    if ("containerName" in labels) series.containerName = labels.containerName;
+    out.push(series);
   }
 
   return out;
