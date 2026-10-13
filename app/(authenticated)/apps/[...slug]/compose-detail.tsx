@@ -688,6 +688,7 @@ export function ComposeDetail({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
 
@@ -752,15 +753,22 @@ export function ComposeDetail({
   }, [orgId, app.id, router]);
 
   async function handleStop() {
+    setStopping(true);
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       const data = await res.json();
-      if (data.success) toast.success("Stack stopped");
-      else toast.error(data.error || "Stop failed");
+      if (!res.ok || !data.success) {
+        toast.error(data.error || data.log || "Stop failed");
+        return;
+      }
+      setStopOpen(false);
+      toast.success("Stack stopped");
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Stop failed");
+    } finally {
+      setStopping(false);
     }
-    router.refresh();
   }
 
   const services = app.childApps;
@@ -1373,6 +1381,8 @@ export function ComposeDetail({
         description={`Are you sure you want to stop all services in "${app.displayName}"?`}
         confirmLabel="Stop"
         onConfirm={handleStop}
+        loading={stopping}
+        loadingLabel="Stopping..."
       />
 
       <ConfirmDeleteDialog

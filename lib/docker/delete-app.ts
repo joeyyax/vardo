@@ -116,6 +116,7 @@ export async function deleteApp(opts: {
   // Containers come down without --volumes; removal below is per volume. A child has no stack of its own: the parent's keeps running.
   if (!app.parentAppId) {
     const stop = await stopProject(appId, app.name, undefined, false);
+    if (!stop.success) throw new Error(`Could not stop ${app.name}: ${stop.log}`);
     if (stop.log.trim()) logs.push(stop.log.trim());
   }
 
@@ -125,6 +126,9 @@ export async function deleteApp(opts: {
     ? await removeAppContainersAndNetworks(teardownIds, { networks: false })
     : await removeAppContainersAndNetworks(teardownIds);
   logs.push(...leftovers.log);
+  if (leftovers.failed.length) {
+    throw new Error(`Could not remove ${app.name}'s containers: ${leftovers.failed.join("; ")}`);
+  }
 
   const removedVolumes: string[] = [];
   const keptVolumes: string[] = [];

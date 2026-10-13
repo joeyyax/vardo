@@ -21,8 +21,9 @@ function labelQuery(label: string, extra: Record<string, unknown> = {}): string 
 export async function removeAppContainersAndNetworks(
   appIds: string[],
   opts: { networks?: boolean } = {},
-): Promise<{ containers: string[]; networks: string[]; log: string[] }> {
+): Promise<{ containers: string[]; networks: string[]; log: string[]; failed: string[] }> {
   const log: string[] = [];
+  const failed: string[] = [];
   const containers: string[] = [];
   const networks: string[] = [];
   const projects = new Set<string>();
@@ -32,7 +33,9 @@ export async function removeAppContainersAndNetworks(
       "GET",
       `/containers/json?all=true&filters=${labelQuery(`vardo.project.id=${appId}`)}`,
     ).catch((err) => {
-      log.push(`Could not list containers for ${appId}: ${errText(err)}`);
+      const message = `Could not list containers for ${appId}: ${errText(err)}`;
+      log.push(message);
+      failed.push(message);
       return [] as RawContainer[];
     });
 
@@ -45,7 +48,9 @@ export async function removeAppContainersAndNetworks(
         containers.push(name);
         log.push(`Removed container ${name}`);
       } catch (err) {
-        log.push(`Kept container ${name} (removal failed: ${errText(err)})`);
+        const message = `Kept container ${name} (removal failed: ${errText(err)})`;
+        log.push(message);
+        failed.push(message);
       }
     }
   }
@@ -67,7 +72,7 @@ export async function removeAppContainersAndNetworks(
     }
   }
 
-  return { containers, networks, log };
+  return { containers, networks, log, failed };
 }
 
 /** Remove a project's networks, one per environment. Docker refuses any still in use. */

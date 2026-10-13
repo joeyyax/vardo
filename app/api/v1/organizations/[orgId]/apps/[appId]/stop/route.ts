@@ -54,7 +54,10 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(
+      result.success ? result : { ...result, error: result.log || "Stop failed" },
+      { status: result.success ? 200 : 500 },
+    );
   } catch (error) {
     return handleRouteError(error, "Error stopping app");
   }

@@ -19,7 +19,7 @@ const {
     stopProjectMock: vi.fn().mockResolvedValue({ success: true, log: "" }),
     recordActivityMock: vi.fn(),
     removeAppDirMock: vi.fn().mockResolvedValue({ removed: true }),
-    removeContainersMock: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [] }),
+    removeContainersMock: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [], failed: [] }),
   };
 });
 

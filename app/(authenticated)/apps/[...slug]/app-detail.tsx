@@ -102,6 +102,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
@@ -284,15 +285,22 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const canDelete = can(userRole, "app.delete");
 
   async function handleStop() {
+    setStopping(true);
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       const data = await res.json();
-      if (data.success) toast.success("Stopped");
-      else toast.error(data.error || "Stop failed");
+      if (!res.ok || !data.success) {
+        toast.error(data.error || data.log || "Stop failed");
+        return;
+      }
+      setStopOpen(false);
+      toast.success("Stopped");
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Stop failed");
+    } finally {
+      setStopping(false);
     }
-    router.refresh();
   }
 
   async function handleDeleteEnvironment() {
@@ -986,6 +994,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         description={`Stop "${app.displayName}"? The app will go offline until you redeploy or restart it.`}
         onConfirm={handleStop}
         confirmLabel="Stop"
+        loading={stopping}
+        loadingLabel="Stopping..."
       />
 
       {/* Instant Rollback Confirmation */}

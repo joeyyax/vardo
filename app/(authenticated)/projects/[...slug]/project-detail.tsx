@@ -535,6 +535,7 @@ export function ProjectDetail({
   const [editAllowDockerSocket, setEditAllowDockerSocket] = useState(project.allowDockerSocket);
   const [editSaving, setEditSaving] = useState(false);
   const [stopAllOpen, setStopAllOpen] = useState(false);
+  const [stoppingAll, setStoppingAll] = useState(false);
 
   // The API refuses both verbs on Vardo's own project.
   const editRefusal = systemManagedRefusal(project, "edit");
@@ -747,7 +748,8 @@ export function ProjectDetail({
           `/api/v1/organizations/${orgId}/apps/${app.id}/${action}`,
           { method: "POST" }
         );
-        if (!res.ok) failed.push(app.displayName || app.name);
+        const data = await res.json().catch(() => null);
+        if (!res.ok || data?.success !== true) failed.push(app.displayName || app.name);
       } catch {
         failed.push(app.displayName || app.name);
       }
@@ -778,16 +780,22 @@ export function ProjectDetail({
 
   async function handleStopAll() {
     if (topLevelApps.length === 0) return;
-    const failed = await runOnAllApps("stop");
-    toastBulkResult(
-      summarizeBulkResult({
-        verb: "stop",
-        past: "stopped",
-        total: topLevelApps.length,
-        failed,
-      })
-    );
-    router.refresh();
+    setStoppingAll(true);
+    try {
+      const failed = await runOnAllApps("stop");
+      toastBulkResult(
+        summarizeBulkResult({
+          verb: "stop",
+          past: "stopped",
+          total: topLevelApps.length,
+          failed,
+        })
+      );
+      if (failed.length === 0) setStopAllOpen(false);
+      router.refresh();
+    } finally {
+      setStoppingAll(false);
+    }
   }
 
   async function handleEditProject() {
@@ -1221,6 +1229,8 @@ export function ProjectDetail({
         open={stopAllOpen}
         onOpenChange={setStopAllOpen}
         onConfirm={handleStopAll}
+        loading={stoppingAll}
+        loadingLabel="Stopping..."
         title="Stop all apps"
         description={`This will stop all ${topLevelApps.length} running app${topLevelApps.length === 1 ? "" : "s"} in "${project.displayName}". You can restart them at any time.`}
         confirmLabel="Stop all"
