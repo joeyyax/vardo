@@ -35,6 +35,7 @@ import { registerBackupStatusTools } from "./backup-status";
 import { registerRunBackup } from "./run-backup";
 import { registerDrillBackup } from "./drill-backup";
 import { registerRunSystemBackup } from "./run-system-backup";
+import { registerDeleteRetiredBackups } from "./delete-retired-backups";
 import { registerListDeployments } from "./list-deployments";
 import { registerListActivity } from "./list-activity";
 import { registerSecuritySummary } from "./security-summary";
@@ -79,6 +80,7 @@ export function registerAllTools(
   registerRunBackup(server, context);
   registerDrillBackup(server, context);
   registerRunSystemBackup(server, context);
+  registerDeleteRetiredBackups(server, context);
   registerListDeployments(server, context);
   registerListActivity(server, context);
   registerSecuritySummary(server, context);
