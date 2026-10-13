@@ -50,8 +50,14 @@ describe("vardo_delete_retired_backups", () => {
   });
 
   it("deletes only the replaced archives", async () => {
-    const body = toolBody(await run()({ dryRun: false }));
+    const body = toolBody(await run()({ dryRun: false, includeUnreplaced: false }));
+    expect(h.findRetiredArchives).toHaveBeenCalledWith({ includeUnreplaced: false });
     expect(h.deleteBackups).toHaveBeenCalledWith([row]);
     expect(body).toMatchObject({ dryRun: false, deleted: 1, failed: 0 });
+  });
+
+  it("passes includeUnreplaced through", async () => {
+    await run()({ dryRun: false, includeUnreplaced: true });
+    expect(h.findRetiredArchives).toHaveBeenCalledWith({ includeUnreplaced: true });
   });
 });

@@ -19,9 +19,9 @@ export type RetiredJob = {
 
 /**
  * Finished backups still in the retired .enc format, grouped by job and volume.
- * A volume is replaced once its job has a successful .age backup of it; only replaced archives are safe to delete.
+ * A volume is replaced once its job has a successful .age backup of it. Only replaced archives are deletable unless includeUnreplaced.
  */
-export async function findRetiredArchives() {
+export async function findRetiredArchives(opts: { includeUnreplaced?: boolean } = {}) {
   const rows = await db
     .select({
       id: backups.id,
@@ -65,7 +65,7 @@ export async function findRetiredArchives() {
     job.archives++;
     job.bytes += row.status === "success" ? (row.sizeBytes ?? 0) : 0;
     jobs.set(groupKey, job);
-    if (isReplaced) deletable.push({ id: row.id, targetId: row.targetId, status: row.status, storagePath: row.storagePath });
+    if (isReplaced || opts.includeUnreplaced) deletable.push({ id: row.id, targetId: row.targetId, status: row.status, storagePath: row.storagePath });
   }
   return { jobs: [...jobs.values()], deletable };
 }
