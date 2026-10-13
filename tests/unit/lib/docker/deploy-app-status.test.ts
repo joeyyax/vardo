@@ -18,7 +18,9 @@ const { dbMock, addEventMock, statusWrites } = vi.hoisted(() => {
 
   // db.update(table).set(values).where(cond)
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockResolvedValue(undefined);
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: "dep-1" }]),
+    });
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       statusWrites.push({ table, values });
       return { where };

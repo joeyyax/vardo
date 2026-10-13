@@ -248,10 +248,32 @@ export async function runDeployment(
   let ownsAppStatus = false;
 
   try {
-    await db
+    // A queued row flipped to "cancelled" before this deploy gets to run must never start: the
+    // DELETE route can mark the row and LREM the Redis queue while we're still parked in
+    // claimActiveInRedis. Conditional on status='queued' so a cancellation that wins the race
+    // (or any earlier status change) shows up here, not after we've claimed containers.
+    const [claimed] = await db
       .update(deployments)
       .set({ status: "running" })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+      .returning({ id: deployments.id });
+
+    if (!claimed) {
+      const row = await db.query.deployments.findFirst({
+        where: eq(deployments.id, deploymentId),
+        columns: { status: true },
+      });
+      const terminalStatus = row?.status === "superseded" ? "superseded" : "cancelled";
+      const durationMs = Date.now() - startTime;
+      await streamLogger.flush();
+      return {
+        deploymentId,
+        success: false,
+        log: logLines.join("\n"),
+        durationMs,
+        status: terminalStatus,
+      };
+    }
 
     if (opts.groupEnvironmentId && !opts.environmentId) {
       throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
@@ -891,11 +913,6 @@ export async function sendDeployNotification(notice: DeployNotice) {
       });
     }
   } catch (err) { logger.child("notifications").error("Deploy notification error:", err); }
-}
-
-export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
-  const deploymentId = await createDeployment(opts);
-  return runDeployment(deploymentId, opts);
 }
 
 export async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {

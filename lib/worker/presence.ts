@@ -21,9 +21,9 @@ export async function registerWorker(w: WorkerIdentity): Promise<void> {
 
 export type Beat = { inFlight: string[]; ready: boolean; draining: boolean };
 
-/** Refreshes the heartbeat. Returns whether a drain was requested. */
-export async function beatWorker(id: string, beat: Beat): Promise<{ drainRequested: boolean }> {
-  const [row] = await db
+/** Refreshes the heartbeat. */
+export async function beatWorker(id: string, beat: Beat): Promise<void> {
+  await db
     .update(workers)
     .set({
       heartbeatAt: sql`now()`,
@@ -31,14 +31,7 @@ export async function beatWorker(id: string, beat: Beat): Promise<{ drainRequest
       readyAt: beat.ready ? sql`coalesce(${workers.readyAt}, now())` : null,
       drainingAt: beat.draining ? sql`coalesce(${workers.drainingAt}, now())` : null,
     })
-    .where(eq(workers.id, id))
-    .returning({ drainRequestedAt: workers.drainRequestedAt });
-  return { drainRequested: !!row?.drainRequestedAt };
-}
-
-/** Asks a worker to stop claiming work. */
-export async function requestDrain(id: string): Promise<void> {
-  await db.update(workers).set({ drainRequestedAt: sql`now()` }).where(eq(workers.id, id));
+    .where(eq(workers.id, id));
 }
 
 /** Every worker row, with the database's now. */

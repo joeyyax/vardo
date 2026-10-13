@@ -14,7 +14,11 @@ const { dbMock, state } = vi.hoisted(() => {
 
   const dbMock = {
     update: vi.fn().mockImplementation(() => ({
-      set: vi.fn().mockImplementation(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      set: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "dep-1" }]),
+        }),
+      })),
     })),
     query: {
       apps: {

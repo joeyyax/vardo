@@ -33,9 +33,16 @@ vi.mock("@/lib/db", () => ({
     update: () => ({
       set: (values: Record<string, unknown>) => {
         fake.dbWrites.push(values);
-        return { where: () => Promise.resolve() };
+        // Promise-like with .returning for runDeployment's queued→running claim and .catch
+        // for deploy-cancel's drain refusal, so a single chain matches every caller.
+        const promise = Promise.resolve([{ id: "dep-1" }]) as Promise<unknown> & { returning: () => unknown };
+        promise.returning = () => Promise.resolve([{ id: "dep-1" }]);
+        return { where: () => promise };
       },
     }),
+    query: {
+      deployments: { findFirst: vi.fn().mockResolvedValue(null) },
+    },
   },
 }));
 vi.mock("@/lib/logger", () => ({

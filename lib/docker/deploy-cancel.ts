@@ -117,7 +117,7 @@ export function resetDrainForTests(): void {
   localRegistry.clear();
 }
 
-/** Whether a deploy of this app is running or queued in any process. "unknown" when Redis can't answer and nothing runs locally. */
+/** Whether a deploy of this app's default environment is running or queued in any process. "unknown" when Redis can't answer and nothing runs locally. Only the default environment — git-poll dedupes poll-driven deploys, which always target the default. */
 export async function deployInFlight(appId: string): Promise<boolean | "unknown"> {
   if (localRegistry.has(appId)) return true;
   try {
@@ -127,7 +127,7 @@ export async function deployInFlight(appId: string): Promise<boolean | "unknown"
   }
 }
 
-/** Claim the app's active-deploy key for a non-deploy operation (e.g. instant rollback). Null when the app is busy. */
+/** Claim the app's default-environment active-deploy key for a non-deploy operation (e.g. instant rollback). Null when the app is busy. Only the default environment — instant rollback always targets it. */
 export async function claimAppForOperation(
   appId: string,
   operation: string,
@@ -195,12 +195,20 @@ export async function renewActiveLease(
 
 export async function clearActiveInRedis(appId: string, deploymentId: string): Promise<void> {
   try {
-    const raw = await redis.get(ACTIVE_KEY(appId));
+    // Resolves the scope (default appId vs. `${appId}:${envId}`) from the row so a force-cancel
+    // of a non-default-environment deploy clears the right key. Synthetic owner IDs from
+    // claimAppForOperation aren't rows, so we fall back to the default-env scope.
+    const row = await db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { environmentId: true },
+    });
+    const scope = await deployScope(appId, row?.environmentId);
+    const raw = await redis.get(ACTIVE_KEY(scope));
     if (!raw) return;
     const entry = JSON.parse(raw) as { deploymentId: string };
     // Only if this deploy still owns it.
     if (entry.deploymentId === deploymentId) {
-      await redis.del(ACTIVE_KEY(appId));
+      await redis.del(ACTIVE_KEY(scope));
     }
   } catch {
     // Non-fatal

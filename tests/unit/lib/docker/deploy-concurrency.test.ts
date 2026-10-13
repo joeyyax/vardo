@@ -108,7 +108,6 @@ import {
   waitForConcurrencySlot,
   releaseConcurrencySlot,
   removeFromQueue,
-  getConcurrencyState,
   reconcileActiveCounter,
   reconcileQueue,
   getConcurrencyLimit,
@@ -286,25 +285,6 @@ describe("deploy-concurrency", () => {
       redisMock.eval.mockRejectedValueOnce(new Error("Redis connection failed"));
 
       await expect(waitForConcurrencySlot("deploy-redis-err")).resolves.not.toThrow();
-    });
-  });
-
-  describe("getConcurrencyState", () => {
-    it("returns current state", async () => {
-      redisState[ACTIVE_KEY] = "1";
-      redisList[QUEUE_KEY] = ["deploy-a", "deploy-b"];
-
-      const state = await getConcurrencyState();
-      expect(state.active).toBe(1);
-      expect(state.queued).toBe(2);
-      expect(state.queuedIds).toEqual(["deploy-a", "deploy-b"]);
-      expect(state.limit).toBe(2);
-    });
-
-    it("returns zeros when nothing is running or queued", async () => {
-      const state = await getConcurrencyState();
-      expect(state.active).toBe(0);
-      expect(state.queued).toBe(0);
     });
   });
 

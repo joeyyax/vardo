@@ -35,9 +35,6 @@ function beat(): Promise<unknown> {
   const state = bootState();
   beating = beating
     .then(() => beatWorker(id, { inFlight: inFlight(), ready: state.booted, draining: state.draining }))
-    .then(({ drainRequested }) => {
-      if (drainRequested && !bootState().draining) void drain("requested");
-    })
     .catch((err) => log.warn("Heartbeat failed:", err));
   return beating;
 }
