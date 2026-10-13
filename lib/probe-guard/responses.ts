@@ -31,16 +31,18 @@ export function responseBody(status: number): string {
   return `${STATUS_NAME[status] ?? "Forbidden"}\n`;
 }
 
-// The console's palette (app/brand.css): warm ground, brass trim, muted body text. System fonts, since the
-// page can't load any.
+// Black and white only. The heading and message use the reader's sans font; only the "error: 403" label is monospace,
+// with shade and weight standing in for syntax-highlight hues.
 const PAGE_STYLE = `
-:root{color-scheme:light dark;--bg:oklch(95.8% .005 85);--fg:oklch(18% .012 75);--muted:oklch(44% .013 78);--brass:oklch(48% .098 72)}
-@media (prefers-color-scheme:dark){:root{--bg:oklch(16% .008 75);--fg:oklch(93% .006 85);--muted:oklch(68% .012 80);--brass:oklch(74% .085 82)}}
+:root{color-scheme:light dark;--bg:#fafafa;--fg:#0a0a0a;--muted:#5c5c5c;--key:#737373;--punct:#a3a3a3;--num:#525252}
+@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#f2f2f2;--muted:#a3a3a3;--key:#8a8a8a;--punct:#5c5c5c;--num:#a8a8a8}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:clamp(1.5rem,6vw,4rem);background:var(--bg);color:var(--fg);font:1rem/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:28rem;padding-bottom:6vh}
-.code{display:flex;align-items:center;gap:.75rem;margin:0 0 1.25rem;font-size:.8125rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);font-variant-numeric:tabular-nums}
-.code:before{content:"";width:1.5rem;height:1px;background:currentColor}
+.code{margin:0 0 1rem;font:.75rem/1 ui-monospace,"SF Mono","JetBrains Mono","Cascadia Mono",Menlo,Consolas,monospace}
+.k{color:var(--key)}
+.p{color:var(--punct)}
+.n{color:var(--num);font-weight:600}
 h1{margin:0 0 .75rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.1;font-weight:680;letter-spacing:-.025em}
 .message{margin:0;color:var(--muted);text-wrap:pretty}
 `.trim();
@@ -61,7 +63,7 @@ export function errorPage(status: number, opts: { banned?: boolean } = {}): stri
 </head>
 <body>
 <main>
-<p class="code">Error ${status}</p>
+<p class="code"><span class="k">error</span><span class="p">:</span> <span class="n">${status}</span></p>
 <h1>${name}</h1>
 <p class="message">${message}</p>
 </main>
