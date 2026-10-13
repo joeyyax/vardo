@@ -3,7 +3,7 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backupJobVolumes, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
 import type { AlertItem } from "@/lib/bus/events";
 import { formatDuration } from "@/lib/email/format";
 import { logger } from "@/lib/logger";
@@ -427,19 +427,65 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
   return history;
 }
 
+/** Apps a scheduled run still takes: switched on, not retired and in an enabled job of their org or the instance. */
+async function appsStillScheduled(appIds: string[]): Promise<Set<string>> {
+  const { getSystemBackupsDefault, resolveBackupSwitch } = await import("./switch");
+  const [rows, links, systemDefault] = await Promise.all([
+    db.query.apps.findMany({
+      where: inArray(apps.id, appIds),
+      columns: { id: true, organizationId: true, status: true, backupsEnabled: true },
+      with: { organization: { columns: { backupsEnabled: true } } },
+    }),
+    db.query.backupJobApps.findMany({
+      where: inArray(backupJobApps.appId, appIds),
+      with: { backupJob: { columns: { organizationId: true, enabled: true } } },
+    }),
+    getSystemBackupsDefault().catch(() => true),
+  ]);
+  const orgOf = new Map((rows ?? []).map((a) => [a.id, a.organizationId]));
+  const inJob = new Set(
+    (links ?? [])
+      .filter((l) => l.backupJob.enabled && (l.backupJob.organizationId === null || l.backupJob.organizationId === orgOf.get(l.appId)))
+      .map((l) => l.appId),
+  );
+  return new Set(
+    (rows ?? [])
+      .filter((a) => a.status !== "missing" && inJob.has(a.id))
+      .filter((a) => resolveBackupSwitch(a.backupsEnabled, a.organization?.backupsEnabled, systemDefault).enabled)
+      .map((a) => a.id),
+  );
+}
+
 /** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
-async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
+export async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
   const out = new Set<string>();
   if (appIds.length === 0) return out;
-  const vols = await db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) });
+  const [vols, scheduled] = await Promise.all([
+    db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) }),
+    appsStillScheduled(appIds),
+  ]);
+  const linked = vols.length
+    ? await db.query.backupJobVolumes.findMany({
+        where: inArray(backupJobVolumes.volumeId, vols.map((v) => v.id)),
+        with: { backupJob: { columns: { enabled: true } } },
+      })
+    : [];
+  const direct = new Set((linked ?? []).filter((l) => l.backupJob.enabled).map((l) => l.volumeId));
   for (const v of vols) {
-    if (!isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
+    if (exclusionReason(v.durability)) continue;
+    // A job linked to the volume itself takes it whatever the app's switch says.
+    if (direct.has(v.id)) {
+      out.add(volumeKey(v.appId, v.name));
+      continue;
+    }
+    if (!v.appId || !scheduled.has(v.appId)) continue;
+    if (!isBackupSelected(v) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
     out.add(volumeKey(v.appId, v.name));
   }
   return out;
 }
 
-/** Volumes backed up this week, still backed up, with no success in 48 hours. */
+/** Volumes backed up this week that a job still backs up, with no success in 48 hours. */
 export async function loadStaleVolumes(organizationId: string, now: number) {
   // Grouped by app ID alone, so a rename doesn't split a volume in two.
   const rows = await db

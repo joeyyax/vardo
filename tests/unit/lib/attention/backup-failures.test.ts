@@ -20,6 +20,11 @@ function outcome(over: Partial<BackupOutcome> & { appId: string; status: string;
 const ids = (rows: BackupOutcome[]) => rows.map((r) => r.appId).sort();
 
 describe("standingBackupFailures", () => {
+  it("drops a failure on a volume no job backs up any more", () => {
+    const rows = [outcome({ appId: "off", status: "failed", hoursAgo: 6 }), outcome({ appId: "on", status: "failed", hoursAgo: 6 })];
+    expect(ids(standingBackupFailures(rows, new Set(["on:data"])))).toEqual(["on"]);
+  });
+
   it("counts a failure that is still the latest outcome", () => {
     expect(ids(standingBackupFailures([outcome({ appId: "gitea", status: "failed", hoursAgo: 6 })]))).toEqual(["gitea"]);
   });

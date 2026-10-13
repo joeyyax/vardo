@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({ emit: vi.fn(), fire: vi.fn(), settle: vi.fn(),
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
 vi.mock("@/lib/notifications/observations", () => ({ fireAlert: mocks.fire, settleAlerts: mocks.settle }));
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
+vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: async () => null, setSystemSetting: vi.fn() }));
 
 import { dbMock } from "@/tests/helpers/db";
 const { describeTarget, finishBackupRuns, recordBackupResults, staleForRun, startManualRun } = await import("@/lib/backups/runs");
@@ -311,6 +312,16 @@ describe("stale volumes in a summary", () => {
   ];
 
   const groupedBy: unknown[][] = [];
+  const app = (id: string, displayName: string, over: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    organizationId: "org1",
+    status: "active",
+    backupsEnabled: null,
+    organization: { backupsEnabled: null },
+    ...over,
+  });
+  const link = (appId: string, enabled = true) => ({ appId, backupJob: { organizationId: "org1", enabled } });
   let staleRows = stale;
 
   const runRow = (over: Record<string, unknown>) => ({
@@ -339,13 +350,11 @@ describe("stale volumes in a summary", () => {
       return chain;
     });
     staleRows = stale;
-    dbMock.query.apps.findMany.mockResolvedValue([
-      { id: "a1", displayName: "Shop" },
-      { id: "a9", displayName: "Other" },
-    ]);
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop"), app("a9", "Other")]);
+    dbMock.query.backupJobApps.findMany.mockResolvedValue([link("a1"), link("a9")]);
     dbMock.query.volumes.findMany.mockResolvedValue([
-      { appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
-      { appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v1", appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v9", appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
     ]);
   });
 
@@ -360,9 +369,23 @@ describe("stale volumes in a summary", () => {
     expect(await loadStaleVolumes("org1", t0)).toEqual([]);
   });
 
+  it("leaves out an app with backups switched off or no enabled job", async () => {
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop", { backupsEnabled: false }), app("a9", "Other")]);
+    dbMock.query.backupJobApps.findMany.mockResolvedValue([link("a1"), link("a9", false)]);
+    expect(await loadStaleVolumes("org1", t0)).toEqual([]);
+  });
+
+  it("keeps a volume its own job takes, whatever the app's switch says", async () => {
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop", { backupsEnabled: false }), app("a9", "Other", { status: "missing" })]);
+    dbMock.query.backupJobVolumes.findMany.mockResolvedValue([{ volumeId: "v1", backupJob: { enabled: true } }]);
+    expect((await loadStaleVolumes("org1", t0)).map((v) => v.volumeName)).toEqual(["data"]);
+  });
+
   it("groups by app ID and names the app as it's called now", async () => {
     staleRows = [{ appId: "a1", appName: "shop-old", volumeName: "data", lastSuccessAt: null }];
-    dbMock.query.apps.findMany.mockResolvedValue([{ id: "a1", displayName: "Shop" }]);
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop")]);
     const { loadStaleVolumes } = await import("@/lib/backups/runs");
     const { backups } = await import("@/lib/db/schema");
     expect(await loadStaleVolumes("org1", t0)).toEqual([{ appId: "a1", appName: "Shop", volumeName: "data", lastSuccessAt: null }]);
