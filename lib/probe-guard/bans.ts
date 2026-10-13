@@ -360,13 +360,15 @@ export async function blocklistBanCount(now = new Date()): Promise<number> {
 /** Active bans by address, for attributing blocked requests and telling a banned visitor when it ends. */
 export async function activeBanRefs(now = new Date()): Promise<Map<string, BanRef>> {
   const rows = await db
-    .select({ id: probeBans.id, ip: probeBans.ip, reason: probeBans.reason, expiresAt: probeBans.expiresAt })
+    .select({ id: probeBans.id, ip: probeBans.ip, reason: probeBans.reason, expiresAt: probeBans.expiresAt, createdAt: probeBans.createdAt })
     .from(probeBans)
     .where(and(isNull(probeBans.liftedAt), gt(probeBans.expiresAt, now)));
   const out = new Map<string, BanRef>();
   // A local ban outranks a blocklist one on the same address.
   for (const r of rows) {
-    if (!out.has(r.ip) || r.reason !== "blocklist") out.set(r.ip, { id: r.id, blocklist: r.reason === "blocklist", expiresAt: r.expiresAt });
+    if (!out.has(r.ip) || r.reason !== "blocklist") {
+      out.set(r.ip, { id: r.id, blocklist: r.reason === "blocklist", expiresAt: r.expiresAt, createdAt: r.createdAt });
+    }
   }
   return out;
 }

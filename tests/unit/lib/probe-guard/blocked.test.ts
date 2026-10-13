@@ -27,8 +27,8 @@ beforeEach(async () => {
 });
 
 const BANS = new Map([
-  ["198.51.100.7", { id: "ban-abuse", blocklist: true, expiresAt: new Date("2099-01-01T00:00:00Z") }],
-  ["198.51.100.8", { id: "ban-local", blocklist: false, expiresAt: new Date("2099-01-01T00:00:00Z") }],
+  ["198.51.100.7", { id: "ban-abuse", blocklist: true, expiresAt: new Date("2099-01-01T00:00:00Z"), createdAt: new Date("2026-10-20T09:00:00Z") }],
+  ["198.51.100.8", { id: "ban-local", blocklist: false, expiresAt: new Date("2099-01-01T00:00:00Z"), createdAt: new Date("2026-10-20T09:00:00Z") }],
 ]);
 const RANGES = ["192.0.2.0/24", "2001:db8::/32"];
 
@@ -142,7 +142,8 @@ describe("blocked request counting", () => {
 describe("attribution", () => {
   it("prefers a ban over a range and a local ban over nothing", () => {
     const find = rangeFinder(RANGES);
-    expect(attributeBlock(["192.0.2.5"], () => ({ id: "x", blocklist: false, expiresAt: new Date("2099-01-01T00:00:00Z") }), find)).toEqual({ source: "local", banId: "x" });
+    const ban = () => ({ id: "x", blocklist: false, expiresAt: new Date("2099-01-01T00:00:00Z"), createdAt: new Date("2026-10-20T09:00:00Z") });
+    expect(attributeBlock(["192.0.2.5"], ban, find)).toEqual({ source: "local", banId: "x" });
     expect(attributeBlock(["192.0.2.5"], () => undefined, find)).toEqual({ source: "spamhaus", range: "192.0.2.0/24" });
   });
 

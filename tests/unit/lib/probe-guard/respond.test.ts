@@ -13,6 +13,7 @@ import {
 import { DEFAULT_INSTANCE_PROBE_GUARD, type InstanceProbeGuard } from "@/lib/probe-guard/settings";
 import { canaryValues } from "@/lib/probe-guard/canary";
 import { renderAppRobots } from "@/lib/probe-guard/robots";
+import { banRef } from "@/lib/probe-guard/ban-ref";
 import type { BanRequest } from "@/lib/probe-guard/bans";
 
 const KEY = "k".repeat(64);
@@ -111,14 +112,37 @@ describe("handleGuardRequest", () => {
 
   describe("banned page", () => {
     const html = { accept: "text/html" };
-    const ban = (expiresAt: Date) => ({ banLookup: async () => (ip: string) => (ip === IP ? { id: "b1", blocklist: false, expiresAt } : undefined) });
+    const BAN_ID = "ban-id-xyz-123";
+    const CREATED = new Date("2026-10-13T09:00:00Z");
+    const ban = (expiresAt: Date, blocklist = false) => ({
+      banLookup: async () => (ip: string) => (ip === IP ? { id: BAN_ID, blocklist, expiresAt, createdAt: CREATED } : undefined),
+    });
     const in45 = () => new Date(Date.now() + 45 * 60_000);
 
     it("tells a banned visitor when the ban ends and nothing about why", async () => {
       const { deps } = setup({}, ban(in45()));
       const body = await (await handleGuardRequest("banned", req("/wp-login.php", { app: "secret-app-id", headers: html }), deps)).text();
       expect(body).toMatch(/Access from your address is unavailable until \d\d:\d\d UTC \(about 45 minutes\)\./);
-      for (const leak of ["threshold", "trap", "canary", "blocklist", "wp-login", "secret-app-id", IP]) expect(body).not.toContain(leak);
+      for (const leak of ["threshold", "trap", "canary", "blocklist", "wp-login", "secret-app-id", BAN_ID, IP]) expect(body).not.toContain(leak);
+    });
+
+    it("gives the visitor a short reference an admin can search for", async () => {
+      const { deps } = setup({}, ban(in45()));
+      const res = await handleGuardRequest("banned", req("/", { headers: html }), deps);
+      const body = await res.text();
+      expect(body).toContain(`<span class="n">${banRef(BAN_ID, CREATED)}</span>`);
+      expect(body).toMatch(/<span class="p">:<\/span> <span class="v"><span class="n">403<\/span><span class="p">-<\/span><span class="n">13-[2-9A-HJ-NP-Z]{4}<\/span>/);
+      // The page stays inert: one CSP everywhere, no script allowed.
+      expect(res.headers.get("content-security-policy")).not.toContain("script-src");
+      const plain = await handleGuardRequest("probe", req("/.env", { headers: html }), deps);
+      expect(plain.headers.get("content-security-policy")).toBe(res.headers.get("content-security-policy"));
+    });
+
+    it("gives no reference for a blocklist ban, which the admin list doesn't show", async () => {
+      const { deps } = setup({}, ban(in45(), true));
+      const body = await (await handleGuardRequest("banned", req("/", { headers: html }), deps)).text();
+      expect(body).toContain("until");
+      expect(body).not.toContain('class="v"');
     });
 
     it("says a permanent ban has no end date", async () => {

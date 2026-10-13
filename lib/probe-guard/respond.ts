@@ -5,6 +5,7 @@ import { OTHER_RULE_ID, matchProbe } from "./rules";
 import { HTML_RESPONSE_HEADERS, RESPONSE_HEADERS, errorPage, responseBody, wantsHtml } from "./responses";
 import { normalizeIp, reachesThreshold } from "./ban-policy";
 import { attributeBlock, type BanRef, type BlockMatch } from "./block-source";
+import { banRef } from "./ban-ref";
 import { CANARY_HEADERS, CANARY_QUERY_KEYS, findMarker, renderDecoyEnv } from "./canary";
 import { decoyPath, type InstanceProbeGuard } from "./settings";
 import { APP_HEADER, KEY_HEADER, type GuardKind } from "./traefik-file";
@@ -48,7 +49,7 @@ export type GuardDeps = {
 };
 
 /** A turned-away request: a small page for browsers, plain text for everything else. */
-function deny(request: Request, status: number, opts: { banned?: boolean; until?: Date } = {}): Response {
+function deny(request: Request, status: number, opts: { banned?: boolean; until?: Date; ref?: string } = {}): Response {
   const head = request.method.toUpperCase() === "HEAD";
   if (wantsHtml(request.headers.get("accept"))) {
     return new Response(head ? null : errorPage(status, opts), { status, headers: HTML_RESPONSE_HEADERS });
@@ -109,7 +110,8 @@ export async function handleGuardRequest(kind: GuardKind, request: Request, deps
     if (kind === "banned") {
       const allowed = await deps.allowed?.(ip).catch(() => false);
       const ban = allowed ? undefined : await countBanned(ip, request.headers, deps).catch(() => undefined);
-      return deny(request, 403, { banned: true, until: ban?.expiresAt });
+      // Blocklist bans have no row in the admin list, so a reference to one would lead nowhere.
+      return deny(request, 403, { banned: true, until: ban?.expiresAt, ref: ban && !ban.blocklist ? banRef(ban.id, ban.createdAt) : undefined });
     }
 
     const allowed = kind !== "robots" && !!(await deps.allowed?.(ip).catch(() => false));

@@ -1,5 +1,6 @@
 // Bodies for turned-away requests. Generic on purpose: nothing about the app, its stack or why.
 
+import { isBanRef, displayRef } from "./ban-ref";
 import { isPermanent } from "./permanent";
 
 const STATUS_NAME: Record<number, string> = { 403: "Forbidden", 404: "Not Found", 429: "Too Many Requests" };
@@ -73,12 +74,23 @@ main{max-width:28rem;padding-bottom:6vh}
 .n{color:var(--num);font-weight:600}
 h1{margin:0 0 .75rem;font-size:clamp(1.75rem,5vw,2.25rem);line-height:1.1;font-weight:680;letter-spacing:-.025em}
 .message{margin:0;color:var(--muted);text-wrap:pretty}
+.v{user-select:all}
 `.trim();
 
+/** The reference to show, as "403-13-K7M2": only for a ban that is still running, in the shape banRef() makes. */
+export function shownRef(status: number, opts: { banned?: boolean; until?: Date; ref?: string; now?: Date }): string | null {
+  const live = !!opts.until && opts.until.getTime() > (opts.now ?? new Date()).getTime();
+  return opts.banned && live && opts.ref && isBanRef(opts.ref) ? displayRef(status, opts.ref) : null;
+}
+
 /** A small standalone page for a turned-away browser request: the status, its official name and one line. */
-export function errorPage(status: number, opts: { banned?: boolean; until?: Date; now?: Date } = {}): string {
+export function errorPage(status: number, opts: { banned?: boolean; until?: Date; ref?: string; now?: Date } = {}): string {
   const name = STATUS_NAME[status] ?? "Forbidden";
   const message = opts.banned ? bannedMessage(opts.until, opts.now) : (UNAVAILABLE[status] ?? UNAVAILABLE[403]);
+  const ref = shownRef(status, opts);
+  const label = ref
+    ? `<p class="code"><span class="k">error</span><span class="p">:</span> <span class="v"><span class="n">${status}</span><span class="p">-</span><span class="n">${opts.ref}</span></span></p>`
+    : `<p class="code"><span class="k">error</span><span class="p">:</span> <span class="n">${status}</span></p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -91,7 +103,7 @@ export function errorPage(status: number, opts: { banned?: boolean; until?: Date
 </head>
 <body>
 <main>
-<p class="code"><span class="k">error</span><span class="p">:</span> <span class="n">${status}</span></p>
+${label}
 <h1>${name}</h1>
 <p class="message">${message}</p>
 </main>
