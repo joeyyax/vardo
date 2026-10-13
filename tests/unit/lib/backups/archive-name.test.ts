@@ -7,14 +7,9 @@ import {
 } from "@/lib/backups/archive-name";
 
 describe("archiveExtension", () => {
-  it("marks encrypted archives with .age", () => {
-    expect(archiveExtension("tar", true)).toBe("tar.gz.age");
-    expect(archiveExtension("dump", true)).toBe("dump.gz.age");
-  });
-
-  it("keeps plaintext archives on their plain extension", () => {
-    expect(archiveExtension("tar", false)).toBe("tar.gz");
-    expect(archiveExtension("dump", false)).toBe("dump.gz");
+  it("names every new archive with .age", () => {
+    expect(archiveExtension("tar")).toBe("tar.gz.age");
+    expect(archiveExtension("dump")).toBe("dump.gz.age");
   });
 });
 

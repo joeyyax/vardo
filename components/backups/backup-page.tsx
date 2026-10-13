@@ -11,7 +11,6 @@ import { JobSections } from "./job-sections";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { KeyEscrowCard } from "./key-escrow-card";
-import { ArchiveEncryptionCard } from "./archive-encryption-card";
 import { OrgBackupDefault, SystemBackupDefault } from "./backup-switch";
 import { NotBackedUp } from "./not-backed-up";
 import { useCan } from "@/components/capabilities-provider";
@@ -302,7 +301,6 @@ export function BackupPage({
 
       {/* Key escrow */}
       {scope === "org" && <KeyEscrowCard heading={Heading} />}
-      {scope === "org" && <ArchiveEncryptionCard heading={Heading} />}
 
       {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 

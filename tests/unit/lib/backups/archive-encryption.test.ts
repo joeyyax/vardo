@@ -78,8 +78,6 @@ vi.mock("child_process", async (importOriginal) => ({
   spawn: spawnMock,
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
-const encryption = vi.hoisted(() => ({ enabled: true }));
-vi.mock("@/lib/backups/encryption-setting", () => ({ getBackupEncryptionEnabled: async () => encryption.enabled }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
   inspectContainer: vi.fn().mockResolvedValue({ mounts: [] }),
@@ -183,7 +181,6 @@ afterAll(() => {
 
 beforeEach(() => {
   process.env.ENCRYPTION_MASTER_KEY = KEY;
-  encryption.enabled = true;
   inserted.length = 0;
   updated.length = 0;
   uploaded.length = 0;
@@ -222,24 +219,13 @@ describe("runBackup — archive encryption", () => {
     expect(uploaded[0].key).toMatch(/\.tar\.gz\.age$/);
   });
 
-  it("uploads plaintext under the plain name when no master key is set", async () => {
+  it("fails the backup and uploads nothing when no master key is set", async () => {
     delete process.env.ENCRYPTION_MASTER_KEY;
-    await runBackup("job-1");
+    const [result] = await runBackup("job-1");
 
-    expect(uploaded[0].key).toMatch(/\.tar\.gz$/);
-    expect(uploaded[0].bytes.equals(ARCHIVE_BYTES)).toBe(true);
-    const success = updated.find((u) => u.status === "success")!;
-    expect(success.encrypted).toBe(false);
-    expect(success.log).toMatch(/uploading the archive unencrypted/);
-  });
-
-  it("uploads plaintext when an admin turned archive encryption off", async () => {
-    encryption.enabled = false;
-    await runBackup("job-1");
-
-    expect(uploaded[0].key).toMatch(/\.tar\.gz$/);
-    expect(uploaded[0].bytes.equals(ARCHIVE_BYTES)).toBe(true);
-    expect(updated.find((u) => u.status === "success")!.encrypted).toBe(false);
+    expect(result.outcome).toBe("failed");
+    expect(uploaded).toHaveLength(0);
+    expect(result.error).toMatch(/ENCRYPTION_MASTER_KEY is not set/);
   });
 
   it("a backup it wrote restores through the engine", async () => {

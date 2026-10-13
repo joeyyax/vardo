@@ -80,8 +80,7 @@ import type { BackupResultItem } from "./run-rules";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { volumeOwnerProblem } from "@/lib/docker/volume-owner";
-import { archiveExtension, ENCRYPTED_SUFFIX, formatFromArchiveName } from "./archive-name";
-import { getBackupEncryptionEnabled } from "./encryption-setting";
+import { archiveExtension, formatFromArchiveName } from "./archive-name";
 
 const log = logger.child("backup");
 
@@ -317,7 +316,7 @@ export function backupWorkDir(backupId: string): string {
 
 /**
  * Stream an archive from its producer through checksum, gzip check and encryption into storage.
- * Encrypted when the storage key ends in `.age`; the key name is the single decision. Nothing is committed unless every check passes.
+ * Always encrypted; fails without ENCRYPTION_MASTER_KEY. Nothing is committed unless every check passes.
  */
 async function streamArchive(opts: {
   producer: ArchiveProducer;
@@ -333,7 +332,7 @@ async function streamArchive(opts: {
   afterExit?: (stats: ArchiveStats) => Promise<void>;
   /** Upper bound on the archive's size, when known. */
   expectedBytes?: number | null;
-}): Promise<{ sizeBytes: number; checksum: string; encrypted: boolean }> {
+}): Promise<{ sizeBytes: number; checksum: string }> {
   const { producer, label, storage, storageKey, logFn } = opts;
   const inspector = createArchiveInspector({
     label,
@@ -348,15 +347,10 @@ async function streamArchive(opts: {
   if (opts.compress) stages.push(createGzip());
   stages.push(inspector);
 
-  const encrypted = storageKey.endsWith(ENCRYPTED_SUFFIX);
-  if (encrypted) {
-    const masterKey = process.env.ENCRYPTION_MASTER_KEY;
-    if (!masterKey) throw new Error("ENCRYPTION_MASTER_KEY is not set, so the archive can't be encrypted");
-    stages.push(createArchiveEncryptor(await deriveArchiveRecipient(masterKey)));
-    logFn("Encrypting the archive with age");
-  } else {
-    logFn("WARNING: uploading the archive unencrypted (archive encryption is off, or ENCRYPTION_MASTER_KEY is not set)");
-  }
+  const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+  if (!masterKey) throw new Error("ENCRYPTION_MASTER_KEY is not set, so the archive can't be encrypted");
+  stages.push(createArchiveEncryptor(await deriveArchiveRecipient(masterKey)));
+  logFn("Encrypting the archive with age");
 
   logFn(`Streaming to ${storageKey}`);
   const startedAt = Date.now();
@@ -384,7 +378,7 @@ async function streamArchive(opts: {
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
   logFn(`Checksum: sha256:${stats.sha256.slice(0, 16)}...`);
   logFn(`Upload complete (${uploaded.value.sizeBytes} bytes, ${stats.bytes} before encryption) in ${seconds}s`);
-  return { sizeBytes: uploaded.value.sizeBytes, checksum: stats.sha256, encrypted };
+  return { sizeBytes: uploaded.value.sizeBytes, checksum: stats.sha256 };
 }
 
 /** The empty-source marker the streaming script leaves in the work dir. */
@@ -409,7 +403,7 @@ async function streamTarBackup(opts: {
   storageKey: string;
   logFn: (msg: string) => void;
   expectedBytes?: number | null;
-}): Promise<{ sizeBytes: number; checksum: string; encrypted: boolean; excludedPaths: string[]; sourceWasEmpty: boolean }> {
+}): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; sourceWasEmpty: boolean }> {
   const { workDir, label } = opts;
   const findArgv = opts.singleFile ? [] : buildFindExclusionArgv(opts.excludePatterns);
   const script = opts.singleFile ? [buildFileStreamScript()] : [buildTarStreamScript(), "vardo-backup", ...findArgv];
@@ -531,7 +525,7 @@ export async function backupVolumeTar(
   storage: BackupStorage,
   logFn: (msg: string) => void,
   excludePatterns: string[] = [],
-): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; encrypted: boolean }> {
+): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[] }> {
   const workDir = backupWorkDir(backupId);
   await ensureDir(workDir);
 
@@ -579,7 +573,7 @@ async function backupVolumeDump(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string; encrypted: boolean }> {
+): Promise<{ sizeBytes: number; checksum: string }> {
   return streamArchive({
     producer,
     compress: true,
@@ -732,7 +726,6 @@ async function backupBindTar(
   checksum: string;
   kind: BindSourceKind;
   excludedPaths: string[];
-  encrypted: boolean;
 }> {
   const workDir = backupWorkDir(backupId);
   await ensureDir(workDir);
@@ -1125,8 +1118,7 @@ async function runBackupUntracked(
     }
 
     const strategy: ArchiveStrategy = vol.backupStrategy === "dump" ? "dump" : "tar";
-    const masterKeySet = Boolean(process.env.ENCRYPTION_MASTER_KEY);
-    const ext = archiveExtension(strategy, masterKeySet && (await getBackupEncryptionEnabled()));
+    const ext = archiveExtension(strategy);
     const storageKey = vol.appName && vol.orgSlug
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
@@ -1153,7 +1145,7 @@ async function runBackupUntracked(
     try {
       log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
 
-      let result: { sizeBytes: number; checksum: string; encrypted: boolean };
+      let result: { sizeBytes: number; checksum: string };
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
       let excludedPaths: string[] = [];
@@ -1232,7 +1224,7 @@ async function runBackupUntracked(
           sizeBytes: result.sizeBytes,
           storagePath: storageKey,
           checksum: `sha256:${result.checksum}`,
-          encrypted: result.encrypted,
+          encrypted: true,
           resolvedSource,
           sourceKind,
           excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,

@@ -57,7 +57,7 @@ Restore app volumes and databases from the app's Backups tab. Downloads and rest
 
 ## Opening an archive without Vardo
 
-Archives are encrypted with [age](https://age-encryption.org) to a key derived from `ENCRYPTION_MASTER_KEY`, so any age client opens them. Encrypted archives end in `.age` on the target (`.tar.gz.age`, `.dump.gz.age`). Archives written with encryption turned off keep their plain names.
+Archives are encrypted with [age](https://age-encryption.org) to a key derived from `ENCRYPTION_MASTER_KEY`, so any age client opens them. Every archive is encrypted and ends in `.age` on the target (`.tar.gz.age`, `.dump.gz.age`). A backup fails rather than upload plaintext when `ENCRYPTION_MASTER_KEY` is missing.
 
 Print the age key from the host, then decrypt with the stock `age` tool:
 
@@ -69,10 +69,6 @@ age -d -i key.txt 2026-10-06T02-00-00-000Z.tar.gz.age | tar -xz
 `vardo backup key` reads the master key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The age key opens archives only. It doesn't reveal the master key, so it can't decrypt env vars. Keep it as private as the archives: anyone holding both can read them. age stops with an error on a corrupt, truncated or tampered archive. Discard anything tar extracted before the error.
 
 Archives written before the switch to age used an in-house format and no longer restore. Delete them from the target.
-
-### Turning encryption off
-
-Archive encryption is on by default. An admin can turn it off on the backups page; new archives are then stored as plain `.tar.gz` and `.dump.gz`, readable by anyone with access to the bucket. It affects new backups only. Vardo's own database dump still holds env vars encrypted with the master key either way.
 
 ## What a backup does not contain
 

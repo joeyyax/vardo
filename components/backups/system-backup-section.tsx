@@ -12,7 +12,6 @@ import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { KeyEscrowCard } from "./key-escrow-card";
-import { ArchiveEncryptionCard } from "./archive-encryption-card";
 import { StatusBadge } from "./status-badge";
 import { getNextRun } from "./next-run";
 import { RetentionSummary } from "./retention-summary";
@@ -208,7 +207,6 @@ export function SystemBackupSection() {
       </div>
 
       <KeyEscrowCard heading="h3" />
-      <ArchiveEncryptionCard heading="h3" />
 
       <Card>
         <CardHeader>

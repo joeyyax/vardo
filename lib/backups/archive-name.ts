@@ -8,9 +8,14 @@ export const ENCRYPTED_SUFFIX = ".age";
 export const DOWNLOAD_HINT =
   "Downloads arrive decrypted. Archives copied straight from storage end in .age and open with any age client: age -d -i key.txt <file>. Get key.txt from vardo backup key.";
 
+/** Extension of an archive's plaintext, without the leading dot. */
+function plainExtension(format: ArchiveFormat): string {
+  return format === "dump" ? "dump.gz" : "tar.gz";
+}
+
 /** Extension for a new archive, without the leading dot. */
-export function archiveExtension(format: ArchiveFormat, encrypted: boolean): string {
-  return `${format === "dump" ? "dump.gz" : "tar.gz"}${encrypted ? ENCRYPTED_SUFFIX : ""}`;
+export function archiveExtension(format: ArchiveFormat): string {
+  return `${plainExtension(format)}${ENCRYPTED_SUFFIX}`;
 }
 
 /** The name with any `.age` suffix removed. */
@@ -28,5 +33,5 @@ export function formatFromArchiveName(name: string): ArchiveFormat | null {
 
 /** File name for a decrypted download. */
 export function downloadFileName(stem: string, format: ArchiveFormat | null): string {
-  return `${stem}.${archiveExtension(format ?? "tar", false)}`;
+  return `${stem}.${plainExtension(format ?? "tar")}`;
 }
