@@ -20,17 +20,23 @@ export const ROLLBACK_IMAGES_RETAINED = 3;
 
 // Timeouts (ms).
 
+/** Longest a deploy runs before the sweeper cancels it. DEPLOY_TIMEOUT_MINUTES overrides the 45-minute default. */
+export const DEPLOY_TIMEOUT_MS = (Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 45) * 60_000;
+
+/** What a deploy keeps back from its budget for clone, start and health checks. */
+const NON_BUILD_RESERVE_MS = 5 * 60_000;
+
 /** Time allowed for a git clone operation. */
 export const GIT_CLONE_TIMEOUT = 60_000;
 
 /** Time allowed for a full image build (Nixpacks, Railpack, Dockerfile). */
-export const BUILD_TIMEOUT = 300_000;
+export const BUILD_TIMEOUT = Math.max(DEPLOY_TIMEOUT_MS - NON_BUILD_RESERVE_MS, 5 * 60_000);
 
 /** Time allowed for `docker compose up` (standard services). */
 export const COMPOSE_UP_TIMEOUT = 120_000;
 
 /** Time allowed for `docker compose up` (compose-type deploys with builds). */
-export const COMPOSE_BUILD_UP_TIMEOUT = 600_000;
+export const COMPOSE_BUILD_UP_TIMEOUT = BUILD_TIMEOUT;
 
 /** Default health check timeout when the compose file doesn't specify one. */
 export const DEFAULT_HEALTH_CHECK_TIMEOUT = 60_000;

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DEPLOY_TIMEOUT_MS } from "@/lib/docker/constants";
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state — vi.mock is hoisted so factories must use vi.hoisted()
@@ -116,8 +117,7 @@ import { slotIsDown } from "@/lib/docker/rollback-monitor";
 const DEPLOY_ID = "deploy-1";
 const APP_ID = "app-1";
 
-/** Default budget is 15 minutes. */
-const PAST_BUDGET_MS = 20 * 60_000;
+const PAST_BUDGET_MS = DEPLOY_TIMEOUT_MS + 5 * 60_000;
 
 const RUNNING_ROW = {
   id: DEPLOY_ID,

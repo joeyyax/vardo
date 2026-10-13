@@ -12,6 +12,7 @@ import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/d
 import { stopProject } from "@/lib/docker/deploy";
 import { deployScope, deployWorker, publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
+import { DEPLOY_TIMEOUT_MS } from "@/lib/docker/constants";
 import { detectActiveSlot, type Slot as SlotName } from "@/lib/docker/slots";
 import {
   decideStandbySweep,
@@ -34,7 +35,7 @@ import {
 
 const log = logger.child("deploy-sweeper");
 
-const TIMEOUT_MINUTES = Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15;
+const TIMEOUT_MINUTES = DEPLOY_TIMEOUT_MS / 60_000;
 
 /** One rollback attempt per deployment. A failed attempt is not retried. */
 const ROLLBACK_ATTEMPT_TTL_MS = MAX_GRACE_PERIOD_SECONDS * 1000;
