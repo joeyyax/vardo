@@ -11,6 +11,7 @@ import {
   cronJobs,
   projects,
   volumes,
+  appMetricHours,
 } from "@/lib/db/schema";
 import { eq, and, isNull, isNotNull, inArray, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -375,6 +376,11 @@ export async function acceptTransfer(
       .update(backups)
       .set({ organizationId: transfer.destinationOrgId })
       .where(inArray(backups.appId, appIds));
+
+    await tx
+      .update(appMetricHours)
+      .set({ organizationId: transfer.destinationOrgId })
+      .where(inArray(appMetricHours.appId, appIds));
 
     await moveAppCronJobs(tx, appIds, transfer.destinationOrgId);
 
