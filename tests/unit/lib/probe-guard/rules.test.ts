@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PROBE_RULES, exceptionProblem, isExcepted, matchProbe, probeLabel, probePathRegexp } from "@/lib/probe-guard/rules";
+import { PROBE_RULES, SUGGESTED_RULES_ON, activeRules, exceptionProblem, isExcepted, matchProbe, probeLabel } from "@/lib/probe-guard/rules";
+import { probePathRegexp } from "@/lib/probe-guard/blocks";
 
 const PROBES = [
   "/.env", "/.env.local", "/.env.production", "/api/.env", "/.envrc",
@@ -50,13 +51,24 @@ describe("matchProbe", () => {
   });
 });
 
-describe("WordPress apps", () => {
-  it.each(["/wp-login.php", "/wp-admin/", "/xmlrpc.php", "/wp-config.php"])("keep %s", (path) => {
-    expect(matchProbe(path, { wordpress: true })).toBeNull();
+describe("opt-in rules", () => {
+  const OPT_IN = ["wp-login", "wp-admin", "xmlrpc", "wp-config"];
+
+  it("stay off until an app switches them on", () => {
+    const off = activeRules().map((r) => r.id);
+    for (const id of OPT_IN) expect(off).not.toContain(id);
+    expect(off).toHaveLength(PROBE_RULES.length - OPT_IN.length);
+    const on = activeRules(SUGGESTED_RULES_ON).map((r) => r.id);
+    for (const id of OPT_IN) expect(on).toContain(id);
   });
 
-  it.each(["/.env", "/.git/config", "/wp-config.php.bak", "/phpmyadmin/"])("still turn away %s", (path) => {
-    expect(matchProbe(path, { wordpress: true })).not.toBeNull();
+  it("let an app turn a default rule off", () => {
+    expect(activeRules({ dotenv: false }).map((r) => r.id)).not.toContain("dotenv");
+    expect(activeRules({ "wp-login": true }).map((r) => r.id)).toContain("wp-login");
+  });
+
+  it("still label a request Traefik routed here", () => {
+    expect(matchProbe("/wp-login.php")?.rule.id).toBe("wp-login");
   });
 });
 
@@ -78,13 +90,13 @@ describe("exceptions", () => {
 
 describe("probePathRegexp", () => {
   it("compiles and agrees with matchProbe", () => {
-    const re = new RegExp(probePathRegexp(PROBE_RULES).replace(/^\(\?i\)/, ""), "i");
+    const re = new RegExp(probePathRegexp(PROBE_RULES)!.replace(/^\(\?i\)/, ""), "i");
     for (const p of PROBES) expect(re.test(p), p).toBe(true);
     for (const p of NEAR_MISSES) expect(re.test(p), p).toBe(false);
   });
 
   it("uses only syntax Go's RE2 accepts", () => {
-    const re = probePathRegexp(PROBE_RULES);
+    const re = probePathRegexp(PROBE_RULES)!;
     expect(re).not.toMatch(/\(\?[=!<]/);
     expect(re).not.toMatch(/\\[1-9]/);
     expect(re).not.toContain("`");

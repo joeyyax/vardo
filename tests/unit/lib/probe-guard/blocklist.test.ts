@@ -188,7 +188,7 @@ describe("render priority", () => {
     expect(banClause([], many)!.match(/ClientIP/g)).toHaveLength(MAX_RENDERED_RANGES);
     const file = renderGuardFile({
       key: "a".repeat(64),
-      apps: [{ id: "app1", hosts: ["shop.example.com"], exceptions: [], wordpress: false, robotsTxt: false }],
+      apps: [{ id: "app1", hosts: ["shop.example.com"], exceptions: [], rules: {}, blocks: [], robotsTxt: false }],
       bannedIps: ["203.0.113.1"],
       bannedRanges: ["198.18.0.0/15", "2001:db8:4000::/34"],
       trapPaths: [],

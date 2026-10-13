@@ -1,21 +1,24 @@
 // Probe guard settings: per app on the app row, per instance in system_settings.
 
 import { z } from "zod";
-import { MAX_EXCEPTIONS, exceptionProblem } from "./rules";
-
-export const WORDPRESS_MODES = ["auto", "on", "off"] as const;
+import { BLOCK_KINDS, MAX_BLOCK_LENGTH, MAX_NOTE_LENGTH, blockProblem, type CustomBlock } from "./blocks";
+import { MAX_EXCEPTIONS, PROBE_RULE_IDS, exceptionProblem, type RuleOverrides } from "./rules";
 
 export type AppProbeGuard = {
   enabled: boolean;
-  /** Path prefixes the guard leaves alone. */
+  /** Path prefixes the managed rules leave alone. Custom blocks ignore them. */
   exceptions: string[];
-  /** "auto" detects WordPress from the image, template or compose file. */
-  wordpress: (typeof WORDPRESS_MODES)[number];
+  /** Switches by managed rule id; a rule without one keeps its default. */
+  rules: RuleOverrides;
+  /** The owner's own turn-away entries. */
+  blocks: CustomBlock[];
+  /** Templates the owner added, so the UI shows them as added. */
+  templates: string[];
   /** Vardo answers /robots.txt with trap lines. Only for apps without their own. */
   robotsTxt: boolean;
 };
 
-export const DEFAULT_APP_PROBE_GUARD: AppProbeGuard = { enabled: true, exceptions: [], wordpress: "auto", robotsTxt: false };
+export const DEFAULT_APP_PROBE_GUARD: AppProbeGuard = { enabled: true, exceptions: [], rules: {}, blocks: [], templates: [], robotsTxt: false };
 
 const pathListSchema = (max: number) =>
   z
@@ -29,11 +32,38 @@ const pathListSchema = (max: number) =>
       }
     });
 
+const ruleOverridesSchema = z.record(z.string(), z.boolean()).superRefine((rules, ctx) => {
+  for (const id of Object.keys(rules)) {
+    if (!PROBE_RULE_IDS.has(id)) ctx.addIssue({ code: "custom", message: `"${id.slice(0, 60)}" isn't a probe rule` });
+  }
+});
+
+export const customBlockSchema = z
+  .object({
+    kind: z.enum(BLOCK_KINDS),
+    value: z.string().trim().min(1).max(MAX_BLOCK_LENGTH),
+    note: z.string().trim().max(MAX_NOTE_LENGTH).optional(),
+    template: z.string().max(64).optional(),
+  })
+  .strict();
+
+const blockListSchema = z
+  .array(customBlockSchema)
+  .transform((list) => list.filter((b, i) => list.findIndex((o) => o.kind === b.kind && o.value === b.value) === i))
+  .superRefine((list, ctx) => {
+    for (const b of list) {
+      const problem = blockProblem(b);
+      if (problem) ctx.addIssue({ code: "custom", message: problem });
+    }
+  });
+
 export const appProbeGuardSchema = z
   .object({
     enabled: z.boolean(),
     exceptions: pathListSchema(MAX_EXCEPTIONS),
-    wordpress: z.enum(WORDPRESS_MODES),
+    rules: ruleOverridesSchema,
+    blocks: blockListSchema,
+    templates: z.array(z.string().max(64)).transform((list) => [...new Set(list)]),
     robotsTxt: z.boolean(),
   })
   .strict();
@@ -41,7 +71,9 @@ export const appProbeGuardSchema = z
 /** A stored value read defensively; anything malformed falls back to the default. */
 export function normalizeAppProbeGuard(raw: unknown): AppProbeGuard {
   if (raw == null) return DEFAULT_APP_PROBE_GUARD;
-  const parsed = appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, ...(raw as object) });
+  const stored = raw as Partial<AppProbeGuard>;
+  const rules = Object.fromEntries(Object.entries(stored.rules ?? {}).filter(([id]) => PROBE_RULE_IDS.has(id)));
+  const parsed = appProbeGuardSchema.safeParse({ ...DEFAULT_APP_PROBE_GUARD, ...stored, rules });
   return parsed.success ? parsed.data : DEFAULT_APP_PROBE_GUARD;
 }
 
@@ -61,6 +93,9 @@ export type InstanceProbeGuard = {
   traps: { enabled: boolean; paths: string[]; decoy: boolean };
   /** Contact in the console's security.txt. Empty falls back to ACME_EMAIL. */
   securityContact: string;
+  /** Entries for every app, added to each app's own. */
+  exceptions: string[];
+  blocks: CustomBlock[];
 };
 
 export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
@@ -71,6 +106,8 @@ export const DEFAULT_INSTANCE_PROBE_GUARD: InstanceProbeGuard = {
   shareBans: false,
   traps: { enabled: true, paths: DEFAULT_TRAP_PATHS, decoy: true },
   securityContact: "",
+  exceptions: [],
+  blocks: [],
 };
 
 export const instanceProbeGuardSchema = z
@@ -88,6 +125,8 @@ export const instanceProbeGuardSchema = z
       })
       .strict(),
     securityContact: z.union([z.literal(""), z.string().trim().email().max(254)]),
+    exceptions: pathListSchema(MAX_EXCEPTIONS),
+    blocks: blockListSchema,
   })
   .strict()
   .refine((s) => s.banMinutes <= s.maxBanHours * 60, { message: "The first ban can't be longer than the longest", path: ["banMinutes"] });
@@ -105,26 +144,6 @@ export function decoyPath(settings: InstanceProbeGuard): string | null {
   if (!settings.traps.enabled || !settings.traps.decoy) return null;
   const dir = settings.traps.paths.find((p) => p.endsWith("/"));
   return dir ? `${dir}${DECOY_FILE}` : null;
-}
-
-const WORDPRESS_IMAGE = /(?:^|\/)wordpress(?:[:@]|$)/i;
-const WORDPRESS_COMPOSE = /^\s*image:\s*["']?(?:\S+\/)?wordpress(?:[:@"'\s]|$)/im;
-
-/** Whether an app looks like WordPress from its image, template or compose file. */
-export function detectWordPress(app: {
-  imageName?: string | null;
-  templateName?: string | null;
-  composeContent?: string | null;
-  childImages?: readonly (string | null)[];
-}): boolean {
-  if (app.templateName?.toLowerCase().includes("wordpress")) return true;
-  const images = [app.imageName, ...(app.childImages ?? [])].filter((i): i is string => !!i);
-  if (images.some((i) => WORDPRESS_IMAGE.test(i))) return true;
-  return !!app.composeContent && WORDPRESS_COMPOSE.test(app.composeContent);
-}
-
-export function isWordPress(guard: AppProbeGuard, detected: boolean): boolean {
-  return guard.wordpress === "on" || (guard.wordpress === "auto" && detected);
 }
 
 /** Body for making a ban permanent or banning its address again. */

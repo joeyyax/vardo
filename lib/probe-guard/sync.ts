@@ -16,8 +16,9 @@ import {
 } from "./traefik-file";
 import { getAllowlist } from "./allowlist-store";
 import { getAbuseSettings, getDropRanges } from "./abuse-store";
-import { detectWordPress, isWordPress, normalizeAppProbeGuard } from "./settings";
+import { normalizeAppProbeGuard } from "./settings";
 import { getProbeGuardSettings, guardKey } from "./instance";
+import { SUGGESTED_RULES_ON } from "./rules";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { banRenderOrder } from "./ban-policy";
 import { blockableRanges } from "./blocklist/import";
@@ -34,15 +35,11 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
       id: apps.id,
       parentAppId: apps.parentAppId,
       probeGuard: apps.probeGuard,
-      imageName: apps.imageName,
-      templateName: apps.templateName,
-      composeContent: apps.composeContent,
     })
     .from(apps);
   const top = rows.filter((r) => !r.parentAppId);
   const parentOf = new Map(rows.map((r) => [r.id, r.parentAppId ?? r.id]));
-  const childImages = new Map<string, (string | null)[]>();
-  for (const r of rows) if (r.parentAppId) childImages.set(r.parentAppId, [...(childImages.get(r.parentAppId) ?? []), r.imageName]);
+  const instance = await getProbeGuardSettings();
 
   const hostRows = await db
     .select({ appId: domains.appId, domain: domains.domain })
@@ -57,12 +54,12 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
   return top.flatMap((app) => {
     const guard = normalizeAppProbeGuard(app.probeGuard);
     if (!guard.enabled) return [];
-    const detected = detectWordPress({ ...app, childImages: childImages.get(app.id) });
     return [{
       id: app.id,
       hosts: hosts.get(app.id) ?? [],
-      exceptions: guard.exceptions,
-      wordpress: isWordPress(guard, detected),
+      exceptions: [...new Set([...instance.exceptions, ...guard.exceptions])],
+      rules: guard.rules,
+      blocks: [...instance.blocks, ...guard.blocks],
       robotsTxt: guard.robotsTxt,
     }];
   });
@@ -134,7 +131,7 @@ export const CONSOLE_GUARD_ID = "vardo-console";
 export async function consoleGuardApp(): Promise<GuardApp | null> {
   const domain = (await getInstanceConfig().catch(() => null))?.domain || process.env.VARDO_DOMAIN || "";
   if (!domain || domain === "localhost") return null;
-  return { id: CONSOLE_GUARD_ID, hosts: [domain], exceptions: [], wordpress: false, robotsTxt: false, console: true };
+  return { id: CONSOLE_GUARD_ID, hosts: [domain], exceptions: [], rules: SUGGESTED_RULES_ON, blocks: [], robotsTxt: false, console: true };
 }
 
 export async function loadGuardState(): Promise<GuardState | null> {

@@ -10,7 +10,7 @@ import { getProbeGuardSettings } from "./instance";
 import type { BanDetail } from "./summary";
 import { hitsThisWeek } from "./hits";
 import { trapsSince } from "./events";
-import { detectWordPress } from "./settings";
+import { detectWordPress } from "./suggestions";
 
 const WEEK_MS = 7 * 86_400_000;
 
@@ -58,7 +58,7 @@ export async function guardOverview(appId?: string): Promise<GuardOverview> {
   return { stats, bans: bans.map((b) => ({ ...b, detail: details.get(b.id) ?? null, reportedTo: reports.get(b.id) ?? null })) };
 }
 
-/** Whether the app looks like WordPress to auto-detection. */
+/** Whether the app looks like WordPress from its image, template or compose file. */
 export async function appLooksLikeWordPress(appId: string): Promise<boolean> {
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, appId),

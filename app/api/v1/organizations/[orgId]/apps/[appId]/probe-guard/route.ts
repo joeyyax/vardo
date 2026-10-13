@@ -9,6 +9,7 @@ import { recordActivity } from "@/lib/activity";
 import { appProbeGuardSchema, normalizeAppProbeGuard } from "@/lib/probe-guard/settings";
 import { appLooksLikeWordPress, appServesOwnRobots, guardOverview } from "@/lib/probe-guard/overview";
 import { syncGuardFile } from "@/lib/probe-guard/sync";
+import { pendingSuggestion } from "@/lib/probe-guard/suggestions";
 import { getProbeGuardSettings, guardKey } from "@/lib/probe-guard/instance";
 import { isAppAdmin } from "@/lib/auth/admin";
 
@@ -30,15 +31,16 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     if (!app) return apiError.forbidden();
     const row = await readGuard(appId, orgId);
     if (!row) return apiError.notFound("app");
-    const [overview, wordpressDetected, instance, admin] = await Promise.all([
+    const [overview, looksLikeWordPress, instance, admin] = await Promise.all([
       guardOverview(appId),
       appLooksLikeWordPress(appId),
       getProbeGuardSettings(),
       isAppAdmin().catch(() => false),
     ]);
+    const settings = normalizeAppProbeGuard(row.probeGuard);
     return NextResponse.json({
-      settings: normalizeAppProbeGuard(row.probeGuard),
-      wordpressDetected,
+      settings,
+      suggestion: pendingSuggestion(settings, looksLikeWordPress),
       available: guardKey() !== null,
       traps: instance.traps.enabled ? instance.traps.paths : [],
       canBanPermanently: admin,
