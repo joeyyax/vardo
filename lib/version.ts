@@ -2,6 +2,7 @@ import pkg from "@/package.json";
 import type { VersionData } from "@/lib/types/version";
 import type { UpdateCommit } from "@/lib/bus/events";
 import { logger } from "@/lib/logger";
+import { GitHubError, githubGet, resetGitHubApiState } from "@/lib/github-api";
 
 const log = logger.child("version");
 
@@ -42,19 +43,10 @@ export async function getVersionData(): Promise<VersionData> {
   let releaseUrl = `https://github.com/${GITHUB_REPO}/releases`;
 
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: {
-          Accept: "application/vnd.github+json",
-          "User-Agent": "vardo-update-check",
-        },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const res = await githubGet(GITHUB_REPO, "/releases/latest", "application/vnd.github+json", { conditional: true });
 
     if (res.ok) {
-      const release = (await res.json()) as {
+      const release = JSON.parse(res.text) as {
         tag_name?: string;
         html_url?: string;
       };
@@ -81,82 +73,17 @@ export async function getVersionData(): Promise<VersionData> {
   return data;
 }
 
-// Commit update check. Installs track main, so a new commit is a new release.
-
 const UPDATE_BRANCH = "main";
-// Unauthenticated GitHub API allows 60 requests an hour per IP.
-const COMMIT_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const SHA_RE = /^[0-9a-f]{7,40}$/i;
-
-export type CommitUpdate = {
-  localSha: string;
-  remoteSha: string;
-  hasUpdate: boolean;
-};
-
-let commitCache: { result: CommitUpdate | null; checkedAt: number } | null = null;
 
 /** Commit the image was built from, inlined by next.config.ts from the GIT_SHA build arg. */
 export function getBuildSha(): string {
   return process.env.NEXT_PUBLIC_GIT_SHA ?? "";
 }
 
-/**
- * Compare the build commit to the head of main on GitHub. Returns null when
- * the build commit is unknown or GitHub can't be reached.
- */
-export async function getCommitUpdate(): Promise<CommitUpdate | null> {
-  const localSha = getBuildSha().trim();
-  if (!SHA_RE.test(localSha)) {
-    log.debug("Update check skipped: no build commit");
-    return null;
-  }
-
-  const now = Date.now();
-  if (commitCache && now - commitCache.checkedAt < COMMIT_CHECK_TTL_MS) {
-    return commitCache.result;
-  }
-  // Failures wait out the TTL too.
-  commitCache = { result: null, checkedAt: now };
-
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/commits/${UPDATE_BRANCH}`,
-      {
-        headers: {
-          Accept: "application/vnd.github.sha",
-          "User-Agent": "vardo-update-check",
-        },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
-    if (!res.ok) {
-      log.debug(`Update check failed: GitHub returned ${res.status}`);
-      return null;
-    }
-
-    const remoteSha = (await res.text()).trim();
-    if (!SHA_RE.test(remoteSha)) {
-      log.debug("Update check failed: unexpected GitHub response");
-      return null;
-    }
-
-    const result: CommitUpdate = {
-      localSha,
-      remoteSha,
-      hasUpdate: !remoteSha.toLowerCase().startsWith(localSha.toLowerCase()),
-    };
-    commitCache = { result, checkedAt: now };
-    return result;
-  } catch (err) {
-    log.debug("Update check failed:", err);
-    return null;
-  }
-}
-
 export function resetCommitUpdateCache(): void {
-  commitCache = null;
   channelCache.clear();
+  resetGitHubApiState();
 }
 
 // Channel update check: the head of main, or the latest GitHub release, compared with the build commit.
@@ -234,30 +161,23 @@ export function invalidateChannelUpdate(channel?: UpdateChannelName): void {
   else channelCache.clear();
 }
 
-const GITHUB_HEADERS = { "User-Agent": "vardo-update-check" };
-
-async function github(path: string, accept: string): Promise<Response> {
-  return fetch(`https://api.github.com/repos/${GITHUB_REPO}${path}`, {
-    headers: { ...GITHUB_HEADERS, Accept: accept },
-    signal: AbortSignal.timeout(5000),
-  });
-}
+const github = (path: string, accept: string, conditional = false) => githubGet(GITHUB_REPO, path, accept, { conditional });
 
 async function resolveTarget(channel: UpdateChannelName): Promise<{ sha: string; label: string; url: string; notes?: string } | null> {
   if (channel === "main") {
-    const res = await github(`/commits/${UPDATE_BRANCH}`, "application/vnd.github.sha");
-    if (!res.ok) return null;
-    const sha = (await res.text()).trim();
+    const res = await github(`/commits/${UPDATE_BRANCH}`, "application/vnd.github.sha", true);
+    if (!res.ok) throw new GitHubError(`GitHub returned ${res.status} for ${UPDATE_BRANCH}`, res.status);
+    const sha = res.text.trim();
     return SHA_RE.test(sha) ? { sha, label: sha.slice(0, 7), url: `https://github.com/${GITHUB_REPO}/commits/${UPDATE_BRANCH}` } : null;
   }
-  const rel = await github("/releases/latest", "application/vnd.github+json");
-  if (!rel.ok) return null;
-  const release = (await rel.json()) as { tag_name?: string; html_url?: string; body?: string };
+  const rel = await github("/releases/latest", "application/vnd.github+json", true);
+  if (!rel.ok) throw new GitHubError(`GitHub returned ${rel.status} for the latest release`, rel.status);
+  const release = JSON.parse(rel.text) as { tag_name?: string; html_url?: string; body?: string };
   const tag = release.tag_name;
   if (!tag || !/^[\w.-]{1,64}$/.test(tag)) return null;
-  const res = await github(`/commits/${encodeURIComponent(tag)}`, "application/vnd.github.sha");
-  if (!res.ok) return null;
-  const sha = (await res.text()).trim();
+  const res = await github(`/commits/${encodeURIComponent(tag)}`, "application/vnd.github.sha", true);
+  if (!res.ok) throw new GitHubError(`GitHub returned ${res.status} for release ${tag}`, res.status);
+  const sha = res.text.trim();
   if (!SHA_RE.test(sha)) return null;
   const url = release.html_url?.startsWith("https://") ? release.html_url : `https://github.com/${GITHUB_REPO}/releases`;
   const notes = typeof release.body === "string" && release.body.trim() ? release.body.trim() : undefined;
@@ -269,14 +189,14 @@ export async function fetchCompare(base: string, head: string): Promise<Compare 
   if (!SHA_RE.test(base) || !SHA_RE.test(head)) return null;
   try {
     const res = await github(`/compare/${base}...${head}`, "application/vnd.github+json");
-    return res.ok ? parseCompare(await res.json()) : null;
+    return res.ok ? parseCompare(JSON.parse(res.text)) : null;
   } catch (err) {
     log.debug("Compare failed:", err);
     return null;
   }
 }
 
-/** The channel's target against the build commit. Null without a build commit or GitHub. Cached like getCommitUpdate. */
+/** The channel's target against the build commit. Null without a build commit or when the check fails (see getGitHubCheckError). Cached five minutes. */
 export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh?: boolean } = {}): Promise<ChannelUpdate | null> {
   const localSha = getBuildSha().trim();
   if (!SHA_RE.test(localSha)) return null;
@@ -292,7 +212,7 @@ export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh
     let compare: Compare | null = null;
     if (!target.sha.toLowerCase().startsWith(localSha.toLowerCase())) {
       const res = await github(`/compare/${localSha}...${target.sha}`, "application/vnd.github+json");
-      compare = res.ok ? parseCompare(await res.json()) : null;
+      compare = res.ok ? parseCompare(JSON.parse(res.text)) : null;
     }
     const hasUpdate = channelHasUpdate(localSha, target.sha, compare);
     const result: ChannelUpdate = {

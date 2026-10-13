@@ -32,6 +32,9 @@ async function updateSection() {
     selfDeploy: status.selfDeploy,
     mode: status.policy.mode,
     channel: status.channel,
+    checkError: status.checkError
+      ? { message: status.checkError.message, rateLimited: status.checkError.rateLimited, resetsAt: status.checkError.resetsAt }
+      : null,
     available: update ? { hasUpdate: update.hasUpdate, version: update.targetLabel, commitsBehind: update.commitsBehind } : null,
     updating: active ? { from: active.fromVersion, to: active.toVersion, startedAt: iso(new Date(active.startedAt)) } : null,
     lastRun: run
