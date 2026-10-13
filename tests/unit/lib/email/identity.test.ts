@@ -25,15 +25,15 @@ describe("one instance name", () => {
     expect(fromDisplayName(undefined, "Vardo")).toBe("Vardo");
   });
 
-  it("leads the header with the instance and mutes Vardo", async () => {
+  it("leads the header with the instance linked to the console and mutes Vardo", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
-    expect(email.html).toMatch(/node-a<span[^>]*> · Vardo<\/span>/);
+    expect(email.html).toMatch(/<a[^>]*href="https:\/\/vardo\.example\.com"[^>]*>node-a<\/a><span[^>]*> · Vardo<\/span>/);
   });
 
-  it("signs the footer with the instance and the console host", async () => {
+  it("signs the text part with the instance and the console host", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
     expect(email.text).toContain("Sent by Vardo on node-a (vardo.example.com).");
-    expect(email.html).toContain("Sent by Vardo on node-a (vardo.example.com).");
+    expect(email.html).not.toContain("Sent by Vardo");
   });
 });
 

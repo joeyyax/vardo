@@ -59,10 +59,9 @@ describe("phase bar", () => {
 });
 
 describe("gauge", () => {
-  it("names the threshold ticks", async () => {
+  it("names the thresholds", async () => {
     const email = (await renderNotificationEmail(fixtureEvent("alert-host-disk"), FIXTURE_CONTEXT))!;
-    expect(email.html).toContain("Warn 85%");
-    expect(email.html).toContain("Critical 95%");
+    expect(email.html).toContain("alerts at 85%, critical at 95%");
   });
 });
 
@@ -70,7 +69,7 @@ describe("fact table", () => {
   it("stacks long labels over their values", async () => {
     const email = (await renderNotificationEmail(fixtureEvent("backup-summary-timed-out"), FIXTURE_CONTEXT))!;
     expect(email.html).toContain("agents / home-worker-.claude-.credentials.json</p>");
-    expect(email.html).toContain("white-space:nowrap;width:1%");
+    expect(email.html).toContain("width:110px");
   });
 });
 
