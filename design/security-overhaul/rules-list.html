@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Probe rules: stack templates</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600&family=Bricolage+Grotesque:wght@500;600&family=Geist+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mock.css">
+<style>
+  .tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .tpl { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; align-content: start; background: var(--card); }
+  .tpl.on { background: var(--muted); }
+  .tpl h4 { font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tpl .grp { display: grid; gap: 1px; }
+  .tpl .grp > b { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; margin-top: 4px; }
+  .tpl .grp > span { font-family: var(--mono); font-size: 11px; color: var(--muted-foreground); }
+  .tpl .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; }
+  .rl { border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; }
+  .rl-scroll { max-height: 340px; overflow-y: auto; }
+  .rl-head, .rl-row { display: grid; grid-template-columns: 124px minmax(0, 1.6fr) minmax(0, 1fr) 76px; gap: 12px; align-items: center; padding: 8px 16px; }
+  .rl-head { position: sticky; top: 0; z-index: 1; background: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; border-bottom: 1px solid var(--border); }
+  .rl-row { border-bottom: 1px solid var(--border); font-size: 13px; }
+  .rl-row:last-child { border-bottom: 0; }
+  .rl-row .path { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .rl-row small { display: block; color: var(--muted-foreground); font-size: 11px; font-family: inherit; }
+  .rl-row .end, .rl-head .end { text-align: right; }
+  .rl.bi .rl-head, .rl.bi .rl-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) 60px 52px; }
+  .rl.bi.noh .rl-head, .rl.bi.noh .rl-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) 60px; }
+  .rl.bi .pat { font-family: var(--mono); font-size: 11px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+  .rl-empty { padding: 18px 16px; color: var(--muted-foreground); font-size: 13px; }
+  .rl-add { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--muted); align-items: center; }
+  .rl-add .input { width: auto; }
+  .cap { font-size: 12px; color: var(--muted-foreground); margin-top: -8px; }
+  .link { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--brass); cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+  table.t td.sig { font-size: 12px; color: var(--muted-foreground); }
+  pre.def { margin: 0; padding: 14px 16px; background: var(--muted); border-radius: 12px; font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-x: auto; border: 1px solid var(--border); }
+</style></head>
+<body>
+<div class="note-bar"><span><b>Probe rules: stack templates.</b> A template is a bundle of entries for a stack. A scan fingerprints the stack and recommends the template; nothing is applied without a click. Built-in rule patterns are from <span class="mono">lib/probe-guard/rules.ts</span>. Rules marked "new rule" don't exist yet. Counts are made up.</span>
+<span><a href="index.html">All mocks</a><a href="app-c-sidebar-section.html#findings">App Findings</a><button class="btn sm" data-theme-toggle>Theme</button></span></div>
+
+<main class="main" style="margin:0 auto;padding-top:28px;max-width:1040px">
+
+  <div class="stack"><h2>1. App → Security → Settings → Probe rules</h2>
+  <p class="cap">This app is WordPress with a phpMyAdmin service. The scan recommended both templates; the recommendations prompt is on the <a href="app-c-sidebar-section.html#findings">Findings page</a>. Add or remove any template here, and type your own entries.</p></div>
+
+  <section class="card" id="app">
+    <div class="card-h"><div><h3>Probe rules</h3><p class="xs muted">Block common probes is the standard list and is on for every app. Stack templates adjust it: they let through the paths a stack needs and turn away extra paths it shouldn't expose.</p></div></div>
+    <div class="card-b">
+      <div class="stack"><span class="label">Templates</span><div class="tpls" id="app-tpls"></div></div>
+
+      <div class="stack">
+        <span class="label">Entries for this app <span id="app-count"></span></span>
+        <div class="rl">
+          <div class="rl-scroll" id="app-list"></div>
+          <form class="rl-add" id="app-add">
+            <select class="input" aria-label="Action"><option value="block">Turn away path</option><option value="allow">Let path through</option></select>
+            <input class="input mono" style="flex:1;min-width:200px" placeholder="/path/prefix   (* matches one segment)" required>
+            <input class="input" style="width:190px" placeholder="Note (optional)">
+            <button class="btn primary" type="submit">Add</button>
+          </form>
+        </div>
+        <p class="xs muted">Turn away answers 403 and counts toward bans like any probe. Let through skips a Block common probes rule for that path. Paths match from the start of the URL.</p>
+      </div>
+
+      <details class="fold" id="common-fold">
+        <summary><span><b>Block common probes</b> <span class="xs muted" id="common-sum">· 23 rules · read-only</span></span><span class="xs muted">Show</span></summary>
+        <div class="inner"><input class="input" id="bi-q" placeholder="Filter by name, path or category" style="max-width:320px"><div class="rl bi noh"><div class="rl-scroll" id="bi-list" style="max-height:300px"></div></div></div>
+      </details>
+    </div>
+    <div class="card-f"><span class="xs" id="app-state" style="color:var(--warn)">Unsaved changes</span><span class="row"><button class="btn sm" type="button" onclick="location.reload()">Discard</button><button class="btn sm primary" type="button">Save</button></span></div>
+  </section>
+
+  <div class="stack" style="margin-top:20px"><h2>2. Admin → Probe guard → Probe rules</h2>
+  <p class="cap">Instance entries apply to every app. The Templates table is the registry the scan reads, and where an admin adds a template of their own.</p></div>
+
+  <section class="card" id="adm">
+    <div class="card-h"><div><h3>Probe rules</h3><p class="xs muted">Entries here apply to every app. An app can add its own on top.</p></div></div>
+    <div class="card-b">
+      <div class="stack">
+        <span class="label">Instance entries <span id="adm-count"></span></span>
+        <div class="rl"><div class="rl-scroll" id="adm-list"></div>
+          <form class="rl-add" id="adm-add">
+            <select class="input" aria-label="Action"><option value="block">Turn away path</option><option value="allow">Let path through</option></select>
+            <input class="input mono" style="flex:1;min-width:200px" placeholder="/internal-admin/" required>
+            <input class="input" style="width:190px" placeholder="Note (optional)">
+            <button class="btn primary" type="submit">Add</button>
+          </form></div>
+      </div>
+      <details class="fold"><summary><span><b>Built-in rules</b> <span class="xs muted">· 23 · in Block common probes · hits are the last 7 days, all apps</span></span><span class="xs muted">Show</span></summary>
+        <div class="inner"><div class="rl bi"><div class="rl-scroll" id="bi-list-adm" style="max-height:340px"></div></div></div></details>
+    </div>
+    <div class="card-f"><span class="xs muted">Saved</span><button class="btn sm" disabled>Save</button></div>
+  </section>
+
+  <section class="card proposed">
+    <div class="card-h"><div><h3>Templates <span class="tag-new">proposed</span></h3><p class="xs muted">Each template says what it changes and how a scan recognizes the stack. The scan runs after each deploy and daily, and recommends a template when a signal matches and the app hasn't added or ignored it.</p></div><button class="btn">New template</button></div>
+    <div class="card-b" style="padding-top:8px">
+      <div class="list"><table class="t"><thead><tr><th>Template</th><th>Scan recognizes it by</th><th>Entries</th><th>Apps using</th><th>Recommended to</th></tr></thead><tbody>
+        <tr><td><b>Block common probes</b> <span class="badge">Built in</span> <span class="badge ok">Default</span></td><td class="sig">Not scanned: added to every app</td><td class="xs">23 rules</td><td class="xs">11 of 12</td><td class="xs">1 app</td></tr>
+        <tr><td><b>WordPress</b> <span class="badge">Built in</span></td><td class="sig">Image <span class="mono">wordpress</span> · login form at <span class="mono">/wp-login.php</span> · generator tag</td><td class="xs">2 let through, 4 turn away</td><td class="xs">3</td><td class="xs">1 app</td></tr>
+        <tr><td><b>Spring Boot Actuator</b> <span class="badge">Built in</span></td><td class="sig"><span class="mono">/actuator/health</span> returns status JSON</td><td class="xs">5 turn away</td><td class="xs">1</td><td class="xs">0</td></tr>
+        <tr><td><b>Laravel</b> <span class="badge">Built in</span></td><td class="sig"><span class="mono">laravel_session</span> cookie</td><td class="xs">3 turn away</td><td class="xs">2</td><td class="xs">1 app</td></tr>
+        <tr><td><b>phpMyAdmin</b> <span class="badge">Built in</span></td><td class="sig">Image <span class="mono">phpmyadmin</span> · <span class="mono">/phpmyadmin/</span> title</td><td class="xs">2 let through, 2 turn away</td><td class="xs">1</td><td class="xs">1 app</td></tr>
+        <tr><td><b>Staging basic-auth tools</b> <span class="badge info">Yours</span></td><td class="sig">Manual only</td><td class="xs">3 turn away</td><td class="xs">4</td><td class="xs">None</td></tr>
+      </tbody></table></div>
+      <div class="stack"><span class="label">Adding one in code</span>
+<pre class="def">// lib/probe-guard/templates/laravel.ts
+export const laravel: ProbeTemplate = {
+  id: "laravel",
+  name: "Laravel",
+  detect: [{ cookie: "laravel_session" }],
+  turnAway: ["/storage/logs", "/telescope", "/horizon"],
+};</pre>
+        <p class="xs muted">Drop a file in the folder and it shows up here and in scans. <span class="mono">detect</span> takes an image pattern, a probe path with a body match, a cookie or a response header; <span class="mono">letThrough</span> lists paths to skip a Block common probes rule for. "New template" in this card saves an entry list as a template with the same fields, minus the code.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="mock.js"></script>
+<script>
+// [id, name, category, pattern, answer, hits]
+const BUILTIN = [
+  ["dotenv","env files","Secrets",String.raw`^.*/\.env[^/]*$`,404,1204],
+  ["aws","cloud credentials","Secrets",String.raw`^.*/\.aws(?:/|$)`,404,188],
+  ["ssh","SSH keys","Secrets",String.raw`^.*/\.ssh(?:/|$)`,404,64],
+  ["editor-sftp","editor SFTP configs","Secrets",String.raw`^.*/(?:\.vscode/sftp\.json|sftp-config\.json)$`,404,31],
+  ["htaccess","Apache access files","Secrets",String.raw`^.*/\.ht(?:access|passwd)$`,404,15],
+  ["git","Git metadata","Version control",String.raw`^.*/\.git(?:/|$)`,404,410],
+  ["svn-hg","version control metadata","Version control",String.raw`^.*/\.(?:svn|hg|bzr)(?:/|$)`,404,22],
+  ["ds-store","macOS folder metadata","Version control",String.raw`^.*/\.DS_Store$`,404,9],
+  ["wp-login","WordPress login","WordPress",String.raw`^(?:/(?:wordpress|wp|blog))?/wp-login\.php(?:/|$)`,403,662],
+  ["wp-admin","WordPress admin","WordPress",String.raw`^(?:/(?:wordpress|wp|blog))?/wp-admin(?:/|$)`,403,318],
+  ["xmlrpc","WordPress XML-RPC","WordPress",String.raw`^(?:/(?:wordpress|wp|blog))?/xmlrpc\.php(?:/|$)`,403,161],
+  ["wp-config","WordPress config","Backups",String.raw`^.*/wp-config\.php$`,404,43],
+  ["phpmyadmin","phpMyAdmin","Database admin",String.raw`^/(?:phpmyadmin[^/]*|pma|myadmin|mysqladmin|adminer\.php)(?:/|$)`,403,120],
+  ["cgi-bin","CGI scripts","CGI",String.raw`^/cgi-bin(?:/|$)`,403,47],
+  ["phpunit","PHPUnit exploit (RCE)","Frameworks",String.raw`^.*/vendor/phpunit(?:/|$)`,403,38],
+  ["ignition","Laravel Ignition exploit (RCE)","Frameworks",String.raw`^/_ignition/execute-solution(?:/|$)`,403,12],
+  ["actuator","Spring Boot Actuator","Frameworks",String.raw`^/actuator/(?:env|heapdump|threaddump|configprops|mappings|beans|jolokia|gateway|logfile)(?:/|$)`,403,29],
+  ["actuator-index","Spring Boot Actuator","Frameworks",String.raw`^/actuator/?$`,403,17],
+  ["server-status","Apache server status","Server info",String.raw`^/server-(?:status|info)(?:/|$)`,403,26],
+  ["php-backup","config backups","Backups",String.raw`^.*/(?:wp-config|config|configuration|settings|database|db|local)\.php(?:\.bak|\.old|\.orig|\.save|\.swp|\.txt|\.dist|~)$`,404,52],
+  ["sql-dump","SQL dumps","Backups",String.raw`^/(?:backup|dump|db|database|data|site|www|mysql)\.sql(?:\.gz|\.zip|\.bz2)?$`,404,35],
+  ["traversal","path traversal","Traversal",String.raw`^.*/(?:etc/(?:passwd|shadow)|windows/win\.ini|proc/self/environ)$`,403,21],
+  ["router-exploits","router exploits","Routers",String.raw`^/(?:boaform|HNAP1|GponForm)(?:/|$)`,403,19],
+];
+// letThrough skips a Block common probes rule for that path. turnAway paths are new rules, so they're tagged.
+const TEMPLATES = [
+  { id: "common", kind: "ruleset", name: "Block common probes", rules: 23,
+    desc: "The standard list. Turns away well-known exploit probes before they reach the app.",
+    covers: ["env files, cloud credentials, SSH keys", "Git and other version-control metadata", "config backups and SQL dumps", "WordPress, phpMyAdmin, CGI and server-status paths", "Actuator, PHPUnit and Laravel Ignition exploits", "path traversal and router exploits"],
+    letThrough: [], turnAway: [] },
+  { id: "wordpress", name: "WordPress", desc: "For apps that run WordPress. Lets the login and admin paths reach the app and turns away files WordPress sites commonly leak. XML-RPC stays turned away.",
+    letThrough: ["/wp-login.php", "/wp-admin"], turnAway: ["/wp-content/debug.log", "/readme.html", "/license.txt", "/wp-json/wp/v2/users"], note: "Also covers /wordpress, /wp and /blog installs." },
+  { id: "phpmyadmin", name: "phpMyAdmin", desc: "For apps that run phpMyAdmin. Lets it through and turns away its setup files.",
+    letThrough: ["/phpmyadmin", "/pma"], turnAway: ["/phpmyadmin/setup", "/phpmyadmin/config.inc.php"] },
+  { id: "actuator", name: "Spring Boot Actuator", desc: "For Spring Boot apps. The sensitive endpoints are already turned away; this adds the rest.",
+    letThrough: [], turnAway: ["/actuator/prometheus", "/actuator/metrics", "/actuator/loggers", "/actuator/caches", "/actuator/shutdown"] },
+  { id: "laravel", name: "Laravel", desc: "For Laravel apps. Turns away log files and debug tools.",
+    letThrough: [], turnAway: ["/storage/logs", "/telescope", "/horizon"] },
+];
+const common = { on: true };
+function syncCommon() {
+  const s = document.getElementById("common-sum"), f = document.getElementById("common-fold");
+  if (!s) return;
+  s.textContent = common.on ? "· 23 rules · read-only" : "· not added";
+  f.querySelector(".inner").style.display = common.on ? "" : "none";
+}
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const tplName = (id) => TEMPLATES.find((t) => t.id === id).name;
+const tplEntries = (t) => [
+  ...t.letThrough.map((p) => ({ key: "t" + t.id + "a" + p, action: "allow", path: p, tpl: t.id })),
+  ...t.turnAway.map((p) => ({ key: "t" + t.id + "b" + p, action: "block", path: p, tpl: t.id })),
+];
+
+function entryList({ list, count, form, entries, tpls, tplRoot, recommended = [], onChange }) {
+  let n = 0;
+  const draw = () => {
+    list.innerHTML = entries.length
+      ? `<div class="rl-head"><span>Action</span><span>Path</span><span>Source</span><span class="end"></span></div>` + entries.map((e) => `
+        <div class="rl-row"><span>${e.action === "allow" ? `<span class="badge ok">Let through</span>` : `<span class="badge err">Turn away</span>`}</span>
+          <span class="path">${esc(e.path)}${e.note ? `<small>${esc(e.note)}</small>` : ""}</span>
+          <span>${e.tpl ? `<span class="badge info">${esc(tplName(e.tpl))}</span>` : `<span class="badge">Manual</span>`}</span>
+          <span class="end"><button class="link" data-rm="${e.key}">Remove</button></span></div>`).join("")
+      : `<div class="rl-empty">Nothing added.</div>`;
+    count.textContent = `· ${entries.length}`;
+    if (tplRoot) tplRoot.innerHTML = tpls.map((t) => {
+      const ruleset = t.kind === "ruleset";
+      const on = ruleset ? common.on : entries.some((e) => e.tpl === t.id);
+      const rec = !ruleset && !on && recommended.includes(t.id);
+      const lines = (arr) => arr.map((p) => `<span>${esc(p)}</span>`).join("");
+      const body = ruleset
+        ? `<div class="grp"><b>Turns away</b>${t.covers.map((c) => `<span style="font-family:inherit;font-size:12px">${esc(c)}</span>`).join("")}</div>
+           <div class="inherit"><span>Turned away, not banned: an address's first 4 probes in 10 minutes. The 5th bans it. A one-off check of <span class="mono">/.env</span> isn't reported either.</span></div>
+           ${on ? "" : `<p class="xs" style="color:var(--warn)">Not added: probes reach this app.</p>`}`
+        : `${t.letThrough.length ? `<div class="grp"><b>Lets through</b>${lines(t.letThrough)}</div>` : ""}
+           <div class="grp"><b>Turns away <span class="tag-new" style="margin-left:4px">new rules</span></b>${lines(t.turnAway.slice(0, 4))}${t.turnAway.length > 4 ? `<span>+ ${t.turnAway.length - 4} more</span>` : ""}</div>
+           ${t.note ? `<p class="xs muted">${t.note}</p>` : ""}`;
+      return `<div class="tpl ${on ? "on" : ""}"><h4>${t.name}${ruleset ? ` <span class="badge ok">Recommended · on by default</span>` : ""}${rec ? ` <span class="badge warn">Recommended by scan</span>` : ""}</h4><p class="xs muted">${t.desc}</p>
+        ${body}
+        <div class="foot"><span class="xs muted">${ruleset ? `${t.rules} rules` : `${t.letThrough.length + t.turnAway.length} entries`}</span>
+        ${on ? `<span class="row" style="gap:8px"><span class="badge ok">Added</span><button class="link" data-rmtpl="${t.id}">Remove</button></span>` : `<button class="btn sm" data-addtpl="${t.id}">Add</button>`}</div></div>`;
+    }).join("");
+  };
+  const change = () => { draw(); syncCommon(); onChange?.(); };
+  list.addEventListener("click", (e) => { const k = e.target.dataset.rm; if (k) { entries.splice(entries.findIndex((x) => x.key === k), 1); change(); } });
+  tplRoot?.addEventListener("click", (e) => {
+    const add = e.target.dataset.addtpl, rm = e.target.dataset.rmtpl;
+    if (add) { if (add === "common") common.on = true; else entries.unshift(...tplEntries(tpls.find((x) => x.id === add))); change(); }
+    if (rm) { if (rm === "common") common.on = false; else for (let i = entries.length - 1; i >= 0; i--) if (entries[i].tpl === rm) entries.splice(i, 1); change(); }
+  });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const [sel, path, note] = form.querySelectorAll("select,input");
+    entries.unshift({ key: "m" + ++n + Date.now(), action: sel.value, path: path.value.trim(), note: note.value.trim() });
+    path.value = ""; note.value = ""; change(); list.scrollTop = 0;
+  });
+  draw();
+}
+
+function catalog(root, { hits }) {
+  return (term = "") => {
+    const t = term.toLowerCase();
+    const rows = BUILTIN.filter((r) => !t || r.slice(0, 4).join(" ").toLowerCase().includes(t));
+    root.innerHTML = `<div class="rl-head"><span>Rule</span><span>Matches</span><span class="end">Answer</span>${hits ? `<span class="end">Hits</span>` : ""}</div>` +
+      (rows.map(([id, name, cat, pat, ans, h]) => `<div class="rl-row"><span>${esc(name)}<small>${cat} · ${id}</small></span><span class="pat">${esc(pat)}</span><span class="end">${ans}</span>${hits ? `<span class="end xs muted">${h}</span>` : ""}</div>`).join("") || `<div class="rl-empty">Nothing matches.</div>`);
+  };
+}
+
+const state = document.getElementById("app-state"); state.style.visibility = "hidden";
+entryList({
+  list: document.getElementById("app-list"), count: document.getElementById("app-count"), form: document.getElementById("app-add"),
+  tpls: TEMPLATES, tplRoot: document.getElementById("app-tpls"), recommended: ["wordpress", "phpmyadmin"], onChange: () => (state.style.visibility = "visible"),
+  entries: [{ key: "m0", action: "block", path: "/old-admin/*", note: "Retired panel, never public" }],
+});
+const drawApp = catalog(document.getElementById("bi-list"), { hits: false }); drawApp();
+document.getElementById("bi-q").addEventListener("input", (e) => drawApp(e.target.value)); syncCommon();
+
+entryList({
+  list: document.getElementById("adm-list"), count: document.getElementById("adm-count"), form: document.getElementById("adm-add"), tpls: [],
+  entries: [{ key: "a0", action: "block", path: "/internal-admin/", note: "Old admin panel" }],
+});
+catalog(document.getElementById("bi-list-adm"), { hits: true })();
+</script>
+</body></html>

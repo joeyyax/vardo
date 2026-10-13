@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>App Security — B: status-first page</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600&family=Bricolage+Grotesque:wght@500;600&family=Geist+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mock.css">
+<style>
+  .jump { position: sticky; top: 0; z-index: 2; background: var(--background); padding: 8px 0; display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+  .jump a { color: var(--muted-foreground); padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+  .jump a:hover { background: var(--accent); text-decoration: none; }
+  .hero { padding: 18px 20px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .hero .lead { display: grid; gap: 2px; }
+  .hero .big { font-family: "Bricolage Grotesque", sans-serif; font-size: 22px; font-weight: 600; }
+  .sumrow { display: flex; justify-content: space-between; gap: 16px; align-items: center; width: 100%; }
+  section[id] { scroll-margin-top: 56px; }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="alert" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.5 15 14H1L8 1.5Zm-.75 5v3.5h1.5V6.5h-1.5Zm0 4.75v1.5h1.5v-1.5h-1.5Z"/></symbol>
+  <symbol id="info" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm-.75 3.5h1.5V6h-1.5V4.5Zm0 3h1.5v4h-1.5v-4Z"/></symbol>
+</defs></svg>
+
+<div class="note-bar"><span><b>App · Security — B: one status-first page.</b> One scroll, ordered by urgency. Settings stay folded until you need them.</span>
+<span><a href="index.html">All mocks</a><a href="app-a-sections.html">A: three sections</a><button class="btn sm" data-theme-toggle>Theme</button></span></div>
+
+<div class="shell">
+  <nav class="rail" aria-label="App sections">
+    <div class="group"><a href="#">Overview</a><a href="#">Deployments</a></div>
+    <div class="group"><span class="label">Configure</span><a href="#">Variables</a><a href="#">Networking</a><a href="#">Resources</a><a href="#">Cron</a><a href="#">Settings</a></div>
+    <div class="group"><span class="label">Observe</span><a href="#">Stability</a><a href="#">Logs</a><a href="#">Metrics</a><a href="#">Errors</a><a class="on" href="#">Security <span class="count">3</span></a></div>
+    <div class="group"><span class="label">Data</span><a href="#">Volumes</a><a href="#">Backups</a></div>
+  </nav>
+
+  <main class="main">
+    <div class="crumb"><span class="muted">Apps /</span><span class="title">Marketing site</span><span class="badge ok"><i class="dot"></i>Running</span><span class="muted xs">acme.com</span></div>
+
+    <div class="card hero">
+      <div class="lead"><span class="label">Security</span><span class="big">1 critical, 2 warnings need a look</span><span class="xs muted">Last scan 3 hours ago · probe guard on · 4 addresses banned in 7 days</span></div>
+      <button class="btn">Scan now</button>
+    </div>
+
+    <nav class="jump" aria-label="On this page"><a href="#findings">Findings</a><a href="#protection">Protection</a><a href="#activity">Activity</a></nav>
+
+    <section id="findings" class="stack">
+      <div class="row between"><h3>Needs attention</h3><a class="xs" href="#history">Scan history</a></div>
+      <div class="finding critical"><svg class="ico"><use href="#alert"/></svg><div class="body"><p class="t">Port 5432 is reachable from the internet</p><p class="xs muted">Remove the published port or bind it to 127.0.0.1.</p><p class="xs mono muted">acme.com:5432 · postgres</p></div></div>
+      <div class="finding warning"><svg class="ico"><use href="#alert"/></svg><div class="body"><p class="t">No Content-Security-Policy header</p><p class="xs muted">Browsers can't limit where scripts and frames load from.</p></div><a class="xs" href="#headers">Fix below</a></div>
+      <div class="finding warning"><svg class="ico"><use href="#alert"/></svg><div class="body"><p class="t">Bind mount outside the allowed host roots</p><p class="xs muted mono">/srv/shared/uploads</p></div><button class="btn sm">Allow path…</button></div>
+      <details class="fold"><summary><span class="muted">1 informational finding</span><span class="xs muted">Show</span></summary>
+        <div class="inner"><div class="finding info"><svg class="ico"><use href="#info"/></svg><div class="body"><p class="t">Server header reveals software</p><p class="xs muted">Responses name <span class="mono">nginx/1.25.3</span>.</p></div></div></div></details>
+    </section>
+
+    <section id="protection" class="stack">
+      <h3>Protection</h3>
+      <details class="fold" open>
+        <summary><span class="sumrow"><span><b>Probe guard</b><br><span class="xs muted">On · WordPress not detected · 1 exception · robots.txt off</span></span><span class="badge ok"><i class="dot"></i>On</span></span></summary>
+        <div class="inner">
+          <div class="inherit"><svg width="14" height="14"><use href="#info"/></svg>Thresholds and traps come from the instance: 5 probes in 10 minutes, then a 1 hour ban. <a href="admin-a-sections.html#rules">Instance rules</a></div>
+          <div class="toggle"><div class="copy"><label>Turn away exploit probes</label><p class="xs muted">/.env, /.git/, /wp-login.php and similar get a short 403 or 404 at the proxy.</p></div><input class="switch" type="checkbox" checked></div>
+          <div class="grid2"><div class="field"><label>WordPress</label><select class="input"><option>Detect (not WordPress)</option></select></div>
+            <div class="field"><label>Exceptions</label><textarea class="input" rows="2">/actuator</textarea></div></div>
+          <div class="toggle"><div class="copy"><label>Serve robots.txt with trap lines</label><p class="xs muted">For apps without their own.</p></div><input class="switch" type="checkbox"></div>
+          <div class="row" style="justify-content:flex-end"><button class="btn sm">Save</button></div>
+        </div>
+      </details>
+      <details class="fold" id="headers">
+        <summary><span class="sumrow"><span><b>Response headers</b><br><span class="xs muted">Recommended · HSTS 1 year · nosniff · same-site framing · no CSP</span></span><span class="badge warn">CSP missing</span></span></summary>
+        <div class="inner">
+          <div class="row between"><p class="xs muted">Added to HTTPS responses. They replace the app's own for the same header.</p><span class="row"><button class="btn sm" style="background:var(--accent)">Recommended</button><button class="btn sm">Off</button></span></div>
+          <div class="toggle"><div class="copy"><label>HSTS</label><p class="xs muted">HTTPS only, remembered for 1 year.</p></div><input class="switch" type="checkbox" checked></div>
+          <div class="toggle"><div class="copy"><label>Block MIME sniffing</label></div><input class="switch" type="checkbox" checked></div>
+          <div class="field"><label>Content-Security-Policy (report only)</label><textarea class="input" rows="2" placeholder="default-src 'self'"></textarea></div>
+          <div class="row" style="justify-content:flex-end"><button class="btn sm">Save</button></div>
+        </div>
+      </details>
+    </section>
+
+    <section id="activity" class="stack">
+      <div class="row between"><h3>Activity</h3><div class="range"><button>24h</button><button class="on">7d</button><button>30d</button><button>90d</button></div></div>
+      <p class="muted">212 probes turned away, most for <span class="mono">/.env</span> (96). 4 addresses banned, 2 still active.</p>
+      <ul class="list">
+        <li><div><p class="mono">203.0.113.42</p><p class="xs muted">Hit 5 probe paths in 3 min · expires in 41 min</p></div><span class="row"><button class="btn sm">Allow</button><button class="btn sm">Unban</button></span></li>
+        <li><div><p class="mono">198.51.100.7</p><p class="xs muted">Fetched trap path /admin-backup/ · permanent</p></div><span class="row"><button class="btn sm">Allow</button><button class="btn sm">Unban</button></span></li>
+      </ul>
+      <details class="fold"><summary><span>What was probed and top sources</span><span class="xs muted">Show</span></summary>
+        <table class="t"><tbody>
+          <tr><td class="mono">/.env</td><td style="width:40%"><div class="bar"><i style="width:100%"></i></div></td><td class="muted xs" style="text-align:right">96</td></tr>
+          <tr><td class="mono">/wp-login.php</td><td><div class="bar"><i style="width:62%"></i></div></td><td class="muted xs" style="text-align:right">60</td></tr>
+        </tbody></table></details>
+      <details class="fold" id="history"><summary><span>Scan history <span class="muted xs">· 6 earlier scans</span></span><span class="xs muted">Show</span></summary>
+        <table class="t"><tbody>
+          <tr><td>Yesterday 04:00</td><td class="muted">Scheduled</td><td><span class="badge err">1 critical</span> <span class="badge warn">2 warnings</span></td></tr>
+          <tr><td>Oct 10 16:12</td><td class="muted">After deploy</td><td><span class="badge warn">3 warnings</span></td></tr>
+        </tbody></table></details>
+    </section>
+  </main>
+</div>
+<script src="mock.js"></script>
+</body></html>
