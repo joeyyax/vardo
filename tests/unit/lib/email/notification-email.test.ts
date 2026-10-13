@@ -21,9 +21,10 @@ describe("notification subjects", () => {
     expect(subjectLine(fixture("deploy-success"))).toBe("✓ acme-web deployed · a1b2c3d");
   });
 
-  it("names the failing phase", () => {
-    expect(subjectLine(fixture("deploy-failed-build"))).toBe("✗ Shop Staging failed at build");
-    expect(subjectLine(fixture("deploy-failed"))).toBe("✗ search-data failed at health check");
+  it("names the failing phase, then the commit for a build or what's still serving", () => {
+    expect(subjectLine(fixture("deploy-failed-build"))).toBe("✗ Shop Staging failed at build · 9f8e7d6");
+    expect(subjectLine(fixture("deploy-failed"))).toBe("✗ search-data failed at health check · still serving the previous version");
+    expect(subjectLine({ ...fixture<"deploy.failed">("deploy-failed"), serving: "none" })).toBe("✗ search-data failed at health check");
   });
 
   it("never repeats the instance at the end", () => {
@@ -44,7 +45,7 @@ describe("notification subjects", () => {
 
   it("never says Unknown when the display name is missing", () => {
     const event = { ...fixture<"deploy.failed">("deploy-failed"), projectName: "" };
-    expect(subjectLine(event)).toBe("✗ search-data failed at health check");
+    expect(subjectLine(event)).toBe("✗ search-data failed at health check · still serving the previous version");
     const bare = { ...event, appName: undefined, project: undefined };
     expect(subject(bare)).not.toMatch(/unknown/i);
   });
@@ -117,20 +118,24 @@ describe("notification emails", () => {
     for (const fact of body.facts ?? []) expect(email!.text).toContain(fact.value);
   });
 
-  it("puts the deploy facts, phases and links in a success email", async () => {
+  it("puts the commit, phases and links in a success email", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Commit: a1b2c3d Fix donation form validation on mobile <https://github.com/acme/acme-web/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678>");
-    expect(email.text).toContain("Phases\nClone 3% · Build 69% · Pull 5% · Start 7% · Health wait 14% · Cleanup 2%");
-    expect(email.text).toContain("Slot: blue → green");
+    expect(email.text).toContain("a1b2c3d Fix donation form validation on mobile, by Alex Kim, is live on acme.example.org.");
+    expect(email.html).toContain('href="https://github.com/acme/acme-web/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"');
+    expect(email.text).toContain("Where the time went\nClone 3 s · Build 1 min 2 s · Pull 4 s · Start 6 s · Health 12 s · Cleanup 2 s");
+    expect(email.text).toContain("Took: 1 min 32 s (usual 1 min 40 s)");
+    expect(email.text).toContain("Rollback: The previous version is kept ready");
+    expect(email.html).toContain('href="https://vardo.example.com/projects/prj_acme"');
     expect(email.html).toContain('href="https://acme.example.org"');
     expect(email.text).toContain("Deployment log: https://vardo.example.com/apps/app_9xk2/deployments");
   });
 
-  it("shows the crash line, the log tail and what's serving in a failure email", async () => {
+  it("says what's serving, the cause once and the crash loop's last cycle in a failure email", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-failed"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Crash: Error: Your database version (1.13.3) is incompatible");
-    expect(email.text).toContain("Last log lines\n    meilisearch-1");
-    expect(email.text).toContain("The previous release is still serving.");
+    expect(email.text).toContain("Nothing is down. The previous version is still serving.");
+    expect(email.text).toContain("meilisearch crashed on start\nIt restarted 5 times before Vardo gave up.");
+    expect(email.text.split("is incompatible with your current engine").length - 1).toBe(1);
+    expect(email.text).toContain("Last log lines\n    meilisearch-1  | 2026-10-09T17:02:19Z");
     expect(email.text).not.toContain("See logs above");
   });
 
