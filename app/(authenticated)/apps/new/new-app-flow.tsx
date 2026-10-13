@@ -402,29 +402,38 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
 
   /** Creates the opted-in GitHub repo and points the app at it. */
   async function createRepoForApp(appId: string, installationId: string): Promise<boolean> {
-    const repoRes = await fetch("/api/v1/github/repos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        installationId,
-        name: name.trim(),
-        description: description.trim() || undefined,
-        isPrivate: true,
-      }),
-    });
-    if (!repoRes.ok) {
-      const err = await repoRes.json().catch(() => ({}));
-      toast.error(err.error || "Couldn't create repository — the app has no source yet");
+    try {
+      const repoRes = await fetch("/api/v1/github/repos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          installationId,
+          name: name.trim(),
+          description: description.trim() || undefined,
+          isPrivate: true,
+        }),
+      });
+      if (!repoRes.ok) {
+        const err = await repoRes.json().catch(() => ({}));
+        toast.error(err.error || "Couldn't create repository — the app has no source yet");
+        return false;
+      }
+      const { repo } = await repoRes.json();
+      const linkRes = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gitUrl: repo.cloneUrl, gitBranch: repo.defaultBranch }),
+      });
+      if (!linkRes.ok) {
+        toast.error("Repository created, but couldn't link it to the app");
+        return false;
+      }
+      toast.success(`Repository created: ${repo.fullName}`);
+      return true;
+    } catch {
+      toast.error("Couldn't finish repository setup");
       return false;
     }
-    const { repo } = await repoRes.json();
-    await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gitUrl: repo.cloneUrl, gitBranch: repo.defaultBranch }),
-    });
-    toast.success(`Repository created: ${repo.fullName}`);
-    return true;
   }
 
   async function handleSubmit() {
@@ -491,28 +500,42 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       // Runs after the app exists so a rejected slug leaves no orphaned repo.
       const repoReady = repoOwner ? await createRepoForApp(app.id, repoOwner.id) : true;
 
-      // Bulk-create env vars from .env content
+      let envReady = true;
       if (envContent.trim()) {
-        await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/env-vars`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: envContent }),
-        });
+        try {
+          const envRes = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/env-vars`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: envContent }),
+          });
+          envReady = envRes.ok;
+        } catch {
+          envReady = false;
+        }
+        if (!envReady) toast.error("App created, but couldn't save variables");
       }
 
-      const deploying = autoDeploy && repoReady;
+      let deploying = false;
+      if (autoDeploy && repoReady && envReady) {
+        try {
+          const deployRes = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
+            method: "POST",
+          });
+          deploying = deployRes.ok;
+        } catch {
+          deploying = false;
+        }
+        if (!deploying) toast.error("App created, but couldn't start deployment");
+      }
       if (deploying) {
-        fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
-          method: "POST",
-        }).catch(() => {
-          // The detail page shows the deploy.
-        });
         toast.success("App created — deploying...");
-      } else {
+      } else if (repoReady && envReady && !autoDeploy) {
         toast.success("App created");
       }
       // The app page is the only one that streams the deploy log.
       router.push(
-        deploying || !projectName ? `/apps/${app.name}` : `/projects/${projectName}`
+        autoDeploy || !repoReady || !envReady || !projectName
+          ? `/apps/${app.name}`
+          : `/projects/${projectName}`
       );
     } catch (err) { toast.error(err instanceof Error ? err.message : "Couldn't create app"); }
     finally { setCreating(false); }
