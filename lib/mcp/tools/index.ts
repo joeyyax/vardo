@@ -34,6 +34,7 @@ import { registerListAttention } from "./list-attention";
 import { registerBackupStatusTools } from "./backup-status";
 import { registerRunBackup } from "./run-backup";
 import { registerDrillBackup } from "./drill-backup";
+import { registerRunSystemBackup } from "./run-system-backup";
 import { registerListDeployments } from "./list-deployments";
 import { registerListActivity } from "./list-activity";
 import { registerSecuritySummary } from "./security-summary";
@@ -77,6 +78,7 @@ export function registerAllTools(
   registerBackupStatusTools(server, context);
   registerRunBackup(server, context);
   registerDrillBackup(server, context);
+  registerRunSystemBackup(server, context);
   registerListDeployments(server, context);
   registerListActivity(server, context);
   registerSecuritySummary(server, context);
