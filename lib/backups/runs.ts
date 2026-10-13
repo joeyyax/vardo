@@ -450,23 +450,35 @@ async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
 
 /** Volumes backed up this week, still backed up, with no success in 48 hours. */
 export async function loadStaleVolumes(organizationId: string, now: number) {
+  // Grouped by app ID alone, so a rename doesn't split a volume in two.
   const rows = await db
     .select({
       appId: backups.appId,
-      appName: sql<string | null>`coalesce(max(${apps.displayName}), ${backups.appName})`,
+      recordedName: sql<string | null>`max(${backups.appName})`,
       volumeName: backups.volumeName,
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
     })
     .from(backups)
-    .leftJoin(apps, eq(apps.id, backups.appId))
     .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
-    .groupBy(backups.appId, backups.appName, backups.volumeName);
+    .groupBy(backups.appId, backups.volumeName);
   const stale = rows.filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS));
+  const appIds = [...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))];
   // A volume the engine now skips, or a deploy removed, leaves rows behind for the week.
-  const current = await stillBackedUp([...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))]);
+  const [current, names] = await Promise.all([
+    stillBackedUp(appIds),
+    appIds.length
+      ? db.query.apps.findMany({ where: inArray(apps.id, appIds), columns: { id: true, displayName: true } })
+      : [],
+  ]);
+  const nameOf = new Map((names ?? []).map((a) => [a.id, a.displayName]));
   return stale
     .filter((r) => !r.appId || current.has(volumeKey(r.appId, r.volumeName!)))
-    .map((r) => ({ appId: r.appId, appName: r.appName ?? r.volumeName!, volumeName: r.volumeName!, lastSuccessAt: r.lastSuccess?.toISOString() ?? null }));
+    .map((r) => ({
+      appId: r.appId,
+      appName: (r.appId && nameOf.get(r.appId)) || r.recordedName || r.volumeName!,
+      volumeName: r.volumeName!,
+      lastSuccessAt: r.lastSuccess?.toISOString() ?? null,
+    }));
 }
 
 type RunRow = typeof backupRuns.$inferSelect;

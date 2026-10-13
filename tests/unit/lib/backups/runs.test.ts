@@ -310,6 +310,9 @@ describe("stale volumes in a summary", () => {
     { appId: "a9", appName: "Other", volumeName: "pgdata", lastSuccessAt: null },
   ];
 
+  const groupedBy: unknown[][] = [];
+  let staleRows = stale;
+
   const runRow = (over: Record<string, unknown>) => ({
     id: "r1",
     organizationId: "org1",
@@ -324,15 +327,22 @@ describe("stale volumes in a summary", () => {
     dbMock.reset();
     vi.clearAllMocks();
     mocks.settings.mockResolvedValue({ categories: { backups: true, backupSummaries: false, host: true, apps: true }, nightlyBackupTime: "02:00" });
-    // The stale query joins apps; the history query doesn't.
+    // The stale query groups; the history query doesn't.
+    groupedBy.length = 0;
     (dbMock.db as Record<string, unknown>).select = vi.fn(() => {
       let stalePass = false;
       const chain: Record<string, unknown> = {};
-      for (const m of ["from", "where", "orderBy", "groupBy"]) chain[m] = () => chain;
-      chain.leftJoin = () => ((stalePass = true), chain);
-      chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(stalePass ? stale.map((s) => ({ ...s, lastSuccess: null })) : []);
+      for (const m of ["from", "where", "orderBy"]) chain[m] = () => chain;
+      chain.groupBy = (...cols: unknown[]) => ((stalePass = true), groupedBy.push(cols), chain);
+      chain.then = (resolve: (rows: unknown[]) => unknown) =>
+        resolve(stalePass ? staleRows.map(({ appName, ...s }) => ({ ...s, recordedName: appName, lastSuccess: null })) : []);
       return chain;
     });
+    staleRows = stale;
+    dbMock.query.apps.findMany.mockResolvedValue([
+      { id: "a1", displayName: "Shop" },
+      { id: "a9", displayName: "Other" },
+    ]);
     dbMock.query.volumes.findMany.mockResolvedValue([
       { appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
       { appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
@@ -348,6 +358,15 @@ describe("stale volumes in a summary", () => {
     expect(await loadStaleVolumes("org1", t0)).toEqual([]);
     dbMock.query.volumes.findMany.mockResolvedValue([]);
     expect(await loadStaleVolumes("org1", t0)).toEqual([]);
+  });
+
+  it("groups by app ID and names the app as it's called now", async () => {
+    staleRows = [{ appId: "a1", appName: "shop-old", volumeName: "data", lastSuccessAt: null }];
+    dbMock.query.apps.findMany.mockResolvedValue([{ id: "a1", displayName: "Shop" }]);
+    const { loadStaleVolumes } = await import("@/lib/backups/runs");
+    const { backups } = await import("@/lib/db/schema");
+    expect(await loadStaleVolumes("org1", t0)).toEqual([{ appId: "a1", appName: "Shop", volumeName: "data", lastSuccessAt: null }]);
+    expect(groupedBy[0]).toEqual([backups.appId, backups.volumeName]);
   });
 
   it("lists only a single job's own apps", () => {
