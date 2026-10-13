@@ -81,3 +81,44 @@ export async function receiveSharedBan(
   });
   return { status: 200, body: { ok: true, result: outcome.status } };
 }
+
+export const PROBE_LIFTS_PATH = "/api/v1/mesh/probe-bans/lift";
+
+export const sharedLiftSchema = z
+  .object({ ip: z.string().max(64).refine((v) => normalizeIp(v) !== null, "Not an IP address") })
+  .strict();
+
+/**
+ * Tells every directly linked instance an admin lifted this address's ban, so it doesn't stay blocked elsewhere.
+ * Sent only for a local or mesh ban an admin lifted, never for a received lift. A refusal or an older instance
+ * without this endpoint just leaves its copy to expire.
+ */
+export async function shareLift(ip: string, deps: ShareDeps = defaultShareDeps): Promise<{ sent: number; failed: number }> {
+  const parsed = sharedLiftSchema.safeParse({ ip });
+  if (!parsed.success) return { sent: 0, failed: 0 };
+  const peers = await deps.peers();
+  const results = await Promise.allSettled(peers.map((p) => deps.post(p.id, PROBE_LIFTS_PATH, parsed.data)));
+  const failed = results.filter((r) => r.status === "rejected").length;
+  if (failed) log.info(`Shared a ban lift with ${peers.length - failed} of ${peers.length} linked instances`);
+  return { sent: peers.length - failed, failed };
+}
+
+export type ReceiveLiftDeps = {
+  sharingEnabled: () => Promise<boolean>;
+  /** Ends this instance's active bans for the address, leaving permanent and blocklist ones. Returns how many. */
+  lift: (ip: string, peer: { id: string; name: string }) => Promise<number>;
+};
+
+/** Applies a lift a linked instance sent. The caller has checked the peer's token, signature and nonce. Never sent on. */
+export async function receiveSharedLift(
+  peer: { id: string; name: string },
+  body: unknown,
+  deps: ReceiveLiftDeps,
+): Promise<ReceiveResult> {
+  if (!(await deps.sharingEnabled())) return { status: 403, body: { error: "This instance doesn't accept shared bans" } };
+  const parsed = sharedLiftSchema.safeParse(body);
+  if (!parsed.success) return { status: 400, body: { error: parsed.error.issues[0]?.message ?? "Invalid address" } };
+  const ip = normalizeIp(parsed.data.ip);
+  if (!ip) return { status: 400, body: { error: "Not an IP address" } };
+  return { status: 200, body: { ok: true, lifted: await deps.lift(ip, peer) } };
+}

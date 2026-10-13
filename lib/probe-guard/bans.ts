@@ -17,6 +17,7 @@ import { PERMANENT_UNTIL } from "./permanent";
 import { getAllowlist } from "./allowlist-store";
 import { bansCovered } from "./allowlist";
 import type { BanRef } from "./block-source";
+import { shareBan, shareLift } from "./mesh-share";
 
 const log = logger.child("probe-guard");
 
@@ -144,7 +145,6 @@ export async function createBan(req: BanRequest, now = new Date()): Promise<BanO
   }
 
   if (!req.origin && settings.shareBans) {
-    const { shareBan } = await import("./mesh-share");
     void shareBan(ban).catch((err) => log.warn("Couldn't share a ban with linked instances:", err));
   }
 
@@ -156,15 +156,42 @@ export async function createBan(req: BanRequest, now = new Date()): Promise<BanO
   return { status: "banned", ban };
 }
 
-/** Lifts a ban now. Returns false when there was nothing active to lift. */
-export async function liftBan(id: string, userId: string | null, scope?: { appId: string }): Promise<boolean> {
+/** Lifts a ban now and tells linked instances. Returns false when there was nothing active to lift. */
+export async function liftBan(id: string, userId: string | null, scope?: { appId: string }, now = new Date()): Promise<boolean> {
   const where = scope
     ? and(eq(probeBans.id, id), eq(probeBans.appId, scope.appId), isNull(probeBans.liftedAt))
     : and(eq(probeBans.id, id), isNull(probeBans.liftedAt));
-  const [row] = await db.update(probeBans).set({ liftedAt: new Date(), liftedBy: userId }).where(where).returning();
+  const [row] = await db.update(probeBans).set({ liftedAt: now, liftedBy: userId }).where(where).returning();
   if (!row) return false;
   await syncGuardFile().catch((err) => log.warn("Couldn't write the probe guard file:", err));
+  // A blocklist ban is this instance's own source and an ended one has nothing left to lift elsewhere.
+  if (row.reason !== "blocklist" && row.expiresAt > now && (await getProbeGuardSettings()).shareBans) {
+    void shareLift(row.ip).catch((err) => log.warn("Couldn't share a ban lift with linked instances:", err));
+  }
   return true;
+}
+
+/**
+ * Ends this instance's active bans for an address because a linked instance's admin lifted theirs. Leaves permanent
+ * bans (a deliberate local choice) and blocklist bans (an independent source). Not sent on, so it can't loop.
+ */
+export async function liftBansForPeer(ip: string, peer: { id: string }, now = new Date()): Promise<number> {
+  const lifted = await db
+    .update(probeBans)
+    .set({ liftedAt: now, liftedBy: `mesh:${peer.id}` })
+    .where(and(
+      eq(probeBans.ip, ip),
+      isNull(probeBans.liftedAt),
+      gt(probeBans.expiresAt, now),
+      lt(probeBans.expiresAt, PERMANENT_UNTIL),
+      ne(probeBans.reason, "blocklist"),
+    ))
+    .returning({ id: probeBans.id });
+  if (lifted.length > 0) {
+    await syncGuardFile().catch((err) => log.warn("Couldn't write the probe guard file:", err));
+    log.info(`Lifted ${lifted.length} ban${lifted.length === 1 ? "" : "s"} on ${ip} at a linked instance's request`);
+  }
+  return lifted.length;
 }
 
 /** Makes an active ban permanent. Returns null when there was nothing active to change. Blocklist bans stay temporary. */
@@ -191,7 +218,6 @@ export async function makeBanPermanent(id: string, userId: string | null, scope?
 
   // Linked instances cap it at their own maximum.
   if (!row.originPeerId && (await getProbeGuardSettings()).shareBans) {
-    const { shareBan } = await import("./mesh-share");
     void shareBan(row).catch((err) => log.warn("Couldn't share a ban with linked instances:", err));
   }
   return row;

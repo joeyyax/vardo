@@ -93,6 +93,8 @@ Vardo keeps the address, path, marker id and times. It never keeps what a client
 
 With **Share bans with linked instances** on, new local bans go to every directly linked instance over the signed mesh channel (`POST /api/v1/mesh/probe-bans`). An instance applies them only when its own sharing setting is on, keeps the sender's expiry (capped at its own longest ban) and never sends them on.
 
+Lifts spread the same way. When an admin lifts a ban (the **Unban** button on **Admin → Security** or an app's **Security** tab), the instance sends the address to every directly linked instance (`POST /api/v1/mesh/probe-bans/lift`), and each one with sharing on ends its own active bans on that address. That includes a ban it received from the sender, and it works in both directions, so unbanning on the instance that received a shared ban lifts it at the one that made it. A received lift isn't sent on. It leaves permanent bans, which are a local decision, and blocklist bans, which come from that instance's own sources. Adding an address to **Never ban** lifts bans on that instance only. An instance that predates the lift endpoint, or has sharing off, keeps its copy until it expires.
+
 ## Activity
 
 Bans, trap hits and canary use leave quiet activity rows on the app. Counts show on the app's **Security → Findings** page and the admin Security page. Nothing sends alerts or email.
