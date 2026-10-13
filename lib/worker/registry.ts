@@ -24,9 +24,7 @@ export type LoopEntry = {
 };
 
 const BOTH: LoopRole[] = ["web", "worker"];
-// Loops that serve its own memory or files. Deploy-start loops and most backup
-// loops run in web today; backup-driven deploys (restore-drill) already run
-// from the worker via lib/restore/worker.ts. A later PR moves the rest.
+// Loops that serve this process's own memory or files, or start app deploys (restore-drill already deploys from the worker).
 const WEB: LoopRole[] = ["web"];
 
 export const LOOP_REGISTRY: LoopEntry[] = [

@@ -195,9 +195,7 @@ export async function renewActiveLease(
 
 export async function clearActiveInRedis(appId: string, deploymentId: string): Promise<void> {
   try {
-    // Resolves the scope (default appId vs. `${appId}:${envId}`) from the row so a force-cancel
-    // of a non-default-environment deploy clears the right key. Synthetic owner IDs from
-    // claimAppForOperation aren't rows, so we fall back to the default-env scope.
+    // Scope from the row; claimAppForOperation's synthetic owners aren't rows and resolve to the default scope.
     const row = await db.query.deployments.findFirst({
       where: eq(deployments.id, deploymentId),
       columns: { environmentId: true },

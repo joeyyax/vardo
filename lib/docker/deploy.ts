@@ -248,10 +248,7 @@ export async function runDeployment(
   let ownsAppStatus = false;
 
   try {
-    // A queued row flipped to "cancelled" before this deploy gets to run must never start: the
-    // DELETE route can mark the row and LREM the Redis queue while we're still parked in
-    // claimActiveInRedis. Conditional on status='queued' so a cancellation that wins the race
-    // (or any earlier status change) shows up here, not after we've claimed containers.
+    // Only a still-queued row starts; a cancel that landed while this deploy waited for its scope wins.
     const [claimed] = await db
       .update(deployments)
       .set({ status: "running" })
@@ -265,6 +262,7 @@ export async function runDeployment(
       });
       const terminalStatus = row?.status === "superseded" ? "superseded" : "cancelled";
       const durationMs = Date.now() - startTime;
+      streamLogger.stage(streamLogger.getStage(), "cancelled");
       await streamLogger.flush();
       return {
         deploymentId,

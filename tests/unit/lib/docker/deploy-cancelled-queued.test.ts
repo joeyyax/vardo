@@ -61,6 +61,7 @@ const { prepareRepo, resolveCompose, build, swap, postDeploy } = vi.hoisted(() =
   swap: vi.fn(),
   postDeploy: vi.fn(),
 }));
+const stageMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
@@ -75,7 +76,7 @@ vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
     addPublicNames: vi.fn(),
     redact: (text: string) => text,
     log: (line: string) => line,
-    stage: vi.fn(),
+    stage: stageMock,
     getStage: () => "clone",
     flush: vi.fn(async () => {}),
   }),
@@ -111,6 +112,7 @@ describe("runDeployment — cancelled queued row", () => {
     build.mockClear();
     swap.mockClear();
     postDeploy.mockClear();
+    stageMock.mockClear();
   });
 
   it("returns the row's terminal status without touching the deploy pipeline", async () => {
@@ -138,6 +140,12 @@ describe("runDeployment — cancelled queued row", () => {
     const result = await runDeployment("dep-1", OPTS);
 
     expect(result.status).toBe("superseded");
+  });
+
+  it("ends the deploy stream so tails don't wait for the stream cap", async () => {
+    await runDeployment("dep-1", OPTS);
+
+    expect(stageMock).toHaveBeenCalledWith("clone", "cancelled");
   });
 
   it("treats a missing row as cancelled (the caller decides not to retry)", async () => {
