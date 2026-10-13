@@ -125,6 +125,16 @@ describe("reconcileSharedServices with recorded definitions", () => {
     expect(outcomes[0].result).toBe("held");
   });
 
+  it("leaves a recorded data store running when only the stop grace period was added", async () => {
+    await reconcile(docker({ desired: ENGINE, running: LEGACY, engine: enginePostgres }), {
+      legacyComposeFile: "/srv/vardo/apps/vardo/env/current/docker-compose.yml",
+    });
+    const outcomes = await reconcile(
+      docker({ desired: NEWER, running: LEGACY, engine: { ...enginePostgres, stop_grace_period: "2m0s" } }),
+    );
+    expect(outcomes[0]).toMatchObject({ result: "unchanged", labelsOnly: true });
+  });
+
   it("compares hashes only when no record describes the running container", async () => {
     const outcomes = await reconcile(docker({ desired: ENGINE, running: LEGACY, engine: enginePostgres }));
     expect(outcomes[0].result).toBe("held");
