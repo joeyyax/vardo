@@ -1,6 +1,6 @@
 // One alert pass: reads the host, the apps' conditions, recent OOM kills and anomalies, then notifies each org once.
 
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { ANOMALY_ALERT_TYPES, anomalyObservations } from "@/lib/anomaly/pass";
 import { db } from "@/lib/db";
@@ -16,7 +16,7 @@ import { APP_ALERT_TYPES, conditionObservations, type ConditionApp } from "./app
 import { autotuneHaltObservation } from "./autotune";
 import { CoreMemoryBuffer, coreMemoryObservations } from "./core-memory";
 import { settleDisk } from "./disk-reclaim";
-import { HostSampleBuffer, hostObservations, readHostSample, type HostSample } from "./host";
+import { HOST_RULES, HostSampleBuffer, hostObservations, memoryUser, readHostSample, type HostSample, type MemoryUser } from "./host";
 import { markOomSent, oomObservation, OOM_SETTLE_MS, sharedOomKills, type OomRecord } from "./oom";
 
 const log = logger.child("alerts");
@@ -103,11 +103,25 @@ async function conditionApps(): Promise<ConditionApp[]> {
   );
 }
 
-function topMemory(): { name: string; bytes: number }[] {
-  return [...(getLatestSnapshot() ?? [])]
-    .sort((a, b) => b.memoryUsage - a.memoryUsage)
-    .slice(0, TOP_CONTAINERS)
-    .map((m) => ({ name: m.containerName, bytes: m.memoryUsage }));
+/** Biggest containers by memory. Names apps only when the memory alert could use them. */
+async function topMemory(named: boolean): Promise<MemoryUser[]> {
+  const top = [...(getLatestSnapshot() ?? [])].sort((a, b) => b.memoryUsage - a.memoryUsage).slice(0, TOP_CONTAINERS);
+  const ids = [...new Set(top.map((m) => m.labels["vardo.project.id"] ?? m.labels["host.project.id"]).filter((id): id is string => !!id))];
+  const names = new Map<string, string>();
+  if (named && ids.length > 0) {
+    try {
+      const stacks = alias(apps, "stacks");
+      const rows = await db
+        .select({ id: apps.id, name: apps.displayName, stack: stacks.displayName })
+        .from(apps)
+        .leftJoin(stacks, eq(stacks.id, apps.parentAppId))
+        .where(inArray(apps.id, ids));
+      for (const r of rows) names.set(r.id, stackedName(r.name, r.stack));
+    } catch (err) {
+      log.warn("Couldn't name the apps using the most memory:", err);
+    }
+  }
+  return top.map((m) => memoryUser(m, names));
 }
 
 export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Date.now()): Promise<void> {
@@ -126,7 +140,8 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   }).catch(() => {});
 
   const kills = await sharedOomKills(now);
-  const host = hostObservations(buffer, now, { topMemory: topMemory(), disk: settled.followup }, {
+  const memoryHigh = (sample.memory?.percent ?? 0) >= HOST_RULES["host.memory"].warn;
+  const host = hostObservations(buffer, now, { topMemory: await topMemory(memoryHigh), disk: settled.followup }, {
     memoryConfirmed: kills.some((k) => k.hostKill && now - k.lastAt <= OOM_CONFIRMS_MS),
   });
   coreBuffer.record(getLatestSnapshot());

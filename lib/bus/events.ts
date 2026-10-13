@@ -711,6 +711,33 @@ export type AlertItem = {
   since?: string;
   /** Set when the alert goes out. */
   incident?: IncidentRef;
+  /** The host ran out of memory behind this one. */
+  hostMemory?: boolean;
+  /** How the email lays it out. Without it the email shows detail, next and facts. */
+  view?: AlertView;
+};
+
+/** A table row; `appId` links the name. */
+export type AlertTableRow = { name: string; appId?: string; sub?: string; why?: string; cells: { value: string; hot?: boolean }[] };
+
+/** Email layout for one alert. The facts stay for webhooks; the email shows these instead. */
+export type AlertView = {
+  /** Heading when it reads better than the title. */
+  heading?: string;
+  /** Good news first: "It's running again." */
+  reassure?: { strong: string; text?: string };
+  /** In place of detail and next. */
+  lead?: string[];
+  /** Callout title and body when several alerts share an email. */
+  brief?: { title: string; body: string };
+  /** Under the gauge, e.g. "204 GiB of 223.4 GiB". */
+  gaugeLabel?: string;
+  /** Series values over this draw red. */
+  seriesOver?: number;
+  tiles?: { label: string; value: string; unit?: string; sub?: string; hot?: boolean }[];
+  table?: { columns: string[]; rows: AlertTableRow[]; note?: string };
+  /** The button, when it isn't the app or metrics page. */
+  action?: { label: string; path: string };
 };
 
 /** Alerts that fired in one pass, coalesced into one notice per org. */

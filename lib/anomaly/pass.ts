@@ -269,12 +269,13 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
     const top = state.top.get(app.id);
     const recentTop = top && now - top.at < PROBE_EVERY_MS * 2 ? top.processes : null;
     const verdict = judged.get(app.id);
+    const seen = state.seen.get(app.id);
     if (verdict) {
-      const item = anomalyItem(app, verdict.findings, recentTop);
+      const fresh = seen ? activeFindings(seen.procs, now, FINDING_HOLD_MS).map((f) => f.item) : [];
+      const item = anomalyItem(app, verdict.findings, recentTop, fresh);
       add(app.organizationId, { type: "app.anomaly", about: app.id, severity: item.severity, fires: verdict.fires, item });
     }
 
-    const seen = state.seen.get(app.id);
     if (!seen) {
       for (const type of ["app.new-port", "app.new-process"] as const) {
         const held = openByAbout.get(`${type}:${app.id}`);

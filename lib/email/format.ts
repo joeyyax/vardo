@@ -95,3 +95,13 @@ export function stackedName(name: string, stack: string | null | undefined): str
   if (!stack || name.toLowerCase().startsWith(stack.toLowerCase())) return name;
   return `${stack} ${name}`;
 }
+
+/** "an hour" for "1h"; other windows as given. */
+export function windowPhrase(window: string | undefined): string {
+  return !window || window === "1h" ? "an hour" : window;
+}
+
+/** "Shop Staging's", "Acme Docs'". */
+export function possessive(name: string): string {
+  return name.endsWith("s") ? `${name}'` : `${name}'s`;
+}

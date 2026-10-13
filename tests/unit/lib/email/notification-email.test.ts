@@ -36,7 +36,7 @@ describe("notification subjects", () => {
   });
 
   it("formats bytes for humans", () => {
-    expect(subjectLine(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in 1h");
+    expect(subjectLine(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in an hour");
     expect(subjectLine(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
     expect(subjectLine(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
     expect(subjectLine(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
@@ -144,11 +144,11 @@ describe("notification emails", () => {
 
   it("disk write alerts explain database writes differently", async () => {
     const db = (await renderNotificationEmail(fixture("disk-write-alert"), FIXTURE_CONTEXT))!;
-    expect(db.text).toContain("bulk load");
+    expect(db.text).toContain("Shop Staging's MySQL wrote 7.7 GiB in an hour");
+    expect(db.text).toContain("Its threshold is 4 GiB. From a database this usually means a bulk import");
     expect(db.text).not.toContain("S3/R2");
-    expect(db.text).toContain("Written: 7.7 GiB in 1h");
-    expect(db.text).toContain("Threshold: 4 GiB");
-    expect(db.text.split("shop-staging-data-production-blue-shop-staging-mysql-1").length - 1).toBe(1);
+    expect(db.text).not.toContain("shop-staging-data-production-blue-shop-staging-mysql-1");
+    expect(db.text.match(/4 GiB/g)).toHaveLength(1);
     const app = (await renderNotificationEmail({ ...fixture<"disk.write-alert">("disk-write-alert"), dataEngine: false }, FIXTURE_CONTEXT))!;
     expect(app.text).toContain("S3/R2");
   });
@@ -292,8 +292,8 @@ describe("notification emails", () => {
       { ...fixture<"disk.write-alert">("disk-write-alert"), appName: "Runner", projectName: "Site Audit", dataEngine: false },
       FIXTURE_CONTEXT,
     ))!;
-    expect(email.subject).toBe("node-a · ⚠ Site Audit Runner wrote 7.7 GiB in 1h");
-    expect(email.text).toContain("Site Audit Runner is writing a lot to disk");
+    expect(email.subject).toBe("node-a · ⚠ Site Audit Runner wrote 7.7 GiB in an hour");
+    expect(email.text).toContain("Site Audit's Runner wrote 7.7 GiB in an hour");
   });
 
   it("skips UI-only events", async () => {

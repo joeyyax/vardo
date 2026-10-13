@@ -3,22 +3,6 @@
 import { formatBytesIec } from "@/lib/metrics/format";
 import type { ChartTone, MailFact, MailVisual } from "./components";
 
-/** The last 24 hours as columns; `over` marks values above it. */
-export function hourlyColumns(
-  title: string,
-  values: number[] | undefined,
-  opts: { over?: number; caption?: string } = {},
-): MailVisual | undefined {
-  if (!values || values.length < 2 || values.every((v) => v === 0)) return undefined;
-  return {
-    kind: "columns",
-    title,
-    columns: values.map((value) => ({ parts: [{ value, tone: (opts.over !== undefined && value > opts.over ? "warn" : 2) as ChartTone }] })),
-    axis: ["24 h ago", "now"],
-    caption: opts.caption,
-  };
-}
-
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);

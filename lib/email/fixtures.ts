@@ -1,5 +1,7 @@
 // Realistic events for the email preview and template tests.
 
+import { HostSampleBuffer, hostObservations, type HostContext, type MemoryUser } from "@/lib/alerts/host";
+import { anomalyItem } from "@/lib/anomaly/items";
 import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
 import { summarizeApps, summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
@@ -19,6 +21,9 @@ const timings = (ms: Partial<Record<"clone" | "build" | "pull" | "up" | "healthW
 
 const GiB = 1024 ** 3;
 
+/** When the alert fixtures fire. */
+const FIXTURE_NOW = Date.parse("2026-10-09T14:07:00.000Z");
+
 /** A gentle 24-point curve from `start` to `end` with some noise. */
 function ramp(start: number, end: number, wobble = 0.02): number[] {
   return Array.from({ length: 24 }, (_, i) => {
@@ -27,35 +32,51 @@ function ramp(start: number, end: number, wobble = 0.02): number[] {
   });
 }
 
-const hostMemory: AlertItem = {
-  type: "host.memory",
-  about: "host",
-  severity: "warning",
-  title: "Memory 91% used",
-  detail: "Available memory is low. Deploys can fail and the kernel starts killing containers. Stop or limit what's using it.",
-  gauge: { title: "Memory used", percent: 91.4, warn: 85, critical: 95 },
-  series: { title: "Memory, last hour", values: ramp(72, 92, 0.03).slice(-20), caption: "Over 85% for 5 min" },
-  facts: [
-    { label: "Used", value: "29.2 GiB of 31.9 GiB" },
-    { label: "Available", value: "2.7 GiB" },
-    { label: "Top containers", value: "shop-production-blue-wordpress-1 6.1 GiB, search-data-production-green-meilisearch-1 4.8 GiB, vardo-postgres 2.2 GiB" },
-  ],
-};
-
-const hostDisk: AlertItem = {
-  type: "host.disk",
-  about: "host",
-  severity: "warning",
-  title: "Disk 91% full",
-  detail: "Deploys and backups fail once the disk is full. Prune old images and build cache or grow the disk.",
-  gauge: { title: "Disk used", percent: 91.3, warn: 85, critical: 95 },
-  facts: [
-    { label: "Used", value: "204.0 GiB of 223.4 GiB" },
-    { label: "Free", value: "19.4 GiB" },
-  ],
-};
-
 const MiB = 1024 ** 2;
+
+/** Host alerts from the real builder: an hour of readings ending at FIXTURE_NOW. */
+function hostAlert(type: "host.memory" | "host.disk", memoryPercent: number, ctx: HostContext): AlertItem {
+  const buffer = new HostSampleBuffer();
+  const memTotal = 31.9 * GiB;
+  const diskTotal = 223.4 * GiB;
+  for (let i = 60; i >= 0; i--) {
+    const pct = i <= 12 ? memoryPercent : 72 + (60 - i) * 0.3;
+    buffer.push({
+      at: FIXTURE_NOW - i * 60_000,
+      memory: { percent: pct, used: (memTotal * pct) / 100, total: memTotal },
+      swap: null,
+      cpuPercent: null,
+      load: null,
+      disk: { percent: 91.3, used: 204 * GiB, total: diskTotal },
+    });
+  }
+  const item = hostObservations(buffer, FIXTURE_NOW, ctx).observations.find((o) => o.type === type)?.item;
+  if (!item) throw new Error(`no ${type} fixture`);
+  return item;
+}
+
+const TOP_MEMORY: MemoryUser[] = [
+  { container: "shop-production-blue-wordpress-1", bytes: 6.1 * GiB, limit: 0, label: "Shop", appId: "app_shop", service: "wordpress" },
+  { container: "search-data-production-green-meilisearch-1", bytes: 4.8 * GiB, limit: 6 * GiB, label: "Search Data", appId: "app_srch", service: "meilisearch" },
+  { container: "vardo-postgres", bytes: 2.2 * GiB, limit: 4 * GiB, label: "Vardo", service: "postgres" },
+];
+
+const hostMemory = hostAlert("host.memory", 91.4, { topMemory: TOP_MEMORY });
+
+const hostDisk = hostAlert("host.disk", 60, {
+  disk: {
+    reclaim: { finishedAt: "2026-10-09T13:58:00.000Z", freedBytes: 12.4 * GiB },
+    reclaimableBytes: 40.6 * GiB,
+    unusedVolumes: { count: 3, bytes: 3 * GiB },
+    topApps: [],
+    usage: {
+      images: { total: 96 * GiB, reclaimable: 31 * GiB },
+      buildCache: { total: 42 * GiB, reclaimable: 9.6 * GiB },
+      volumes: { total: 27 * GiB },
+    },
+  },
+});
+
 
 /** A night of backups, one result per app and volume. */
 const NIGHTLY: BackupResultItem[] = [
@@ -164,6 +185,30 @@ const COMMITS = [
   { sha: "9c0d1e2", subject: "feat(backups): quiet nightly summaries", author: "Dev Example" },
   { sha: "3b4c5d6", subject: "chore: bump dependencies", author: "Dev Example" },
 ];
+
+const SHOP_SINCE = Date.parse("2026-10-09T14:02:00.000Z");
+
+/** The anomaly fixture from the real builder: egress at 40× with an unknown process. */
+const SHOP_EGRESS = anomalyItem(
+  { id: "app_shop", name: "Shop" },
+  [
+    {
+      signal: "egress",
+      verdict: { fires: true, holds: true, severity: "critical", value: (48.6 * MiB) / 60, since: SHOP_SINCE, line: { typical: (1.2 * MiB) / 60, high: (1.6 * MiB) / 60, threshold: (4.8 * MiB) / 60, clearBelow: (2.4 * MiB) / 60 } },
+      recent: [...Array.from({ length: 14 }, (_, i) => ((1.1 + Math.sin(i) * 0.15) * MiB) / 60), ...ramp(40, 50, 0.03).slice(0, 16).map((m) => (m * MiB) / 60)],
+    },
+    {
+      signal: "cpu",
+      verdict: { fires: true, holds: true, severity: "warning", value: 190, since: SHOP_SINCE, line: { typical: 4, high: 9, threshold: 27, clearBelow: 14 } },
+      recent: [],
+    },
+  ],
+  [
+    { pid: 812, name: "kworkerd", cpu: 187, rssKb: 48_000 },
+    { pid: 1, name: "node", cpu: 3, rssKb: 210_000 },
+  ],
+  ["kworkerd"],
+);
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   {
@@ -489,6 +534,18 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
             { label: "Status", value: "Running since 07:04 PDT" },
             { label: "Container", value: "shop-production-blue-wordpress-1" },
           ],
+          view: {
+            heading: "Shop was killed for memory",
+            reassure: { strong: "It's running again.", text: "Docker restarted it at 07:04 PDT." },
+            lead: ["It hit its 2 GiB limit, Vardo's default since compose doesn't set one. Its memory profile is Auto, so Vardo raised the limit to 3 GiB, starting now."],
+            brief: { title: "Shop was killed for memory", body: "Killed once at its 2 GiB limit. Docker restarted it at 07:04 PDT. Vardo raised its limit to 3 GiB." },
+            tiles: [
+              { label: "Peak", value: "2", unit: " GiB", sub: "last hour" },
+              { label: "New limit", value: "3", unit: " GiB", sub: "was 2 GiB" },
+              { label: "Restarts", value: "1", sub: "running since 07:04", hot: false },
+            ],
+            action: { label: "Change the limit", path: "/apps/app_shop/resources" },
+          },
           since: "2026-10-09T14:02:11.000Z",
         },
       ],
@@ -499,7 +556,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     event: {
       type: "alert.fired",
       title: "3 alerts: Shop killed for memory · still down and more",
-      message: "Shop killed for memory · still down; Search killed for memory · still running; Memory 97% used",
+      message: "Shop killed for memory · still down; Memory 97% used; Search Data killed for memory · still running",
       alerts: [
         {
           type: "app.oom",
@@ -519,26 +576,51 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
             { label: "Container", value: "shop-production-blue-wordpress-1 (2)" },
           ],
           since: "2026-10-09T14:02:11.000Z",
+          hostMemory: true,
+          view: {
+            heading: "Shop was killed for memory",
+            lead: ["The host ran out of memory and the kernel killed it. It has no limit of its own. Vardo restarted it 3 times, then stopped. Free memory on the host, or give it a limit of 1.5 GiB."],
+            brief: { title: "Shop is down", body: "Killed twice with no limit of its own. Vardo restarted it 3 times, then stopped. Free memory on the host, or give it a limit of 1.5 GiB." },
+            tiles: [
+              { label: "Peak", value: "1", unit: " GiB", sub: "last hour" },
+              { label: "Limit", value: "None", unit: "" },
+              { label: "Kills", value: "2", sub: "last hour" },
+              { label: "Restarts", value: "3", sub: "restarts stopped", hot: true },
+            ],
+            action: { label: "Set a limit", path: "/apps/app_shop/resources" },
+          },
         },
+        { ...hostAlert("host.memory", 97.2, { topMemory: TOP_MEMORY }), since: "2026-10-09T14:01:00.000Z" },
         {
           type: "app.oom",
           about: "app_srch",
           appId: "app_srch",
-          appName: "Search",
-          severity: "critical",
-          title: "Search killed for memory · still running",
+          appName: "Search Data",
+          severity: "warning",
+          title: "Search Data killed for memory · still running",
           detail: "The host ran out of memory and the kernel killed a process inside it; the container kept running.",
           next: "Free memory on the host, or lower what else runs on it.",
           facts: [
-            { label: "Limit", value: "4 GiB (set in compose)" },
-            { label: "Peak (1h)", value: "3.1 GiB" },
+            { label: "Limit", value: "6 GiB (set in compose)" },
+            { label: "Peak (1h)", value: "4.8 GiB" },
             { label: "Restarts", value: "0" },
             { label: "Status", value: "Running since 06:40 PDT" },
             { label: "Container", value: "search-data-production-green-meilisearch-1" },
           ],
           since: "2026-10-09T14:02:40.000Z",
+          hostMemory: true,
+          view: {
+            heading: "A process in Search Data was killed for memory",
+            reassure: { strong: "The container kept running." },
+            lead: ["The host ran out of memory and the kernel killed one process inside it. Free memory on the host, or lower what else runs on it."],
+            brief: { title: "Search Data lost a process", body: "The kernel killed one process inside it. The container kept running." },
+            tiles: [
+              { label: "Peak", value: "4.8", unit: " GiB", sub: "last hour" },
+              { label: "Limit", value: "6", unit: " GiB", sub: "set in compose" },
+            ],
+            action: { label: "Open Search Data", path: "/apps/app_srch" },
+          },
         },
-        { ...hostMemory, severity: "critical", title: "Memory 97% used", gauge: { ...hostMemory.gauge!, percent: 97.2 } },
       ],
     },
   },
@@ -548,28 +630,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       type: "alert.fired",
       title: "Shop is sending far more traffic than usual",
       message: "Shop is sending far more traffic than usual",
-      alerts: [
-        {
-          type: "app.anomaly",
-          about: "app_shop",
-          appId: "app_shop",
-          appName: "Shop",
-          severity: "critical",
-          title: "Shop is sending far more traffic than usual",
-          detail: "Unexpected outbound traffic can mean a compromised app. Check its logs, recent deploys and running processes.",
-          series: {
-            title: "Outbound traffic, last hour",
-            values: [...ramp(1, 1.4, 0.2).slice(0, 14), ...ramp(40, 52, 0.05).slice(0, 16)],
-            caption: "Typical for this hour: 1.2 MiB/min",
-          },
-          facts: [
-            { label: "Outbound traffic", value: "48.6 MiB/min now, typically 1.2 MiB/min" },
-            { label: "CPU", value: "1.9 cores now, typically 4% of a core" },
-            { label: "Top processes", value: "kworkerd 187% CPU, node 3% CPU, sh 0% CPU" },
-          ],
-          since: "2026-10-09T14:02:00.000Z",
-        },
-      ],
+      alerts: [SHOP_EGRESS],
     },
   },
   {
@@ -588,6 +649,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
           severity: "warning",
           title: "Shop is near its memory limit",
           detail: "It has stayed over 90% of its limit for 10 minutes.",
+          gauge: { title: "Memory limit used", percent: 93, warn: 90, critical: 100 },
           since: "2026-10-09T13:50:00.000Z",
           firedAt: "2026-10-09T14:00:00.000Z",
           resolvedAt: "2026-10-09T14:41:00.000Z",

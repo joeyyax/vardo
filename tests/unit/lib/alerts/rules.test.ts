@@ -75,11 +75,32 @@ describe("hostObservations", () => {
   it("fires memory after the sustained window with the top containers named", () => {
     const buffer = new HostSampleBuffer();
     for (let i = 6; i >= 0; i--) buffer.push(sample(now - i * MIN, 91));
-    const { observations } = hostObservations(buffer, now, { topMemory: [{ name: "shop", bytes: 2 ** 30 }] });
+    const { observations } = hostObservations(buffer, now, {
+      topMemory: [{ container: "shop-blue-web-1", bytes: 2 ** 30, limit: 0, label: "Shop", appId: "a1", service: "web" }],
+    });
     const memory = observations.find((o) => o.type === "host.memory")!;
     expect(memory.fires).toBe(true);
     expect(memory.item.title).toBe("Memory 91% used");
-    expect(memory.item.facts?.find((f) => f.label === "Top containers")?.value).toContain("shop");
+    expect(memory.item.facts?.find((f) => f.label === "Top containers")?.value).toContain("shop-blue-web-1");
+    expect(memory.item.view?.table?.rows).toEqual([
+      { name: "Shop", appId: "a1", sub: "web", cells: [{ value: "1 GiB", hot: false }, { value: "none" }] },
+    ]);
+  });
+
+  it("says how long memory has been over the line, once", () => {
+    const buffer = new HostSampleBuffer();
+    for (let i = 20; i >= 0; i--) buffer.push(sample(now - i * MIN, i <= 7 ? 91 : 60));
+    const memory = hostObservations(buffer, now, {}).observations.find((o) => o.type === "host.memory")!;
+    const lead = memory.item.view?.lead?.join(" ") ?? "";
+    expect(lead).toMatch(/, over 85% for 7 min\./);
+    expect(lead.match(/available/g)).toHaveLength(1);
+  });
+
+  it("leaves the duration out when an OOM kill confirmed memory pressure at once", () => {
+    const buffer = new HostSampleBuffer();
+    buffer.push(sample(now, 91));
+    const memory = hostObservations(buffer, now, {}, { memoryConfirmed: true }).observations.find((o) => o.type === "host.memory")!;
+    expect(memory.item.view?.lead?.[0]).not.toMatch(/ for /);
   });
 
   it("lets a host OOM kill confirm memory pressure early", () => {
