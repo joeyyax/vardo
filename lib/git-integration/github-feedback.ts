@@ -331,7 +331,8 @@ export type DeployTracker = {
   /** Where the deploy waits; called only while it's queued. */
   queued(place: QueuePlace): void;
   stage(stage: string, status: string): void;
-  finish(result: { status: "success" | "failed" | "cancelled" | "superseded"; error?: string; durationMs?: number }): void;
+  /** `closedElsewhere`: another process closed the row and reported it, so nothing is posted. */
+  finish(result: { status: "success" | "failed" | "cancelled" | "superseded"; error?: string; durationMs?: number; closedElsewhere?: boolean }): void;
 };
 
 /** Fewest milliseconds between queued commit and deployment statuses for one deploy. */
@@ -723,7 +724,7 @@ export function createFeedback(deps: FeedbackDeps) {
         queued(next) {
           enqueue(async () => {
             // The chain runs in order, so a place reported before the first stage never lands after it.
-            if (leftQueue || next === place) return;
+            if (leftQueue || closed || next === place) return;
             const i = await load();
             if (!i) return;
             place = next;
@@ -761,6 +762,10 @@ export function createFeedback(deps: FeedbackDeps) {
         },
         finish(result) {
           enqueue(async () => {
+            if (result.closedElsewhere) {
+              closed = true;
+              return;
+            }
             const i = await load();
             if (!i) return;
             // Success only stands if this deploy's own write recorded it.

@@ -16,13 +16,14 @@ const { dbMock, addEventMock, statusWrites, closedFirst } = vi.hoisted(() => {
   const statusWrites: Write[] = [];
   const addEventMock = vi.fn().mockResolvedValue("1-0");
   /** The sweeper closed the row first: the conditional failed write matches nothing. */
-  const closedFirst = { value: false };
+  const closedFirst = { value: false, beforeStart: false };
 
   // db.update(table).set(values).where(cond)
   function makeUpdateChain(table: unknown) {
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       statusWrites.push({ table, values });
-      const rows = closedFirst.value && values.status === "failed" ? [] : [{ id: "row" }];
+      const closed = (closedFirst.value && values.status === "failed") || (closedFirst.beforeStart && values.status === "running");
+      const rows = closed ? [] : [{ id: "row" }];
       return { where: vi.fn(() => Object.assign(Promise.resolve(undefined), { returning: async () => rows })) };
     });
     return { set };
@@ -102,6 +103,18 @@ describe("runDeployment app status ownership", () => {
     statusWrites.length = 0;
     addEventMock.mockClear();
     closedFirst.value = false;
+    closedFirst.beforeStart = false;
+  });
+
+  it("stops before any work when the sweeper cancelled it in the queue", async () => {
+    closedFirst.beforeStart = true;
+    const onStage = vi.fn();
+    const result = await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(result).toMatchObject({ status: "cancelled", success: false, closedElsewhere: true });
+    expect(statusSequence()).toEqual([]);
+    expect(addEventMock).not.toHaveBeenCalled();
+    expect(onStage).not.toHaveBeenCalled();
   });
 
   it("leaves the app status the sweeper set when it closed the row first", async () => {

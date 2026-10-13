@@ -117,6 +117,8 @@ export type DeployResult = {
   error?: string;
   /** Post-deploy work that did not finish on a deploy that succeeded. */
   postDeployError?: string;
+  /** Another process, such as the sweeper, closed the row first and reported it. */
+  closedElsewhere?: boolean;
 };
 
 export async function createDeployment(opts: DeployOpts): Promise<string> {
@@ -248,10 +250,18 @@ export async function runDeployment(
   let ownsAppStatus = false;
 
   try {
-    await db
+    // Only while still queued: the sweeper may have cancelled it while it waited.
+    const claimed = await db
       .update(deployments)
       .set({ status: "running" })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+      .returning({ id: deployments.id })
+      .then((rows) => rows.length > 0);
+    if (!claimed) {
+      log("[deploy] Not started: the deployment was closed while it waited in the queue");
+      await streamLogger.flush();
+      return { deploymentId, success: false, log: logLines.join("\n"), durationMs: 0, status: "cancelled", closedElsewhere: true };
+    }
 
     if (opts.groupEnvironmentId && !opts.environmentId) {
       throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");

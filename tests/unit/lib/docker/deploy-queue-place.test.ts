@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // A waiting deploy tells its GitHub feedback where it stands in line.
 
-const { store, places, concurrency } = vi.hoisted(() => ({
+const { store, places, finished, concurrency } = vi.hoisted(() => ({
+  finished: [] as unknown[],
   store: new Map<string, string>(),
   places: [] as unknown[],
   concurrency: {
@@ -37,7 +38,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) },
 }));
 vi.mock("@/lib/git-integration/github-feedback", () => ({
-  trackDeploy: () => ({ queued: (place: unknown) => places.push(place), stage: vi.fn(), finish: vi.fn() }),
+  trackDeploy: () => ({ queued: (place: unknown) => places.push(place), stage: vi.fn(), finish: (r: unknown) => finished.push(r) }),
 }));
 vi.mock("@/lib/docker/deploy-concurrency", () => ({
   enqueueAndTryAcquire: vi.fn(async () => concurrency.immediate),
@@ -60,6 +61,7 @@ const deploy = () => requestDeploy({ appId: "app-1", organizationId: "org-1", tr
 beforeEach(() => {
   store.clear();
   places.length = 0;
+  finished.length = 0;
   concurrency.immediate = true;
   concurrency.waitPlaces = [];
 });
@@ -84,5 +86,19 @@ describe("queue place on GitHub", () => {
   it("reports nothing for a deploy that starts straight away", async () => {
     await deploy();
     expect(places).toEqual([]);
+  });
+});
+
+describe("a deploy closed while it waited", () => {
+  it("frees its slot and app lock and hands the tracker nothing to post", async () => {
+    const { runDeployment } = await import("@/lib/docker/deploy");
+    const { releaseConcurrencySlot } = await import("@/lib/docker/deploy-concurrency");
+    vi.mocked(runDeployment).mockResolvedValueOnce({
+      deploymentId: "dep-1", success: false, log: "", durationMs: 0, status: "cancelled", closedElsewhere: true,
+    });
+    await deploy();
+    expect(releaseConcurrencySlot).toHaveBeenCalledWith("dep-1");
+    expect(store.has("deploy:active:app-1")).toBe(false);
+    expect(finished).toEqual([expect.objectContaining({ closedElsewhere: true })]);
   });
 });

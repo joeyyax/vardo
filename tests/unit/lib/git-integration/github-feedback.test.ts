@@ -376,6 +376,16 @@ describe("deploy feedback", () => {
     expect(calls.some((c) => (c.body as { state?: string } | undefined)?.state === "success")).toBe(false);
   });
 
+  it("posts nothing when the deploy never started because the row was closed elsewhere", async () => {
+    const { feedback, calls } = harness({ info: info({ environment: "preview", pr: { repo: "acme/widget", number: 4 } }) });
+    const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
+    await settle();
+    const before = calls.length;
+    t.finish({ status: "cancelled", closedElsewhere: true });
+    await settle();
+    expect(calls.slice(before).filter((c) => c.method !== "GET")).toHaveLength(0);
+  });
+
   it("goes silent on stages once another process closed the row", async () => {
     const { feedback, calls } = harness({ deps: { readStatus: async () => "failed" } });
     const t = feedback.trackDeploy("dep-1", { trigger: "webhook" });
