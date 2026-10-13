@@ -10,21 +10,15 @@ import {
 
 const putSchema = z.object({ enabled: z.boolean() }).strict();
 
+const state = (enabled: boolean) =>
+  NextResponse.json({ enabled, keyAvailable: !!process.env.ENCRYPTION_MASTER_KEY });
+
 // GET /api/v1/system/backup-encryption — instance-wide backup encryption setting.
 async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
-    return NextResponse.json({
-      enabled: await getBackupEncryptionEnabled(),
-      keyAvailable: !!process.env.ENCRYPTION_MASTER_KEY,
-    });
+    return state(await getBackupEncryptionEnabled());
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return apiError.unauthorized();
-    }
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error reading backup encryption setting");
   }
 }
@@ -40,17 +34,8 @@ async function handlePut(request: NextRequest) {
     }
 
     await setBackupEncryptionEnabled(parsed.data.enabled);
-    return NextResponse.json({
-      enabled: parsed.data.enabled,
-      keyAvailable: !!process.env.ENCRYPTION_MASTER_KEY,
-    });
+    return state(parsed.data.enabled);
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return apiError.unauthorized();
-    }
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error changing backup encryption setting");
   }
 }
