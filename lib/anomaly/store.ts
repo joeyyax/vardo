@@ -64,6 +64,10 @@ export async function writeSeen(appId: string, kind: SeenKind, set: Map<string, 
   await pipe.exec();
 }
 
+export async function forgetSeen(appId: string, kind: SeenKind): Promise<void> {
+  await redis.del(seenKey(appId, kind));
+}
+
 /** When the app's allow-set started learning. Set on first call. */
 export async function learningSince(appId: string, now: number): Promise<number> {
   const key = metaKey(appId);

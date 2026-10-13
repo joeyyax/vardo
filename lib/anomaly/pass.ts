@@ -16,10 +16,10 @@ import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { BASELINE_WINDOW_MS, WARMUP_MS, computeBaseline, utcOffset, zoneOffset, type Baseline, type ZoneOffset } from "./baseline";
 import { AnomalyEngine } from "./engine";
 import { anomalyItem, newPortItem, newProcessItem, type AppRef, type Finding } from "./items";
-import { probeContainer } from "./probe";
+import { appPorts, probeContainer } from "./probe";
 import { activeFindings, reconcileSeen, type SeenEntry, type TopProcess } from "./security";
 import { SIGNAL_KEYS, isSensitivity, type Sensitivity, type SignalKey } from "./signals";
-import { appendSample, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
+import { appendSample, forgetSeen, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
 import { activityWindows, markActivity, quietApps, recentWorkWindows } from "./suppress";
 import { AppRateTracker, type AppReading } from "./tracker";
 
@@ -149,6 +149,13 @@ async function fold(appId: string, kind: SeenKind, current: string[], now: numbe
   await writeSeen(appId, kind, set, remove);
 }
 
+async function forget(appId: string, kind: SeenKind): Promise<void> {
+  const seen = await seenFor(appId);
+  if (seen[kind].size === 0) return;
+  seen[kind].clear();
+  await forgetSeen(appId, kind);
+}
+
 /** Reads processes and ports for one app and folds them into its allow-sets. */
 async function probeApp(app: WatchedApp, now: number, quiet: boolean): Promise<void> {
   state.probedAt.set(app.id, now);
@@ -160,9 +167,11 @@ async function probeApp(app: WatchedApp, now: number, quiet: boolean): Promise<v
   const processes = probes.flatMap((p) => p.processes);
   state.top.set(app.id, { at: now, processes });
   const learning = quiet || now - (await learningSince(app.id, now)) < WARMUP_MS;
-  await fold(app.id, "procs", [...new Set(processes.map((p) => p.name))], now, learning);
-  // A container whose ports couldn't be read would look like it closed them all.
-  if (probes.every((p) => p.ports !== null)) await fold(app.id, "ports", [...new Set(probes.flatMap((p) => p.ports ?? []))], now, learning);
+  // A container that couldn't be probed would look like it stopped its processes.
+  if (probes.length === containers.length) await fold(app.id, "procs", [...new Set(processes.map((p) => p.name))], now, learning);
+  const ports = appPorts(probes, containers.length);
+  if (ports.action === "fold") await fold(app.id, "ports", ports.ports, now, learning);
+  else if (ports.action === "forget") await forget(app.id, "ports");
 }
 
 /** Open anomaly alerts, to hold the ones this pass can't judge. */
