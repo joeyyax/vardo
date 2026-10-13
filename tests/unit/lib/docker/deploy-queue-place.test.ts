@@ -9,6 +9,7 @@ const { store, places, finished, concurrency } = vi.hoisted(() => ({
   concurrency: {
     immediate: true,
     waitPlaces: [] as number[],
+    rowClosed: false,
   },
 }));
 
@@ -31,7 +32,7 @@ vi.mock("@/lib/db", () => ({
       environments: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deployments: { findFirst: vi.fn().mockResolvedValue(null) },
     },
-    update: vi.fn(() => ({ set: () => ({ where: () => ({ catch: () => {} }) }) })),
+    update: vi.fn(() => ({ set: () => ({ where: () => Object.assign(Promise.resolve(undefined), { returning: async () => (concurrency.rowClosed ? [] : [{ id: "dep-1" }]) }) }) })),
   },
 }));
 vi.mock("@/lib/logger", () => ({
@@ -64,6 +65,7 @@ beforeEach(() => {
   finished.length = 0;
   concurrency.immediate = true;
   concurrency.waitPlaces = [];
+  concurrency.rowClosed = false;
 });
 
 describe("queue place on GitHub", () => {
@@ -96,6 +98,23 @@ describe("a deploy that threw before it ran", () => {
     vi.mocked(waitForConcurrencySlot).mockRejectedValueOnce(new Error("Deploy queue timeout — waited too long for a concurrency slot"));
     await expect(deploy()).rejects.toThrow("Deploy queue timeout");
     expect(finished).toEqual([{ status: "cancelled", error: "Deploy queue timeout — waited too long for a concurrency slot" }]);
+  });
+
+  it("stays quiet when the sweeper took it out of the queue and closed its row", async () => {
+    const { waitForConcurrencySlot } = await import("@/lib/docker/deploy-concurrency");
+    concurrency.immediate = false;
+    concurrency.rowClosed = true;
+    vi.mocked(waitForConcurrencySlot).mockRejectedValueOnce(new Error("Deploy was removed from the concurrency queue before it started"));
+    await expect(deploy()).rejects.toThrow();
+    expect(finished).toEqual([{ status: "cancelled", closedElsewhere: true }]);
+  });
+
+  it("reports a removal itself when nothing else closed the row", async () => {
+    const { waitForConcurrencySlot } = await import("@/lib/docker/deploy-concurrency");
+    concurrency.immediate = false;
+    vi.mocked(waitForConcurrencySlot).mockRejectedValueOnce(new Error("Deploy was removed from the concurrency queue before it started"));
+    await expect(deploy()).rejects.toThrow();
+    expect(finished).toEqual([{ status: "cancelled", error: "Deploy was removed from the concurrency queue before it started" }]);
   });
 
   it("reports a deploy a newer one superseded in the queue as superseded", async () => {

@@ -321,6 +321,23 @@ describe("a queued deploy the sweeper cancelled", () => {
     expect(calls.find((c) => c.path === `/repos/acme/widget/statuses/${SHA}`)?.body).toMatchObject({ state: "error" });
   });
 
+  it("lands exactly one update when the deploy's own process then finds itself removed", async () => {
+    const webCalls: Call[] = [];
+    const web = processFeedback(redis, preview, webCalls);
+    const tracker = web.feedback.trackDeploy("dep-api", { trigger: "webhook" });
+    await settle();
+    const before = webCalls.filter((c) => c.method !== "GET").length;
+
+    const sweeperCalls: Call[] = [];
+    const sweeper = processFeedback(redis, preview, sweeperCalls, { readStatus: async () => "cancelled" });
+    await sweeper.feedback.queuedDeployCancelled("dep-api", ORPHANED);
+    tracker.finish({ status: "cancelled", closedElsewhere: true });
+    await settle();
+
+    expect(commentEdits(sweeperCalls, 4)).toHaveLength(1);
+    expect(webCalls.filter((c) => c.method !== "GET")).toHaveLength(before);
+  });
+
   it("does nothing once the deploy has started", async () => {
     const web = processFeedback(redis, preview, []);
     web.feedback.trackDeploy("dep-api", { trigger: "webhook" });

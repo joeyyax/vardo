@@ -8,7 +8,7 @@ import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
-import { DeployBlockedError, DeployQueueAbortedError } from "./errors";
+import { DeployBlockedError, DeployClosedElsewhereError, DeployQueueAbortedError } from "./errors";
 import { trackDeploy } from "@/lib/git-integration/github-feedback";
 import type { QueuePlace } from "@/lib/git-integration/github-feedback-render";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
@@ -326,7 +326,8 @@ export async function deployWorker(deploymentId: string): Promise<"live" | "gone
 }
 
 /** What GitHub hears about a deploy that threw before it ran: a user cancel, a supersede, or the error itself. */
-export function thrownOutcome(err: unknown): { status: "cancelled" | "superseded"; error?: string } {
+export function thrownOutcome(err: unknown): { status: "cancelled" | "superseded"; error?: string; closedElsewhere?: boolean } {
+  if (err instanceof DeployClosedElsewhereError) return { status: "cancelled", closedElsewhere: true };
   if (err instanceof DeployQueueAbortedError) return { status: err.reason === "superseded" ? "superseded" : "cancelled" };
   return { status: "cancelled", error: err instanceof Error ? err.message : String(err) };
 }
@@ -529,7 +530,7 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts, onQ
       await removeFromQueue(newDeploymentId).catch(() => {});
       const now = new Date();
       const errorMessage = err instanceof Error ? err.message : String(err);
-      await db
+      const closedHere = await db
         .update(deployments)
         .set({
           status: "cancelled",
@@ -537,7 +538,14 @@ async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts, onQ
           finishedAt: now,
         })
         .where(and(eq(deployments.id, newDeploymentId), eq(deployments.status, "queued")))
-        .catch((dbErr) => log.warn("Failed to update cancelled deployment status:", dbErr));
+        .returning({ id: deployments.id })
+        .then((rows) => rows.length > 0)
+        .catch((dbErr) => {
+          log.warn("Failed to update cancelled deployment status:", dbErr);
+          return true;
+        });
+      // The sweeper closed it first and reported it; this process stays quiet.
+      if (!closedHere) throw new DeployClosedElsewhereError(null);
       // Say why it aborted, so GitHub can tell a supersede or a user's cancel from a failure.
       const reason = controller.signal.aborted
         ? (controller.signal.reason as { supersededBy?: string; killed?: boolean } | undefined)
