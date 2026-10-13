@@ -277,7 +277,7 @@ export async function startJobRun(job: { id: string; name: string; organizationI
   });
 }
 
-/** Opens a run for a job someone started by hand, so its summary reports whatever it found. */
+/** Opens a run for a job someone started by hand, so its results stay out of another run's summary. */
 export async function startManualRun(
   job: { id: string; name: string; organizationId: string | null },
   now: Date,

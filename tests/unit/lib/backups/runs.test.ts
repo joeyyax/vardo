@@ -249,7 +249,7 @@ describe("summaryEmails", () => {
 
   it("keeps a clean nightly run out of the inbox", () => {
     expect(summaryEmails(nightly, ok, 0, 0, false)).toEqual({ send: false, problemsOnly: true });
-    expect(summaryEmails({ kind: "job", runKey: "job:j1:1" }, ok, 0, 0, false).send).toBe(false);
+    expect(summaryEmails({ kind: "job" }, ok, 0, 0, false).send).toBe(false);
   });
 
   it("emails a nightly run with a problem, listing only the problems", () => {
@@ -261,9 +261,27 @@ describe("summaryEmails", () => {
     expect(summaryEmails(nightly, ok, 0, 0, true)).toEqual({ send: true, problemsOnly: false });
   });
 
-  it("always reports a manual run and a restore", () => {
-    expect(summaryEmails({ kind: "job", runKey: "manual:j1:1" }, ok, 0, 0, false)).toEqual({ send: true, problemsOnly: false });
-    expect(summaryEmails({ kind: "restore", runKey: "restore:b1:1" }, ok, 0, 0, false).send).toBe(true);
+  it("always reports a restore", () => {
+    expect(summaryEmails({ kind: "restore" }, ok, 0, 0, false)).toEqual({ send: true, problemsOnly: false });
+  });
+
+  it("keeps a single job that succeeded out of the inbox, opted in or not", () => {
+    const manual = { kind: "job", runKey: "manual:j1:1" };
+    expect(summaryEmails(manual, ok, 0, 0, false).send).toBe(false);
+    expect(summaryEmails(manual, ok, 0, 0, true).send).toBe(false);
+    expect(summaryEmails({ kind: "job" }, ok, 0, 0, true).send).toBe(false);
+  });
+
+  it("leaves a single job's failure to its own email", () => {
+    expect(summaryEmails({ kind: "job" }, failed, 0, 0, false).send).toBe(false);
+  });
+
+  it("emails a single job for a problem no failure email covered", () => {
+    const shrunk = summarizeResults([item({ sizeBytes: 10 })], new Map([[volumeKey("a1", "data"), [1000, 1000, 1000]]]));
+    const manual = { kind: "job", runKey: "manual:j1:1" };
+    expect(summaryEmails(manual, shrunk, 0, 0, false)).toEqual({ send: true, problemsOnly: true });
+    expect(summaryEmails(manual, ok, 1, 0, false).send).toBe(true);
+    expect(summaryEmails(manual, ok, 0, 1, false).send).toBe(true);
   });
 });
 

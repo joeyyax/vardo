@@ -878,7 +878,7 @@ export async function runBackup(
   return trackBackupWork("backup", label, () => runBackupUntracked(jobId, options));
 }
 
-/** A run of its own for a job started by hand, so its summary always reports. */
+/** A run of its own for a job started by hand, so its results stay out of another run's summary. */
 async function openManualRun(jobId: string): Promise<string | null> {
   const job = await db.query.backupJobs.findFirst({
     where: eq(backupJobs.id, jobId),

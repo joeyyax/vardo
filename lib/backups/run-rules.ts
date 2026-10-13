@@ -218,15 +218,24 @@ export function needsAttention(rows: BackupSummaryRow[], staleVolumes: number, u
 /** Run keys of runs someone started by hand. */
 export const MANUAL_RUN_PREFIX = "manual:";
 
-/** A manual job or a restore always reports; a scheduled run emails only when something needs a look, unless the org opted in. */
+/**
+ * A restore always reports. A nightly run emails when something needs a look, or every night if the org opted in.
+ * A single job emails only for a problem its live failure emails didn't cover.
+ */
 export function summaryEmails(
-  run: { kind: string; runKey: string },
+  run: { kind: string },
   rows: BackupSummaryRow[],
   staleVolumes: number,
   unfinished: number,
   alwaysSummary: boolean,
 ): { send: boolean; problemsOnly: boolean } {
-  const scheduled = run.kind === "nightly" || (run.kind === "job" && !run.runKey.startsWith(MANUAL_RUN_PREFIX));
-  if (!scheduled || alwaysSummary) return { send: true, problemsOnly: false };
-  return { send: needsAttention(rows, staleVolumes, unfinished), problemsOnly: true };
+  if (run.kind === "nightly") {
+    if (alwaysSummary) return { send: true, problemsOnly: false };
+    return { send: needsAttention(rows, staleVolumes, unfinished), problemsOnly: true };
+  }
+  if (run.kind === "job") {
+    const unreported = rows.filter((r) => r.outcome !== "failed");
+    return { send: needsAttention(unreported, staleVolumes, unfinished), problemsOnly: true };
+  }
+  return { send: true, problemsOnly: false };
 }
