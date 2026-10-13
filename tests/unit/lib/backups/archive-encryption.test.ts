@@ -1,6 +1,5 @@
-// Archive encryption through the engine (#877): what reaches storage, what the
-// row records, and that restore, download and prune handle encrypted and
-// legacy plaintext archives.
+// Archive encryption through the engine: what reaches storage, what the row records, and that
+// restore, download and prune handle age-encrypted and plaintext archives.
 
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
 vi.mock("@/lib/docker/volume-owner", () => ({
@@ -79,6 +78,8 @@ vi.mock("child_process", async (importOriginal) => ({
   spawn: spawnMock,
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
+const encryption = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/lib/backups/encryption-setting", () => ({ getBackupEncryptionEnabled: async () => encryption.enabled }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
   inspectContainer: vi.fn().mockResolvedValue({ mounts: [] }),
@@ -108,12 +109,12 @@ vi.mock("@/lib/backups/storage-factory", () => ({
 import {
   downloadBackupToTemp,
   getBackupDownloadUrl,
-  pruneBackups,
   restoreBackup,
   runBackup,
 } from "@/lib/backups/engine";
-import { ARCHIVE_MAGIC, encryptArchiveFile } from "@/lib/backups/archive-crypto";
-import { fingerprintMasterKey } from "@/lib/crypto/key-fingerprint";
+import { createReadStream, createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+import { createArchiveEncryptor, deriveArchiveRecipient } from "@/lib/backups/archive-age";
 
 const execImpl = (...args: unknown[]) => {
   const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
@@ -151,20 +152,24 @@ function backupRow(overrides: Record<string, unknown> = {}) {
     status: "success",
     checksum: sha(ARCHIVE_BYTES),
     sizeBytes: 700,
-    archiveKey: null,
+    encrypted: false,
     target: { organizationId: "org-1" },
     app: { name: "myapp" },
     ...overrides,
   };
 }
 
-/** Write `plain` as the stored object, encrypted. Returns the row's key fields. */
+/** Write `plain` as the stored object, age-encrypted. Returns the row's encryption field. */
 async function storeEncrypted(plain: Buffer) {
   const src = join(BACKUPS_ROOT, "plain-src");
-  stored.path = join(BACKUPS_ROOT, "stored.enc");
+  stored.path = join(BACKUPS_ROOT, "stored.age");
   writeFileSync(src, plain);
-  const key = await encryptArchiveFile(src, stored.path, KEY);
-  return { archiveKey: key.wrappedKey, archiveKeyFingerprint: key.keyFingerprint };
+  await pipeline(
+    createReadStream(src),
+    createArchiveEncryptor(await deriveArchiveRecipient(KEY)),
+    createWriteStream(stored.path),
+  );
+  return { encrypted: true };
 }
 
 function storePlain(plain: Buffer) {
@@ -178,6 +183,7 @@ afterAll(() => {
 
 beforeEach(() => {
   process.env.ENCRYPTION_MASTER_KEY = KEY;
+  encryption.enabled = true;
   inserted.length = 0;
   updated.length = 0;
   uploaded.length = 0;
@@ -195,53 +201,54 @@ beforeEach(() => {
 });
 
 describe("runBackup — archive encryption", () => {
-  it("uploads ciphertext and records the wrapped key, fingerprint and plaintext checksum", async () => {
+  it("uploads age ciphertext and records the plaintext checksum", async () => {
     const [result] = await runBackup("job-1");
 
     expect(result.outcome).toBe("success");
     expect(uploaded).toHaveLength(1);
     const { bytes } = uploaded[0];
-    expect(bytes.subarray(0, 8).equals(ARCHIVE_MAGIC)).toBe(true);
+    expect(bytes.subarray(0, 22).toString("ascii")).toBe("age-encryption.org/v1\n");
     expect(bytes.includes(ARCHIVE_BYTES.subarray(0, 64))).toBe(false);
 
     const success = updated.find((u) => u.status === "success")!;
-    expect(success.archiveKeyFingerprint).toBe(fingerprintMasterKey(KEY));
-    expect(typeof success.archiveKey).toBe("string");
-    expect(bytes.includes(Buffer.from(success.archiveKey as string, "base64"))).toBe(true);
+    expect(success.encrypted).toBe(true);
     expect(success.checksum).toBe(sha(ARCHIVE_BYTES));
     expect(success.sizeBytes).toBe(bytes.length);
   });
 
-  it("names an encrypted archive with an .enc suffix", async () => {
+  it("names an encrypted archive with an .age suffix", async () => {
     await runBackup("job-1");
 
-    expect(uploaded[0].key).toMatch(/\.tar\.gz\.enc$/);
+    expect(uploaded[0].key).toMatch(/\.tar\.gz\.age$/);
   });
 
-  it("keeps the plain name when the archive is not encrypted", async () => {
+  it("uploads plaintext under the plain name when no master key is set", async () => {
     delete process.env.ENCRYPTION_MASTER_KEY;
     await runBackup("job-1");
 
     expect(uploaded[0].key).toMatch(/\.tar\.gz$/);
-  });
-
-  it("uploads plaintext with no key recorded when no master key is set", async () => {
-    delete process.env.ENCRYPTION_MASTER_KEY;
-    await runBackup("job-1");
-
     expect(uploaded[0].bytes.equals(ARCHIVE_BYTES)).toBe(true);
     const success = updated.find((u) => u.status === "success")!;
-    expect(success.archiveKey).toBeNull();
+    expect(success.encrypted).toBe(false);
     expect(success.log).toMatch(/uploading the archive unencrypted/);
+  });
+
+  it("uploads plaintext when an admin turned archive encryption off", async () => {
+    encryption.enabled = false;
+    await runBackup("job-1");
+
+    expect(uploaded[0].key).toMatch(/\.tar\.gz$/);
+    expect(uploaded[0].bytes.equals(ARCHIVE_BYTES)).toBe(true);
+    expect(updated.find((u) => u.status === "success")!.encrypted).toBe(false);
   });
 
   it("a backup it wrote restores through the engine", async () => {
     await runBackup("job-1");
     const success = updated.find((u) => u.status === "success")!;
-    stored.path = join(BACKUPS_ROOT, "roundtrip.enc");
+    stored.path = join(BACKUPS_ROOT, "roundtrip.age");
     writeFileSync(stored.path, uploaded[0].bytes);
     backupsFindFirst.mockResolvedValue(
-      backupRow({ checksum: success.checksum, sizeBytes: success.sizeBytes, archiveKey: success.archiveKey }),
+      backupRow({ checksum: success.checksum, sizeBytes: success.sizeBytes, encrypted: true }),
     );
 
     const restored = await restoreBackup("bk-1");
@@ -265,9 +272,9 @@ describe("restoreBackup — encrypted and legacy archives", () => {
     expect(restoreRan()).toBe(true);
   });
 
-  it("restores an .enc archive whose row predates the strategy column", async () => {
-    const keyFields = await storeEncrypted(ARCHIVE_BYTES);
-    backupsFindFirst.mockResolvedValue(backupRow({ ...keyFields, strategy: null, storagePath: "acme/app/data/x.tar.gz.enc" }));
+  it("restores an .age archive whose row predates the strategy column", async () => {
+    const encryptedRow = await storeEncrypted(ARCHIVE_BYTES);
+    backupsFindFirst.mockResolvedValue(backupRow({ ...encryptedRow, strategy: null, storagePath: "acme/app/data/x.tar.gz.age" }));
 
     const result = await restoreBackup("bk-1");
 
@@ -277,8 +284,8 @@ describe("restoreBackup — encrypted and legacy archives", () => {
 
   it("waives the size floor for an encrypted archive of an empty source", async () => {
     const tiny = Buffer.alloc(40, 1);
-    const keyFields = await storeEncrypted(tiny);
-    backupsFindFirst.mockResolvedValue(backupRow({ ...keyFields, checksum: sha(tiny), sizeBytes: 200 }));
+    const encryptedRow = await storeEncrypted(tiny);
+    backupsFindFirst.mockResolvedValue(backupRow({ ...encryptedRow, checksum: sha(tiny), sizeBytes: 200 }));
 
     const result = await restoreBackup("bk-1");
 
@@ -286,34 +293,46 @@ describe("restoreBackup — encrypted and legacy archives", () => {
   });
 
   it("refuses a tampered archive before any restore command runs", async () => {
-    const keyFields = await storeEncrypted(ARCHIVE_BYTES);
+    const encryptedRow = await storeEncrypted(ARCHIVE_BYTES);
     const sealed = readFileSync(stored.path);
     sealed[sealed.length - 20] ^= 1;
     writeFileSync(stored.path, sealed);
-    backupsFindFirst.mockResolvedValue(backupRow(keyFields));
+    backupsFindFirst.mockResolvedValue(backupRow(encryptedRow));
 
     const result = await restoreBackup("bk-1");
 
     expect(result.success).toBe(false);
-    expect(result.log).toMatch(/failed authentication/);
+    expect(result.log).toMatch(/could not be decrypted/);
     expect(restoreRan()).toBe(false);
   });
 
   it("refuses an archive under a different master key", async () => {
-    const keyFields = await storeEncrypted(ARCHIVE_BYTES);
+    const encryptedRow = await storeEncrypted(ARCHIVE_BYTES);
     process.env.ENCRYPTION_MASTER_KEY = "e".repeat(64);
-    backupsFindFirst.mockResolvedValue(backupRow(keyFields));
+    backupsFindFirst.mockResolvedValue(backupRow(encryptedRow));
 
     const result = await restoreBackup("bk-1");
 
     expect(result.success).toBe(false);
-    expect(result.log).toMatch(/wrapped by master key/);
+    expect(result.log).toMatch(/could not be decrypted/);
+    expect(restoreRan()).toBe(false);
+  });
+
+  it("refuses an archive in the retired in-house format", async () => {
+    stored.path = join(BACKUPS_ROOT, "stored.enc");
+    writeFileSync(stored.path, Buffer.concat([Buffer.from("VARDOENC"), Buffer.alloc(200)]));
+    backupsFindFirst.mockResolvedValue(backupRow({ encrypted: false, storagePath: "acme/app/data/x.tar.gz.enc" }));
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(result.log).toMatch(/retired encryption format/);
     expect(restoreRan()).toBe(false);
   });
 
   it("refuses a plaintext object where the row records an encrypted one", async () => {
     storePlain(ARCHIVE_BYTES);
-    backupsFindFirst.mockResolvedValue(backupRow({ archiveKey: "c29tZXRoaW5n" }));
+    backupsFindFirst.mockResolvedValue(backupRow({ encrypted: true }));
 
     const result = await restoreBackup("bk-1");
 
@@ -323,10 +342,10 @@ describe("restoreBackup — encrypted and legacy archives", () => {
   });
 });
 
-describe("download and prune", () => {
+describe("download", () => {
   it("never presigns an encrypted archive and downloads it decrypted", async () => {
-    const keyFields = await storeEncrypted(ARCHIVE_BYTES);
-    backupsFindFirst.mockResolvedValue(backupRow(keyFields));
+    const encryptedRow = await storeEncrypted(ARCHIVE_BYTES);
+    backupsFindFirst.mockResolvedValue(backupRow(encryptedRow));
 
     expect(await getBackupDownloadUrl("bk-1")).toBeNull();
     expect(getDownloadUrlMock).not.toHaveBeenCalled();
@@ -339,16 +358,5 @@ describe("download and prune", () => {
   it("still presigns a legacy plaintext archive", async () => {
     backupsFindFirst.mockResolvedValue(backupRow());
     expect(await getBackupDownloadUrl("bk-1")).toBe("https://bucket.example/presigned");
-  });
-
-  it("clears the wrapped key when a backup is pruned", async () => {
-    backupJobsFindFirst.mockResolvedValue({ ...job(), keepAll: false, keepLast: 1 });
-    backupsFindMany.mockResolvedValue([
-      { id: "new", finishedAt: new Date(2026, 1, 2), appId: "a", volumeName: "data", storagePath: "k1" },
-      { id: "old", finishedAt: new Date(2026, 1, 1), appId: "a", volumeName: "data", storagePath: "k2" },
-    ]);
-
-    expect(await pruneBackups("job-1")).toBe(1);
-    expect(updated).toContainEqual({ status: "pruned", archiveKey: null });
   });
 });

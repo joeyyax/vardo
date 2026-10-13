@@ -2208,8 +2208,9 @@ case "${1:-}" in
     ;;
   backup)
     shift
-    if [ "${1:-}" != "decrypt" ] || [ $# -ne 3 ]; then
-      echo "Usage: vardo backup decrypt <in> <out>" >&2
+    if [ "${1:-}" != "key" ] || [ $# -ne 1 ]; then
+      echo "Usage: vardo backup key > key.txt" >&2
+      echo "Then: age -d -i key.txt <archive>.age | tar -xz" >&2
       exit 2
     fi
     if [ -z "${ENCRYPTION_MASTER_KEY:-}" ]; then
@@ -2221,23 +2222,17 @@ case "${1:-}" in
     fi
     export ENCRYPTION_MASTER_KEY
     SRC="$SRC_DIR"
-    [ -f "$SRC/scripts/backup-decrypt.ts" ] || SRC="$VARDO_DIR"
-    if [ ! -f "$SRC/scripts/backup-decrypt.ts" ]; then
-      echo "Error: backup-decrypt.ts not found. Make sure Vardo is up to date." >&2
+    [ -f "$SRC/scripts/backup-key.ts" ] || SRC="$VARDO_DIR"
+    if [ ! -f "$SRC/scripts/backup-key.ts" ]; then
+      echo "Error: backup-key.ts not found. Make sure Vardo is up to date." >&2
       exit 1
     fi
-    # A missing bind source makes docker create a directory in its place.
-    [ -f "$2" ] || { echo "No such file: $2" >&2; exit 1; }
-    IN=$(realpath "$2")
-    OUT_DIR=$(realpath "$(dirname "$3")")
-    OUT_NAME=$(basename "$3")
     if command -v tsx >/dev/null 2>&1; then
-      tsx "$SRC/scripts/backup-decrypt.ts" "$IN" "$OUT_DIR/$OUT_NAME"
+      tsx "$SRC/scripts/backup-key.ts"
     else
       # No host tsx: run it in a throwaway Node container. Needs no Vardo services.
-      docker run --rm -e ENCRYPTION_MASTER_KEY \
-        -v "$SRC:/src:ro" -v "$IN:/in:ro" -v "$OUT_DIR:/out" \
-        node:22-slim npx -y tsx /src/scripts/backup-decrypt.ts /in "/out/$OUT_NAME"
+      docker run --rm -e ENCRYPTION_MASTER_KEY -v "$SRC:/src:ro" \
+        node:22-slim npx -y tsx /src/scripts/backup-key.ts
     fi
     ;;
   import-data)
@@ -2304,7 +2299,7 @@ case "${1:-}" in
     echo "  key set          Load escrowed secrets (fresh installs, before a restore)"
     echo "  setup-token      Print the first-run setup token"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
-    echo "  backup decrypt <in> <out>  Decrypt a backup archive"
+    echo "  backup key       Print the age key that opens backup archives"
     echo "  import-data <org>/<app> <volume> <source> [db]  Load a dump or volume tar into an app"
     echo "  shell [cmd]      Open shell in frontend container"
     echo "  uninstall        Remove Vardo"

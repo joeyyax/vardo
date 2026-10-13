@@ -147,7 +147,6 @@ export async function readSystemBackupJob() {
     where: and(isNull(backups.appId), isNull(backups.organizationId)),
     orderBy: [desc(backups.startedAt)],
     limit: 20,
-    columns: { archiveKey: false },
     with: { job: { columns: { id: true, name: true } } },
   });
   if (!job) return { job: null, history };

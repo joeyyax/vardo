@@ -23,7 +23,7 @@ describe("backupDownloadResponse", () => {
 
     expect(res.headers.get("Content-Disposition")).toBe('attachment; filename="web-data-2026-10-09.tar.gz"');
     expect(res.headers.get("X-Vardo-Archive")).toBe(DOWNLOAD_HINT);
-    expect(DOWNLOAD_HINT).toContain("vardo backup decrypt <in> <out>");
+    expect(DOWNLOAD_HINT).toContain("vardo backup key");
     expect(await res.text()).toBe("plain");
   });
 });

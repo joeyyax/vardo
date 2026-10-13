@@ -6,12 +6,12 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { createBackupStorage } from "@/lib/backups/storage-factory";
 import { targetConfigSchema, type TargetType } from "@/lib/backups/target-config";
-import { decryptArchiveFile, readArchiveKeyId } from "@/lib/backups/archive-crypto";
+import { ArchiveDecryptError, decryptArchiveFile, readArchiveKind } from "@/lib/backups/archive-age";
 import { fingerprintMasterKey } from "@/lib/crypto/key-fingerprint";
 import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { getBackupStorageConfig } from "@/lib/system-settings";
 import { checkDumpAuthSecret, type AuthSecretCheck } from "./auth-secret";
-import { SYSTEM_BACKUP_PREFIX, checkKeyIds, systemBackupsFrom, type KeyCheck, type SystemBackup } from "./plan";
+import { SYSTEM_BACKUP_PREFIX, checkKeyIds, systemBackupsFrom, type ArchiveOpening, type KeyCheck, type SystemBackup } from "./plan";
 
 export type RestoreTarget = { type: TargetType; config: Record<string, unknown> };
 
@@ -85,7 +85,7 @@ export type BackupCheck = {
   authSecret: AuthSecretCheck | null;
 };
 
-/** Download a system backup, compare its Key ID with the entered key, then check the auth secret against it. */
+/** Download a system backup, try the entered key on it, then check the auth secret against its dump. */
 export async function checkSystemBackup(
   target: RestoreTarget,
   backupKey: string,
@@ -96,16 +96,25 @@ export async function checkSystemBackup(
   try {
     const sealed = join(dir, "archive");
     await createBackupStorage({ ...target, organizationId: null }).download(backupKey, sealed);
+    const dump = join(dir, "dump.gz");
+    let archive: ArchiveOpening = "plain";
+    if ((await readArchiveKind(sealed)) === "age") {
+      archive = await decryptArchiveFile(sealed, dump, masterKey).then(
+        () => "opens" as const,
+        (err) => {
+          if (err instanceof ArchiveDecryptError) return "refused" as const;
+          throw err;
+        },
+      );
+    }
     const key = checkKeyIds({
-      archiveKeyId: await readArchiveKeyId(sealed),
+      archive,
       enteredKeyId: fingerprintMasterKey(masterKey),
       runningKeyId: runningKeyFingerprint(),
     });
     if (key.kind !== "match" && key.kind !== "unencrypted") return { key, authSecret: null };
 
-    const dump = join(dir, "dump.gz");
-    await decryptArchiveFile(sealed, dump, masterKey);
-    return { key, authSecret: await checkDumpAuthSecret(dump) };
+    return { key, authSecret: await checkDumpAuthSecret(archive === "opens" ? dump : sealed) };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

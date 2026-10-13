@@ -11,6 +11,7 @@ import { JobSections } from "./job-sections";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { KeyEscrowCard } from "./key-escrow-card";
+import { ArchiveEncryptionCard } from "./archive-encryption-card";
 import { OrgBackupDefault, SystemBackupDefault } from "./backup-switch";
 import { NotBackedUp } from "./not-backed-up";
 import { useCan } from "@/components/capabilities-provider";
@@ -301,6 +302,7 @@ export function BackupPage({
 
       {/* Key escrow */}
       {scope === "org" && <KeyEscrowCard heading={Heading} />}
+      {scope === "org" && <ArchiveEncryptionCard heading={Heading} />}
 
       {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 
@@ -331,7 +333,7 @@ export function BackupPage({
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Each archive is encrypted, and the recovery key protects its key</span>
+                <span className="text-muted-foreground">Each archive is encrypted with age and opens with any age client given the recovery key</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />

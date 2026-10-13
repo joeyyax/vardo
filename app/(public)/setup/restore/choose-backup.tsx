@@ -18,7 +18,7 @@ type FoundBackup = { key: string; takenAt: string; sizeBytes: number };
 type KeyCheck =
   | { kind: "match"; keyId: string }
   | { kind: "unencrypted"; keyId: string }
-  | { kind: "wrong-key"; archiveKeyId: string; enteredKeyId: string }
+  | { kind: "wrong-key"; enteredKeyId: string }
   | { kind: "not-loaded"; keyId: string; runningKeyId: string | null };
 
 type BackupCheck = { key: KeyCheck; authSecret: { kind: "none" | "match" | "mismatch" } | null };
@@ -361,22 +361,22 @@ function KeyCheckResult({ check, hostKey = false }: { check: KeyCheck; hostKey?:
   switch (check.kind) {
     case "match":
       return (
-        <Callout variant="success" label="Key ID matches">
-          The backup was written with Key ID <code className="font-mono">{check.keyId}</code>, {hostKey ? "the key this host already holds" : "the key you entered"}.
+        <Callout variant="success" label="Key opens the backup">
+          The {hostKey ? "key this host already holds" : "key you entered"} (Key ID <code className="font-mono">{check.keyId}</code>) opens this backup.
         </Callout>
       );
     case "unencrypted":
       return (
         <Callout variant="warning" label="Unencrypted backup">
-          This backup predates archive encryption, so it carries no Key ID. Env vars decrypt only if{" "}
+          This backup isn&apos;t encrypted, so it can&apos;t say which key it needs. Env vars decrypt only if{" "}
           <code className="font-mono">{check.keyId}</code> is the key the old instance used.
         </Callout>
       );
     case "wrong-key":
       return (
         <Callout variant="error" label="Wrong key">
-          The backup was written with Key ID <code className="font-mono">{check.archiveKeyId}</code>, and the key you
-          entered is <code className="font-mono">{check.enteredKeyId}</code>. Find the key escrowed for that Key ID.
+          The key you entered (Key ID <code className="font-mono">{check.enteredKeyId}</code>) doesn&apos;t open this backup. Find the key
+          escrowed for the instance that wrote it.
         </Callout>
       );
     case "not-loaded":

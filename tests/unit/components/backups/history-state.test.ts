@@ -49,9 +49,9 @@ describe("failureReason", () => {
 });
 
 describe("isEncryptedRun", () => {
-  it("is true only for a stored archive written with a key", () => {
-    expect(isEncryptedRun({ storagePath: "a.enc", archiveKeyFingerprint: "k1:abcd" })).toBe(true);
-    expect(isEncryptedRun({ storagePath: "a.tar.gz", archiveKeyFingerprint: null })).toBe(false);
-    expect(isEncryptedRun({ storagePath: null, archiveKeyFingerprint: "k1:abcd" })).toBe(false);
+  it("is true only for a stored archive written encrypted", () => {
+    expect(isEncryptedRun({ storagePath: "a.tar.gz.age", encrypted: true })).toBe(true);
+    expect(isEncryptedRun({ storagePath: "a.tar.gz", encrypted: false })).toBe(false);
+    expect(isEncryptedRun({ storagePath: null, encrypted: true })).toBe(false);
   });
 });

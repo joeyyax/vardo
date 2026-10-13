@@ -19,10 +19,10 @@ describe("systemBackupsFrom", () => {
       { key: "vardo-system/postgres/2026-10-07T03-12-00-000Z.dump.gz", sizeBytes: 20, modifiedAt: new Date(0) },
       { key: "acme/web/data/2026-10-08T01-00-00-000Z.tar.gz", sizeBytes: 30, modifiedAt: new Date(0) },
       { key: "vardo-system/postgres/notes.txt", sizeBytes: 1, modifiedAt: new Date(0) },
-      { key: "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.enc", sizeBytes: 40, modifiedAt: new Date(0) },
+      { key: "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.age", sizeBytes: 40, modifiedAt: new Date(0) },
     ]);
     expect(found.map((b) => b.key)).toEqual([
-      "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.enc",
+      "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.age",
       "vardo-system/postgres/2026-10-07T03-12-00-000Z.dump.gz",
       "vardo-system/postgres/2026-10-01T03-12-00-000Z.dump.gz",
     ]);
@@ -36,20 +36,20 @@ describe("systemBackupsFrom", () => {
 });
 
 describe("checkKeyIds", () => {
-  it("blocks a key the archive wasn't written with", () => {
-    expect(checkKeyIds({ archiveKeyId: "k1:aaaa", enteredKeyId: "k1:bbbb", runningKeyId: "k1:bbbb" }).kind).toBe("wrong-key");
+  it("blocks a key the archive refused", () => {
+    expect(checkKeyIds({ archive: "refused", enteredKeyId: "k1:bbbb", runningKeyId: "k1:bbbb" }).kind).toBe("wrong-key");
   });
 
   it("asks to load the key when the instance runs a different one", () => {
-    expect(checkKeyIds({ archiveKeyId: "k1:aaaa", enteredKeyId: "k1:aaaa", runningKeyId: "k1:cccc" }).kind).toBe("not-loaded");
+    expect(checkKeyIds({ archive: "opens", enteredKeyId: "k1:aaaa", runningKeyId: "k1:cccc" }).kind).toBe("not-loaded");
   });
 
-  it("matches when all three agree", () => {
-    expect(checkKeyIds({ archiveKeyId: "k1:aaaa", enteredKeyId: "k1:aaaa", runningKeyId: "k1:aaaa" }).kind).toBe("match");
+  it("matches when the key opens the archive and the instance runs it", () => {
+    expect(checkKeyIds({ archive: "opens", enteredKeyId: "k1:aaaa", runningKeyId: "k1:aaaa" }).kind).toBe("match");
   });
 
   it("calls out a plaintext archive", () => {
-    expect(checkKeyIds({ archiveKeyId: null, enteredKeyId: "k1:aaaa", runningKeyId: "k1:aaaa" }).kind).toBe("unencrypted");
+    expect(checkKeyIds({ archive: "plain", enteredKeyId: "k1:aaaa", runningKeyId: "k1:aaaa" }).kind).toBe("unencrypted");
   });
 });
 

@@ -31,29 +31,32 @@ export function systemBackupsFrom(objects: StoredObject[]): SystemBackup[] {
 }
 
 export type KeyCheck =
-  /** The archive was written with the entered key, and it's the key this instance runs. */
+  /** The entered key opens the archive, and it's the key this instance runs. */
   | { kind: "match"; keyId: string }
-  /** A plaintext archive. Nothing to compare, so the restore proceeds on the running key. */
+  /** A plaintext archive. Nothing to open, so the restore proceeds on the running key. */
   | { kind: "unencrypted"; keyId: string }
-  /** The entered key isn't the one the archive was written with. */
-  | { kind: "wrong-key"; archiveKeyId: string; enteredKeyId: string }
+  /** The entered key doesn't open the archive. */
+  | { kind: "wrong-key"; enteredKeyId: string }
   /** The entered key is right, but this instance was started with a different one. */
   | { kind: "not-loaded"; keyId: string; runningKeyId: string | null };
 
-/** Compare the Key IDs of the archive, the entered key and the running key. */
+/** What the entered key did to the archive: opened it, was refused, or there was nothing to open. */
+export type ArchiveOpening = "opens" | "refused" | "plain";
+
+/** Compare the archive's outcome with the entered key's ID and the running key's. */
 export function checkKeyIds(args: {
-  archiveKeyId: string | null;
+  archive: ArchiveOpening;
   enteredKeyId: string;
   runningKeyId: string | null;
 }): KeyCheck {
-  const { archiveKeyId, enteredKeyId, runningKeyId } = args;
-  if (archiveKeyId && archiveKeyId !== enteredKeyId) {
-    return { kind: "wrong-key", archiveKeyId, enteredKeyId };
+  const { archive, enteredKeyId, runningKeyId } = args;
+  if (archive === "refused") {
+    return { kind: "wrong-key", enteredKeyId };
   }
   if (runningKeyId !== enteredKeyId) {
     return { kind: "not-loaded", keyId: enteredKeyId, runningKeyId };
   }
-  return archiveKeyId ? { kind: "match", keyId: enteredKeyId } : { kind: "unencrypted", keyId: enteredKeyId };
+  return archive === "opens" ? { kind: "match", keyId: enteredKeyId } : { kind: "unencrypted", keyId: enteredKeyId };
 }
 
 export type ArchiveRow = {

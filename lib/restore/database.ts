@@ -10,6 +10,7 @@ import { restoreBackup } from "@/lib/backups/engine";
 import { buildSystemDumpMeta } from "@/lib/backups/auto-backup";
 import { sealTargetConfig } from "@/lib/backups/target-config";
 import { SYSTEM_DB_VOLUME_NAME } from "@/lib/backups/key-guard";
+import { ENCRYPTED_SUFFIX } from "@/lib/backups/archive-name";
 import { execFileAsync } from "@/lib/utils/exec";
 import { needsSetup } from "@/lib/setup";
 import { logger } from "@/lib/logger";
@@ -51,7 +52,7 @@ export async function startInstanceRestore(args: {
   const { key: check, authSecret } = await checkSystemBackup(args.target, args.backupKey, args.masterKey);
   if (check.kind === "wrong-key") {
     throw new RestoreRefusedError(
-      `This backup was written with Key ID ${check.archiveKeyId}, but the key you entered is ${check.enteredKeyId}.`,
+      `The key you entered (Key ID ${check.enteredKeyId}) doesn't open this backup.`,
     );
   }
   if (check.kind === "not-loaded") {
@@ -131,6 +132,7 @@ async function stageSystemBackup(target: RestoreTarget, backupKey: string, keyId
     strategy: "dump",
     storagePath: backupKey,
     keyFingerprint: keyId,
+    encrypted: backupKey.endsWith(ENCRYPTED_SUFFIX),
     startedAt: new Date(),
     finishedAt: new Date(),
   });

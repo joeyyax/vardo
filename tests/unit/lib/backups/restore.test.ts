@@ -660,7 +660,7 @@ describe("tar restore quiesces, snapshots and rolls back", () => {
 
 describe("restoreBackup — free disk space", () => {
   it("refuses before downloading when staging can't hold the archive and its decrypted copy", async () => {
-    backupsFindFirst.mockResolvedValue(backupRow({ sizeBytes: 2 ** 60, archiveKey: "wrapped" }));
+    backupsFindFirst.mockResolvedValue(backupRow({ sizeBytes: 2 ** 60, encrypted: true }));
     volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
 
     const result = await restoreBackup("bk-1");
