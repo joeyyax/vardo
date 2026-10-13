@@ -117,6 +117,7 @@ import {
   reconcileQueue,
   getConcurrencyLimit,
   queuePosition,
+  REMOVED_FROM_QUEUE_MESSAGE,
   ACTIVE_KEY,
   QUEUE_KEY,
 } from "@/lib/docker/deploy-concurrency";
@@ -331,6 +332,47 @@ describe("deploy-concurrency", () => {
         await waiting;
         expect(redisList[QUEUE_KEY]).toEqual([]);
         expect(redisState[ACTIVE_KEY]).toBe("2");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops waiting promptly once Redis says it left the list", async () => {
+      vi.useFakeTimers();
+      try {
+        redisList[QUEUE_KEY] = ["a", "me"];
+        redisState[ACTIVE_KEY] = "2";
+        const waiting = waitForConcurrencySlot("me");
+        const outcome = waiting.then(() => "resolved", (err: Error) => err.message);
+        await vi.advanceTimersByTimeAsync(0);
+        redisList[QUEUE_KEY] = ["a"];
+        await vi.advanceTimersByTimeAsync(3_000);
+        expect(await outcome).toBe(REMOVED_FROM_QUEUE_MESSAGE);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps waiting through a Redis error on the place read", async () => {
+      vi.useFakeTimers();
+      try {
+        redisList[QUEUE_KEY] = ["a", "me"];
+        redisState[ACTIVE_KEY] = "2";
+        redisMock.lpos.mockRejectedValue(new Error("Redis down"));
+        let settled = false;
+        const waiting = waitForConcurrencySlot("me").finally(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(settled).toBe(false);
+        redisMock.lpos.mockReset();
+        redisMock.lpos.mockImplementation(async (key: string, value: string) => {
+          const index = (redisList[key] ?? []).indexOf(value);
+          return index === -1 ? null : index;
+        });
+        redisList[QUEUE_KEY] = ["me"];
+        redisState[ACTIVE_KEY] = "1";
+        await vi.advanceTimersByTimeAsync(1_000);
+        await waiting;
+        expect(settled).toBe(true);
       } finally {
         vi.useRealTimers();
       }

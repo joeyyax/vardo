@@ -78,13 +78,21 @@ const POSITION_POLL_MS = 2_000;
 
 /** Deploys ahead of this one in the queue: 0 is next. Null when it isn't queued or Redis can't say. */
 export async function queuePosition(deploymentId: string): Promise<number | null> {
+  const place = await readQueuePlace(deploymentId);
+  return typeof place === "number" ? place : null;
+}
+
+/** Deploys ahead, "absent" when Redis says it isn't queued, "unknown" when Redis didn't answer. */
+async function readQueuePlace(deploymentId: string): Promise<number | "absent" | "unknown"> {
   try {
     const index = await redis.lpos(QUEUE_KEY, deploymentId);
-    return typeof index === "number" ? index : null;
+    return typeof index === "number" ? index : "absent";
   } catch {
-    return null;
+    return "unknown";
   }
 }
+
+export const REMOVED_FROM_QUEUE_MESSAGE = "Deploy was removed from the concurrency queue before it started";
 
 /** Poll until this deployment heads the queue with a free slot, then take it. Throws on abort or timeout, leaving the queue. */
 export async function waitForConcurrencySlot(
@@ -98,13 +106,15 @@ export async function waitForConcurrencySlot(
   let positionReadAt = 0;
 
   while (true) {
-    if (onPosition && Date.now() - positionReadAt >= POSITION_POLL_MS) {
+    if (Date.now() - positionReadAt >= POSITION_POLL_MS) {
       positionReadAt = Date.now();
-      const ahead = await queuePosition(deploymentId);
-      if (ahead !== null && ahead !== lastPosition) {
-        lastPosition = ahead;
+      const place = await readQueuePlace(deploymentId);
+      // Taken out of the list, as by the sweeper: it can never reach the head.
+      if (place === "absent") throw new Error(REMOVED_FROM_QUEUE_MESSAGE);
+      if (typeof place === "number" && place !== lastPosition) {
+        lastPosition = place;
         try {
-          onPosition(ahead);
+          onPosition?.(place);
         } catch { /* a listener never stalls the queue */ }
       }
     }

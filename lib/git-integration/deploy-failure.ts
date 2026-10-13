@@ -27,6 +27,7 @@ const RULES: Rule[] = [
   [/^Deployment was stuck in the queue for (\d+) minutes and was cancelled$/, (m) => `The deploy waited in the queue longer than ${m[1]} minutes and was cancelled.`],
   [/^Deployment never started\b.* and was cancelled$/, () => "The deploy was cancelled before it started."],
   [/^Deploy queue timeout\b/, () => "The deploy waited too long for a free deploy slot and didn't start."],
+  [/^Deploy was removed from the concurrency queue before it started$/, () => "The deploy was taken out of the queue before it started."],
   [/^Deploy cancelled while waiting in concurrency queue$/, () => "The deploy was cancelled while it waited in the queue."],
   [/^Vardo is restarting to finish an update\b/, () => "Vardo was restarting for an update, so the deploy didn't start. Retry it in a minute."],
   [/^Deployment aborted$/, () => "The deploy was stopped."],

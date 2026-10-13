@@ -29,6 +29,7 @@ describe("knownFailure", () => {
     ],
     ["Deploy queue timeout — waited too long for a concurrency slot", "The deploy waited too long for a free deploy slot and didn't start."],
     ["Deploy cancelled while waiting in concurrency queue", "The deploy was cancelled while it waited in the queue."],
+    ["Deploy was removed from the concurrency queue before it started", "The deploy was taken out of the queue before it started."],
     ["Vardo is restarting to finish an update — retry the deploy in a minute", "Vardo was restarting for an update, so the deploy didn't start. Retry it in a minute."],
     ["Deployment never started — the process that queued it stopped and was cancelled", "The deploy was cancelled before it started."],
     ["Deployment was stuck in the queue for 90 minutes and was cancelled", "The deploy waited in the queue longer than 90 minutes and was cancelled."],
