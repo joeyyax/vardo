@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps, domainChecks, domains, systemSettings } from "@/lib/db/schema";
@@ -31,18 +31,29 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
 
   if (orgDomains.length === 0) return [];
 
-  // Latest check per domain: one query, reduced here.
+  // Latest checks per domain, capped in SQL.
   const ids = orgDomains.map((d) => d.id);
-  const checks = await db
+  const ranked = db
     .select({
       domainId: domainChecks.domainId,
       reachable: domainChecks.reachable,
       error: domainChecks.error,
       checkedAt: domainChecks.checkedAt,
+      rn: sql<number>`row_number() over (partition by ${domainChecks.domainId} order by ${domainChecks.checkedAt} desc)`.as("rn"),
     })
     .from(domainChecks)
     .where(inArray(domainChecks.domainId, ids))
-    .orderBy(desc(domainChecks.checkedAt));
+    .as("ranked");
+  const checks = await db
+    .select({
+      domainId: ranked.domainId,
+      reachable: ranked.reachable,
+      error: ranked.error,
+      checkedAt: ranked.checkedAt,
+    })
+    .from(ranked)
+    .where(lte(ranked.rn, DOMAIN_FAILURES_TO_CONFIRM))
+    .orderBy(desc(ranked.checkedAt));
 
   // Two most recent per domain, so a single aborted request doesn't read as unreachable.
   const recent = new Map<string, (typeof checks)[number][]>();

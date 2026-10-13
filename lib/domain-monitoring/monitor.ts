@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { domainChecks } from "@/lib/db/schema";
-import { desc, sql, inArray } from "drizzle-orm";
+import { desc, inArray, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
@@ -11,6 +11,14 @@ import type { OutboundPolicy } from "@/lib/security/ssrf";
 const log = logger.child("domain-monitor");
 
 const MAX_CONCURRENCY = 5;
+
+/** Raw checks kept this long; the hourly rollup keeps the history. */
+export const DOMAIN_CHECK_RETENTION_MS = 7 * 24 * 60 * 60_000;
+
+/** Deletes checks older than the retention window, for every domain. */
+export async function pruneDomainChecks(now = Date.now()): Promise<void> {
+  await db.delete(domainChecks).where(lt(domainChecks.checkedAt, new Date(now - DOMAIN_CHECK_RETENTION_MS)));
+}
 
 type DomainCheckResult = {
   domainId: string;
@@ -24,6 +32,9 @@ type DomainCheckResult = {
 
 /** Probe every active app's domains, MAX_CONCURRENCY at a time. */
 export async function checkAllDomains(): Promise<DomainCheckResult[]> {
+  // Before the eligibility filter, so a stopped app's checks still age out.
+  await pruneDomainChecks().catch(() => {});
+
   const allDomains = await db.query.domains.findMany({
     with: {
       app: {
@@ -41,22 +52,14 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   // Latest check per domain, for state-transition detection.
   const domainIds = eligible.map((d) => d.id);
   const prevChecks = await db
-    .select({
+    .selectDistinctOn([domainChecks.domainId], {
       domainId: domainChecks.domainId,
       reachable: domainChecks.reachable,
     })
     .from(domainChecks)
     .where(inArray(domainChecks.domainId, domainIds))
     .orderBy(domainChecks.domainId, desc(domainChecks.checkedAt))
-    .then((rows) => {
-      const map = new Map<string, { reachable: boolean }>();
-      for (const row of rows) {
-        if (!map.has(row.domainId)) {
-          map.set(row.domainId, { reachable: row.reachable });
-        }
-      }
-      return map;
-    });
+    .then((rows) => new Map(rows.map((row) => [row.domainId, { reachable: row.reachable }])));
 
   const limit = pLimit(MAX_CONCURRENCY);
   const policy = await getDomainProbePolicy();
@@ -70,23 +73,6 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   const checks: DomainCheckResult[] = [];
   for (const r of results) {
     if (r.status === "fulfilled") checks.push(r.value);
-  }
-
-  // Keep the 100 most recent checks per domain.
-  try {
-    await db.execute(sql`
-      DELETE FROM "domain_check"
-      WHERE id IN (
-        SELECT id FROM (
-          SELECT id, ROW_NUMBER() OVER (PARTITION BY domain_id ORDER BY checked_at DESC) AS rn
-          FROM "domain_check"
-          WHERE domain_id IN (${sql.join(domainIds.map((id) => sql`${id}`), sql`, `)})
-        ) ranked
-        WHERE rn > 100
-      )
-    `);
-  } catch {
-    // Best-effort.
   }
 
   return checks;
