@@ -63,6 +63,11 @@ export function anomalyItem(app: AppRef, findings: Finding[], top: TopProcess[] 
   };
 }
 
+/** These only flag outside deploy, restart and backup windows. */
+function unexplained(app: AppRef, what: string): string {
+  return `${app.name} hasn't ${what} before, and nothing was deployed or changed in Vardo around then. If you changed its settings yourself, there's nothing to do.`;
+}
+
 export function newProcessItem(app: AppRef, names: string[], since: number, top: TopProcess[] | null): AlertItem {
   return {
     type: "app.new-process",
@@ -70,8 +75,8 @@ export function newProcessItem(app: AppRef, names: string[], since: number, top:
     appId: app.id,
     appName: app.name,
     severity: "warning",
-    title: names.length === 1 ? `${app.name} is running a process it never has: ${names[0]}` : `${app.name} is running ${names.length} processes it never has`,
-    detail: `Vardo hasn't seen ${names.length === 1 ? "this process" : "these processes"} in the app before. If a deploy or a change of yours doesn't explain it, a compromised app can look like this. ${CHECK}`,
+    title: names.length === 1 ? `${app.name} started a new process, ${names[0]}, without a deploy` : `${app.name} started ${names.length} new processes without a deploy`,
+    detail: unexplained(app, names.length === 1 ? "run this process" : "run these processes"),
     facts: [{ label: names.length === 1 ? "Process" : "Processes", value: names.join(", ") }, ...topProcessesFact(top)],
     since: new Date(since).toISOString(),
   };
@@ -84,8 +89,8 @@ export function newPortItem(app: AppRef, ports: string[], since: number, top: To
     appId: app.id,
     appName: app.name,
     severity: "warning",
-    title: ports.length === 1 ? `${app.name} is listening on a new port: ${ports[0]}` : `${app.name} is listening on ${ports.length} new ports`,
-    detail: `Vardo hasn't seen the app listen there before. If a deploy or a change of yours doesn't explain it, something inside may be serving what it shouldn't. ${CHECK}`,
+    title: ports.length === 1 ? `${app.name} opened ${ports[0]} without a deploy` : `${app.name} opened ${ports.length} new ports without a deploy`,
+    detail: unexplained(app, ports.length === 1 ? "listened on this port" : "listened on these ports"),
     facts: [{ label: ports.length === 1 ? "Port" : "Ports", value: ports.join(", ") }, ...topProcessesFact(top)],
     since: new Date(since).toISOString(),
   };
