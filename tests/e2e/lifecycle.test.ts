@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { setupScratchAdmin } from "./helpers/seed";
 
 test.setTimeout(300_000);
 
@@ -47,14 +48,7 @@ test("create, deploy, back up, restore, stop, recreate and roll back an app", as
   let appId = "";
 
   try {
-    await page.goto("/setup");
-    await page.getByLabel("Setup token").fill("e2e-setup-token-0123456789");
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("textbox", { name: "Name" }).fill("Lifecycle E2E");
-    await page.getByRole("textbox", { name: "Email" }).fill(`${slug}@example.test`);
-    await page.getByRole("textbox", { name: "Password" }).fill("TestPassword123!");
-    await page.getByRole("button", { name: "Create account" }).click();
-    await page.waitForURL("**/projects");
+    await setupScratchAdmin(page, `${slug}@example.test`);
 
     await page.goto("/apps/new");
     await page.getByRole("button", { name: "Docker Compose Paste or from a repo" }).click();
