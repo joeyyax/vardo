@@ -14,7 +14,7 @@ The console writes one Traefik file, `vardo-probe-guard.yaml`, in the dynamic di
 | `vardo-guard-<app>-probe-*` | 1,000,000,010 | A probe path (`lib/probe-guard/rules.ts`) | 403, or 404 for `.env`, `.git` and backups |
 | `vardo-guard-<app>-robots-*` | 1,000,000,000 | `/robots.txt`, when the app opted in | Trap lines as `Disallow` |
 
-Every router sends the request to the console's `vardo@docker` service at `/probe-guard/<kind>`, with `X-Vardo-Guard` set to a key derived from `ENCRYPTION_MASTER_KEY`. The console answers only requests that carry it. Answers are short plain text with `Cache-Control: no-store`, never mention the app or its stack, and don't depend on the app being up. With **Humor in probe responses** off, the body is `Forbidden` or `Not Found`.
+Every router sends the request to the console's `vardo@docker` service at `/probe-guard/<kind>`, with `X-Vardo-Guard` set to a key derived from `ENCRYPTION_MASTER_KEY`. The console answers only requests that carry it. Answers have `Cache-Control: no-store`, never mention the app or its stack, and don't depend on the app being up. A request that accepts `text/html` gets a small error page with the status, its official name and one generic line, such as "This item is unavailable." (a banned address reads "Access from your address is unavailable right now."). Every other client gets short plain text. With **Humor in probe responses** on, the humor line replaces the generic one; with it off, the plain text body is `Forbidden` or `Not Found`.
 
 The file is rewritten on every settings change and ban, and each minute by the `probe-guard` loop, which drops expired bans and picks up new domains. Saved settings apply without a redeploy.
 
