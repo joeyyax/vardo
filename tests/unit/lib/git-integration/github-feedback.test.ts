@@ -290,7 +290,7 @@ function harness(opts: { info?: DeployInfo | null; routes?: Route[]; deps?: Part
   const deps: FeedbackDeps = {
     loadInfo: vi.fn(async () => (opts.info === undefined ? info() : opts.info)),
     readSha: vi.fn(async () => "abcdef1234567"),
-    instance: async () => ({ id: "inst-1", name: "Acme Vardo", consoleUrl: "https://console.example.com" }),
+    instance: async () => ({ id: "inst-1", consoleUrl: "https://console.example.com" }),
     resolveInstallation: vi.fn(async () => 11),
     client: vi.fn(async () => gh),
     markBlocked,
@@ -330,7 +330,7 @@ describe("deploy feedback", () => {
     const comments = calls.filter((c) => /\/issues\/(4\/comments$|comments\/900)/.test(c.path) && c.method !== "GET");
     expect(comments[0].method).toBe("POST");
     expect(comments.slice(1).every((c) => c.method === "PATCH")).toBe(true);
-    expect((comments.at(-1)?.body as { body: string }).body).toContain("| web | Live | https://pr-4-web.example.com |");
+    expect((comments.at(-1)?.body as { body: string }).body).toContain("| web | https://pr-4-web.example.com |");
   });
 
   it("comments once on the merged PR when production goes live", async () => {
@@ -341,20 +341,25 @@ describe("deploy feedback", () => {
     await settle();
     const posts = calls.filter((c) => c.path === "/repos/acme/widget/issues/8/comments" && c.method === "POST");
     expect(posts).toHaveLength(1);
-    expect((posts[0].body as { body: string }).body).toContain("**Live in production**");
-    expect((posts[0].body as { body: string }).body).toContain("`abcdef1` | 1m 5s");
+    expect((posts[0].body as { body: string }).body).toContain("**Live in production at `abcdef1`**");
+    expect((posts[0].body as { body: string }).body).toContain("| web | https://widget.example.com | 1m 5s |");
     expect(calls.find((c) => c.path === "/repos/acme/widget/deployments")?.body).toMatchObject({ environment: "production/web", production_environment: true });
   });
 
-  it("reports a production failure with a log link on the merged PR", async () => {
+  it("reports a production failure with readable text and links on the merged PR", async () => {
     const { feedback, calls } = harness({
       routes: [["GET", /commits\/.*\/pulls/, () => [{ number: 8, merged_at: "2026-01-01", merge_commit_sha: "abcdef1234567", base: { ref: "main" } }]]],
     });
-    runDeploy(feedback, { status: "failed", error: "Health check failed", durationMs: 1000 });
+    runDeploy(feedback, { status: "failed", error: "docker failed (exit 1): npm ERR! at /srv/app 10.0.0.4", durationMs: 1000 });
     await settle();
     const post = calls.find((c) => c.path === "/repos/acme/widget/issues/8/comments" && c.method === "POST");
-    expect((post?.body as { body: string }).body).toContain("Failed: Health check failed ([log](https://console.example.com/apps/app-1/deployments/dep-1))");
-    expect(calls.filter((c) => c.path.includes("/statuses/abcdef")).at(-1)?.body).toMatchObject({ state: "failure" });
+    const body = (post?.body as { body: string }).body;
+    expect(body).toContain("**Production deploy failed at `abcdef1`**\n\nBuild failed (exit 1).\n");
+    expect(body).toContain("| web | Failed | [Log](https://console.example.com/apps/app-1/deployments/dep-1) · [Open in Vardo](https://console.example.com/apps/app-1) |");
+    expect(calls.filter((c) => c.path.includes("/statuses/abcdef")).at(-1)?.body).toMatchObject({ state: "failure", description: "Build failed (exit 1)." });
+    expect(calls.find((c) => c.path === "/repos/acme/widget/deployments/500/statuses" && (c.body as { state: string }).state === "failure")?.body)
+      .toMatchObject({ description: "Build failed (exit 1)." });
+    expect(JSON.stringify(calls)).not.toContain("npm ERR");
   });
 
   it("skips commit statuses on a manual redeploy of the branch", async () => {
@@ -497,7 +502,7 @@ describe("deploy feedback", () => {
     t.stage("compose", "running");
     await settle();
     const last = calls.filter((c) => c.method === "PATCH").at(-1)?.body as { body: string };
-    expect(last.body).toContain("**Preview: building** at `bbbbbbb`");
+    expect(last.body).toContain("**Preview building at `bbbbbbb`**");
   });
 });
 

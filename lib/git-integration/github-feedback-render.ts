@@ -1,5 +1,7 @@
 // Bodies and payloads for deploy feedback on GitHub. Pure, no I/O.
 
+import { knownFailure } from "./deploy-failure";
+
 export type PreviewState = "queued" | "building" | "deploying" | "live" | "failed";
 
 export type PreviewRow = {
@@ -8,6 +10,8 @@ export type PreviewRow = {
   url?: string | null;
   error?: string | null;
   logUrl?: string | null;
+  /** The app's console page, when the console is public. */
+  appUrl?: string | null;
 };
 
 export type ProductionState = "live" | "failed" | "rolled_back";
@@ -20,6 +24,9 @@ export type ProductionRow = {
   url?: string | null;
   error?: string | null;
   logUrl?: string | null;
+  appUrl?: string | null;
+  /** The commit still serving after a rollback. */
+  servingSha?: string | null;
 };
 
 export const previewMarker = (instanceId: string) => `<!-- vardo:pr:${instanceId} -->`;
@@ -44,6 +51,12 @@ export function cell(text: string, max = 120): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
+/** A known error's sentence, else the message's first line, capped. */
+export function failureText(raw: string | null | undefined, max = 100): string | null {
+  if (!raw?.trim()) return null;
+  return knownFailure(raw) ?? (cell(raw.trim().split(/\r?\n/)[0], max) || null);
+}
+
 /** The PR's state: any failure, then the earliest step still running, then live. */
 export function overallState(rows: PreviewRow[]): PreviewState {
   if (rows.length === 0) return "queued";
@@ -52,38 +65,68 @@ export function overallState(rows: PreviewRow[]): PreviewState {
   return "live";
 }
 
-function statusCell(row: { state: PreviewState | ProductionState; error?: string | null; logUrl?: string | null }): string {
-  let text = STATE_LABEL[row.state];
-  if (row.error && (row.state === "failed" || row.state === "rolled_back")) text += `: ${cell(row.error, 100)}`;
-  if (row.logUrl && (row.state === "failed" || row.state === "rolled_back")) text += ` ([log](${row.logUrl}))`;
-  return text;
+type Row = PreviewRow | ProductionRow;
+
+const isFailure = (r: Row) => r.state === "failed" || r.state === "rolled_back";
+
+function rowError(r: Row): string | null {
+  if (!isFailure(r)) return null;
+  const serving = "servingSha" in r && r.state === "rolled_back" ? shortSha(r.servingSha) : null;
+  return [failureText(r.error), serving && `\`${serving}\` is still serving traffic.`].filter(Boolean).join(" ") || null;
+}
+
+/** The error every row failed with, when they all failed with the same one. */
+function sharedError(rows: Row[]): string | null {
+  if (rows.length === 0 || !rows.every(isFailure)) return null;
+  const first = rowError(rows[0]);
+  return first && rows.every((r) => rowError(r) === first) ? first : null;
+}
+
+function linksCell(r: Row): string {
+  if (!isFailure(r)) return "";
+  return [r.logUrl && `[Log](${r.logUrl})`, r.appUrl && `[Open in Vardo](${r.appUrl})`].filter(Boolean).join(" · ");
+}
+
+function statusCell(r: Row, errorShared: boolean): string {
+  const label = STATE_LABEL[r.state];
+  if (r.state === "live") return r.url ? `${label} · ${r.url}` : label;
+  const error = errorShared ? null : rowError(r);
+  return error ? `${label} · ${error}` : label;
+}
+
+function table(header: string[], rows: string[][]): string[] {
+  const line = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  return [line(header), line(header.map(() => "---")), ...rows.map(line)];
+}
+
+/** Heading, the shared error if any, then the table. */
+function body(marker: string, heading: string, shared: string | null, lines: string[]): string {
+  return [marker, `**${heading}**`, "", ...(shared ? [shared, ""] : []), ...lines].join("\n");
 }
 
 export function renderPreviewComment(opts: {
   instanceId: string;
-  instanceName: string;
   sha?: string | null;
   rows: PreviewRow[];
   removed?: boolean;
 }): string {
   const marker = previewMarker(opts.instanceId);
-  const footer = `<sub>${cell(opts.instanceName, 60)}</sub>`;
-  if (opts.removed) return [marker, "**Preview removed**", "", footer].join("\n");
+  if (opts.removed) return [marker, "**Preview removed**"].join("\n");
 
   const rows = [...opts.rows].sort((a, b) => a.app.localeCompare(b.app));
   const state = overallState(rows);
   const sha = shortSha(opts.sha);
-  const lines = [
-    marker,
-    `**Preview: ${STATE_LABEL[state].toLowerCase()}**${sha ? ` at \`${sha}\`` : ""}`,
-    "",
-    "| Service | Status | URL |",
-    "| --- | --- | --- |",
-    ...rows.map((r) => `| ${cell(r.app, 60)} | ${statusCell(r)} | ${r.state === "live" && r.url ? r.url : ""} |`),
-    "",
-    footer,
-  ];
-  return lines.join("\n");
+  const heading = `Preview ${STATE_LABEL[state].toLowerCase()}${sha ? ` at \`${sha}\`` : ""}`;
+
+  if (rows.length > 0 && rows.every((r) => r.state === "live")) {
+    return body(marker, heading, null, table(["Service", "URL"], rows.map((r) => [cell(r.app, 60), r.url ?? ""])));
+  }
+  const shared = sharedError(rows);
+  const links = rows.some((r) => linksCell(r));
+  return body(marker, heading, shared, table(
+    ["Service", "Status", ...(links ? [""] : [])],
+    rows.map((r) => [cell(r.app, 60), statusCell(r, !!shared), ...(links ? [linksCell(r)] : [])]),
+  ));
 }
 
 export function formatDuration(ms: number | null | undefined): string {
@@ -94,27 +137,39 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${m}m ${s % 60}s`;
 }
 
-export function renderMergedComment(opts: { instanceId: string; instanceName: string; rows: ProductionRow[] }): string {
+export function renderMergedComment(opts: { instanceId: string; rows: ProductionRow[] }): string {
+  const marker = mergedMarker(opts.instanceId);
   const rows = [...opts.rows].sort((a, b) => a.app.localeCompare(b.app));
-  const heading = rows.some((r) => r.state === "rolled_back")
+  const title = rows.some((r) => r.state === "rolled_back")
     ? "Rolled back in production"
     : rows.some((r) => r.state === "failed")
       ? "Production deploy failed"
       : "Live in production";
-  const lines = [
-    mergedMarker(opts.instanceId),
-    `**${heading}**`,
-    "",
-    "| Service | Status | Version | Duration |",
-    "| --- | --- | --- | --- |",
-    ...rows.map((r) => {
-      const status = r.state === "live" && r.url ? `[Live](${r.url})` : statusCell(r);
-      return `| ${cell(r.app, 60)} | ${status} | \`${shortSha(r.sha)}\` | ${formatDuration(r.durationMs)} |`;
-    }),
-    "",
-    `<sub>${cell(opts.instanceName, 60)}</sub>`,
-  ];
-  return lines.join("\n");
+  const first = shortSha(rows[0]?.sha);
+  const sha = first && rows.every((r) => shortSha(r.sha) === first) ? first : null;
+  const heading = sha ? `${title} at \`${sha}\`` : title;
+  const version = (r: ProductionRow) => (sha ? [] : [`\`${shortSha(r.sha)}\``]);
+  const duration = (r: ProductionRow) => (r.state === "live" ? formatDuration(r.durationMs) : "");
+
+  if (rows.length > 0 && rows.every((r) => r.state === "live")) {
+    return body(marker, heading, null, table(
+      ["Service", "URL", ...(sha ? [] : ["Version"]), "Duration"],
+      rows.map((r) => [cell(r.app, 60), r.url ?? "", ...version(r), duration(r)]),
+    ));
+  }
+  const shared = sharedError(rows);
+  const live = rows.some((r) => r.state === "live");
+  const links = rows.some((r) => linksCell(r));
+  return body(marker, heading, shared, table(
+    ["Service", "Status", ...(sha ? [] : ["Version"]), ...(live ? ["Duration"] : []), ...(links ? [""] : [])],
+    rows.map((r) => [
+      cell(r.app, 60),
+      statusCell(r, !!shared),
+      ...version(r),
+      ...(live ? [duration(r)] : []),
+      ...(links ? [linksCell(r)] : []),
+    ]),
+  ));
 }
 
 export type CommitState = "pending" | "success" | "failure" | "error";
@@ -204,4 +259,8 @@ export function publicConsoleUrl(raw: string | null | undefined): string | null 
 
 export function deployPageUrl(base: string | null, appId: string, deploymentId: string): string | null {
   return base ? `${base}/apps/${appId}/deployments/${deploymentId}` : null;
+}
+
+export function appPageUrl(base: string | null, appId: string): string | null {
+  return base ? `${base}/apps/${appId}` : null;
 }

@@ -41,7 +41,7 @@ function info(deploymentId: string, over: Partial<DeployInfo>): DeployInfo {
 }
 
 /** One process's feedback: its own memory, the shared store. */
-function processFeedback(redis: FakeRedis, over: Partial<DeployInfo>, calls: Call[]) {
+function processFeedback(redis: FakeRedis, over: Partial<DeployInfo>, calls: Call[], extra: Partial<FeedbackDeps> = {}) {
   let pullLookups = 0;
   const gh: GitHub = {
     async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -59,12 +59,13 @@ function processFeedback(redis: FakeRedis, over: Partial<DeployInfo>, calls: Cal
   const deps: FeedbackDeps = {
     loadInfo: async (deploymentId) => info(deploymentId, over),
     readSha: async () => SHA,
-    instance: async () => ({ id: "inst-1", name: "Example", consoleUrl: "https://console.example.com" }),
+    instance: async () => ({ id: "inst-1", consoleUrl: "https://console.example.com" }),
     resolveInstallation: async () => 11,
     client: async () => gh,
     markBlocked: async () => {},
     intervalMs: 0,
     store: redisFeedbackStore(redis as unknown as FeedbackRedis),
+    ...extra,
   };
   return { feedback: createFeedback(deps), pullLookups: () => pullLookups };
 }
@@ -94,7 +95,7 @@ describe("PR comment state across processes", () => {
     await settle();
     deploy(web.feedback, "dep-api");
     await settle();
-    expect(lastBody(webCalls, 4)).toContain("| api | Live");
+    expect(lastBody(webCalls, 4)).toContain("**Preview live at `abcdef1`**");
 
     const workerCalls: Call[] = [];
     const worker = processFeedback(redis, preview, workerCalls);
@@ -103,7 +104,7 @@ describe("PR comment state across processes", () => {
 
     const body = lastBody(workerCalls, 4);
     expect(body).toContain("| web | Live");
-    expect(body).toMatch(/\| api \| Failed: Rolled back after the deploy/);
+    expect(body).toMatch(/\| api \| Failed · The new version stopped soon after going live\. \| \[Log\]/);
     // Edits the comment web created instead of searching for it.
     expect(workerCalls.some((c) => c.method === "PATCH" && c.path === "/repos/acme/widget/issues/comments/900")).toBe(true);
     expect(workerCalls.some((c) => c.method === "GET" && c.path.includes("/issues/4/comments"))).toBe(false);
@@ -126,7 +127,22 @@ describe("PR comment state across processes", () => {
     expect(body).toContain("Rolled back in production");
     expect(body).toMatch(/\| web \| Live/);
     expect(body).toMatch(/\| api \| Rolled back/);
+    expect(body).not.toContain("still serving");
     expect(worker.pullLookups()).toBe(0);
+  });
+
+  it("names the restored commit only when the rollback says it's serving", async () => {
+    const web = processFeedback(redis, {}, []);
+    deploy(web.feedback, "dep-api");
+    await settle();
+
+    const readServingSha = vi.fn(async () => "a91c0e2ffff");
+    const workerCalls: Call[] = [];
+    const worker = processFeedback(redis, {}, workerCalls, { readServingSha });
+    await worker.feedback.deployRolledBack("dep-api", { serving: true });
+    await settle();
+    expect(readServingSha).toHaveBeenCalledWith("dep-api", "app-api");
+    expect(lastBody(workerCalls, 8)).toContain("**Rolled back in production at `abcdef1`**\n\nThe new version stopped soon after going live. `a91c0e2` is still serving traffic.\n");
   });
 
   it("still updates the comment from this process's state when Redis is down", async () => {
@@ -135,7 +151,7 @@ describe("PR comment state across processes", () => {
     const web = processFeedback(redis, preview, calls);
     deploy(web.feedback, "dep-web");
     await settle();
-    expect(lastBody(calls, 4)).toContain("| web | Live");
+    expect(lastBody(calls, 4)).toContain("**Preview live at `abcdef1`**");
   });
 });
 

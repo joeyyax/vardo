@@ -3,11 +3,13 @@
 import { logger } from "@/lib/logger";
 import { redis } from "@/lib/redis";
 import {
+  appPageUrl,
   commitStatusPayload,
   deployPageUrl,
   deploymentEnvironment,
   deploymentPayload,
   deploymentStatusPayload,
+  failureText,
   mergedMarker,
   overallState,
   previewMarker,
@@ -288,11 +290,13 @@ export type DeployInfo = {
   enabled: boolean;
 };
 
-export type InstanceInfo = { id: string; name: string; consoleUrl: string | null };
+export type InstanceInfo = { id: string; consoleUrl: string | null };
 
 export type FeedbackDeps = {
   loadInfo: (deploymentId: string, trigger: string, pinnedSha: string | null) => Promise<DeployInfo | null>;
   readSha: (deploymentId: string) => Promise<string | null>;
+  /** The commit the rollback of this deploy restored. */
+  readServingSha?: (deploymentId: string, appId: string) => Promise<string | null>;
   instance: () => Promise<InstanceInfo>;
   /** Installation that covers the repo for these orgs; null orgs trusts GitHub's answer alone. */
   resolveInstallation: (repo: string, organizationIds: string[] | null) => Promise<number | null>;
@@ -435,7 +439,6 @@ export function createFeedback(deps: FeedbackDeps) {
     const instance = await deps.instance();
     const body = renderPreviewComment({
       instanceId: instance.id,
-      instanceName: instance.name,
       sha: state.sha,
       rows: [...state.rows.values()],
       removed: opts.removed,
@@ -583,7 +586,7 @@ export function createFeedback(deps: FeedbackDeps) {
     }
     if (!merged.pr) return;
     const instance = await deps.instance();
-    const body = renderMergedComment({ instanceId: instance.id, instanceName: instance.name, rows: [...merged.rows.values()] });
+    const body = renderMergedComment({ instanceId: instance.id, rows: [...merged.rows.values()] });
     const repo = info.repo;
     const pr = merged.pr;
     coalescer.push(`merged:${key}`, body, async (latest) => {
@@ -700,6 +703,7 @@ export function createFeedback(deps: FeedbackDeps) {
             await begin(i);
             const instance = await deps.instance();
             const logUrl = deployPageUrl(instance.consoleUrl, i.appId, deploymentId);
+            const appUrl = appPageUrl(instance.consoleUrl, i.appId);
             const url = i.environmentUrl;
             if (result.status === "success") {
               await setPreviewRow(i, { state: "live", url }, sha);
@@ -708,12 +712,14 @@ export function createFeedback(deps: FeedbackDeps) {
               if (sha) await mergedRow(i, sha, { state: "live", durationMs: result.durationMs, url });
             } else if (result.status === "failed") {
               const reason = result.error || "Deploy failed";
-              await setPreviewRow(i, { state: "failed", error: reason, logUrl }, sha);
-              if (sha) await postCommitStatus(i, sha, "failure", reason);
-              await deploymentStatus(i, "failure", reason);
-              if (sha) await mergedRow(i, sha, { state: "failed", durationMs: result.durationMs, error: reason, logUrl });
+              // Readable text only: statuses show on public repos.
+              const summary = failureText(reason) ?? "Deploy failed";
+              await setPreviewRow(i, { state: "failed", error: reason, logUrl, appUrl }, sha);
+              if (sha) await postCommitStatus(i, sha, "failure", summary);
+              await deploymentStatus(i, "failure", summary);
+              if (sha) await mergedRow(i, sha, { state: "failed", durationMs: result.durationMs, error: reason, logUrl, appUrl });
             } else if (result.status === "cancelled") {
-              await setPreviewRow(i, { state: "failed", error: "Cancelled", logUrl }, sha);
+              await setPreviewRow(i, { state: "failed", error: "Cancelled", logUrl, appUrl }, sha);
               if (sha) await postCommitStatus(i, sha, "error", "Cancelled");
               await deploymentStatus(i, "error", "Cancelled");
             } else {
@@ -729,15 +735,17 @@ export function createFeedback(deps: FeedbackDeps) {
     }
   }
 
-  /** A deploy that went live was rolled back afterwards. */
-  async function deployRolledBack(deploymentId: string, reason = "Rolled back after the deploy"): Promise<void> {
+  /** A deploy that went live was rolled back afterwards. `serving` when the restored version is running. */
+  async function deployRolledBack(deploymentId: string, opts: { serving?: boolean } = {}): Promise<void> {
+    const reason = "Rolled back after the deploy";
     try {
       const info = await deps.loadInfo(deploymentId, "", null);
       if (!info || !info.enabled || !info.repo) return;
       const sha = await deps.readSha(deploymentId);
       const instance = await deps.instance();
       const logUrl = deployPageUrl(instance.consoleUrl, info.appId, deploymentId);
-      await setPreviewRow(info, { state: "failed", error: reason, logUrl }, sha);
+      const appUrl = appPageUrl(instance.consoleUrl, info.appId);
+      await setPreviewRow(info, { state: "failed", error: reason, logUrl, appUrl }, sha);
       if (!sha) return;
       await postCommitStatus(info, sha, "failure", reason);
       if (wantsDeployment(info)) {
@@ -750,7 +758,8 @@ export function createFeedback(deps: FeedbackDeps) {
           }, { final: true, conn: gh });
         }
       }
-      await mergedRow(info, sha, { state: "rolled_back", error: reason, logUrl });
+      const servingSha = opts.serving ? await deps.readServingSha?.(deploymentId, info.appId).catch(() => null) : null;
+      await mergedRow(info, sha, { state: "rolled_back", error: reason, logUrl, appUrl, servingSha });
     } catch (err) {
       log.warn(`Rollback feedback for ${deploymentId} failed: ${err instanceof Error ? err.message : err}`);
     }
@@ -878,12 +887,7 @@ async function loadInstance(): Promise<InstanceInfo> {
   if (!instancePromise) {
     instancePromise = (async () => {
       const { getInstanceId } = await import("@/lib/constants");
-      let name = "Vardo";
-      try {
-        const { getInstanceDisplayName } = await import("@/lib/system-settings");
-        name = (await getInstanceDisplayName()) || name;
-      } catch { /* default stands */ }
-      return { id: await getInstanceId(), name, consoleUrl: publicConsoleUrl(process.env.NEXT_PUBLIC_APP_URL) };
+      return { id: await getInstanceId(), consoleUrl: publicConsoleUrl(process.env.NEXT_PUBLIC_APP_URL) };
     })().catch((err) => {
       instancePromise = null;
       throw err;
@@ -974,6 +978,19 @@ async function readSha(deploymentId: string): Promise<string | null> {
   return row?.gitSha ?? null;
 }
 
+/** The SHA on the rollback row the monitor wrote for this deploy. */
+async function readServingSha(deploymentId: string, appId: string): Promise<string | null> {
+  const { db } = await import("@/lib/db");
+  const { deployments } = await import("@/lib/db/schema");
+  const { and, desc, eq } = await import("drizzle-orm");
+  const row = await db.query.deployments.findFirst({
+    where: and(eq(deployments.appId, appId), eq(deployments.rollbackFromId, deploymentId), eq(deployments.trigger, "rollback")),
+    orderBy: [desc(deployments.startedAt)],
+    columns: { gitSha: true },
+  });
+  return row?.gitSha ?? null;
+}
+
 /** Turns feedback off for the apps and records why, once per outage. */
 async function markBlocked(appIds: string[], organizationId: string | null, permission: Permission): Promise<void> {
   if (appIds.length === 0) return;
@@ -1003,6 +1020,7 @@ const feedback = createFeedback({
   store: redisFeedbackStore(redis as unknown as FeedbackRedis),
   loadInfo,
   readSha,
+  readServingSha,
   instance: loadInstance,
   resolveInstallation: cachedInstallation,
   client: installationClient,
