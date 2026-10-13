@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ADMIN_FORBIDDEN_MESSAGE } from "@/lib/auth/admin-error";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { MANUAL_TRIGGER, runBackup } from "@/lib/backups/engine";
+import { startManualBackup } from "@/lib/backups/manual-run";
 import { findSystemJob } from "@/lib/backups/system-storage";
 import { logger } from "@/lib/logger";
 import type { McpAuthContext } from "../auth";
@@ -26,7 +26,9 @@ export function registerRunSystemBackup(server: McpServer, context: McpAuthConte
       if (!job) return failure("No system backup job is set up");
 
       const startedAt = new Date();
-      void runBackup(job.id, { trigger: MANUAL_TRIGGER }).catch((err) => {
+      const start = await startManualBackup(job.id);
+      if (!start.started) return failure("The system backup is already running");
+      start.done.catch((err) => {
         log.error(`Manual system backup failed for job ${job.id}:`, err);
       });
 

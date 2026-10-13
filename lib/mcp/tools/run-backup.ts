@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { MANUAL_TRIGGER, runBackup } from "@/lib/backups/engine";
+import { startManualBackup } from "@/lib/backups/manual-run";
 import { logger } from "@/lib/logger";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
@@ -31,7 +31,9 @@ export function registerRunBackup(server: McpServer, context: McpAuthContext) {
       }
 
       const startedAt = new Date();
-      void runBackup(job.id, { trigger: MANUAL_TRIGGER }).catch((err) => {
+      const start = await startManualBackup(job.id);
+      if (!start.started) return failure("This backup job is already running");
+      start.done.catch((err) => {
         log.error(`Manual backup failed for job ${job.id}:`, err);
       });
 

@@ -3,7 +3,8 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { requireAppAdmin } from "@/lib/auth/admin";
-import { MANUAL_TRIGGER, runBackup, runSucceeded } from "@/lib/backups/engine";
+import { runSucceeded } from "@/lib/backups/engine";
+import { startManualBackup } from "@/lib/backups/manual-run";
 import { findSystemJob } from "@/lib/backups/system-storage";
 
 // POST /api/v1/admin/system-backup/run — back up Vardo's own database now
@@ -16,7 +17,9 @@ async function handlePost() {
     const job = await findSystemJob();
     if (!job) return apiError.notFound("system backup job");
 
-    const results = await runBackup(job.id, { trigger: MANUAL_TRIGGER });
+    const start = await startManualBackup(job.id);
+    if (!start.started) return NextResponse.json({ error: "The system backup is already running.", code: "BACKUP_IN_PROGRESS" }, { status: 409 });
+    const results = await start.done;
 
     return NextResponse.json({
       success: runSucceeded(results),
