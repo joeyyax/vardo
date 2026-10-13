@@ -205,11 +205,13 @@ case "${1:-}" in
       echo "Error: backup-key.ts not found. Make sure Vardo is up to date." >&2
       exit 1
     fi
+    # A slot's scripts/ links into the repo checkout; mount the real tree so the container sees it.
+    SRC=$(dirname "$(cd "$SRC/scripts" && pwd -P)")
     if command -v tsx >/dev/null 2>&1; then
       tsx "$SRC/scripts/backup-key.ts"
     else
       # No host tsx: run it in a throwaway Node container. Needs no Vardo services.
-      docker run --rm -e ENCRYPTION_MASTER_KEY -v "$SRC:/src:ro" \
+      docker run --rm -q -e ENCRYPTION_MASTER_KEY -e NPM_CONFIG_UPDATE_NOTIFIER=false -v "$SRC:/src:ro" \
         node:22-slim npx -y tsx /src/scripts/backup-key.ts
     fi
     ;;
