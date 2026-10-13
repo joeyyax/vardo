@@ -103,7 +103,7 @@ export async function planAppVolumes(
   for (const row of selected) {
     const vol = row as SelectableVolume;
     // The engine skips config at run time, so enrolling it would claim coverage it never gets.
-    const configReason = vol.type === "bind" && !vol.backupSelection ? await skipsAsConfig(vol) : null;
+    const configReason = vol.type === "bind" && vol.backupSelection !== "exclude" ? await skipsAsConfig(vol) : null;
     let decision = classifyVolume(vol, { otherBinds, hostMounts, configReason });
     let sizeBytes: number | null | undefined;
     if (opts.measure && decision.verdict === "include" && !row.backupSelection) {
@@ -336,11 +336,13 @@ export async function listUncoveredApps(
         sizeBytes,
         verdict: decision.verdict,
         reason: decision.reason,
-        selected: isBackupSelected({
-          persistent: vol.persistent,
-          durability: vol.durability,
-          backupSelection: vol.backupSelection,
-        }),
+        selected:
+          !vol.configReason &&
+          isBackupSelected({
+            persistent: vol.persistent,
+            durability: vol.durability,
+            backupSelection: vol.backupSelection,
+          }),
       });
     }
 

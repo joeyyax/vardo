@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
 import { BackupHistory } from "./backup-history";
 import { jobAnchor } from "./job-anchor";
-import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
+import { UncapturedWarning, uncapturedSources, type UncapturedSources } from "./uncaptured-warning";
 import type { BackupJob, RecentBackup } from "./types";
 
-type AppBackupData = { history: RecentBackup[]; uncaptured: string[] };
+type AppBackupData = { history: RecentBackup[]; uncaptured: UncapturedSources };
 
 async function requestAppBackups(orgId: string, appId: string): Promise<AppBackupData | null> {
   try {
@@ -35,7 +35,7 @@ export function AppBackupHistory({
 }) {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<RecentBackup[]>([]);
-  const [uncaptured, setUncaptured] = useState<string[]>([]);
+  const [uncaptured, setUncaptured] = useState<UncapturedSources>({ binds: [], config: [] });
   const [backingUp, setBackingUp] = useState(false);
 
   const applyData = useCallback((data: AppBackupData | null) => {

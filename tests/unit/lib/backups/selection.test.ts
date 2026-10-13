@@ -149,6 +149,15 @@ describe("classifyVolume — excluded by rule", () => {
     expect(classifyVolume({ ...vol, durability: "stateful" }, ctx({ configReason: "Config from the app's repo" })).verdict).toBe("include");
   });
 
+  it("excludes config enrolled before the engine skipped it, whatever its selection says", () => {
+    const vol = { ...bind("observability", "/var/lib/vardo/apps/observability/blue/etc/dashboards", "/etc/dashboards"), backupSelection: "include" as const };
+    expect(classifyVolume(vol, ctx({ configReason: "Config from the app's repo" }))).toEqual({
+      verdict: "exclude",
+      reason: "Config from the app's repo",
+    });
+    expect(classifyVolume(vol, ctx())).toEqual({ verdict: "include", reason: "Opted in" });
+  });
+
   it("keeps an app's own media directory — only top-level shares are excluded", () => {
     expect(verdict(bind("paperless", "/mnt/docker/paperless/media", "/usr/src/paperless/media"))).toBe("include");
   });

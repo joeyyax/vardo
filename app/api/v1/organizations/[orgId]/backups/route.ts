@@ -15,6 +15,7 @@ import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getOrgTimeZone } from "@/lib/time-zone-settings";
 import { backupOwnerOrgId, orgBackupScope } from "@/lib/backups/org-backup";
+import { withConfigReasons } from "@/lib/backups/bind-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -59,7 +60,15 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
               // Volume sources, so the UI can flag data the engine can't capture.
               with: {
                 volumes: {
-                  columns: { name: true, type: true, source: true, backupStrategy: true },
+                  columns: {
+                    name: true,
+                    type: true,
+                    source: true,
+                    persistent: true,
+                    durability: true,
+                    backupStrategy: true,
+                    backupSelection: true,
+                  },
                   where: (v, { isNull }) => isNull(v.removedAt),
                 },
               },
@@ -121,7 +130,19 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     };
 
     const timeZone = await getOrgTimeZone(orgId);
-    return NextResponse.json({ jobs: jobs.map((j) => ({ ...j, timeZone })), recentHistory, storedBytes });
+    const withReasons = await Promise.all(
+      jobs.map(async (j) => ({
+        ...j,
+        timeZone,
+        backupJobApps: await Promise.all(
+          j.backupJobApps.map(async (bja) => ({
+            ...bja,
+            app: { ...bja.app, volumes: await withConfigReasons(bja.app.volumes) },
+          })),
+        ),
+      })),
+    );
+    return NextResponse.json({ jobs: withReasons, recentHistory, storedBytes });
   } catch (error) {
     return handleRouteError(error, "Error fetching backup jobs");
   }

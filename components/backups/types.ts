@@ -2,7 +2,12 @@ export type AppVolume = {
   name: string;
   type: "named" | "bind";
   source: string | null;
+  persistent?: boolean;
+  durability?: string | null;
   backupStrategy: string;
+  backupSelection?: "include" | "exclude" | null;
+  /** Why the engine leaves it out as checked-out config. */
+  configReason?: string | null;
 };
 
 export type App = {

@@ -153,7 +153,9 @@ function bindRule(vol: SelectableVolume, ctx: SelectionContext): SelectionDecisi
 
 /** Whether an enrolled app backs this volume up by default, and why. */
 export function classifyVolume(vol: SelectableVolume, ctx: SelectionContext): SelectionDecision {
-  if (vol.backupSelection === "include") return { verdict: "include", reason: "Opted in" };
+  if (vol.backupSelection === "include") {
+    return ctx.configReason ? { verdict: "exclude", reason: ctx.configReason } : { verdict: "include", reason: "Opted in" };
+  }
   if (vol.backupSelection === "exclude") return { verdict: "exclude", reason: "Opted out" };
   if (vol.durability === "rebuildable") return { verdict: "exclude", reason: "Marked rebuildable" };
   if (vol.durability === "external") return { verdict: "exclude", reason: "Marked external" };
