@@ -16,6 +16,7 @@ import {
 } from "./client";
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
+import { DEPLOY_TIMEOUT_MS } from "./constants";
 import { matchContainers } from "./container-match";
 import {
   exitCandidates,
@@ -43,7 +44,7 @@ export type ObservedStatus = "active" | "error" | "stopped" | "missing";
 
 /** How long "deploying" is honored before the reconciler takes the status back. */
 export const DEPLOYING_HOLD_MS =
-  (Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15) * 60_000 * 4;
+  DEPLOY_TIMEOUT_MS * 4;
 
 /** Whether an in-flight deploy still owns this app's status. */
 export function deployHoldsStatus(

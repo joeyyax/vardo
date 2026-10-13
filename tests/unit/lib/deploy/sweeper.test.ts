@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DEPLOY_TIMEOUT_MS } from "@/lib/docker/constants";
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state — vi.mock is hoisted so factories must use vi.hoisted()
@@ -79,7 +80,7 @@ import { deployWorker } from "@/lib/docker/deploy-cancel";
 // Helpers
 // ---------------------------------------------------------------------------
 
-const PAST_CUTOFF = new Date(Date.now() - 40 * 60_000); // 40 min ago (beyond 2×15 = 30 min cutoff)
+const PAST_CUTOFF = new Date(Date.now() - 2 * DEPLOY_TIMEOUT_MS - 10 * 60_000);
 
 function queueSelectResults(...results: unknown[][]) {
   dbMock._queue.push(...results);
