@@ -1,7 +1,7 @@
 // Alert items for anomalies: what strayed, by how much, since when and what to check.
 
 import { downsample } from "@/lib/alerts/host";
-import type { AlertItem } from "@/lib/bus/events";
+import type { AlertItem, AlertView } from "@/lib/bus/events";
 import { severityRank, type AlertSeverity } from "@/lib/notifications/registry";
 import type { SignalVerdict } from "./detect";
 import type { TopProcess } from "./security";
@@ -32,8 +32,58 @@ export function topProcessesFact(processes: TopProcess[] | null | undefined, lim
   return [{ label: "Top processes", value: top.map((p) => `${p.name} ${Math.round(p.cpu)}% CPU`).join(", ") }];
 }
 
+const RISE: Record<SignalKey, [verb: string, heading: string]> = {
+  egress: ["Sending", "is sending {r} its usual traffic"],
+  cpu: ["Using", "is using {r} its usual CPU"],
+  ingress: ["Receiving", "is receiving {r} its usual traffic"],
+  pids: ["Running", "is running {r} its usual number of processes"],
+  diskWrite: ["Writing", "is writing {r} its usual amount to disk"],
+};
+
+/** "40×", "2.5×". */
+function ratio(value: number, typical: number): string {
+  const r = value / typical;
+  return `${r >= 10 ? Math.round(r) : Number(r.toFixed(1))}×`;
+}
+
+/** Heading, lead and process table: each reading once. */
+export function anomalyView(app: AppRef, findings: Finding[], top: TopProcess[] | null, newProcesses: string[] = []): AlertView {
+  const [lead, ...rest] = findings;
+  const def = SIGNALS[lead.signal];
+  const { value, line } = lead.verdict;
+  const [verb, rise] = RISE[lead.signal];
+  const heading = line.typical > 0 && value > line.typical ? `${app.name} ${rise.replace("{r}", ratio(value, line.typical))}` : undefined;
+  const fresh = new Set(newProcesses);
+  const busiest = top?.length ? [...top].sort((a, b) => b.cpu - a.cpu) : [];
+  const first = `${verb} ${def.format(value)}, against a usual ${def.format(line.typical)} for this hour.`;
+  const proc = busiest[0] && busiest[0].cpu >= 1 ? busiest[0] : undefined;
+  const also = rest.filter((f) => !(proc && f.signal === "cpu")).map((f) => `${SIGNALS[f.signal].label} is up too: ${SIGNALS[f.signal].format(f.verdict.value)}, usually ${SIGNALS[f.signal].format(f.verdict.line.typical)}.`);
+  const procLine = proc ? `A process called ${proc.name} is using ${SIGNALS.cpu.format(proc.cpu)}.` : undefined;
+  const risk = proc
+    ? "If you don't recognize it, the app may be compromised."
+    : lead.signal === "egress"
+      ? "Unexpected outbound traffic can mean a compromised app."
+      : "If nothing explains it, a compromised app can look like this.";
+  return {
+    heading,
+    lead: [[first, ...also, procLine, risk].filter(Boolean).join(" ")],
+    brief: { title: heading ?? `${app.name} ${TITLE[lead.signal]}`, body: [first, procLine].filter(Boolean).join(" ") },
+    seriesOver: line.threshold,
+    table: busiest.length
+      ? {
+          columns: ["Process", "CPU"],
+          rows: busiest.slice(0, 3).map((p) => ({
+            name: p.name,
+            why: fresh.has(p.name) ? "Not seen in this app before" : undefined,
+            cells: [{ value: `${Math.round(p.cpu)}%`, hot: fresh.has(p.name) }],
+          })),
+        }
+      : undefined,
+  };
+}
+
 /** One item for every signal holding on the app, the most telling first. */
-export function anomalyItem(app: AppRef, findings: Finding[], top: TopProcess[] | null): AlertItem {
+export function anomalyItem(app: AppRef, findings: Finding[], top: TopProcess[] | null, newProcesses: string[] = []): AlertItem {
   const [lead] = findings;
   const def = SIGNALS[lead.signal];
   const egress = findings.some((f) => f.signal === "egress");
@@ -60,6 +110,7 @@ export function anomalyItem(app: AppRef, findings: Finding[], top: TopProcess[] 
       ...topProcessesFact(top),
     ],
     since: new Date(Math.min(...findings.map((f) => f.verdict.since))).toISOString(),
+    view: anomalyView(app, findings, top, newProcesses),
   };
 }
 

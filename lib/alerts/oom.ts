@@ -1,6 +1,6 @@
 // Recent OOM kills per app, fed by every `app.oom-killed` emit in any process through Redis, and the alert they raise.
 
-import type { AlertItem } from "@/lib/bus/events";
+import type { AlertItem, AlertView } from "@/lib/bus/events";
 import { onEmit } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { redis } from "@/lib/redis";
@@ -391,6 +391,102 @@ export function oomFacts(record: Pick<OomRecord, "path">, f: OomFollowup): { lab
   ];
 }
 
+const SOURCE_CLAUSE: Record<LimitOrigin, string> = {
+  app: ", set in Vardo",
+  autotune: ", set by the Auto profile",
+  compose: ", set in compose",
+  default: ", Vardo's default since compose doesn't set one",
+  none: "",
+  unknown: "",
+};
+
+const SOURCE_SHORT: Record<LimitOrigin, string | undefined> = {
+  app: "set in Vardo",
+  autotune: "set by Auto",
+  compose: "set in compose",
+  default: "Vardo's default",
+  none: undefined,
+  unknown: undefined,
+};
+
+/** "2 GiB" as a tile: value "2", unit " GiB". */
+function tileSize(bytes: number): { value: string; unit: string } {
+  const [value, unit] = size(bytes).split(" ");
+  return { value, unit: unit ? ` ${unit}` : "" };
+}
+
+/** "Docker restarted it at 07:04 PDT." for a running app. */
+function backLine(f: OomFollowup): string | undefined {
+  if (f.status !== "running") return undefined;
+  const at = f.runningSince ? ` at ${clock(f.runningSince, f.timeZone)}` : "";
+  if ((f.dockerRestarts ?? 0) > 0) return `Docker restarted it${at}.`;
+  if (f.vardoRestarts > 0) return `Vardo restarted it${at}.`;
+  return f.runningSince ? `Running since ${clock(f.runningSince, f.timeZone)}.` : undefined;
+}
+
+/** What the Auto profile did, or what to do. */
+function nextLine(record: Pick<OomRecord, "hostKill">, f: OomFollowup, note: AutotuneNote | null | undefined): string {
+  if (note?.kind === "raised") {
+    return `Its memory profile is Auto, so Vardo raised the limit to ${mbSize(note.toMb)}, ${note.live ? "starting now" : "from the next deploy"}.`;
+  }
+  return oomNextStep(record, f, note);
+}
+
+/** The email layout: each fact once, status in tiles. */
+export function oomView(record: OomRecord, f: OomFollowup, note: AutotuneNote | null | undefined): AlertView {
+  const name = record.appName;
+  const limit = f.limitBytes ? size(f.limitBytes) : null;
+  const hitLimit = !record.hostKill && limit;
+  const tiles: NonNullable<AlertView["tiles"]> = [];
+  if (f.peakBytes) tiles.push({ label: "Peak", ...tileSize(f.peakBytes), sub: "last hour" });
+  if (note?.kind === "raised") tiles.push({ label: "New limit", ...tileSize(note.toMb * MIB), sub: `was ${limit ?? "none"}` });
+  else if (f.limitBytes !== null) tiles.push({ label: "Limit", ...(limit ? tileSize(f.limitBytes) : { value: "None", unit: "" }), sub: SOURCE_SHORT[f.limitSource] });
+  if (record.kills > 1) tiles.push({ label: "Kills", value: String(record.kills), sub: "last hour" });
+  const action = { label: f.limitBytes === 0 ? "Set a limit" : "Change the limit", path: `/apps/${record.appId}/resources` };
+
+  if (record.path === "process") {
+    const how = hitLimit ? `A process hit its ${limit} limit${SOURCE_CLAUSE[f.limitSource]} and was killed.` : "The host ran out of memory and the kernel killed one process inside it.";
+    return {
+      heading: `A process in ${name} was killed for memory`,
+      reassure: { strong: "The container kept running." },
+      lead: [`${how} ${nextLine(record, f, note)}`],
+      brief: {
+        title: `${name} lost a process`,
+        body: `${hitLimit ? `A process hit the ${limit} limit and was killed.` : "The kernel killed one process inside it."} The container kept running.`,
+      },
+      tiles,
+      action: hitLimit ? action : { label: `Open ${name}`, path: `/apps/${record.appId}` },
+    };
+  }
+
+  const how = hitLimit
+    ? `It hit its ${limit} limit${SOURCE_CLAUSE[f.limitSource]}.`
+    : `The host ran out of memory and the kernel killed it.${f.limitBytes === 0 ? " It has no limit of its own." : ""}`;
+  const down = f.status === "down" ? (f.gaveUp ? `Vardo restarted it ${times(Math.max(1, f.vardoRestarts))}, then stopped.` : "It hasn't come back up.") : undefined;
+  const back = backLine(f);
+  const restarts = (f.dockerRestarts ?? 0) + f.vardoRestarts;
+  tiles.push({
+    label: "Restarts",
+    value: String(restarts),
+    sub: f.status === "running" ? (f.runningSince ? `running since ${formatClock(f.runningSince, f.timeZone)}` : "running") : f.status === "down" ? (f.gaveUp ? "restarts stopped" : "still down") : undefined,
+    hot: f.status === "down",
+  });
+  const killed = hitLimit
+    ? `Killed ${times(record.kills)} at its ${limit} limit.`
+    : `Killed ${times(record.kills)}${f.limitBytes === 0 ? " with no limit of its own" : " when the host ran out of memory"}.`;
+  return {
+    heading: `${name} was killed for memory`,
+    reassure: f.status === "running" ? { strong: "It's running again.", text: back } : undefined,
+    lead: [[how, down, nextLine(record, f, note)].filter(Boolean).join(" ")],
+    brief: {
+      title: f.status === "down" ? `${name} is down` : `${name} was killed for memory`,
+      body: [killed, down ?? back, note?.kind === "raised" ? `Vardo raised its limit to ${mbSize(note.toMb)}.` : oomNextStep(record, f, note)].filter(Boolean).join(" "),
+    },
+    tiles,
+    action,
+  };
+}
+
 /** The `app.oom` alert for one record. Without a follow-up it holds the alert but says less. */
 export function oomObservation(record: OomRecord, followup: OomFollowup | null = null, now: number = record.lastAt): Observation {
   const containers = [...record.containers].map(([name, n]) => (n > 1 ? `${name} (${n})` : name));
@@ -415,6 +511,8 @@ export function oomObservation(record: OomRecord, followup: OomFollowup | null =
       { label: containers.length === 1 ? "Container" : "Containers", value: containers.join(", ") },
     ],
     since: new Date(record.firstAt).toISOString(),
+    ...(record.hostKill ? { hostMemory: true } : {}),
+    ...(followup ? { view: oomView(record, followup, record.autotune) } : {}),
   };
   return { type: "app.oom", about: record.appId, severity: "critical", fires: !settling, item };
 }

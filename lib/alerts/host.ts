@@ -2,10 +2,14 @@
 
 import { readFile } from "fs/promises";
 import os from "os";
-import type { AlertItem } from "@/lib/bus/events";
+import type { AlertItem, AlertTableRow, AlertView } from "@/lib/bus/events";
+import { ROLLBACK_IMAGES_RETAINED } from "@/lib/docker/constants";
+import { formatDurationRough, plural } from "@/lib/email/format";
 import { formatBytesIec } from "@/lib/metrics/format";
+import type { ContainerMetrics } from "@/lib/metrics/types";
 import type { Observation } from "@/lib/notifications/observations";
 import type { AlertType } from "@/lib/notifications/registry";
+import { isCoreContainer } from "./core-memory";
 import { judgeThreshold, type Point, type ThresholdRule, type Verdict } from "./threshold";
 
 export type HostSample = {
@@ -149,13 +153,123 @@ export type DiskFollowup = {
   unusedVolumes: { count: number; bytes: number | null } | null;
   /** Biggest apps by disk: containers plus volumes. */
   topApps: { name: string; bytes: number }[];
+  /** Docker's own accounting. Null when unknown. */
+  usage?: { images: { total: number; reclaimable: number }; buildCache: { total: number; reclaimable: number }; volumes: { total: number } } | null;
+};
+
+/** A container using memory, with the app it belongs to when known. */
+export type MemoryUser = {
+  container: string;
+  bytes: number;
+  /** 0 is none. */
+  limit: number;
+  /** App or "Vardo" for its own services. */
+  label?: string;
+  appId?: string;
+  /** Compose service. */
+  service?: string;
 };
 
 export type HostContext = {
   /** Biggest containers by memory, for the memory alert. */
-  topMemory?: { name: string; bytes: number }[];
+  topMemory?: MemoryUser[];
   disk?: DiskFollowup;
+  /** How long each type has read over its warn line. */
+  overMs?: Partial<Record<keyof typeof HOST_RULES, number>>;
 };
+
+/** The container as a memory user: its app, or Vardo for its own services. */
+export function memoryUser(m: Pick<ContainerMetrics, "containerName" | "labels" | "memoryUsage" | "memoryLimit">, names: Map<string, string>): MemoryUser {
+  const container = m.containerName.replace(/^\//, "");
+  const service = m.labels["com.docker.compose.service"];
+  const user: MemoryUser = { container, bytes: m.memoryUsage, limit: m.memoryLimit };
+  if (isCoreContainer(m)) return { ...user, label: "Vardo", service: service || container.replace(/^vardo-/, "") };
+  const appId = m.labels["vardo.project.id"] ?? m.labels["host.project.id"];
+  const label = appId ? names.get(appId) : undefined;
+  return label ? { ...user, label, appId, service } : user;
+}
+
+/** "29.2 of 31.9 GiB", dropping the first unit when both share it. */
+export function ofTotal(used: number, total: number): string {
+  const a = formatBytesIec(used);
+  const b = formatBytesIec(total);
+  const [av, au] = a.split(" ");
+  return au && b.endsWith(` ${au}`) ? `${av} of ${b}` : `${a} of ${b}`;
+}
+
+/** "a, b and c". */
+function andList(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+function memoryRows(users: MemoryUser[]): AlertTableRow[] {
+  return users.map((u) => ({
+    name: u.label ?? u.container,
+    appId: u.appId,
+    sub: u.service,
+    cells: [
+      { value: formatBytesIec(u.bytes), hot: u.limit > 0 && u.bytes / u.limit >= 0.9 },
+      { value: u.limit > 0 ? formatBytesIec(u.limit) : "none" },
+    ],
+  }));
+}
+
+function memoryView(m: NonNullable<HostSample["memory"]>, overMs: number | undefined, users: MemoryUser[]): AlertView {
+  const rule = HOST_RULES["host.memory"];
+  const available = `${formatBytesIec(m.total - m.used)} available of ${formatBytesIec(m.total)}`;
+  const over = overMs && overMs >= 60_000 ? `, over ${rule.warn}% for ${formatDurationRough(overMs)}` : "";
+  const names = [...new Set(users.map((u) => u.label ?? u.container))];
+  const most = names.length ? ` ${andList(names)} use${names.length === 1 ? "s" : ""} the most.` : "";
+  return {
+    lead: [`${available}${over}. When it runs out, the kernel starts killing containers.`],
+    brief: { title: `Memory ${pct(m.percent)} used`, body: `${available}.${most}` },
+    gaugeLabel: ofTotal(m.used, m.total),
+    table: users.length ? { columns: ["Using the most", "Memory", "Limit"], rows: memoryRows(users) } : undefined,
+  };
+}
+
+/** What automatic cleanup already did, in one sentence. */
+function reclaimLine(f: DiskFollowup | undefined): string | undefined {
+  if (!f) return undefined;
+  if (!f.reclaim) return "Automatic cleanup hasn't run yet.";
+  if (f.reclaim.skipped === "Turned off") return "Automatic cleanup is turned off.";
+  if (f.reclaim.skipped) return `Automatic cleanup didn't run: ${f.reclaim.skipped.toLowerCase()}.`;
+  return f.reclaim.freedBytes > 0
+    ? `Vardo already cleared ${formatBytesIec(f.reclaim.freedBytes)} of old images and build cache.`
+    : "Automatic cleanup ran and found nothing more to remove.";
+}
+
+function diskTable(f: DiskFollowup | undefined): AlertView["table"] {
+  const u = f?.usage;
+  if (!u) return undefined;
+  const volumes = f.unusedVolumes;
+  const unusedVolumes = volumes?.count === 0 ? formatBytesIec(0) : volumes && volumes.bytes !== null ? formatBytesIec(volumes.bytes) : "—";
+  return {
+    columns: ["What's using it", "Size", "Unused"],
+    rows: [
+      { name: "Images", cells: [{ value: formatBytesIec(u.images.total) }, { value: formatBytesIec(u.images.reclaimable) }] },
+      { name: "Build cache", cells: [{ value: formatBytesIec(u.buildCache.total) }, { value: formatBytesIec(u.buildCache.reclaimable) }] },
+      {
+        name: "Volumes",
+        sub: volumes && volumes.count > 0 ? `${plural(volumes.count, "unused volume")}` : undefined,
+        cells: [{ value: formatBytesIec(u.volumes.total) }, { value: unusedVolumes }],
+      },
+    ],
+    note: `Unused images include each app's last ${ROLLBACK_IMAGES_RETAINED} deploys, kept for rollback.`,
+  };
+}
+
+function diskView(d: NonNullable<HostSample["disk"]>, f: DiskFollowup | undefined): AlertView {
+  const free = `${formatBytesIec(Math.max(0, d.total - d.used))} free of ${formatBytesIec(d.total)}`;
+  const reclaim = reclaimLine(f);
+  return {
+    lead: [`${free}. Deploys and backups fail when it fills up.`, ...(reclaim ? [reclaim] : [])],
+    brief: { title: `Disk ${pct(d.percent)} full`, body: [`${free}.`, reclaim].filter(Boolean).join(" ") },
+    gaugeLabel: ofTotal(d.used, d.total),
+    table: diskTable(f),
+    action: { label: "Free up space", path: "/admin/settings/maintenance" },
+  };
+}
 
 function diskFacts(f: DiskFollowup | undefined): { label: string; value: string }[] {
   if (!f) return [];
@@ -193,9 +307,10 @@ function hostItem(type: keyof typeof HOST_RULES, verdict: Verdict, s: HostSample
           { label: "Used", value: `${formatBytesIec(m.used)} of ${formatBytesIec(m.total)}` },
           { label: "Available", value: formatBytesIec(m.total - m.used) },
           ...(ctx.topMemory?.length
-            ? [{ label: "Top containers", value: ctx.topMemory.map((c) => `${c.name} ${formatBytesIec(c.bytes)}`).join(", ") }]
+            ? [{ label: "Top containers", value: ctx.topMemory.map((c) => `${c.container} ${formatBytesIec(c.bytes)}`).join(", ") }]
             : []),
         ],
+        view: memoryView(m, ctx.overMs?.["host.memory"], ctx.topMemory ?? []),
       };
     }
     case "host.swap": {
@@ -247,9 +362,19 @@ function hostItem(type: keyof typeof HOST_RULES, verdict: Verdict, s: HostSample
           { label: "Free", value: formatBytesIec(Math.max(0, d.total - d.used)) },
           ...diskFacts(ctx.disk),
         ],
+        view: diskView(d, ctx.disk),
       };
     }
   }
+}
+
+/** How long the latest run of readings has stayed at or over `line`. */
+export function overFor(points: Point[], line: number): number {
+  const latest = points.at(-1);
+  if (!latest || latest.value < line) return 0;
+  let start = latest.at;
+  for (let i = points.length - 1; i >= 0 && points[i].value >= line; i--) start = points[i].at;
+  return latest.at - start;
 }
 
 /**
@@ -278,7 +403,8 @@ export function hostObservations(
     if (!verdict.holds) continue;
     const series = type === "host.swap" ? (s: HostSample) => s.swap?.percent : READ[type];
     const hour = downsample(buffer.points(series, now - 60 * 60_000).map((p) => p.value));
-    observations.push({ type, about: "host", severity: verdict.severity, fires: verdict.fires, item: hostItem(type, verdict, latest, hour, ctx) });
+    const overMs = { ...ctx.overMs, [type]: overFor(points, HOST_RULES[type].warn) };
+    observations.push({ type, about: "host", severity: verdict.severity, fires: verdict.fires, item: hostItem(type, verdict, latest, hour, { ...ctx, overMs }) });
   }
   return { evaluated, observations };
 }

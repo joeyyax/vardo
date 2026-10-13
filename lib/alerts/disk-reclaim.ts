@@ -87,6 +87,13 @@ async function buildFollowup(last: HostReclaimRun | null, now: number): Promise<
     reclaim: last ? { finishedAt: last.finishedAt, freedBytes: freedBytes(last), skipped: last.skipped } : null,
     reclaimableBytes: snapshot ? snapshot.usage.images.reclaimable + snapshot.usage.buildCache.reclaimable : null,
     unusedVolumes: orphans || detached ? { count: names.length, bytes } : null,
+    usage: snapshot
+      ? {
+          images: { total: snapshot.usage.images.totalSize, reclaimable: snapshot.usage.images.reclaimable },
+          buildCache: { total: snapshot.usage.buildCache.totalSize, reclaimable: snapshot.usage.buildCache.reclaimable },
+          volumes: { total: snapshot.usage.volumes.totalSize },
+        }
+      : null,
     topApps: snapshot
       ? [...snapshot.perProject.entries()]
           .sort((a, b) => b[1] - a[1])
