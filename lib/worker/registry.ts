@@ -82,6 +82,8 @@ export const LOOP_REGISTRY: LoopEntry[] = [
     stop: async () => (await import("@/lib/metrics/collector")).stopCollector(),
   },
   { name: "metrics-orphan-sweep", roles: BOTH, singleton: true, feature: "metrics", load: async () => (await import("@/lib/metrics/series-cleanup")).orphanSeriesLoop },
+  // Not gated on metrics: domain checks roll up without it.
+  { name: "metrics-rollup", roles: BOTH, singleton: true, load: async () => (await import("@/lib/metrics/rollup")).metricsRollupLoop },
   { name: "error-rate", roles: BOTH, singleton: true, feature: "logging", load: async () => (await import("@/lib/logging/register")).errorRateLoop },
   { name: "domain-monitoring", roles: BOTH, singleton: true, feature: "domain-monitoring", load: async () => (await import("@/lib/domain-monitoring/scheduler")).domainMonitoringLoop },
   { name: "domain-verification", roles: BOTH, singleton: true, load: async () => (await import("@/lib/domains/scheduler")).domainVerificationLoop },

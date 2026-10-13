@@ -172,7 +172,7 @@ export async function queryDiskWriteRange(
 }
 
 type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk" | "diskWrite" | "gpuUtilization" | "gpuMemoryUsed" | "gpuMemoryTotal" | "gpuTemperature";
-type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
+type Aggregation = { type: "avg" | "max" | "min" | "sum" | "last"; bucketMs: number };
 
 /** Historical metrics for a project. `composeService` narrows a stack to one service. */
 export async function queryMetrics(
@@ -305,8 +305,8 @@ export async function queryMetricsPoints(
     queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }, composeService),
     queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }, composeService),
     queryMetrics(projectName, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }, composeService),
-    queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "sum", bucketMs }, composeService),
-    queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "sum", bucketMs }, composeService),
+    queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "last", bucketMs }, composeService),
+    queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "last", bucketMs }, composeService),
     queryMetrics(projectName, "disk", fromMs, toMs, { type: "max", bucketMs }, composeService),
     ...(includeGpu ? [
       queryMetrics(projectName, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }, composeService),
@@ -334,8 +334,8 @@ export async function queryByOrgPoints(
     queryByOrg(orgId, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memory", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
-    queryByOrg(orgId, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-    queryByOrg(orgId, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryByOrg(orgId, "networkRx", fromMs, toMs, { type: "last", bucketMs }),
+    queryByOrg(orgId, "networkTx", fromMs, toMs, { type: "last", bucketMs }),
     queryByOrg(orgId, "disk", fromMs, toMs, { type: "max", bucketMs }),
     ...(includeGpu ? [
       queryByOrg(orgId, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
@@ -362,8 +362,8 @@ export async function queryAllPoints(
     queryAll("cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryAll("memory", fromMs, toMs, { type: "avg", bucketMs }),
     queryAll("memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
-    queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-    queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryAll("networkRx", fromMs, toMs, { type: "last", bucketMs }),
+    queryAll("networkTx", fromMs, toMs, { type: "last", bucketMs }),
     queryDiskHistory(fromMs, toMs, bucketMs),
     ...(includeGpu ? [
       queryAll("gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),

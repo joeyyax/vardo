@@ -59,7 +59,7 @@ function labelMap(raw: unknown): Record<string, string> {
   return out;
 }
 
-function parseSeries(result: unknown): LabeledSeries[] {
+export function parseSeries(result: unknown): LabeledSeries[] {
   if (!Array.isArray(result)) return [];
   const out: LabeledSeries[] = [];
 

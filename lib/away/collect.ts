@@ -1,7 +1,7 @@
 // "While you were away" collection: turns operational rows into facts with each subject's prior history.
 // A source that throws is reported, never silently dropped.
 
-import { and, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -308,12 +308,29 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       unavailable,
       async () => {
         if (appIds.length === 0) return;
-        const rows = await db
+        const appDomains = and(inArray(domains.appId, appIds), gte(domainChecks.checkedAt, baselineFrom));
+
+        // Baseline as counts; raw checks only go back a week.
+        const prior = await db
+          .select({
+            domainId: domainChecks.domainId,
+            reachable: domainChecks.reachable,
+            n: sql<number>`count(*)::int`,
+          })
+          .from(domainChecks)
+          .innerJoin(domains, eq(domainChecks.domainId, domains.id))
+          .where(and(appDomains, lt(domainChecks.checkedAt, since)))
+          .groupBy(domainChecks.domainId, domainChecks.reachable);
+        for (const row of prior) {
+          bump(counts, "domain", row.domainId, row.reachable ? "successes" : "failures", row.n);
+        }
+
+        // Successful probes only feed the baseline.
+        const failures = await db
           .select({
             domainId: domainChecks.domainId,
             domain: domains.domain,
             appId: domains.appId,
-            reachable: domainChecks.reachable,
             checkedAt: domainChecks.checkedAt,
           })
           .from(domainChecks)
@@ -321,22 +338,11 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
           .where(
             and(
               inArray(domains.appId, appIds),
-              gte(domainChecks.checkedAt, baselineFrom),
+              gte(domainChecks.checkedAt, since),
+              eq(domainChecks.reachable, false),
             ),
           );
-
-        for (const row of rows) {
-          if (row.checkedAt < since) {
-            bump(
-              counts,
-              "domain",
-              row.domainId,
-              row.reachable ? "successes" : "failures",
-            );
-            continue;
-          }
-          // Successful probes only feed the baseline.
-          if (row.reachable) continue;
+        for (const row of failures) {
           facts.push({
             kind: "domain.unreachable",
             family: "domain",

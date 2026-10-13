@@ -18,6 +18,7 @@ export * from "./cron";
 export * from "./cron-status";
 export * from "./mesh";
 export * from "./monitoring";
+export * from "./app-metric-hours";
 export * from "./templates";
 export * from "./external-routes";
 export * from "./security";

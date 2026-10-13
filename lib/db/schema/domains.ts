@@ -63,6 +63,7 @@ export const domainChecks = pgTable(
   },
   (t) => [
     index("domain_check_domain_checked_at_idx").on(t.domainId, t.checkedAt),
+    index("domain_check_checked_at_idx").on(t.checkedAt),
   ]
 );
 
