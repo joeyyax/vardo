@@ -23,6 +23,10 @@ describe("knownFailure", () => {
     [`Command failed: docker volume create x\nDATABASE_URL=postgres://${CRED}@db/x`, "A command failed during the deploy."],
     ["Deployment aborted", "The deploy was stopped."],
     ["Cancelled", "The deploy was cancelled."],
+    [
+      "Rollback target commit 3bed1769abcdef0123456789abcdef0123456789 is not available in the repository — the branch may have been force-pushed or the commit garbage collected",
+      "The commit is no longer in the repository. It may have been force-pushed away.",
+    ],
     ["Deploy queue timeout — waited too long for a concurrency slot", "The deploy waited too long for a free deploy slot and didn't start."],
     ["Deploy cancelled while waiting in concurrency queue", "The deploy was cancelled while it waited in the queue."],
     ["Vardo is restarting to finish an update — retry the deploy in a minute", "Vardo was restarting for an update, so the deploy didn't start. Retry it in a minute."],

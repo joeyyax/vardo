@@ -49,10 +49,10 @@ vi.mock("@/lib/db", () => ({
 
 const { POST } = await import("@/app/api/v1/github/webhook/route");
 
-function push(installationId: number | undefined) {
+function push(installationId: number | undefined, after = "abc1234") {
   const body = JSON.stringify({
     ref: "refs/heads/main",
-    after: "abc1234",
+    after,
     repository: { full_name: "acme/site" },
     pusher: { name: "dev" },
     ...(installationId !== undefined ? { installation: { id: installationId } } : {}),
@@ -95,6 +95,23 @@ describe("push webhook scope", () => {
     expect(res.status).toBe(200);
     expect(requestDeploy).toHaveBeenCalledTimes(1);
     expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", organizationId: "org-vardo" }));
+  });
+
+  it("pins the deploy to the pushed commit", async () => {
+    links.set(2, ["org-vardo"]);
+    const sha = "3bed1769abcdef0123456789abcdef0123456789";
+
+    await push(2, sha);
+
+    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha }));
+  });
+
+  it.each(["0000000000000000000000000000000000000000", "abc1234", "not-a-sha"])("pins nothing for after=%s", async (after) => {
+    links.set(2, ["org-vardo"]);
+
+    await push(2, after);
+
+    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ gitSha: undefined }));
   });
 
   it("deploys nothing for an installation no org has linked", async () => {

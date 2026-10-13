@@ -505,6 +505,16 @@ describe("deploy feedback", () => {
     expect(calls.find((c) => c.path.endsWith("/deployments/500/statuses"))?.body).toMatchObject({ state: "queued" });
   });
 
+  it("posts a production push's queued status as soon as it's requested", async () => {
+    const sha = "3bed1769abcdef0123456789abcdef0123456789";
+    const { feedback, calls } = harness();
+    feedback.trackDeploy("dep-1", { trigger: "webhook", gitSha: sha }).queued(1);
+    await settle();
+    expect(calls.filter((c) => c.path === `/repos/acme/widget/statuses/${sha}`).map((c) => (c.body as { description: string }).description))
+      .toEqual(["Queued", "Queued, 2nd in line"]);
+    expect(calls.find((c) => c.path === "/repos/acme/widget/deployments")?.body).toMatchObject({ ref: sha, environment: "production/web" });
+  });
+
   it("stays quiet when the app opted out", async () => {
     const { feedback, calls } = harness({ info: info({ enabled: false }) });
     runDeploy(feedback, { status: "success" });

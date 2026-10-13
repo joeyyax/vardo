@@ -20,6 +20,7 @@ const RULES: Rule[] = [
   [/^Pre-build\/pre-pull for \S+ failed/, () => "Couldn't build or pull the image."],
   [/^docker compose up \(\S+\) failed/, () => "The containers failed to start."],
   [/^Shared services failed to start/, () => "Shared services failed to start."],
+  [/^Rollback target commit \S+ is not available in the repository/, () => "The commit is no longer in the repository. It may have been force-pushed away."],
   [/^Couldn't clone /, () => "Couldn't clone the repository."],
   [/^Command failed: git\b/, () => "Couldn't fetch the repository."],
   [/^Command failed: /, () => "A command failed during the deploy."],
