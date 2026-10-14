@@ -6,6 +6,7 @@ type Rule = [RegExp, (m: RegExpMatchArray) => string];
 
 // First match wins; the message may carry stderr after the matched prefix.
 const RULES: Rule[] = [
+  [/The build ran out of memory \(([\d.]+ GiB)\)/, (m) => `The build ran out of memory: it needed more than BuildKit's ${m[1]} limit and was stopped.`],
   [/The build ran out of memory/, () => "The build ran out of memory."],
   [/^(?:nixpacks|railpack|docker) timed out after (\d+)s/, (m) => `The build took longer than the ${minutes(Number(m[1]))} minute limit.`],
   [/^(?:nixpacks|railpack|docker) failed \(exit (\d+)\)/, (m) => `Build failed (exit ${m[1]}).`],

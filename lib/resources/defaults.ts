@@ -85,6 +85,35 @@ export function deployConcurrency(host: HostSize): number {
   return clamp(Math.min(Math.floor(host.cpus / coresPer), byRam), min, max);
 }
 
+/** Builds at once: per-build budget when no peak is recorded, buildkitd's own memory, the memory PSI that drops it to one. */
+export const BUILDS_FORMULA = {
+  coresPer: 4,
+  budgetBytes: 3 * 1024 ** 3,
+  buildkitdBytes: 640 * 1024 ** 2,
+  /** Share of host memory builds may use when BuildKit has no limit. */
+  unboundedShare: 0.5,
+  pressureAvg10: 20,
+} as const;
+
+/** As many per-build budgets as BuildKit's memory holds and one build per four cores, at least one. */
+export function buildConcurrency(input: { cpus: number; usableBytes: number; budgetBytes: number }): number {
+  const byMemory = Math.floor(input.usableBytes / Math.max(1, input.budgetBytes));
+  const byCores = Math.floor(input.cpus / BUILDS_FORMULA.coresPer);
+  return Math.max(1, Math.min(byMemory, byCores));
+}
+
+/** Most builds at once. VARDO_MAX_CONCURRENT_BUILDS wins, floored at 1. Memory pressure makes it one. */
+export function resolveBuildConcurrency(
+  rule: number,
+  opts: { env?: Env; memoryPressure?: boolean } = {},
+): Resolved<number> {
+  const parsed = parseInt((opts.env ?? process.env).VARDO_MAX_CONCURRENT_BUILDS ?? "", 10);
+  const resolved: Resolved<number> = !isNaN(parsed)
+    ? { value: Math.max(1, parsed), source: "override", rule }
+    : { value: rule, source: "detected", rule };
+  return opts.memoryPressure ? { ...resolved, value: 1 } : resolved;
+}
+
 /** A quarter of RAM, between 4 and 16 GiB. */
 export function buildkitMemGb(memoryMb: number): number {
   return Math.min(16, Math.max(4, Math.floor(memoryMb / 1024 / 4)));

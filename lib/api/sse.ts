@@ -15,6 +15,32 @@ type SSEOptions = {
   timeoutMs?: number;
 };
 
+/** The queuing strategy every SSE stream uses. */
+export function sseQueuingStrategy(): CountQueuingStrategy {
+  return new CountQueuingStrategy({ highWaterMark: BUFFER_CHUNKS });
+}
+
+/** Writes SSE events to a stream, dropping them only for a client that stopped reading, then saying how many. */
+export function sseSender(controller: ReadableStreamDefaultController<Uint8Array>): (event: string, data: unknown) => void {
+  const encoder = new TextEncoder();
+  let dropped = 0;
+  return (event, data) => {
+    try {
+      // desiredSize hits 0 after one enqueue, so only a deep backlog counts as stalled.
+      if (controller.desiredSize !== null && controller.desiredSize <= -STALLED_CLIENT_CHUNKS) {
+        dropped++;
+        return;
+      }
+      if (dropped > 0) {
+        const lost = dropped;
+        dropped = 0;
+        controller.enqueue(encoder.encode(`event: dropped\ndata: ${JSON.stringify({ count: lost })}\n\n`));
+      }
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    } catch { /* stream closed */ }
+  };
+}
+
 /** Creates an SSE Response from a handler. Closes with a `timeout` event after `timeoutMs`. */
 export function createSSEResponse(
   request: NextRequest,
@@ -22,32 +48,11 @@ export function createSSEResponse(
   options?: SSEOptions,
 ) {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
+  const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-      let dropped = 0;
-
-      function sendEvent(event: string, data: unknown) {
-        try {
-          // Drop only a client that stopped reading; desiredSize hits 0 after one enqueue.
-          if (controller.desiredSize !== null && controller.desiredSize <= -STALLED_CLIENT_CHUNKS) {
-            dropped++;
-            return;
-          }
-          if (dropped > 0) {
-            const lost = dropped;
-            dropped = 0;
-            controller.enqueue(
-              encoder.encode(`event: dropped\ndata: ${JSON.stringify({ count: lost })}\n\n`),
-            );
-          }
-          controller.enqueue(
-            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-          );
-        } catch { /* stream closed */ }
-      }
+      const sendEvent = sseSender(controller);
 
       const unregister = closeOnShutdown(() => {
         sendEvent("shutdown", { message: "Server shutting down, reconnect to resume" });
@@ -83,7 +88,7 @@ export function createSSEResponse(
         try { controller.close(); } catch { /* already closed */ }
       });
     },
-  }, new CountQueuingStrategy({ highWaterMark: BUFFER_CHUNKS }));
+  }, sseQueuingStrategy());
 
   return new Response(stream, {
     headers: {

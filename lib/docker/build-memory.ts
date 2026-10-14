@@ -21,6 +21,8 @@ export type BoundedBuild = {
   output?: string | null;
   /** The container's memory limit in bytes, 0 when it has none, null when building on the daemon. */
   limitBytes: number | null;
+  /** The BuildKit container, when builds run in one. */
+  container?: string;
 };
 
 const UNBOUNDED: BoundedBuild = { env: {}, loadArgs: [], limitBytes: null };
@@ -30,17 +32,23 @@ function buildxConfigDir(): string {
   return join(process.env.DOCKER_CONFIG ?? join(homedir(), ".docker"), "buildx");
 }
 
-async function memoryLimit(container: string): Promise<number> {
+/** Memory limit and memory+swap limit in bytes; 0 for none, swap null when unreadable. */
+async function memoryLimits(container: string): Promise<{ memory: number; swap: number | null }> {
   try {
     const { stdout } = await execFileAsync(
       "docker",
-      ["inspect", "-f", "{{.HostConfig.Memory}}", container],
+      ["inspect", "-f", "{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}}", container],
       { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
-    return Number(stdout.trim()) || 0;
+    const [memory, swap] = stdout.trim().split(/\s+/).map(Number);
+    return { memory: memory || 0, swap: Number.isFinite(swap) ? swap : null };
   } catch {
-    return 0;
+    return { memory: 0, swap: null };
   }
+}
+
+async function memoryLimit(container: string): Promise<number> {
+  return (await memoryLimits(container)).memory;
 }
 
 async function ensureBuilder(host: string, env: NodeJS.ProcessEnv): Promise<boolean> {
@@ -67,7 +75,7 @@ async function ensureBuilder(host: string, env: NodeJS.ProcessEnv): Promise<bool
 export async function buildKitLimit(host: string): Promise<BoundedBuild> {
   const container = buildKitContainerName(host);
   if (!container) return UNBOUNDED;
-  return { env: {}, loadArgs: [], limitBytes: await memoryLimit(container) };
+  return { env: {}, loadArgs: [], limitBytes: await memoryLimit(container), container };
 }
 
 function formatGiB(bytes: number): string {
@@ -97,7 +105,7 @@ export async function boundedBuild(log: (line: string) => void, signal?: AbortSi
     return UNBOUNDED;
   }
 
-  const limitBytes = await memoryLimit(container);
+  const { memory: limitBytes, swap } = await memoryLimits(container);
   const store = await exportStore(signal);
   const output = exportOutput(store);
   if (output) log(`[build] Exporting ${output.includes("zstd") ? "zstd" : "uncompressed"} layers to the ${store} image store`);
@@ -106,7 +114,14 @@ export async function boundedBuild(log: (line: string) => void, signal?: AbortSi
       ? `[build] Building in ${container} (memory limit ${formatGiB(limitBytes)})`
       : `[build] Warning: building in ${container}, which has no memory limit — set VARDO_BUILDKIT_MEM and recreate it`,
   );
-  return { env: { ...env, BUILDX_BUILDER: BOUNDED_BUILDER }, loadArgs: exportArgs(store), output, limitBytes };
+  // -1 is unlimited swap; a value above the limit is the limit plus that much swap.
+  if (limitBytes > 0 && swap !== null && (swap < 0 || swap > limitBytes)) {
+    log(
+      `[build] Warning: ${container} can swap past its memory limit, so a build over the limit slows the whole host instead of failing. ` +
+        "Run sudo vardo update to recreate it without swap.",
+    );
+  }
+  return { env: { ...env, BUILDX_BUILDER: BOUNDED_BUILDER }, loadArgs: exportArgs(store), output, limitBytes, container };
 }
 
 /** What BuildKit and the kernel report when a build step runs out of memory. */
@@ -122,7 +137,9 @@ export function explainBuildOom(err: unknown, build: BoundedBuild): unknown {
   if (build.limitBytes === null || !isBuildOom(message)) return err;
   const limit = build.limitBytes > 0 ? ` (${formatGiB(build.limitBytes)})` : "";
   return new Error(
-    `The build ran out of memory${limit} and was stopped before it could affect the host. ` +
+    (build.limitBytes > 0
+      ? `The build ran out of memory${limit}: it needed more than BuildKit's limit and was stopped rather than swap the host. `
+      : "The build ran out of memory and was stopped before it could affect the host. ") +
       "Raise BuildKit's limit and recreate vardo-buildkit, or reduce the build's memory use:\n" +
       `  ${raiseBuildKitCommand(build.limitBytes)}\n` +
       message,

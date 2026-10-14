@@ -57,7 +57,8 @@ import { dockerfileBuildArgs, nixpacksBuildArgs, railpackBuildArgs, type BuildOv
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
 import { engineVersion } from "../engine-version";
-import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
+import { boundedBuild, buildKitLimit, explainBuildOom, type BoundedBuild } from "../build-memory";
+import { withBuildSlot, type BuildGate } from "../build-gate";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -210,6 +211,9 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 /** Tail of a build's output kept for timing; the export steps come last. */
 const CAPTURE_MAX = 2 * 1024 * 1024;
 
+/** How long a cancelled build client gets to cancel before its process group is killed. */
+const KILL_GRACE_MS = 15_000;
+
 function spawnStream(
   cmd: string,
   args: string[],
@@ -233,15 +237,27 @@ function spawnStream(
 
     let stderrBuf = "";
     let killed = false;
+    let timedOut = false;
+    let forceKill: ReturnType<typeof setTimeout> | null = null;
 
+    // The CLI alone first, so buildx cancels the build in BuildKit; the group after a grace period.
     function killProcessGroup() {
       if (killed || proc.pid === undefined) return;
       killed = true;
+      const pid = proc.pid;
       try {
-        process.kill(-proc.pid, "SIGTERM");
+        process.kill(pid, "SIGTERM");
       } catch {
         // Already exited.
       }
+      forceKill = setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          // Already exited.
+        }
+      }, KILL_GRACE_MS);
+      forceKill.unref?.();
     }
 
     if (opts.signal) {
@@ -268,7 +284,11 @@ function spawnStream(
     });
 
     proc.on("close", (code) => {
-      if (code === 0) {
+      if (forceKill) clearTimeout(forceKill);
+      // Settles once the client has exited, so the builder slot frees after the build is cancelled.
+      if (timedOut) {
+        reject(new Error(`${cmd} timed out after ${BUILD_TIMEOUT / 1000}s`));
+      } else if (code === 0) {
         resolve();
       } else if (killed && opts.signal?.aborted) {
         reject(new Error("Deployment aborted"));
@@ -280,8 +300,8 @@ function spawnStream(
     proc.on("error", (err) => reject(err));
 
     const timeout = setTimeout(() => {
+      timedOut = true;
       killProcessGroup();
-      reject(new Error(`${cmd} timed out after ${BUILD_TIMEOUT / 1000}s`));
     }, BUILD_TIMEOUT);
 
     proc.on("close", () => clearTimeout(timeout));
@@ -337,6 +357,9 @@ async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) =
   if (exportMs > 0) ctx.timer.range("export", end - exportMs, end);
 }
 
+/** A Nixpacks build on the daemon, outside BuildKit's limit. */
+const DAEMON_BUILD: BoundedBuild = { env: {}, loadArgs: [], limitBytes: null };
+
 type RepoBuild = {
   repoPath: string;
   imageName: string;
@@ -352,6 +375,8 @@ type RepoBuild = {
   buildKey?: string;
   /** Collects the build's output for timing. */
   capture?: { text: string };
+  /** Queues the build for the builder. */
+  gate: BuildGate;
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -382,7 +407,9 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
       }
       logs.push(`[build] Building with Nixpacks...`);
       const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides, noCache);
-      await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]", build.capture);
+      await withBuildSlot(build.gate, DAEMON_BUILD, () =>
+        spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]", build.capture),
+      );
       logs.push(`[build] Nixpacks build complete: ${imageName}`);
       return;
     }
@@ -394,10 +421,13 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
 
       logs.push(`[build] Building with Railpack...`);
       const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars, overrides, noCache);
+      const limit = await buildKitLimit(buildEnv.BUILDKIT_HOST);
       try {
-        await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]", build.capture);
+        await withBuildSlot(build.gate, limit, () =>
+          spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]", build.capture),
+        );
       } catch (err) {
-        throw explainBuildOom(err, await buildKitLimit(buildEnv.BUILDKIT_HOST));
+        throw explainBuildOom(err, limit);
       }
       logs.push(`[build] Railpack build complete: ${imageName}`);
       return;
@@ -428,7 +458,9 @@ async function dockerBuild(
     gitSha: build.gitSha,
   });
   try {
-    await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
+    await withBuildSlot(build.gate, bounded, () =>
+      spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture),
+    );
   } catch (err) {
     throw explainBuildOom(err, bounded);
   }
@@ -830,6 +862,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,
+          gate: { deploymentId: ctx.deploymentId, log, signal },
           overrides,
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,

@@ -8,6 +8,7 @@ import { COMPOSE_BUILD_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT, GIT_METADATA_TIMEOUT }
 import { engineVersion } from "./engine-version";
 import { planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
 import type { BoundedBuild } from "./build-memory";
+import { withBuildSlot } from "./build-gate";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -37,6 +38,10 @@ export type ComposeBuildOpts = {
   log: (line: string) => void;
   signal?: AbortSignal;
   exec?: Exec;
+  /** Records the build's memory peak against this deploy and pauses its sweeper clock while it waits. */
+  deploymentId?: string;
+  /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
+  gate?: <T>(run: () => Promise<T>) => Promise<T>;
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -56,7 +61,7 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
 /** Builds the slot's services; returns the build output, or null when every service reused an image. */
 export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | null> {
   const exec = opts.exec ?? (execFileAsync as unknown as Exec);
-  const { slotDir, project, bounded, log } = opts;
+  const { slotDir, project, log } = opts;
 
   let services = opts.services;
   let keyFileArgs: string[] = [];
@@ -95,7 +100,12 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     }
   }
   if (services.length === 0) return null;
+  const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, signal: opts.signal }, opts.bounded, run));
+  return gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
+}
 
+async function runComposeBuild(opts: ComposeBuildOpts, exec: Exec, services: string[], keyFileArgs: string[]): Promise<Output> {
+  const { slotDir, project, bounded } = opts;
   const files = [...opts.composeFileArgs, ...keyFileArgs];
   const env = { ...opts.env, ...bounded.env };
   const run = { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: MAX_BUFFER, signal: opts.signal };
