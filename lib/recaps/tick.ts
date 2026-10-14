@@ -7,7 +7,7 @@ import type { AppRecap } from "@/lib/bus/events";
 import { emit } from "@/lib/notifications/dispatch";
 import { getInstanceTimeZone, getOrgTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { logger } from "@/lib/logger";
-import { collectRecap } from "./collect";
+import { collectRecap, volumeSizes } from "./collect";
 import { RECAP_KINDS, recapDueAt, recapEligible, recapStillWanted, type RecapKind } from "./schedule";
 
 const log = logger.child("recaps");
@@ -80,16 +80,6 @@ export async function finishRecaps(rows: { appId: string; kind: RecapKind }[], o
     .set({ outcome, finishedAt: now })
     .where(and(isNull(appRecaps.outcome), or(...rows.map(rowKey))))
     .returning({ appId: appRecaps.appId, kind: appRecaps.kind });
-}
-
-async function volumeSizes(): Promise<Map<string, number>> {
-  try {
-    const { getVolumeSizes } = await import("@/lib/docker/client");
-    const { within, VOLUME_SIZES_TIMEOUT_MS } = await import("@/lib/docker/app-data");
-    return await within(getVolumeSizes({ timeoutMs: VOLUME_SIZES_TIMEOUT_MS }), VOLUME_SIZES_TIMEOUT_MS, new Map<string, number>());
-  } catch {
-    return new Map();
-  }
 }
 
 /** Sends every due recap. Rows are claimed before the email goes out, so a restart never sends one twice. */

@@ -23,12 +23,18 @@ export async function storeHostSample(timestamp: number, values: Partial<Record<
   );
 }
 
-/** Averages per bucket, oldest first. Empty when the series is missing. */
-export async function queryHostHistory(metric: HostMetric, fromMs: number, toMs: number, bucketMs: number): Promise<TimeSeriesPoint[]> {
+/** Averages (or peaks) per bucket, oldest first. Empty when the series is missing. */
+export async function queryHostHistory(
+  metric: HostMetric,
+  fromMs: number,
+  toMs: number,
+  bucketMs: number,
+  aggregation: "avg" | "max" = "avg",
+): Promise<TimeSeriesPoint[]> {
   try {
     const result = (await tsRedis.call(
       "TS.RANGE", KEYS[metric], fromMs.toString(), toMs.toString(),
-      "AGGREGATION", "avg", bucketMs.toString(),
+      "AGGREGATION", aggregation, bucketMs.toString(),
     )) as [string, string][];
     return result.map(([ts, val]) => [parseInt(ts), parseFloat(val)]);
   } catch {

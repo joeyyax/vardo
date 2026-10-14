@@ -918,6 +918,13 @@
       "when": 1791934855162,
       "tag": "0130_app_recap",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1791936213844,
+      "tag": "0131_digest_frequency",
+      "breakpoints": true
     }
   ]
 }

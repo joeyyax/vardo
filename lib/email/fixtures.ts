@@ -2,7 +2,7 @@
 
 import { HostSampleBuffer, hostObservations, type HostContext, type MemoryUser } from "@/lib/alerts/host";
 import { anomalyItem } from "@/lib/anomaly/items";
-import type { AlertItem, AppRecap, BackupSummaryEvent, BusEvent, DigestAppRecapEvent } from "@/lib/bus/events";
+import type { AlertItem, AppRecap, BackupSummaryEvent, BusEvent, DigestAppRecapEvent, DigestHealthEvent, DigestWatchedProject } from "@/lib/bus/events";
 import { backupFailureItem } from "@/lib/backups/failure-alert";
 import { summarizeApps, summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
@@ -403,6 +403,123 @@ function recapEvent(recaps: AppRecap[]): DigestAppRecapEvent {
 }
 
 export const RECAP_FIXTURES = { clean: RECAP_CLEAN, actions: RECAP_ACTIONS, month: RECAP_MONTH, group: RECAP_GROUP };
+
+const OCTOBER = { since: "2026-10-01T07:00:00.000Z", until: "2026-11-01T07:00:00.000Z" };
+const octoberDays = (values: number[], failed: number[] = []) =>
+  values.map((n, i) => ({ start: new Date(Date.parse(OCTOBER.since) + i * 86_400_000).toISOString(), succeeded: failed.includes(i) ? n - 1 : n, failed: failed.includes(i) ? 1 : 0 }));
+
+/** Long House's October. */
+const DIGEST_MONTH: DigestHealthEvent = {
+  type: "digest.health",
+  title: "Monthly digest: Long House",
+  message: "391 deploys, 19 failed.",
+  cadence: "monthly",
+  orgName: "Long House",
+  windowLabel: "October 2026",
+  ...OCTOBER,
+  appCount: 44,
+  deploys: { total: 391, succeeded: 372, failed: 19 },
+  deploysByBucket: octoberDays([9, 14, 12, 16, 11, 3, 2, 13, 15, 12, 18, 10, 4, 2, 12, 14, 16, 11, 13, 3, 1, 14, 12, 17, 15, 9, 2, 3, 11, 13, 12], [3, 10, 17, 24]),
+  backups: { succeeded: 1104, failed: 26, totalSize: 244 * GiB, drillsPassed: 111, drillsFailed: 2, staleVolumes: 14, runs: 31, lastRunAt: "2026-10-31T09:04:00.000Z" },
+  staleApps: [
+    { appId: "app_gitea", appName: "gitea", volumes: 6 },
+    { appId: "app_dockge", appName: "dockge", volumes: 4 },
+    { appId: "app_ntfy", appName: "ntfy", volumes: 3 },
+    { appId: "app_samba", appName: "samba", volumes: 1 },
+  ],
+  drillFailures: [
+    { appId: "app_syncthing", appName: "syncthing", volume: "var-syncthing" },
+    { appId: "app_paperless", appName: "paperless", volume: "media" },
+  ],
+  oomApps: [{ appId: "app_qbit", appName: "qbittorrent", count: 10 }],
+  scans: { scanned: 176, apps: 44, lastRunAt: "2026-10-29T09:20:00.000Z", appsWithFindings: 0, critical: 0, warnings: 0 },
+  cron: { failed: 0, affectedJobs: [] },
+  alerts: {
+    fired: 12,
+    resolved: 12,
+    open: 0,
+    top: [
+      { label: "Killed for memory", count: 10 },
+      { label: "Host swap", count: 1 },
+      { label: "Host disk", count: 1 },
+    ],
+  },
+  resources: [
+    { label: "CPU", values: [32, 28, 30, 43, 29, 25, 22], latest: 12, peak: 43, unit: "percent" },
+    { label: "Memory", values: [62, 62, 63, 64, 63, 63, 62], latest: 63, peak: 64, unit: "percent" },
+    { label: "Disk", values: [66, 66, 65, 65, 66, 66, 65], latest: 65, peak: 66, unit: "percent" },
+    { label: "Load", values: [0.2, 0.18, 0.22, 0.65, 0.25, 0.15, 0.12], latest: 0.14, peak: 0.65, unit: "per-core" },
+  ],
+  newApps: [
+    { appId: "app_scrypted", appName: "scrypted", deployedAt: "2026-10-11T18:00:00.000Z", monthRecapAt: "2026-11-10T17:00:00.000Z" },
+    { appId: "app_formbricks", appName: "formbricks", deployedAt: "2026-10-11T19:00:00.000Z", monthRecapAt: "2026-11-10T17:00:00.000Z" },
+  ],
+  changes: [
+    { appId: "app_ntfy", appName: "ntfy", kind: "port", item: "tcp/8443", since: "2026-10-19T17:00:00.000Z" },
+    { appId: "app_formbricks", appName: "formbricks", kind: "process", item: "worker", since: "2026-10-22T17:00:00.000Z" },
+  ],
+  certs: [],
+  imageUpdates: [
+    { appId: "app_authentik", appName: "authentik", count: 3 },
+    ...["gitea", "immich", "n8n", "ntfy", "paperless", "Wizarr", "outline", "bazarr", "Hermes Agent"].map((appName) => ({ appId: `app_${appName.replace(/\W/g, "")}`, appName, count: 1 })),
+  ],
+  projects: [
+    { id: "proj_wizarr", name: "Wizarr", deploys: 17, failures: 4, backups: { succeeded: 90, total: 90 }, backupFailures: 0, cronFailures: 0, cpu: 1, memory: 180 * MB },
+    { id: "proj_reeve", name: "Reeve NVR", deploys: 2, failures: 2, backupFailures: 0, cronFailures: 0, cpu: 14, memory: 2.1 * GiB },
+    { id: "proj_mcp", name: "Services MCP", deploys: 52, failures: 1, backups: { succeeded: 30, total: 30 }, backupFailures: 0, cronFailures: 0, cpu: 2, memory: 340 * MB },
+    { id: "proj_ntfy", name: "ntfy", deploys: 19, failures: 0, backups: { succeeded: 90, total: 90 }, backupFailures: 0, cronFailures: 0, cpu: 0.2, memory: 40 * MB },
+    { id: "proj_media", name: "media", apps: ["plex", "qbittorrent", "radarr", "sonarr"], deploys: 4, failures: 0, backups: { succeeded: 120, total: 120 }, backupFailures: 0, cronFailures: 0, cpu: 23, memory: 3.1 * GiB },
+    { id: "proj_immich", name: "immich", deploys: 2, failures: 0, backups: { succeeded: 30, total: 30 }, backupFailures: 0, cronFailures: 0, cpu: 4, memory: 0.9 * GiB },
+  ],
+  quietProjects: 18,
+};
+
+const watchedSite = (appId: string, appName: string, extra: Partial<AppRecap>): AppRecap => ({
+  ...RECAP_MONTH,
+  appId,
+  appName,
+  since: OCTOBER.since,
+  until: OCTOBER.until,
+  deployedAt: OCTOBER.since,
+  imageUpdates: 1,
+  backups: { schedule: "Daily at 02:00", lastAt: "2026-10-31T09:03:00.000Z", nights: Array.from({ length: 31 }, () => "ok" as const) },
+  ...extra,
+});
+
+/** MOWP, watched: three sites over October. */
+const DIGEST_WATCHED: DigestWatchedProject = {
+  projectId: "proj_mowp",
+  name: "MOWP",
+  apps: [
+    watchedSite("app_mowp", "mowp-2026", {
+      memory: { avg: 280 * MB, peak: 471 * MB, peakAt: "2026-10-22T18:00:00.000Z", limit: 512 * MB, daysNearLimit: 6 },
+      deploysByDay: octoberDays([0, 3, 5, 2, 4, 1, 0, 0, 6, 4, 3, 2, 5, 0, 0, 2, 3, 1, 4, 2, 0, 0, 5, 3, 2, 1, 2, 0, 0, 4, 3], [2, 8, 15, 22]),
+    }),
+    watchedSite("app_mowpdocs", "mowp-2026-docs", {
+      deploys: { total: 21, failed: 1 },
+      deploysByDay: octoberDays([0, 1, 1, 0, 1, 0, 0, 0, 2, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 2, 1, 1, 0, 1, 0, 0, 2, 1], [26]),
+      uptime: { ratio: 1, downMinutes: 0 },
+      cpu: { avg: 1, peak: 12 },
+      memory: { avg: 120 * MB, peak: 160 * MB, peakAt: OCTOBER.since, limit: 512 * MB, daysNearLimit: 0 },
+      network: { rx: 0.4 * GiB, tx: 1.9 * GiB },
+      volumes: [{ name: "mowp-docs-cache", sizeBytes: 240 * MB, unprotected: false }],
+    }),
+    watchedSite("app_mowpvenue", "mowp-venue-docs", {
+      deploys: { total: 18, failed: 1 },
+      deploysByDay: octoberDays([0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1], [29]),
+      uptime: { ratio: 1, downMinutes: 0 },
+      cpu: { avg: 0.8, peak: 9 },
+      memory: { avg: 110 * MB, peak: 150 * MB, peakAt: OCTOBER.since, limit: 512 * MB, daysNearLimit: 0 },
+      network: { rx: 0.3 * GiB, tx: 1.4 * GiB },
+      volumes: [{ name: "mowp-venue-cache", sizeBytes: 150 * MB, unprotected: false }],
+    }),
+  ],
+  domains: { app_mowp: "www.example.org", app_mowpdocs: "docs.example.org", app_mowpvenue: "venue.example.org" },
+  uptime: { ratio: 0.9999, downMinutes: 9 },
+  response: { p50: 182, p95: 410 },
+  hours: [1, 1, 1, 1, 1, 1, 1, 3, 6, 10, 10, 7, 7, 7, 4, 4, 4, 4, 2, 2, 1, 1, 1, 1],
+  certs: { count: 3, nextExpiresAt: "2026-12-04T00:00:00.000Z" },
+};
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   { name: "recap-72h", event: recapEvent([RECAP_CLEAN]) },
@@ -980,13 +1097,14 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     name: "digest-weekly",
     event: {
       type: "digest.health",
-      title: "Weekly health summary: Acme Studio",
+      title: "Weekly digest: Acme Studio",
       message: "48 deploys, 3 failed.",
       cadence: "weekly",
       orgName: "Acme Studio",
       windowLabel: "Oct 5 – Oct 11, 2026",
       since: "2026-10-05T00:00:00.000Z",
       until: "2026-10-12T00:00:00.000Z",
+      appCount: 14,
       deploys: { total: 48, succeeded: 45, failed: 3 },
       deploysByBucket: [
         [5, 1], [9, 0], [12, 2], [3, 0], [8, 0], [4, 0], [4, 0],
@@ -1003,48 +1121,27 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
           { label: "Restart loop", count: 1 },
         ],
       },
+      drillFailures: [{ appId: "app_shop", appName: "Shop", volume: "uploads" }],
       resources: [
-        { label: "CPU", values: ramp(18, 26, 0.3).slice(-28), latest: 22, peak: 61, unit: "percent" },
-        { label: "Memory", values: ramp(64, 79, 0.05).slice(-28), latest: 78, peak: 91, unit: "percent" },
-        { label: "Disk", values: ramp(70, 74, 0.005).slice(-28), latest: 74, peak: 74, unit: "percent" },
+        { label: "CPU", values: [44, 52, 61, 38, 41, 30, 28], latest: 22, peak: 61, unit: "percent" },
+        { label: "Memory", values: [80, 84, 91, 82, 81, 79, 79], latest: 78, peak: 91, unit: "percent" },
+        { label: "Disk", values: [72, 72, 73, 73, 74, 74, 74], latest: 74, peak: 74, unit: "percent" },
       ],
       certs: [{ domain: "staging.shop.example.net", daysLeft: 12 }],
       imageUpdates: [
-        { appName: "Uptime Kuma", count: 1 },
-        { appName: "Search", count: 2 },
+        { appId: "app_srch", appName: "Search", count: 2 },
+        { appId: "app_kuma", appName: "Uptime Kuma", count: 1 },
       ],
       projects: [
-        { name: "Shop", deploys: 19, failures: 2, backupFailures: 1, cronFailures: 2 },
-        { name: "Acme Nonprofit", deploys: 22, failures: 1, backupFailures: 0, cronFailures: 0 },
-        { name: "Tools", deploys: 7, failures: 0, backupFailures: 0, cronFailures: 0 },
+        { id: "proj_shop", name: "Shop", apps: ["Shop", "Shop Worker"], deploys: 19, failures: 2, backups: { succeeded: 13, total: 14 }, backupFailures: 1, cronFailures: 2, cpu: 6.2, memory: 1.4 * GiB },
+        { id: "proj_acme", name: "Acme Nonprofit", deploys: 22, failures: 1, backups: { succeeded: 7, total: 7 }, backupFailures: 0, cronFailures: 0, cpu: 2.1, memory: 410 * MB },
+        { id: "proj_tools", name: "Tools", deploys: 7, failures: 0, backupFailures: 0, cronFailures: 0, cpu: 0.4, memory: 120 * MB },
       ],
+      quietProjects: 4,
     },
   },
-  {
-    name: "digest-daily",
-    event: {
-      type: "digest.health",
-      title: "Daily health summary: Acme Studio",
-      message: "6 deploys.",
-      cadence: "daily",
-      orgName: "Acme Studio",
-      windowLabel: "Oct 8, 2026",
-      since: "2026-10-08T00:00:00.000Z",
-      until: "2026-10-09T00:00:00.000Z",
-      deploys: { total: 6, succeeded: 6, failed: 0 },
-      deploysByBucket: Array.from({ length: 24 }, (_, h) => ({
-        start: `2026-10-08T${String(h).padStart(2, "0")}:00:00.000Z`,
-        succeeded: [9, 10, 14, 15, 16, 21].includes(h) ? 1 : 0,
-        failed: 0,
-      })),
-      backups: { succeeded: 19, failed: 0, totalSize: 10 * GiB, drillsPassed: 24, drillsFailed: 0, staleVolumes: 0 },
-      cron: { failed: 0, affectedJobs: [] },
-      alerts: { fired: 0, resolved: 0, open: 0, top: [] },
-      certs: [],
-      imageUpdates: [],
-      projects: [{ name: "Acme Nonprofit", deploys: 6, failures: 0, backupFailures: 0, cronFailures: 0 }],
-    },
-  },
+  { name: "digest-monthly", event: DIGEST_MONTH },
+  { name: "digest-watching", event: { ...DIGEST_MONTH, watched: [DIGEST_WATCHED] } },
   {
     name: "system-shutdown",
     event: {

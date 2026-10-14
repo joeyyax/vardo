@@ -461,26 +461,55 @@ export type SecurityDomainClaimedEvent = {
 };
 
 export type DigestProjectRow = {
+  /** Project id, or absent for an app outside any project. */
+  id?: string;
+  /** Set when the row is a lone app. */
+  appId?: string;
   name: string;
+  /** Its apps by name, when it has more than one. */
+  apps?: string[];
   deploys: number;
   failures: number;
+  /** Backups that finished in the window. */
+  backups?: { succeeded: number; total: number };
   backupFailures: number;
   cronFailures: number;
+  /** Sums of each app's average. CPU is percent of one core; memory is bytes. */
+  cpu?: number | null;
+  memory?: number | null;
 };
 
-/** A daily or weekly record of one org's window: deploys, backups, alerts, trends and what's coming due. */
+/** A project someone watches: each site's numbers over the window, from the recap collector. */
+export type DigestWatchedProject = {
+  projectId: string;
+  name: string;
+  apps: AppRecap[];
+  /** Primary domain per app id. */
+  domains: Record<string, string>;
+  /** Across every site's checks. */
+  uptime: { ratio: number; downMinutes: number } | null;
+  response: { p50: number; p95: number } | null;
+  /** Mean activity per local hour across its sites, 24 values. */
+  hours: number[];
+  /** Certificates on its domains: how many, and the soonest expiry. */
+  certs: { count: number; nextExpiresAt: string | null };
+};
+
+/** A weekly or monthly record of one org's window: deploys, backups, alerts, trends and what's coming due. */
 export type DigestHealthEvent = {
   type: "digest.health";
   title: string;
   message: string;
-  cadence: "daily" | "weekly";
+  cadence: "weekly" | "monthly";
   orgName: string;
-  /** "Oct 2 – Oct 8, 2026", or one day for a daily digest. */
+  /** "Oct 2 – Oct 8, 2026" or "October 2026". */
   windowLabel: string;
   since: string;
   until: string;
+  /** Top-level apps in the org at send time. */
+  appCount?: number;
   deploys: { total: number; succeeded: number; failed: number };
-  /** Per hour for a daily digest, per day for a weekly one. Oldest first. */
+  /** Per local day, oldest first. */
   deploysByBucket?: { start: string; succeeded: number; failed: number }[];
   backups: {
     succeeded: number;
@@ -493,19 +522,32 @@ export type DigestHealthEvent = {
     runs?: number;
     lastRunAt?: string | null;
   };
+  /** Apps holding the stale volumes, most volumes first. */
+  staleApps?: { appId: string | null; appName: string; volumes: number }[];
+  drillFailures?: { appId: string | null; appName: string; volume: string }[];
+  /** Apps killed for memory in the window, most first. */
+  oomApps?: { appId: string; appName: string; count: number }[];
   /** Security scans in the window: apps scanned and what the latest scan of each found. */
   scans?: { scanned: number; apps: number; lastRunAt: string | null; appsWithFindings: number; critical: number; warnings: number };
   cron: { failed: number; affectedJobs: string[] };
   alerts: { fired: number; resolved: number; open: number; top: { label: string; count: number }[] };
   /** Host trends, for orgs with an instance admin. */
   resources?: { label: string; values: number[]; latest: number; peak: number; unit: "percent" | "per-core" }[];
+  /** First production deploys in the window. */
+  newApps?: { appId: string; appName: string; deployedAt: string; monthRecapAt: string | null }[];
+  /** Ports and processes deploys added to apps past their first three days. */
+  changes?: { appId: string; appName: string; kind: "port" | "process"; item: string; since: string }[];
   /** Live at send time, not part of the window. */
   certs: { domain: string; daysLeft: number }[];
   /** Updates within the running major. New majors are never listed here. */
-  imageUpdates: { appName: string; count: number }[];
+  imageUpdates: { appId?: string; appName: string; count: number }[];
   /** Running majors at or near end of life. */
   majorNotices?: { appName: string; detail: string }[];
   projects: DigestProjectRow[];
+  /** Projects with nothing to show, past the table. */
+  quietProjects?: number;
+  /** The recipient's watched projects in this org. */
+  watched?: DigestWatchedProject[];
 };
 
 /** One new app's numbers for its 72-hour or 30-day recap. Bytes are bytes; CPU is percent of one core. */

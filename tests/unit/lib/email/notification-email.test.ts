@@ -127,7 +127,7 @@ describe("notification emails", () => {
     expect(email!.html).toContain(body.heading.replace(/'/g, "&#x27;"));
     expect(email!.text).toContain(body.heading);
     expect(email!.html).toContain("prefers-color-scheme:dark");
-    expect(email!.text).toContain("Notification settings: https://vardo.example.com/user/settings/notifications");
+    expect(email!.text).toContain(`${body.footer.settingsLabel ?? "Notification settings"}: https://vardo.example.com/user/settings/notifications`);
     expect(email!.html).not.toContain("?tab=");
     expect(email!.text).not.toMatch(/\bunknown\b/i);
     for (const fact of body.facts ?? []) expect(email!.text).toContain(fact.value);

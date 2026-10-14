@@ -4,6 +4,8 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import {
   notificationChannels,
+  projects,
+  projectWatches,
   userNotificationPreferences,
   userDigestPreferences,
 } from "@/lib/db/schema";
@@ -12,6 +14,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { ALL_EVENT_TYPES } from "@/lib/bus/events";
+import { DIGEST_FREQUENCIES, frequencyFor } from "@/lib/digest/window";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -27,11 +30,17 @@ const putSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("digest"),
     orgId: z.string().min(1),
-    digestEnabled: z.boolean(),
+    frequency: z.enum(DIGEST_FREQUENCIES),
+  }),
+  z.object({
+    type: z.literal("watch"),
+    orgId: z.string().min(1),
+    projectId: z.string().min(1),
+    watching: z.boolean(),
   }),
 ]);
 
-/** GET ?orgId= — the user's preferences for every channel in the org, plus their digest preference. */
+/** GET ?orgId= — the user's preferences for every channel in the org, their digest frequency and the projects they watch. */
 async function handleGet(req: NextRequest) {
   try {
     const orgId = req.nextUrl.searchParams.get("orgId");
@@ -43,7 +52,7 @@ async function handleGet(req: NextRequest) {
     if (!org) return apiError.forbidden();
     const userId = org.session.user.id;
 
-    const [channels, prefs, digestPref] = await Promise.all([
+    const [channels, prefs, digestPref, orgProjects, watches] = await Promise.all([
       db.query.notificationChannels.findMany({
         where: eq(notificationChannels.organizationId, orgId),
         columns: { id: true, name: true, type: true, enabled: true },
@@ -65,21 +74,33 @@ async function handleGet(req: NextRequest) {
           eq(userDigestPreferences.userId, userId),
           eq(userDigestPreferences.organizationId, orgId),
         ),
-        columns: { id: true, enabled: true },
+        columns: { frequency: true },
       }),
+      db.query.projects.findMany({
+        where: and(eq(projects.organizationId, orgId), eq(projects.isSystemManaged, false)),
+        columns: { id: true, name: true, displayName: true },
+        orderBy: (p, { asc }) => [asc(p.displayName)],
+      }),
+      db
+        .select({ projectId: projectWatches.projectId })
+        .from(projectWatches)
+        .innerJoin(projects, eq(projects.id, projectWatches.projectId))
+        .where(and(eq(projectWatches.userId, userId), eq(projects.organizationId, orgId))),
     ]);
 
     return NextResponse.json({
       channels,
       preferences: prefs,
-      digestEnabled: digestPref?.enabled ?? false,
+      digestFrequency: frequencyFor(digestPref),
+      projects: orgProjects.map((p) => ({ id: p.id, name: p.displayName || p.name })),
+      watching: watches.map((w) => w.projectId),
     });
   } catch (error) {
     return handleRouteError(error, "Error fetching notification preferences");
   }
 }
 
-/** PUT — upserts a preference (type: "preference") or the digest toggle (type: "digest"). */
+/** PUT — upserts a channel preference, the digest frequency, or a project watch. */
 async function handlePut(req: NextRequest) {
   try {
     const session = await requireSession();
@@ -98,31 +119,31 @@ async function handlePut(req: NextRequest) {
     const userId = org.session.user.id;
 
     if (parsed.data.type === "digest") {
-      const { orgId, digestEnabled } = parsed.data;
+      const { orgId, frequency } = parsed.data;
+      const now = new Date();
+      await db
+        .insert(userDigestPreferences)
+        .values({ id: nanoid(), userId, organizationId: orgId, frequency })
+        .onConflictDoUpdate({
+          target: [userDigestPreferences.userId, userDigestPreferences.organizationId],
+          set: { frequency, updatedAt: now },
+        });
+      return NextResponse.json({ ok: true, frequency });
+    }
 
-      const existing = await db.query.userDigestPreferences.findFirst({
-        where: and(
-          eq(userDigestPreferences.userId, userId),
-          eq(userDigestPreferences.organizationId, orgId),
-        ),
+    if (parsed.data.type === "watch") {
+      const { orgId, projectId, watching } = parsed.data;
+      const project = await db.query.projects.findFirst({
+        where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
         columns: { id: true },
       });
-
-      if (existing) {
-        await db
-          .update(userDigestPreferences)
-          .set({ enabled: digestEnabled, updatedAt: new Date() })
-          .where(eq(userDigestPreferences.id, existing.id));
+      if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      if (watching) {
+        await db.insert(projectWatches).values({ userId, projectId }).onConflictDoNothing();
       } else {
-        await db.insert(userDigestPreferences).values({
-          id: nanoid(),
-          userId,
-          organizationId: orgId,
-          enabled: digestEnabled,
-        });
+        await db.delete(projectWatches).where(and(eq(projectWatches.userId, userId), eq(projectWatches.projectId, projectId)));
       }
-
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, watching });
     }
 
     // type === "preference"

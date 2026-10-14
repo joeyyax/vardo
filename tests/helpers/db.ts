@@ -74,8 +74,28 @@ function createDbMock() {
     }),
   }));
 
+  // Every select resolves to the next scripted result, or the default, whatever it chains.
+  const selectQueue: unknown[][] = [];
+  let selectRows: unknown[] = [];
+  const selectChain = (rows: unknown[]): unknown =>
+    new Proxy(
+      {},
+      {
+        get(_, prop) {
+          if (prop === "then") return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject);
+          if (prop === "catch") return (reject: (e: unknown) => unknown) => Promise.resolve(rows).catch(reject);
+          return () => selectChain(rows);
+        },
+      },
+    );
+  const select = vi.fn(() => selectChain(selectQueue.shift() ?? selectRows));
+
   return {
-    db: { query, insert, update, delete: del },
+    db: { query, insert, update, delete: del, select },
+    select,
+    selectReturns: (rows: unknown[]) => void (selectRows = rows),
+    /** Results for the next selects, in order, before the default. */
+    selectOnce: (...results: unknown[][]) => void selectQueue.push(...results),
     query,
     insert,
     update,
@@ -94,6 +114,9 @@ function createDbMock() {
       insert.mockClear();
       update.mockClear();
       del.mockClear();
+      select.mockClear();
+      selectQueue.length = 0;
+      selectRows = [];
       inserts.length = updates.length = deletes.length = 0;
       insertRows = updateRows = deleteRows = [];
     },

@@ -3,11 +3,12 @@
 import { and, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import { alertHistory, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains } from "@/lib/db/schema";
+import { alertHistory, appRecaps, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains, projects } from "@/lib/db/schema";
 import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
 import { ALERTS, isAlertType } from "@/lib/notifications/registry";
 import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
-import { bucketMsFor, bucketStarts, type DigestWindow } from "./window";
+import { RECAP_AGE_MS } from "@/lib/recaps/schedule";
+import { dayStarts, type DigestWindow } from "./window";
 import { UTC, zonedDateKey, zonedParts } from "@/lib/time-zone";
 
 export type DigestData = Omit<DigestHealthEvent, "type" | "title" | "message">;
@@ -15,13 +16,12 @@ export type DigestData = Omit<DigestHealthEvent, "type" | "title" | "message">;
 const DAY_MS = 86_400_000;
 const TOP_ALERTS = 5;
 
-/** Deploys per bucket across the window, oldest first. */
+/** Deploys per local day across the window, oldest first. */
 export function deployBuckets(
   rows: { status: string; startedAt: Date }[],
   window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string },
-  bucketMs: number,
 ): NonNullable<DigestHealthEvent["deploysByBucket"]> {
-  const starts = bucketStarts(window, bucketMs);
+  const starts = dayStarts(window);
   const buckets = starts.map((start) => ({ start: new Date(start).toISOString(), succeeded: 0, failed: 0 }));
   for (const row of rows) {
     const t = row.startedAt.getTime();
@@ -34,8 +34,9 @@ export function deployBuckets(
   return buckets;
 }
 
-export function windowLabel(window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string }): string {
+export function windowLabel(window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string; cadence?: DigestWindow["cadence"] }): string {
   const timeZone = window.timeZone ?? UTC;
+  if (window.cadence === "monthly") return window.since.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone });
   const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone });
   // An hour before the end is inside the last day even when DST made it 23 hours.
   const last = new Date(window.until.getTime() - 3_600_000);
@@ -94,9 +95,50 @@ export function topAlerts(rows: { type: string }[]): { label: string; count: num
   return [...counts].map(([label, n]) => ({ label, count: n })).sort((a, b) => b.count - a.count).slice(0, TOP_ALERTS);
 }
 
+/** Stale volumes grouped by app, most first. */
+export function staleByApp(rows: { appId: string | null; appName: string }[]): NonNullable<DigestHealthEvent["staleApps"]> {
+  const byApp = new Map<string, { appId: string | null; appName: string; volumes: number }>();
+  for (const r of rows) {
+    const key = r.appId ?? `name:${r.appName}`;
+    const entry = byApp.get(key) ?? { appId: r.appId, appName: r.appName, volumes: 0 };
+    entry.volumes += 1;
+    byApp.set(key, entry);
+  }
+  return [...byApp.values()].sort((a, b) => b.volumes - a.volumes);
+}
+
+type SeenItem = { kind: "port" | "process"; item: string; state: string; first: number };
+
+/** Items a deploy taught an app inside the window: learned ("known") then, and past the app's first three days. */
+export function deployChanges(items: SeenItem[], window: Pick<DigestWindow, "since" | "until">, firstDeployAt: Date | null): SeenItem[] {
+  const settled = firstDeployAt ? firstDeployAt.getTime() + RECAP_AGE_MS["72h"] : -Infinity;
+  return items
+    .filter((i) => i.state === "known" && i.first >= window.since.getTime() && i.first < window.until.getTime() && i.first >= settled)
+    .sort((a, b) => a.first - b.first);
+}
+
+async function seenChanges(
+  candidates: { id: string; name: string; firstDeployAt: Date | null }[],
+  window: DigestWindow,
+): Promise<NonNullable<DigestHealthEvent["changes"]>> {
+  if (!candidates.length) return [];
+  const { readSeen } = await import("@/lib/anomaly/store");
+  const out: NonNullable<DigestHealthEvent["changes"]> = [];
+  for (const app of candidates) {
+    const [ports, procs] = await Promise.all([readSeen(app.id, "ports"), readSeen(app.id, "procs")]);
+    const items: SeenItem[] = [
+      ...[...ports].map(([item, e]) => ({ kind: "port" as const, item, state: e.state, first: e.first })),
+      ...[...procs].map(([item, e]) => ({ kind: "process" as const, item, state: e.state, first: e.first })),
+    ];
+    for (const c of deployChanges(items, window, app.firstDeployAt)) {
+      out.push({ appId: app.id, appName: app.name, kind: c.kind, item: c.item, since: new Date(c.first).toISOString() });
+    }
+  }
+  return out;
+}
+
 async function hostTrends(window: DigestWindow): Promise<DigestHealthEvent["resources"]> {
   const { queryHostHistory } = await import("@/lib/metrics/store-host");
-  const bucketMs = window.cadence === "daily" ? 60 * 60_000 : 6 * 60 * 60_000;
   const from = window.since.getTime();
   const to = window.until.getTime() - 1;
   const series = [
@@ -107,9 +149,13 @@ async function hostTrends(window: DigestWindow): Promise<DigestHealthEvent["reso
   ];
   const out = await Promise.all(
     series.map(async ({ metric, label, unit }) => {
-      const values = (await queryHostHistory(metric, from, to, bucketMs)).map(([, v]) => v);
+      const [peaks, recent] = await Promise.all([
+        queryHostHistory(metric, from, to, DAY_MS, "max"),
+        queryHostHistory(metric, Math.max(from, to - 6 * 3_600_000), to, 6 * 3_600_000),
+      ]);
+      const values = peaks.map(([, v]) => v);
       if (values.length < 2) return null;
-      return { label, values, latest: values.at(-1)!, peak: Math.max(...values), unit };
+      return { label, values, latest: recent.at(-1)?.[1] ?? values.at(-1)!, peak: Math.max(...values), unit };
     }),
   );
   const trends = out.filter((t) => t !== null);
@@ -153,13 +199,15 @@ async function imageUpdates(orgId: string): Promise<ImageUpdateFacts> {
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
   const status = await getAggregateUpdateStatus(orgId, rows, await getCooldownUntil());
   return {
-    imageUpdates: status.appsWithUpdates.map((a) => ({ appName: a.displayName || a.name, count: a.count })),
+    imageUpdates: status.appsWithUpdates.map((a) => ({ appId: a.id, appName: a.displayName || a.name, count: a.count })).sort((a, b) => b.count - a.count),
     majorNotices: status.majorNotices.map((n) => ({
       appName: n.service.service ? `${n.displayName} · ${n.service.service}` : n.displayName,
       detail: describeMajorNotice(n.service),
     })),
   };
 }
+
+const issues = (p: DigestProjectRow) => p.failures + p.backupFailures + p.cronFailures;
 
 /** One org's digest for a window. `withHost` adds host trends, for orgs with an instance admin. */
 export async function collectDigestData(
@@ -171,17 +219,40 @@ export async function collectDigestData(
   const now = opts.now ?? new Date();
   const inWindow = (column: AnyPgColumn) => and(gte(column, window.since), lt(column, window.until));
 
-  const orgApps = await db.query.apps.findMany({
-    where: eq(apps.organizationId, orgId),
-    columns: { id: true, name: true, displayName: true, projectId: true },
-  });
+  const [orgApps, orgProjects, orgCronJobs] = await Promise.all([
+    db.query.apps.findMany({
+      where: eq(apps.organizationId, orgId),
+      columns: { id: true, name: true, displayName: true, projectId: true, parentAppId: true, isSystemManaged: true },
+    }),
+    db.query.projects.findMany({
+      where: eq(projects.organizationId, orgId),
+      columns: { id: true, name: true, displayName: true, isSystemManaged: true },
+    }),
+    db.query.cronJobs.findMany({
+      where: eq(cronJobs.organizationId, orgId),
+      columns: { id: true, name: true, appId: true },
+    }),
+  ]);
   const appIds = orgApps.map((a) => a.id);
-  const orgCronJobs = await db.query.cronJobs.findMany({
-    where: eq(cronJobs.organizationId, orgId),
-    columns: { id: true, name: true, appId: true },
-  });
 
-  const [deployRows, backupRows, drillRows, cronRuns, fired, resolvedCount, openCount, stale, certs, updates, resources, scanRows, runRows] = await Promise.all([
+  const [
+    deployRows,
+    backupRows,
+    drillRows,
+    drillFailRows,
+    cronRuns,
+    fired,
+    resolvedCount,
+    openCount,
+    stale,
+    certs,
+    updates,
+    resources,
+    scanRows,
+    runRows,
+    recapRows,
+    summaries,
+  ] = await Promise.all([
     appIds.length
       ? db
           .select({ appId: deployments.appId, status: deployments.status, startedAt: deployments.startedAt })
@@ -197,13 +268,20 @@ export async function collectDigestData(
       .from(backups)
       .where(and(eq(backups.organizationId, orgId), inWindow(backups.verifiedAt)))
       .groupBy(backups.verifyOutcome),
+    db
+      .select({ appId: backups.appId, appName: backups.appName, volume: backups.volumeName })
+      .from(backups)
+      .where(and(eq(backups.organizationId, orgId), inWindow(backups.verifiedAt), eq(backups.verifyOutcome, "failed"))),
     orgCronJobs.length
       ? db.query.cronJobRuns.findMany({
           where: and(inArray(cronJobRuns.cronJobId, orgCronJobs.map((j) => j.id)), inWindow(cronJobRuns.startedAt), eq(cronJobRuns.status, "failed")),
           columns: { cronJobId: true },
         })
       : Promise.resolve([]),
-    db.select({ type: alertHistory.type }).from(alertHistory).where(and(eq(alertHistory.organizationId, orgId), inWindow(alertHistory.firedAt))),
+    db
+      .select({ type: alertHistory.type, about: alertHistory.about })
+      .from(alertHistory)
+      .where(and(eq(alertHistory.organizationId, orgId), inWindow(alertHistory.firedAt))),
     db.select({ n: count() }).from(alertHistory).where(and(eq(alertHistory.organizationId, orgId), inWindow(alertHistory.resolvedAt))),
     db
       .select({ n: count() })
@@ -230,6 +308,14 @@ export async function collectDigestData(
       .from(backupRuns)
       .where(and(eq(backupRuns.organizationId, orgId), inWindow(backupRuns.finishedAt)))
       .catch(() => []),
+    db
+      .select({ appId: appRecaps.appId, deployedAt: appRecaps.deployedAt, dueAt: appRecaps.dueAt })
+      .from(appRecaps)
+      .where(and(eq(appRecaps.organizationId, orgId), eq(appRecaps.kind, "30d")))
+      .catch(() => []),
+    import("@/lib/metrics/history")
+      .then(({ appSummaries }) => appSummaries(orgId, { from: window.since, to: window.until }))
+      .catch(() => new Map<string, never>()),
   ]);
 
   const deploys = {
@@ -240,15 +326,28 @@ export async function collectDigestData(
 
   const jobById = new Map(orgCronJobs.map((j) => [j.id, j]));
   const appById = new Map(orgApps.map((a) => [a.id, a]));
-  const projects = new Map<string, DigestProjectRow>();
+  const projectById = new Map(orgProjects.map((p) => [p.id, p]));
+  const label = (a: { name: string; displayName: string | null }) => a.displayName || a.name;
+  const topLevel = orgApps.filter((a) => !a.parentAppId && !a.isSystemManaged);
+
+  const rows = new Map<string, DigestProjectRow & { appNames: Set<string> }>();
   const project = (appId: string | null) => {
     const app = appId ? appById.get(appId) : undefined;
     if (!app) return null;
-    const key = app.projectId ?? `app:${app.id}`;
-    const row = projects.get(key) ?? { name: app.displayName || app.name, deploys: 0, failures: 0, backupFailures: 0, cronFailures: 0 };
-    projects.set(key, row);
+    const parent = app.parentAppId ? appById.get(app.parentAppId) : undefined;
+    const projectId = app.projectId ?? parent?.projectId ?? null;
+    const owner = projectId ? projectById.get(projectId) : undefined;
+    const key = owner ? owner.id : `app:${parent?.id ?? app.id}`;
+    let row = rows.get(key);
+    if (!row) {
+      row = owner
+        ? { id: owner.id, name: owner.displayName || owner.name, deploys: 0, failures: 0, backupFailures: 0, cronFailures: 0, appNames: new Set() }
+        : { appId: parent?.id ?? app.id, name: label(parent ?? app), deploys: 0, failures: 0, backupFailures: 0, cronFailures: 0, appNames: new Set() };
+      rows.set(key, row);
+    }
     return row;
   };
+  for (const a of topLevel) project(a.id)?.appNames.add(label(a));
   for (const d of deployRows) {
     const row = project(d.appId);
     if (!row) continue;
@@ -256,13 +355,50 @@ export async function collectDigestData(
     if (d.status === "failed") row.failures += 1;
   }
   for (const b of backupRows) {
-    const row = b.status === "failed" ? project(b.appId) : null;
-    if (row) row.backupFailures += 1;
+    const row = project(b.appId);
+    if (!row || (b.status !== "success" && b.status !== "failed")) continue;
+    row.backups ??= { succeeded: 0, total: 0 };
+    row.backups.total += 1;
+    if (b.status === "success") row.backups.succeeded += 1;
+    else row.backupFailures += 1;
   }
   for (const run of cronRuns) {
     const row = project(jobById.get(run.cronJobId)?.appId ?? null);
     if (row) row.cronFailures += 1;
   }
+  for (const [appId, s] of summaries) {
+    const row = project(appId);
+    if (!row) continue;
+    if (s.cpu) row.cpu = (row.cpu ?? 0) + s.cpu.avg;
+    if (s.memory) row.memory = (row.memory ?? 0) + s.memory.avg;
+  }
+
+  const oom = new Map<string, number>();
+  for (const f of fired) if (f.type === "app.oom") oom.set(f.about, (oom.get(f.about) ?? 0) + 1);
+  const oomApps = [...oom]
+    .flatMap(([appId, n]) => {
+      const app = appById.get(appId);
+      return app ? [{ appId, appName: label(app), count: n }] : [];
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const firstDeploy = new Map(recapRows.map((r) => [r.appId, r]));
+  const newApps = recapRows
+    .filter((r) => r.deployedAt >= window.since && r.deployedAt < window.until && appById.has(r.appId))
+    .sort((a, b) => a.deployedAt.getTime() - b.deployedAt.getTime())
+    .map((r) => ({ appId: r.appId, appName: label(appById.get(r.appId)!), deployedAt: r.deployedAt.toISOString(), monthRecapAt: r.dueAt >= now ? r.dueAt.toISOString() : null }));
+
+  const changes = await seenChanges(
+    topLevel.map((a) => ({ id: a.id, name: label(a), firstDeployAt: firstDeploy.get(a.id)?.deployedAt ?? null })),
+    window,
+  ).catch(() => []);
+
+  const projectRows = [...rows.values()]
+    .filter((p) => p.id === undefined || !projectById.get(p.id)?.isSystemManaged)
+    .map(({ appNames, ...p }): DigestProjectRow => (appNames.size > 1 ? { ...p, apps: [...appNames].sort() } : p));
+  const active = projectRows
+    .filter((p) => p.deploys + issues(p) > 0)
+    .sort((a, b) => issues(b) - issues(a) || b.deploys - a.deploys);
 
   const drills = new Map(drillRows.map((r) => [r.outcome, r.n]));
   return {
@@ -271,8 +407,9 @@ export async function collectDigestData(
     windowLabel: windowLabel(window),
     since: window.since.toISOString(),
     until: window.until.toISOString(),
+    appCount: topLevel.length,
     deploys,
-    deploysByBucket: deployBuckets(deployRows, window, bucketMsFor(window.cadence)),
+    deploysByBucket: deployBuckets(deployRows, window),
     backups: {
       succeeded: backupRows.filter((b) => b.status === "success").length,
       failed: backupRows.filter((b) => b.status === "failed").length,
@@ -282,6 +419,12 @@ export async function collectDigestData(
       staleVolumes: stale.length,
       ...backupRunRollup(runRows),
     },
+    staleApps: staleByApp(stale),
+    drillFailures: drillFailRows.map((r) => {
+      const app = r.appId ? appById.get(r.appId) : undefined;
+      return { appId: app?.id ?? null, appName: app ? label(app) : r.appName ?? "an app", volume: r.volume ?? "a volume" };
+    }),
+    oomApps,
     scans: scanRollup(scanRows),
     cron: {
       failed: cronRuns.length,
@@ -289,20 +432,20 @@ export async function collectDigestData(
     },
     alerts: { fired: fired.length, resolved: resolvedCount[0]?.n ?? 0, open: openCount[0]?.n ?? 0, top: topAlerts(fired) },
     resources,
+    newApps,
+    changes,
     certs,
     ...updates,
-    projects: [...projects.values()]
-      .filter((p) => p.deploys + p.failures + p.backupFailures + p.cronFailures > 0)
-      .sort((a, b) => b.failures + b.backupFailures + b.cronFailures - (a.failures + a.backupFailures + a.cronFailures) || b.deploys - a.deploys),
+    projects: active,
+    quietProjects: projectRows.length - active.length,
   };
 }
 
 /** The bus event for a digest. */
 export function digestEvent(data: DigestData): DigestHealthEvent {
-  const period = data.cadence === "daily" ? "Daily" : "Weekly";
   return {
     type: "digest.health",
-    title: `${period} health summary: ${data.orgName}`,
+    title: `${data.cadence === "monthly" ? "Monthly" : "Weekly"} digest: ${data.orgName}`,
     message: `${data.deploys.total} deploys, ${data.deploys.failed} failed; ${data.backups.failed} backup failures; ${data.alerts.fired} alerts.`,
     ...data,
   };

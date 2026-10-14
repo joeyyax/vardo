@@ -20,7 +20,7 @@ vi.mock("@/lib/api/verify-access", async () => {
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
 vi.mock("@/lib/digest/collector", () => ({ collectDigestData: vi.fn() }));
-vi.mock("@/lib/notifications/factory", () => ({ createChannel: vi.fn() }));
+vi.mock("@/lib/digest/tick", () => ({ deliverDigests: vi.fn() }));
 vi.mock("@/lib/transfers/engine", () => ({
   initiateTransfer: vi.fn(),
   analyzeTransfer: vi.fn(),

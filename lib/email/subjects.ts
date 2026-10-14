@@ -4,6 +4,7 @@ import type { AlertResolvedEvent, BusEvent, MissingContainer } from "@/lib/bus/e
 import { formatBytesIec } from "@/lib/metrics/format";
 import { backupRunTotal, formatDuration, formatDurationRough, plural, shortSha, stackedName, versionShort, windowPhrase } from "./format";
 import { appRecapSubject } from "./templates/app-recap";
+import { digestSubject } from "./templates/digest";
 import { backupProblemCount } from "./templates/backup";
 import type { MailSeries } from "./templates/context";
 
@@ -188,7 +189,7 @@ export function subjectLine(event: BusEvent): string {
     case "system.containers-missing":
       return `⚠ ${missingLabel(event.containers)} didn't come back`;
     case "digest.health":
-      return `${event.cadence === "daily" ? "Daily" : "Weekly"} summary · ${event.orgName} · ${event.windowLabel}`;
+      return digestSubject(event);
     case "digest.app-recap":
       return appRecapSubject(event);
     default:

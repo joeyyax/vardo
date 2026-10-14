@@ -15,8 +15,13 @@ const {
   prefsFindFirst,
   digestFindFirst,
   channelsFindFirst,
+  projectsFindFirst,
+  projectsFindMany,
   mockInsert,
   mockUpdate,
+  mockDelete,
+  insertValues,
+  conflictUpdate,
 } = vi.hoisted(() => ({
   mockRequireSession: vi.fn(),
   mockVerifyOrgAccess: vi.fn(),
@@ -25,25 +30,36 @@ const {
   prefsFindFirst: vi.fn(),
   digestFindFirst: vi.fn(),
   channelsFindFirst: vi.fn(),
+  projectsFindFirst: vi.fn(),
+  projectsFindMany: vi.fn(),
   mockInsert: vi.fn(),
   mockUpdate: vi.fn(),
+  mockDelete: vi.fn(),
+  insertValues: vi.fn(),
+  conflictUpdate: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireSession: mockRequireSession, isScopedToken: () => false }));
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      notificationChannels: { findMany: channelsFindMany, findFirst: channelsFindFirst },
-      userNotificationPreferences: { findMany: prefsFindMany, findFirst: prefsFindFirst },
-      userDigestPreferences: { findFirst: digestFindFirst },
+vi.mock("@/lib/db", () => {
+  const watchRows = { from: () => watchRows, innerJoin: () => watchRows, where: async () => [{ projectId: "proj-1" }] };
+  return {
+    db: {
+      query: {
+        notificationChannels: { findMany: channelsFindMany, findFirst: channelsFindFirst },
+        userNotificationPreferences: { findMany: prefsFindMany, findFirst: prefsFindFirst },
+        userDigestPreferences: { findFirst: digestFindFirst },
+        projects: { findFirst: projectsFindFirst, findMany: projectsFindMany },
+      },
+      select: () => watchRows,
+      insert: mockInsert,
+      update: mockUpdate,
+      delete: mockDelete,
     },
-    insert: mockInsert,
-    update: mockUpdate,
-  },
-}));
+  };
+});
 
 const { GET, PUT } = await import("@/app/api/v1/user/notification-preferences/route");
 
@@ -60,9 +76,13 @@ beforeEach(() => {
   prefsFindMany.mockResolvedValue([]);
   digestFindFirst.mockResolvedValue(null);
   prefsFindFirst.mockResolvedValue(null);
+  projectsFindMany.mockResolvedValue([{ id: "proj-1", name: "mowp", displayName: "MOWP" }]);
+  projectsFindFirst.mockResolvedValue(null);
   // The channel genuinely exists in the foreign org — only membership stops the write.
   channelsFindFirst.mockResolvedValue({ id: "chan-x" });
-  mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+  const chain = { onConflictDoUpdate: conflictUpdate.mockResolvedValue(undefined), onConflictDoNothing: vi.fn().mockResolvedValue(undefined), then: (r: (v: unknown) => unknown) => Promise.resolve(undefined).then(r) };
+  mockInsert.mockReturnValue({ values: insertValues.mockReturnValue(chain) });
+  mockDelete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
 });
 
 function getRequest(orgId: string) {
@@ -87,21 +107,27 @@ describe("GET notification-preferences — org membership", () => {
     expect(channelsFindMany).not.toHaveBeenCalled();
   });
 
-  it("returns channels for the caller's own org", async () => {
+  it("returns channels, the weekly default, projects and watches for the caller's own org", async () => {
     const res = await GET(getRequest(ORG_ID));
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.channels).toHaveLength(1);
+    expect(body.digestFrequency).toBe("weekly");
+    expect(body.projects).toEqual([{ id: "proj-1", name: "MOWP" }]);
+    expect(body.watching).toEqual(["proj-1"]);
+  });
+
+  it("returns a stored frequency", async () => {
+    digestFindFirst.mockResolvedValue({ frequency: "off" });
+    const body = await (await GET(getRequest(ORG_ID))).json();
+    expect(body.digestFrequency).toBe("off");
   });
 });
 
 describe("PUT notification-preferences — org membership", () => {
   it("rejects a digest write scoped to a foreign org", async () => {
-    const res = await PUT(
-      putRequest({ type: "digest", orgId: OTHER_ORG, digestEnabled: true }),
-      undefined,
-    );
+    const res = await PUT(putRequest({ type: "digest", orgId: OTHER_ORG, frequency: "monthly" }), undefined);
 
     expect(res.status).toBe(403);
     expect(mockInsert).not.toHaveBeenCalled();
@@ -123,13 +149,41 @@ describe("PUT notification-preferences — org membership", () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it("accepts a digest write for the caller's own org", async () => {
-    const res = await PUT(
-      putRequest({ type: "digest", orgId: ORG_ID, digestEnabled: true }),
-      undefined,
-    );
+  it("accepts a digest frequency for the caller's own org", async () => {
+    const res = await PUT(putRequest({ type: "digest", orgId: ORG_ID, frequency: "monthly" }), undefined);
 
     expect(res.status).toBe(200);
-    expect(mockInsert).toHaveBeenCalled();
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-1", organizationId: ORG_ID, frequency: "monthly" }));
+    expect(conflictUpdate).toHaveBeenCalledWith(expect.objectContaining({ set: expect.objectContaining({ frequency: "monthly" }) }));
+  });
+});
+
+describe("PUT notification-preferences — validation", () => {
+  it.each([
+    ["an unknown frequency", { type: "digest", orgId: ORG_ID, frequency: "daily" }],
+    ["the old toggle", { type: "digest", orgId: ORG_ID, digestEnabled: true }],
+    ["a watch without a project", { type: "watch", orgId: ORG_ID, watching: true }],
+    ["a watch flag that isn't a boolean", { type: "watch", orgId: ORG_ID, projectId: "proj-1", watching: "yes" }],
+  ])("rejects %s", async (_label, body) => {
+    const res = await PUT(putRequest(body), undefined);
+    expect(res.status).toBe(400);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT notification-preferences — watching", () => {
+  it("refuses a project outside the org", async () => {
+    const res = await PUT(putRequest({ type: "watch", orgId: ORG_ID, projectId: "proj-foreign", watching: true }), undefined);
+    expect(res.status).toBe(404);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("watches and unwatches a project in the org", async () => {
+    projectsFindFirst.mockResolvedValue({ id: "proj-1" });
+    expect((await PUT(putRequest({ type: "watch", orgId: ORG_ID, projectId: "proj-1", watching: true }), undefined)).status).toBe(200);
+    expect(insertValues).toHaveBeenCalledWith({ userId: "user-1", projectId: "proj-1" });
+
+    expect((await PUT(putRequest({ type: "watch", orgId: ORG_ID, projectId: "proj-1", watching: false }), undefined)).status).toBe(200);
+    expect(mockDelete).toHaveBeenCalled();
   });
 });

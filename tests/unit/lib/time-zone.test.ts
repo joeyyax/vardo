@@ -10,7 +10,7 @@ import {
 } from "@/lib/time-zone";
 import { nightlyRunKey } from "@/lib/backups/run-rules";
 import { shouldRunNow } from "@/lib/cron/parse";
-import { bucketStarts, digestWindow, isDigestDue, DEFAULT_DIGEST } from "@/lib/digest/window";
+import { dayStarts, digestWindow, isDigestDue, DEFAULT_DIGEST } from "@/lib/digest/window";
 import { windowLabel } from "@/lib/digest/collector";
 
 const LA = "America/Los_Angeles";
@@ -139,36 +139,37 @@ describe("shouldRunNow with a time zone", () => {
 });
 
 describe("digest windows in a zone", () => {
-  it("cuts the day at local midnight", () => {
-    const w = digestWindow("daily", new Date("2026-10-12T15:00:00Z"), LA);
-    expect(w.since.toISOString()).toBe("2026-10-11T07:00:00.000Z");
-    expect(w.until.toISOString()).toBe("2026-10-12T07:00:00.000Z");
-    expect(w.windowKey).toBe("daily:2026-10-11");
-    expect(windowLabel(w)).toBe("Oct 11, 2026");
+  it("cuts a month at local midnight on the 1st", () => {
+    const w = digestWindow("monthly", new Date("2026-11-01T16:00:00Z"), LA);
+    expect(w.since.toISOString()).toBe("2026-10-01T07:00:00.000Z");
+    expect(w.until.toISOString()).toBe("2026-11-01T07:00:00.000Z");
+    expect(w.windowKey).toBe("monthly:2026-10");
+    expect(windowLabel(w)).toBe("October 2026");
+    expect(dayStarts(w)).toHaveLength(31);
   });
 
-  it("covers a 25-hour fall-back day with 25 hourly buckets", () => {
-    const w = digestWindow("daily", new Date("2026-11-02T15:00:00Z"), LA);
-    expect(w.until.getTime() - w.since.getTime()).toBe(25 * 3_600_000);
-    expect(bucketStarts(w, 3_600_000)).toHaveLength(25);
+  it("names the month in the org's zone east of UTC", () => {
+    const w = digestWindow("monthly", new Date("2026-11-01T08:00:00Z"), BERLIN);
+    expect(w.since.toISOString()).toBe("2026-09-30T22:00:00.000Z");
+    expect(windowLabel(w)).toBe("October 2026");
   });
 
   it("keeps seven day buckets across a DST week", () => {
     const w = digestWindow("weekly", new Date("2026-11-02T16:00:00Z"), LA);
-    expect(bucketStarts(w, 86_400_000)).toHaveLength(7);
+    expect(dayStarts(w)).toHaveLength(7);
     expect(zonedDateKey(w.since, LA)).toBe("2026-10-26");
     expect(windowLabel(w)).toBe("Oct 26 – Nov 1, 2026");
   });
 
   it("sends during the org's local hour", () => {
     // Default: Mondays at 08:00.
-    expect(isDigestDue(DEFAULT_DIGEST, new Date("2026-10-12T15:10:00Z"), LA)).toBe(true);
-    expect(isDigestDue(DEFAULT_DIGEST, new Date("2026-10-12T08:10:00Z"), LA)).toBe(false);
+    expect(isDigestDue(DEFAULT_DIGEST, "weekly", new Date("2026-10-12T15:10:00Z"), LA)).toBe(true);
+    expect(isDigestDue(DEFAULT_DIGEST, "weekly", new Date("2026-10-12T08:10:00Z"), LA)).toBe(false);
   });
 
   it("sends a digest whose hour the spring jump skips", () => {
-    const daily = { ...DEFAULT_DIGEST, cadence: "daily" as const, hourOfDay: 2 };
-    const due = firings("2026-03-08T00:00:00Z", "2026-03-09T00:00:00Z", (t) => isDigestDue(daily, t, LA));
+    const sunday = { ...DEFAULT_DIGEST, dayOfWeek: 0, hourOfDay: 2 };
+    const due = firings("2026-03-08T00:00:00Z", "2026-03-09T00:00:00Z", (t) => isDigestDue(sunday, "weekly", t, LA));
     expect(due[0]).toBe("2026-03-08T10:00:00.000Z");
   });
 });
