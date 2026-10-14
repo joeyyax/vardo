@@ -6,14 +6,15 @@ import { StatusMark } from "@/components/ui/status-dot";
 import { TreeConnector } from "@/components/tree-connector";
 import { EntityLink } from "@/components/entity-link";
 import { MiddleTruncate } from "@/components/middle-truncate";
+import { middleMinWidth } from "@/lib/ui/middle-truncate";
 import type { StatusMarkState } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 
 /** Indent per nesting level, in px. */
 const INDENT = 22;
 
-/** Short of room the signal gives way first, then the name; the status shows in full. */
-const NAME_CELL = "min-w-[4.5em] shrink-[999] overflow-hidden sm:min-w-[6em]";
+/** Short of room the signal gives way first, then the name down to "…tail"; the status shows in full. */
+const NAME_CELL = "shrink-[999] overflow-hidden";
 
 /**
  * One row of a comfortable list: mark, name, one signal, then the problem or a quiet value, an
@@ -89,7 +90,7 @@ export function ListRow({
       data-selected={selected}
       onClick={onOpen}
       className={cn(
-        "group/row relative flex cursor-pointer items-center gap-(--row-gap) rounded-[10px] pr-1.5 pl-1 outline-none",
+        "group/row relative flex cursor-pointer items-center gap-(--row-gap) overflow-x-clip rounded-[10px] pr-1.5 pl-1 outline-none",
         depth > 0 ? "min-h-(--row-h-child) text-sm" : "min-h-(--row-h)",
         "hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_2px_0_0_var(--brass)]",
         selected && "bg-brass-muted hover:bg-brass-muted",
@@ -144,6 +145,7 @@ export function ListRow({
               : undefined
           }
           className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          style={{ minWidth: middleMinWidth(name) }}
         >
           <MiddleTruncate text={name} />
         </EntityLink>
@@ -151,6 +153,7 @@ export function ListRow({
         <span
           title={nameTitle}
           className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          style={{ minWidth: middleMinWidth(name) }}
         >
           <MiddleTruncate text={name} />
         </span>
@@ -168,7 +171,7 @@ export function ListRow({
             {metrics}
           </span>
         )}
-        {status && <span className="min-w-0 truncate">{status}</span>}
+        {status && <span className="shrink-0 max-sm:max-w-[60vw] max-sm:truncate">{status}</span>}
         {action && (
           <span className="max-sm:hidden" onClick={(e) => e.stopPropagation()}>
             {action}

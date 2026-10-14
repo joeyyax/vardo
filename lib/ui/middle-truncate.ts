@@ -6,6 +6,12 @@ const WHOLE_UP_TO = 12;
 const TAIL_WORD_MAX = 8;
 const TAIL_CHARS = 6;
 
+/** The narrowest a name gets: an ellipsis and its tail, or 4.5em when it doesn't split. */
+export function middleMinWidth(text: string): string {
+  const { tail } = middleSplit(text);
+  return tail ? `calc(${tail.length}ch + 1.5ch)` : "4.5em";
+}
+
 /** The head, which truncates with an ellipsis, and the tail, which always shows. Joined, they're the name. */
 export function middleSplit(text: string): { head: string; tail: string } {
   if (text.length <= WHOLE_UP_TO) return { head: text, tail: "" };

@@ -10,6 +10,8 @@ import { statusDotColor } from "@/lib/ui/status-colors";
 import type { DeployView } from "@/lib/ui/deploy-wait";
 import { RowDeployLabel } from "@/components/row-deploy-label";
 import { MiddleTruncate } from "@/components/middle-truncate";
+import { middleMinWidth } from "@/lib/ui/middle-truncate";
+import { Term } from "@/components/term";
 import {
   compactUptime,
   primaryDomain,
@@ -161,13 +163,19 @@ export function AppRow({
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${deploy ? DEPLOY_DOT[deploy.tone] : statusDotColor(app.status)}`} />
-        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} />
+        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} style={{ minWidth: middleMinWidth(app.displayName) }} />
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
         {deploy ? (
-          <span className={`min-w-0 shrink-[3] truncate font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`} title={deploy.why}>
-            <RowDeployLabel view={deploy} />
+          <span className={`shrink-0 font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`}>
+            {deploy.why ? (
+              <Term note={deploy.why} passive>
+                <RowDeployLabel view={deploy} />
+              </Term>
+            ) : (
+              <RowDeployLabel view={deploy} />
+            )}
           </span>
         ) : (
           word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>
