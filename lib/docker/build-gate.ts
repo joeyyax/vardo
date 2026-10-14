@@ -81,6 +81,7 @@ if running > 0 and (hold or running >= tonumber(ARGV[2])) then return {0, 0, 0} 
 redis.call('LPOP', KEYS[1])
 redis.call('HDEL', KEYS[2], ARGV[1])
 redis.call('ZADD', KEYS[3], now + tonumber(ARGV[3]), ARGV[1])
+if running == 0 then redis.call('DEL', KEYS[6]) end
 redis.call('HSET', KEYS[6], ARGV[1], now)
 local n = redis.call('INCR', KEYS[5])
 if running == 0 then

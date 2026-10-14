@@ -108,9 +108,12 @@ describe.skipIf(!client)("build gate on Redis", () => {
 
   it("frees a lapsed lease and holds the builder for a sweep", async () => {
     await client!.zadd(keys.running, Date.now() - 1000, "dead");
+    await client!.hset(keys.started, "dead", String(Date.now() - 60_000));
     expect(await store.tryAcquire("a", 1)).toMatchObject({ alone: true });
     expect(await client!.zscore(keys.running, "dead")).toBeNull();
     expect(await client!.get(keys.hold)).toBe("sweep:a");
+    // A lapsed build's admission time goes once the builder empties.
+    expect(await client!.hkeys(keys.started)).toEqual(["a"]);
   });
 
   it("lets nothing join after a build ends badly until the builder empties", async () => {
