@@ -48,7 +48,7 @@ export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout" | "wo
 /** A wait's place in a line: how many are ahead and in it, and when it should start (epoch ms). */
 export type WaitPlace = { ahead?: number; total?: number; eta?: number | null };
 
-/** One line per reason, for callers that print why a deploy waits. Never states capacity. */
+/** One line per reason, for callers that print why a deploy waits. */
 export function waitText(reason: WaitReason, place: WaitPlace = {}): string {
   const { ahead, total } = place;
   const at = ahead === undefined ? "" : total ? ` (${ahead + 1} of ${total})` : ahead ? ` (${ahead} ahead)` : "";
@@ -91,7 +91,7 @@ function sanitize(line: string, values: Iterable<string>): string {
   return result;
 }
 
-/** A deploy stream entry for a wait; null ends it. The `wait` field marks it, so readers never show it as a log line. */
+/** A deploy stream entry for a wait; null ends it. Its `wait` field keeps it out of the log. */
 export function waitEntry(reason: WaitReason | null, place: WaitPlace, stage: string) {
   const next = reason === null ? undefined : place.ahead;
   const of = reason === null ? undefined : place.total;

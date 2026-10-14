@@ -88,12 +88,12 @@ export const deployments = pgTable("deployment", {
   cancelReason: text("cancel_reason").$type<DeployCancelReason>(),
   // Set while this deploy's swap needs every other deploy stopped. Blocks new claims.
   exclusiveRequestedAt: timestamp("exclusive_requested_at", { withTimezone: true }),
-  // What the deploy waits on right now, since when, and for a line (deploy-slot, build-slot) how many are ahead and in it.
+  // What the deploy waits on and since when; in a deploy-slot or build-slot line, how many are ahead and in it.
   waitReason: text("wait_reason").$type<WaitReason>(),
   waitingSince: timestamp("waiting_since", { withTimezone: true }),
   waitAhead: smallint("wait_ahead"),
   waitTotal: smallint("wait_total"),
-  // When a deploy-slot or build-slot wait should end, from the line ahead and each app's last run. Null without history.
+  // When a deploy-slot or build-slot wait should end. Null without history.
   waitEta: timestamp("wait_eta", { withTimezone: true }),
   // An admin moved it to the front of its queue; the latest bump goes first.
   bumpedAt: timestamp("bumped_at", { withTimezone: true }),

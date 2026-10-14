@@ -28,7 +28,7 @@ export async function claimPass(scope: ClaimScope): Promise<string[]> {
   try {
     return await claimAndStart(scope);
   } finally {
-    // Every claimer runs it, so a missing worker still shows on the rows the console can see.
+    // Runs even with nothing to claim, so a missing worker still shows.
     await markQueueWaits().catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
     await clearFinishedWaits().catch(() => {});
   }

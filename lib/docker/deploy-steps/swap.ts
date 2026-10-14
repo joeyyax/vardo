@@ -495,7 +495,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         const bounded = await boundedBuild(log, ctx.signal);
         const buildBegan = Date.now();
         const waitedBefore = ctx.timer.waited();
-        // Timed from the builder's admission: the gate's wait comes first.
+        // Admitted after any wait for the builder.
         const admitted = () => buildBegan + ctx.timer.waited() - waitedBefore;
         const built = await composeBuild({
           appId: ctx.appId,

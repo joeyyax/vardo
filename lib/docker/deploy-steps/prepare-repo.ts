@@ -346,7 +346,7 @@ async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) =
   const capture = { text: "" };
   const began = Date.now();
   const waitedBefore = ctx.timer.waited();
-  // The gate's wait comes before the build, so the build starts that much later.
+  // Admitted after any wait for the builder.
   const admitted = () => began + ctx.timer.waited() - waitedBefore;
   try {
     await run(capture);

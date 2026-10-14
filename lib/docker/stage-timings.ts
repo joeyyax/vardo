@@ -87,7 +87,7 @@ export function createStageTimings() {
 
 export type StageTimer = ReturnType<typeof createStageTimings>;
 
-/** A wait writer that also tallies the wait on `timer`, so phases it interrupts don't count it. */
+/** Wraps a wait writer to tally its waits on `timer`. */
 export function timedWait(timer: StageTimer, writer: WaitWriter): WaitWriter {
   return (reason, place) => {
     if (reason === null) timer.waitEnd();

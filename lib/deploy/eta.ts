@@ -1,4 +1,4 @@
-// When a deploy waiting in a line (deploy slots, the builder) should start, from what runs and what's ahead of it.
+// When a deploy waiting in a line (deploy slots, the builder) should start.
 
 /** A run longer than this counts as this long. */
 export const MAX_TYPICAL_MS = 60 * 60_000;
@@ -13,10 +13,7 @@ export function slotFreeAt(now: number, since: number, typicalMs: number | null)
   return Math.max(now, since + Math.min(typicalMs, MAX_TYPICAL_MS));
 }
 
-/**
- * Each place's start in a line served by `slots` (when each frees): the next in line takes the earliest free slot for its typical run.
- * Null from the first place that depends on a run without history, and past MAX_ETA_MS.
- */
+/** Each place's start in a line served by `slots` (when each frees). Null from the first run without history, and past MAX_ETA_MS. */
 export function lineEtas(now: number, slots: (number | null)[], typicalMs: (number | null)[]): (number | null)[] {
   const free = [...slots];
   let known = free.length > 0 && free.every((s) => s !== null);

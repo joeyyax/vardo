@@ -51,7 +51,7 @@ export const WAIT_TIMEOUT_MS = 6 * 60 * 60_000;
 const PEAK_WINDOW_MS = 30 * 24 * 60 * 60_000;
 /** A smaller rise, as from a cached build, isn't recorded and doesn't size builds. */
 export const MIN_PEAK_BYTES = 64 * 1024 ** 2;
-/** Nor is a build shorter than this, which the sampler barely sees. */
+/** Nor is a build shorter than this. */
 const MIN_PEAK_BUILD_MS = 2 * SAMPLE_MS;
 const CACHE_MS = 30_000;
 
@@ -334,7 +334,7 @@ export function buildLimit(input: BuildLimitInput): { limit: number; usableBytes
 
 async function currentLimit(bounded: BoundedBuild) {
   const host = detectedHost();
-  // The live limit: an earlier build into an empty builder may have resized it.
+  // Live, since sizeBuildKit may have resized it.
   const live = bounded.container ? await builderLimitBytes(bounded.container) : null;
   return buildLimit({
     limitBytes: live ?? bounded.limitBytes ?? 0,
@@ -436,7 +436,7 @@ async function sweep(container: string | undefined, logLine: (line: string) => v
   );
 }
 
-/** Whether a build's rise is worth recording: big enough and from a build long enough to sample. */
+/** Whether a build's rise is big and long enough to record. */
 export function recordablePeak(riseBytes: number | null, buildMs: number): riseBytes is number {
   return riseBytes !== null && riseBytes >= MIN_PEAK_BYTES && buildMs >= MIN_PEAK_BUILD_MS;
 }
@@ -469,7 +469,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   let latest = await currentLimit(bounded);
   const limit = async () => (latest = await currentLimit(bounded)).limit;
 
-  // One estimate at a time; a read that lands while one runs is skipped, and the next poll catches up.
+  // One estimate at a time; reads during one are skipped.
   let estimating = false;
   let waiting = true;
   const reportPlace = async (place: SlotPlace) => {
@@ -551,7 +551,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       if (held.alone) {
         try {
           await sweep(bounded.container, gate.log);
-          // Nothing builds while the sweep hold is set, so BuildKit can be resized now.
+          // The sweep hold keeps the builder empty, so it can be resized.
           const container = bounded.container;
           if (container) {
             const sized = await sizeBuildKit(container, { builderBytes: () => builderMemory(container), log: gate.log });

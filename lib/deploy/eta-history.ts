@@ -3,7 +3,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 
-/** The app's last successful deploy time less what it spent waiting for the builder or the checkout, for the deploy-slot line. */
+/** The app's last successful deploy time less its waits, for the deploy-slot line. */
 export const typicalDeploySql = (appId: SQL) => sql`(
   SELECT greatest(0, p.duration_ms - coalesce((p.stage_timings->>'waitMs')::int, 0)) FROM deployment p
   WHERE p.app_id = ${appId} AND p.status = 'success' AND p.duration_ms IS NOT NULL

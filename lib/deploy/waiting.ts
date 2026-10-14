@@ -1,4 +1,4 @@
-// What a deploy waits on, kept on its row and its stream: the queue's reasons from the claim loop, the build gate's and the checkout lock's from the deploy.
+// What a deploy waits on, kept on its row and its stream.
 
 import { and, count, eq, inArray, isNotNull, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -86,17 +86,13 @@ type QueuedRow = {
   wait_eta: Date | string | null;
 };
 
-/**
- * Every queued deploy's wait: why it hasn't started (the worker, Vardo's own swap, the app's running deploy, a deploy slot) and,
- * in the deploy-slot line, its place, the line's length instance-wide and when it should start.
- * Reads the queue once, then writes only rows that changed (an estimate by more than ETA_STEP_MS) in one statement, with a stream entry for each.
- */
+/** Records why each queued deploy waits and, in the deploy-slot line, its place, the line's length and start. Writes only rows that changed. */
 export async function markQueueWaits(opts: { capacity?: number; workerMissing?: boolean; now?: number } = {}): Promise<QueueWait[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
   const noWorker = opts.workerMissing ?? (await workerMissing());
   const automatic = sql`d.trigger IN ('webhook', 'relay', 'poll')`;
 
-  // Claim order, as claimDeploys picks: bumped first (latest bump first), then explicit triggers, then oldest.
+  // Same order as claimDeploys.
   const queued = await db.execute<QueuedRow>(sql`
     WITH state AS (
       SELECT

@@ -17,9 +17,9 @@ export const BUILDKIT_SIZE = {
   /** Kept back for the apps: a tenth of RAM, at least 1 GiB. */
   reserveShare: 0.1,
   reserveMinBytes: 1 * GiB,
-  /** Below this much RAM BuildKit may swap as much again, so a build that needs more slows down instead of failing. */
+  /** Below this much RAM, BuildKit gets swap equal to its memory. */
   swapBelowBytes: 6 * GiB,
-  /** Sizes move in these steps, and smaller differences aren't worth a resize. */
+  /** Sizes round down to this step; a smaller change doesn't resize. */
   stepBytes: 64 * MiB,
 } as const;
 

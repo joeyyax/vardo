@@ -15,7 +15,7 @@ export type FifoWaitOpts<T> = {
   /** Read on every attempt, so a changed limit applies to the next poll. */
   limit: () => number | Promise<number>;
   signal?: AbortSignal;
-  /** Called on every read of the place, so a listener can refresh what depends on time. */
+  /** Called on every read of the place. */
   onPosition?: (place: SlotPlace) => void;
   timeoutMs: number;
   pollMs: number;
