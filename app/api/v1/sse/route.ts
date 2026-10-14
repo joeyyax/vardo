@@ -8,6 +8,7 @@ import { deployments } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { startGateway } from "@/lib/sse/gateway";
 import { closeOnShutdown } from "@/lib/shutdown";
+import { sseQueuingStrategy, sseSender } from "@/lib/api/sse";
 
 // GET /api/v1/sse?org={orgId}&deploy={deployId}&lastEventId=&lastDeployId=&lastToastId=
 // Multiplexes org events, deploy logs and user toasts into one connection:
@@ -56,7 +57,7 @@ async function handleGet(request: NextRequest) {
     const encoder = new TextEncoder();
     const abortController = new AbortController();
 
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const keepalive = setInterval(() => {
           try {
@@ -71,14 +72,7 @@ async function handleGet(request: NextRequest) {
           cleanup();
         }, 10 * 60 * 1000);
 
-        function send(event: string, data: unknown) {
-          try {
-            if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
-            controller.enqueue(
-              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-            );
-          } catch { /* client disconnected */ }
-        }
+        const send = sseSender(controller);
 
         function cleanup() {
           clearInterval(keepalive);
@@ -104,7 +98,7 @@ async function handleGet(request: NextRequest) {
           send,
         );
       },
-    });
+    }, sseQueuingStrategy());
 
     return new Response(stream, {
       headers: {

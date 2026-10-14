@@ -10,6 +10,7 @@ import { eventStream } from "@/lib/stream/keys";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import type { BusEvent } from "@/lib/bus/events";
 import { closeOnShutdown } from "@/lib/shutdown";
+import { sseQueuingStrategy, sseSender } from "@/lib/api/sse";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -42,7 +43,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const encoder = new TextEncoder();
     const abortController = new AbortController();
 
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         // Keepalive to prevent proxy/browser timeouts
         const keepalive = setInterval(() => {
@@ -58,14 +59,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           cleanup();
         }, 30 * 60 * 1000);
 
-        function sendEvent(event: string, data: unknown) {
-          try {
-            if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
-            controller.enqueue(
-              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-            );
-          } catch { /* client disconnected */ }
-        }
+        const sendEvent = sseSender(controller);
 
         function cleanup() {
           clearInterval(keepalive);
@@ -116,7 +110,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           }
         })();
       },
-    });
+    }, sseQueuingStrategy());
 
     return new Response(stream, {
       headers: {
