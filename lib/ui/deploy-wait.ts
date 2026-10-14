@@ -178,8 +178,10 @@ export type DeployWord = "Preparing" | "Queued" | "Starting" | "Deploying";
 
 export type DeployView = {
   word: DeployWord;
-  /** The row label and the card's line. */
+  /** The row label, and the card's line unless `line` says otherwise. */
   label: string;
+  /** The card's line when it differs from the row's: a checkout wait is Deploying in lists, Queued on the card. */
+  line?: string;
   /** The row label on a phone: the place in line without the estimate. */
   short: string;
   /** Mark color: amber only when no worker is running. */
@@ -223,7 +225,7 @@ export function deployView({
   if (reason === "build-slot") {
     return { word: "Deploying", label: lineLabel("build", wait!, now), short: lineLabel("build", { ahead: wait!.ahead }, null), tone: "neutral", held: "build", startNext: behind };
   }
-  if (reason === "checkout") return { word: "Deploying", label: "Queued", short: "Queued", tone: "neutral", why: WHY.checkout, held: "clone" };
+  if (reason === "checkout") return { word: "Deploying", label: "Deploying", short: "Deploying", line: "Queued", tone: "info", why: WHY.checkout, held: "clone" };
   if (queued || reason) {
     if (preparing) return { word: "Preparing", label: "Preparing", short: "Preparing", tone: "neutral", held: "queued" };
     if (reason === "deploy-slot") {
@@ -274,7 +276,7 @@ export function deployCardText(
   clock: DeployClock,
   typicalMs: number | null,
 ): { line: string; meta: string | null } {
-  if (clock.wait) return { line: view.label, meta: null };
+  if (clock.wait) return { line: view.line ?? view.label, meta: null };
   const line =
     typicalMs === null
       ? "No earlier deploy to judge by"

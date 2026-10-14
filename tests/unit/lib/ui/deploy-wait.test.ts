@@ -365,10 +365,13 @@ describe("deployView", () => {
     expect(view(true, { reason: "deploy-slot", ahead: 2 }, false, true).startNext).toBeFalsy();
   });
 
-  it("calls a checkout wait plain queued, with the reason on hover", () => {
+  it("lists a checkout wait as deploying, and the card says queued with the reason", () => {
     expect(view(false, { reason: "checkout" }, true)).toMatchObject({
       word: "Deploying",
-      label: "Queued",
+      label: "Deploying",
+      short: "Deploying",
+      line: "Queued",
+      tone: "info",
       why: "Another deploy of this app is using its checkout",
       held: "clone",
     });

@@ -169,7 +169,7 @@ export function AppRow({
 
         {deploy ? (
           <span className={`shrink-0 font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`}>
-            {deploy.why ? (
+            {deploy.why && deploy.word !== "Deploying" ? (
               <Term note={deploy.why} passive>
                 <RowDeployLabel view={deploy} />
               </Term>
