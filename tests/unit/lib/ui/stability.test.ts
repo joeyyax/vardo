@@ -261,6 +261,13 @@ describe("stabilityVerdict", () => {
     expect(verdict({ status: "deploying" }).level).toBe("unknown");
   });
 
+  it("names a held deploy instead of calling it deploying", () => {
+    expect(verdict({ status: "deploying" }).headline).toBe("Deploying");
+    expect(verdict({ status: "deploying", deployHeld: "Waiting" }).headline).toBe("Waiting");
+    // A queued deploy leaves the running version to be judged.
+    expect(verdict({ status: "active", deployHeld: "Queued" }).headline).toBe("Stable");
+  });
+
   it("lets a warning condition qualify a running app", () => {
     const result = verdict({ conditions: [condition("memory-pressure", "warning")] });
     expect(result).toMatchObject({ level: "watch", headline: "Degraded" });

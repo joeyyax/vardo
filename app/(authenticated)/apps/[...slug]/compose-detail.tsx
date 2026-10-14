@@ -88,7 +88,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { waitLabel, waitWord } from "@/lib/ui/deploy-wait";
+import { activeDeploy, waitWord } from "@/lib/ui/deploy-wait";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -822,7 +822,7 @@ export function ComposeDetail({
   });
 
   const serverRunningDeploy =
-    app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
+    activeDeploy(app.deployments);
 
   const deploy = useDeploy({
     orgId,
@@ -845,7 +845,6 @@ export function ComposeDetail({
   }, [app.composeContent, app.deployments.length, deploy]);
 
   const heldDeploy = deploy.deployHeld;
-  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const totalDeployments = app.deployments.length;
 
@@ -1095,7 +1094,7 @@ export function ComposeDetail({
         stack={rollupHealth(services)}
         stackUptimeSince={rollupUptimeSince(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
-        deployWait={deployWaitLabel}
+        deployWait={heldDeploy}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />

@@ -31,6 +31,7 @@ import { DependencySelector } from "./dependency-selector";
 import { TabLink } from "@/components/tab-link";
 import { quietLinkClass } from "@/components/entity-link";
 import { StatusMark } from "@/components/ui/status-dot";
+import { waitLabel, waitWord, type ActiveWait } from "@/lib/ui/deploy-wait";
 import { appHref, deployHref, imageUrl } from "@/lib/ui/hrefs";
 import { AppUpdateStat } from "./app-updates";
 import { useNow } from "./app-stability";
@@ -105,7 +106,7 @@ export function AppHeader({
   /** Phase word of a running deploy — "Build", "Health", "Route". */
   deployStage?: string | null;
   /** What a waiting deploy is waiting for, like "Queued behind 2 other deploys". */
-  deployWait?: string | null;
+  deployWait?: ActiveWait | null;
 }) {
   const router = useRouter();
 
@@ -170,6 +171,7 @@ export function AppHeader({
     incidents: stabilityIncidents,
     trend,
     restarts,
+    deployHeld: deployWait ? waitWord(deployWait.reason) : null,
   });
   const cue = stabilityCue(trend, restarts);
 
@@ -343,7 +345,7 @@ export function AppHeader({
           {deployWait ? (
             <span className="flex items-center gap-1.5">
               <StatusMark tone="neutral" pending />
-              {deployWait}
+              {waitLabel(deployWait.reason, deployWait.ahead)}
             </span>
           ) : isDeploying ? (
             <span className="flex items-center gap-1.5 text-status-info">

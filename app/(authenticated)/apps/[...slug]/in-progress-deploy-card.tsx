@@ -1,7 +1,8 @@
 "use client";
 
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
-import { Loader2, X } from "lucide-react";
+import { Check, Loader2, X } from "lucide-react";
+import { StatusMark } from "@/components/ui/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
@@ -113,10 +114,12 @@ export function InProgressDeployCard({
                   {i > 0 && <span className="text-muted-foreground/25 text-xs">·</span>}
                   {running && <Loader2 className="size-3 animate-spin text-status-info" />}
                   {failed && <X className="size-3 text-status-error" />}
+                  {status === "success" && <Check className="size-3 text-status-success" />}
+                  {waiting && <StatusMark tone="neutral" pending />}
                   <span className={`text-xs transition-colors duration-300 ${
                     failed ? "text-status-error font-medium" :
                     running ? "text-status-info font-medium" :
-                    waiting ? "text-foreground/70" :
+                    waiting ? "text-foreground font-medium" :
                     status === "skipped" ? "text-muted-foreground/50 line-through" :
                     status ? "text-muted-foreground" :
                     "text-muted-foreground/40"

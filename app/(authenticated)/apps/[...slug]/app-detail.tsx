@@ -84,7 +84,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { waitLabel, waitWord } from "@/lib/ui/deploy-wait";
+import { activeDeploy, waitWord } from "@/lib/ui/deploy-wait";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import { RECOMMENDED_HEADERS } from "@/lib/security/response-headers";
@@ -173,7 +173,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     : app.deployments;
 
   // Detect a deploy already in progress on load.
-  const serverRunningDeploy = app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
+  const serverRunningDeploy = activeDeploy(app.deployments);
 
   const deploy = useDeploy({
     orgId,
@@ -184,7 +184,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
   const heldDeploy = deploy.deployHeld;
-  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const handleDeploy = deploy.handleDeploy;
 
@@ -687,7 +686,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
-        deployWait={deployWaitLabel}
+        deployWait={heldDeploy}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />
