@@ -65,36 +65,42 @@ export function SystemStatus({ worker: initial, version }: { worker: WorkerOutag
   const label = worst ? chipLabel(worst) : null;
 
   return (
-    <Popover>
-      <PopoverTrigger
-        aria-label={label ? `System status: ${label.full}` : "System status: running normally"}
-        className={cn(
-          "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full text-xs font-medium focus-visible:outline-2 focus-visible:outline-brass",
-          label ? "border bg-card px-2.5 hover:bg-accent" : "hover:bg-sidebar-accent/50",
-        )}
-      >
-        <Mark problem={worst} />
-        {label && (
-          <>
-            <span aria-hidden="true" className="truncate sm:hidden">
-              {label.short}
-            </span>
-            <span aria-hidden="true" className="hidden truncate sm:inline">
-              {label.full}
-            </span>
-          </>
-        )}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="grid w-auto max-w-[min(20rem,calc(100vw-2rem))] gap-3 text-[13px]">
-        {problems.length ? (
-          problems.map((p) => <ProblemNote key={p.kind} problem={p} />)
-        ) : (
-          <div className="grid gap-1">
-            <p className="font-medium">Running normally</p>
-            <p className="text-muted-foreground">{version}</p>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+    <>
+      {/* Always mounted, so a change is announced and the first reading isn't. */}
+      <span role="status" className="sr-only">
+        {label ? label.full : "Running normally"}
+      </span>
+      <Popover>
+        <PopoverTrigger
+          aria-label={label ? `System status: ${label.full}` : "System status: running normally"}
+          className={cn(
+            "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full text-xs font-medium after:absolute after:-inset-1.5 focus-visible:outline-2 focus-visible:outline-brass pointer-fine:after:hidden",
+            label ? "border bg-card px-2.5 hover:bg-accent" : "hover:bg-sidebar-accent/50",
+          )}
+        >
+          <Mark problem={worst} />
+          {label && (
+            <>
+              <span aria-hidden="true" className="truncate sm:hidden">
+                {label.short}
+              </span>
+              <span aria-hidden="true" className="hidden truncate sm:inline">
+                {label.full}
+              </span>
+            </>
+          )}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="grid w-auto max-w-[min(20rem,calc(100vw-2rem))] gap-3 text-[13px]">
+          {problems.length ? (
+            problems.map((p) => <ProblemNote key={p.kind} problem={p} />)
+          ) : (
+            <div className="grid gap-1">
+              <p className="font-medium">Running normally</p>
+              <p className="text-muted-foreground">{version}</p>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
