@@ -35,7 +35,7 @@ vi.mock("@/lib/db", () => ({
       organizations: { findMany: vi.fn(async () => [{ id: "org-1" }]) },
       notificationChannels: {
         findMany: vi.fn(async () => [
-          { id: "ch-1", name: "Ops email", type: "email", enabled: true, subscribedEvents: [] },
+          { id: "ch-1", name: "Ops email", type: "email", enabled: true, subscribedEvents: [], projectIds: [] },
         ]),
       },
       memberships: { findMany: vi.fn(async () => [{ userId: "user-1" }]) },

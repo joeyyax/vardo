@@ -19,7 +19,8 @@ import {
   resolveRecipients,
 } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
-import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
+import { isCriticalEvent } from "./channel-defaults";
+import { channelsForEvent } from "./project-filter";
 import { markConsumedOrgs, clearConsumedOrgs } from "./consumer-state";
 import { logger } from "@/lib/logger";
 import { instanceName } from "@/lib/worker/instance";
@@ -56,16 +57,15 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
       eq(notificationChannels.enabled, true),
     ),
   });
-  if (channels.length === 0) return;
+  const targets = await channelsForEvent(orgId, event, channels);
+  if (targets.length === 0) return;
 
   const members = await fetchOrgMembers(orgId);
   const memberIds = members.map((m) => m.userId);
   const prefs = await fetchEventPrefs(orgId, event.type, memberIds);
 
   const results = await Promise.allSettled(
-    channels.map(async (row) => {
-      if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
-
+    targets.map(async (row) => {
       const { shouldSend } = resolveRecipients(
         row.id,
         row.type,
