@@ -282,9 +282,9 @@ describe("lineLabel", () => {
     expect(lineLabel("build", {}, now)).toBe("Queued");
   });
 
-  it("counts the estimate down, and drops it before the clock is known", () => {
+  it("counts the estimate down, and drops it before the clock is known or once it passes", () => {
     expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now + 5 * 60_000)).toBe("Starts in about 1 min · 3rd in line");
-    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now + 7 * 60_000)).toBe("Starts in less than a minute · 3rd in line");
+    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now + 7 * 60_000)).toBe("3rd in line");
     expect(lineLabel("deploy", { ahead: 2, eta: in6 }, null)).toBe("3rd in line");
   });
 });
@@ -303,6 +303,14 @@ describe("queuedRowLabel", () => {
 describe("deployView", () => {
   type Wait = Parameters<typeof deployView>[0]["wait"];
   const view = (queued: boolean, wait: Wait, started = false, preparing = false) => deployView({ queued, wait, started, preparing, now: T0 });
+
+  it("drops an estimate once it has passed and keeps the place", () => {
+    expect(lineLabel("deploy", { ahead: 2, eta: T0 - 1 }, T0)).toBe("3rd in line");
+    expect(lineLabel("deploy", { ahead: 0, eta: T0 }, T0)).toBe("Next in line");
+    expect(lineLabel("build", { ahead: 1, eta: T0 - 60_000 }, T0)).toBe("2nd in line to build");
+    expect(lineLabel("deploy", { eta: T0 - 1 }, T0)).toBe("Queued");
+    expect(lineLabel("deploy", { ahead: 2, eta: T0 + 30_000 }, T0)).toBe("Starts in less than a minute · 3rd in line");
+  });
 
   it("gives rows on a phone the place without the estimate", () => {
     const eta = T0 + 6 * 60_000;

@@ -164,7 +164,8 @@ export function aboutMinutes(ms: number): string {
 /** A deploy's place in the deploy or build line, with the estimate when there is one. */
 export function lineLabel(line: "deploy" | "build", { ahead, eta }: QueuePlace, now: number | null): string {
   const place = ahead != null && ahead >= 0 ? ahead + 1 : null;
-  const left = eta != null && now != null ? eta - now : null;
+  // A passed estimate stops promising; the place still holds.
+  const left = eta != null && now != null && eta > now ? eta - now : null;
   const build = line === "build";
   if (place === 1) return left !== null ? (build ? "Building next" : "Starts next") : build ? "Next to build" : "Next in line";
   const starts = left !== null ? `${build ? "Build starts" : "Starts"} in ${aboutMinutes(left)}` : null;
@@ -250,9 +251,9 @@ export function streamView(
   });
 }
 
-/** A ring in the view's tone: gray queued, amber with no worker, blue deploying. */
+/** A ring in the view's tone: gray queued, amber with no worker, blue deploying. Its label is the row's line. */
 export function deployMarkOf(view: DeployView): StatusMarkState {
-  return { tone: view.tone, pending: true, label: view.word };
+  return { tone: view.tone, pending: true, label: view.label };
 }
 
 /** Before work starts: counted as queued rather than deploying. */
