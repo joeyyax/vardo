@@ -1,6 +1,6 @@
 // Backup runs: failures as they happen and one summary when every job is done, emailed when it needs a look.
 
-import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, backupJobApps, backupJobs, backupJobVolumes, backupRuns, backups, backupTargets, organizations, volumes } from "@/lib/db/schema";
@@ -10,6 +10,7 @@ import { emit } from "@/lib/notifications/dispatch";
 import { fireAlert, settleAlerts } from "@/lib/notifications/observations";
 import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
+import { backupLeaseHeld } from "./run-lease";
 import { backupFailureItem } from "./failure-alert";
 import { isUncapturedSource } from "./coverage";
 import { UTC } from "@/lib/time-zone";
@@ -604,12 +605,30 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
   });
 }
 
-/** Closes and summarizes every run whose jobs all reported or whose deadline passed. Safe across processes. */
+/** Now while one of the run's backups holds a live lease, else when its latest result came in. */
+async function lastProgressAt(run: RunRow, now: number): Promise<number | null> {
+  const jobIds = run.plan.jobs.map((j) => j.jobId);
+  const running = jobIds.length
+    ? await db.query.backups.findMany({
+        where: and(inArray(backups.jobId, jobIds), eq(backups.status, "running"), gte(backups.startedAt, run.startedAt)),
+        columns: { id: true },
+      })
+    : [];
+  for (const row of running ?? []) {
+    if (await backupLeaseHeld(row.id).catch(() => false)) return now;
+  }
+  const times = (run.items ?? []).map((i) => Date.parse(i.at)).filter(Number.isFinite);
+  return times.length ? Math.max(...times) : null;
+}
+
+/** Closes and summarizes every run whose jobs all reported, or that stopped progressing past its deadline. Safe across processes. */
 export async function finishBackupRuns(now = Date.now()): Promise<void> {
   const open = await db.query.backupRuns.findMany({ where: isNull(backupRuns.finishedAt) });
   for (const run of open) {
     try {
-      if (!runIsDone({ plan: run.plan, jobsDone: run.jobsDone, deadlineAt: run.deadlineAt.getTime() }, now)) continue;
+      const deadlineAt = run.deadlineAt.getTime();
+      const progress = now >= deadlineAt ? await lastProgressAt(run, now) : null;
+      if (!runIsDone({ plan: run.plan, jobsDone: run.jobsDone, deadlineAt, startedAt: run.startedAt.getTime(), lastProgressAt: progress }, now)) continue;
       const [claimed] = await db
         .update(backupRuns)
         .set({ finishedAt: new Date(now) })
