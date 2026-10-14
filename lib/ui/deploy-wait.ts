@@ -72,6 +72,20 @@ export function deployClock(
   return { wait: state.current, waitedMs, workingMs: total - waitedMs };
 }
 
+/** `deployClock` for a deploy's stream state and row: a queued row counts until a stage or wait event lands. */
+export function deployClockOf(
+  { wait, stages }: { wait: WaitState; stages: Record<string, string> },
+  { startedAt, status, now }: { startedAt: Date | string | number; status?: string; now: number },
+): DeployClock {
+  const queued = status === "queued" && Object.keys(stages).length === 0;
+  return deployClock(wait, { startedAt: new Date(startedAt).getTime(), now, queued });
+}
+
+/** The lock or queue holding the deploy, or null while it works. */
+export function deployWaitOf(stream: { wait: WaitState; stages: Record<string, string> }, status?: string): ActiveWait | null {
+  return deployClockOf(stream, { startedAt: 0, status, now: 0 }).wait;
+}
+
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
