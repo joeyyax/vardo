@@ -1120,15 +1120,15 @@ export function footerLine(footer: MailFooter): string {
   return `Sent by Vardo on ${footer.instanceName}${host}`;
 }
 
-/** Note, then links: "Deployment log · Notification settings". */
+/** Note, then links: "Version 1.4.0 · Deployment log · Notification settings". */
 export function MailFooterBlock({ footer, links = [] }: { footer: MailFooter; links?: MailLink[] }) {
   const all = [...links, { label: footer.settingsLabel ?? "Notification settings", href: footer.settingsUrl }];
   return (
     <p className="vd-muted" style={text(12, light.muted, { lineHeight: 1.6 })}>
-      {footer.note ? `${footer.note} ` : null}
+      {footer.note ?? null}
       {all.map((link, i) => (
         <span key={i}>
-          {i > 0 ? " · " : null}
+          {i > 0 || footer.note ? " · " : null}
           <Link className="vd-muted" href={link.href} style={{ color: light.muted, textDecoration: "underline" }}>
             {link.label}
           </Link>

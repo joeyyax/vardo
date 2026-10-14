@@ -29,7 +29,6 @@ export const EVENT_CATEGORIES = {
     "system.update-started",
     "system.updated",
     "system.update-failed",
-    "system.update-skipped",
     "system.rollout-started",
     "system.rollout-busy",
     "system.rollout-paused",
@@ -678,16 +677,6 @@ export type SystemUpdateFailedEvent = UpdateChanges & {
   rolloutId?: string;
 };
 
-/** An automatic update that didn't start because a pre-flight check failed. */
-export type SystemUpdateSkippedEvent = {
-  type: "system.update-skipped";
-  title: string;
-  message: string;
-  fromVersion: string;
-  target: string;
-  reasons: string[];
-};
-
 export type SystemRolloutEvent = {
   type: "system.rollout-started" | "system.rollout-busy" | "system.rollout-paused" | "system.rollout-finished";
   title: string;
@@ -938,7 +927,6 @@ export type BusEvent = EventEnvelope & (
   | SystemUpdateStartedEvent
   | SystemUpdatedEvent
   | SystemUpdateFailedEvent
-  | SystemUpdateSkippedEvent
   | SystemRolloutEvent
   | SystemRestartingEvent
   | SystemRestartedEvent

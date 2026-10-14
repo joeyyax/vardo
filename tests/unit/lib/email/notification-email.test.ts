@@ -57,7 +57,6 @@ describe("notification subjects", () => {
     expect(subjectLine(fixture("system-restart-failed"))).toBe("✗ The shared services didn't come back");
     expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo updated · 4f1a9b2");
     expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at health check");
-    expect(subjectLine(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped · v0.2.0");
     expect(subjectLine(fixture("system-update-started"))).toBe("↑ Vardo update started");
   });
 
@@ -279,14 +278,6 @@ describe("notification emails", () => {
     expect(rolledBack.text).toContain("Retry on the host\n    sudo vardo update");
     const stuck = (await renderNotificationEmail({ ...fixture<"system.update-failed">("system-update-failed"), rolledBack: false }, FIXTURE_CONTEXT))!;
     expect(stuck.text).not.toContain("Nothing changed");
-  });
-
-  it("lists each failed update check with what it needs", async () => {
-    const email = (await renderNotificationEmail(fixture("system-update-skipped"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Jobs: Now 1 deploy in progress · Needs none");
-    expect(email.text).toContain("Disk: Now 3.1 GB free, 94% used · Needs 5 GB and under 90%");
-    const odd = (await renderNotificationEmail({ ...fixture<"system.update-skipped">("system-update-skipped"), reasons: ["This version failed its health check here and was rolled back"] }, FIXTURE_CONTEXT))!;
-    expect(odd.text).toContain("This version failed its health check here and was rolled back");
   });
 
   it("folds containers that didn't come back into the back-up email, linked to their apps", async () => {

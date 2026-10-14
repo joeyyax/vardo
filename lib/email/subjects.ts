@@ -164,8 +164,6 @@ export function subjectLine(event: BusEvent): string {
       return `✓ Vardo updated · ${versionShort(event.toVersion)}`;
     case "system.update-failed":
       return `✗ Vardo update failed at ${event.step.charAt(0).toLowerCase()}${event.step.slice(1)}`;
-    case "system.update-skipped":
-      return `⚠ Vardo update skipped · ${event.target}`;
     case "system.rollout-started":
       return `Vardo update started for ${rolloutInstances(event.members)}`;
     case "system.rollout-busy": {

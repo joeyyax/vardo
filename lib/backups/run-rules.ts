@@ -39,9 +39,14 @@ export type BackupRunPlan = {
 /** A run's own job or restore that should take longer than this gets a start notice and a summary. */
 export const LONG_RUN_MS = 10 * 60_000;
 
-/** The summary sends by the deadline even if jobs never report: three times the estimate, within 1 to 6 hours. */
+/** Three times the estimate, within 1 to 6 hours. Past it, a run closes once it stops progressing. */
 export const MIN_DEADLINE_MS = 60 * 60_000;
 export const MAX_DEADLINE_MS = 6 * 60 * 60_000;
+
+/** A run past its deadline stays open while something ran or reported this recently. */
+export const RUN_PROGRESS_MS = 30 * 60_000;
+/** A run closes this long after it started, progressing or not. */
+export const MAX_RUN_MS = 24 * 60 * 60_000;
 
 /** Rows past this are counted, not listed. */
 export const MAX_SUMMARY_ROWS = 60;
@@ -112,11 +117,16 @@ export function runDeadline(startedAt: number, estimatedMs: number | null): numb
   return startedAt + budget;
 }
 
-/** Every planned job reported, or the deadline passed. */
-export function runIsDone(run: { plan: BackupRunPlan; jobsDone: string[]; deadlineAt: number }, now: number): boolean {
-  if (now >= run.deadlineAt) return true;
+/** Every planned job reported, or the deadline passed with no progress for RUN_PROGRESS_MS. */
+export function runIsDone(
+  run: { plan: BackupRunPlan; jobsDone: string[]; deadlineAt: number; startedAt: number; lastProgressAt: number | null },
+  now: number,
+): boolean {
   const done = new Set(run.jobsDone);
-  return run.plan.jobs.every((j) => done.has(j.jobId));
+  if (run.plan.jobs.every((j) => done.has(j.jobId))) return true;
+  if (now < run.deadlineAt) return false;
+  if (now - run.startedAt >= MAX_RUN_MS) return true;
+  return run.lastProgressAt === null || now - run.lastProgressAt >= RUN_PROGRESS_MS;
 }
 
 /** Planned jobs that never reported. */

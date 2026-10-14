@@ -147,7 +147,7 @@ describe("certAlertMessage", () => {
     if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
     const { title, message } = certAlertMessage(["app.example.com"], verdict);
     expect(title).toBe("Certificate expiring: app.example.com");
-    expect(message).toContain("expires in 1 day.");
+    expect(message).toBe("The TLS certificate served on port 443 for app.example.com expires in 1 day, on 2026-08-01.");
   });
 
   it("reads in the past tense once expired", () => {
@@ -155,7 +155,7 @@ describe("certAlertMessage", () => {
     if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
     const { title, message } = certAlertMessage(["app.example.com"], verdict);
     expect(title).toBe("Certificate expired: app.example.com");
-    expect(message).toContain("expired 2 days ago");
+    expect(message).toBe("The TLS certificate served on port 443 for app.example.com expired 2 days ago, on 2026-07-29.");
   });
 
   it("names the shared certificate once when it covers several domains", () => {

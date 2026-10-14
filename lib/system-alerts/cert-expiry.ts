@@ -117,16 +117,17 @@ export function certAlertMessage(
   verdict: Extract<CertVerdict, { kind: "expiring" | "expired" }>,
 ): { title: string; message: string } {
   const who = subject(domains);
+  const on = verdict.expiresAt.slice(0, 10);
   if (verdict.kind === "expired") {
     const days = Math.abs(verdict.daysLeft);
     return {
       title: `Certificate expired: ${who}`,
-      message: `The TLS certificate for ${who} expired ${days} day${days === 1 ? "" : "s"} ago. Browsers are refusing the connection — check Traefik's ACME logs.`,
+      message: `The TLS certificate served on port 443 for ${who} expired ${days} day${days === 1 ? "" : "s"} ago, on ${on}.`,
     };
   }
   return {
     title: `Certificate expiring: ${who}`,
-    message: `The TLS certificate for ${who} expires in ${verdict.daysLeft} day${verdict.daysLeft === 1 ? "" : "s"}. Traefik should auto-renew — check its logs if renewal is not happening.`,
+    message: `The TLS certificate served on port 443 for ${who} expires in ${verdict.daysLeft} day${verdict.daysLeft === 1 ? "" : "s"}, on ${on}.`,
   };
 }
 

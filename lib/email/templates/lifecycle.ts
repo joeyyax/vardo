@@ -15,7 +15,6 @@ export type LifecycleEvent = Extract<
       | "system.update-started"
       | "system.updated"
       | "system.update-failed"
-      | "system.update-skipped"
       | "system.restarting"
       | "system.restarted"
       | "system.restart-failed"
@@ -206,19 +205,6 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         footer,
       };
     }
-    case "system.update-skipped":
-      return {
-        tone: "warn",
-        status: "Update skipped",
-        heading: `Vardo didn't update to ${event.target}`,
-        preheader: event.reasons[0] ?? event.message,
-        blocks: [
-          { kind: "text", text: "It tries again in the next maintenance window." },
-          { kind: "stats", columns: ["Check", "Now", "Needs"], rows: event.reasons.map(skipRow) },
-        ],
-        action: { label: "Open updates", href: consolePage(ctx, "/admin/settings/maintenance#updates") },
-        footer,
-      };
     case "system.restarting":
       return {
         tone: "info",
@@ -276,13 +262,3 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
   }
 }
 
-const CHECK_NAMES: Record<string, string> = { Busy: "Jobs", "Low disk": "Disk", Unhealthy: "Services" };
-
-/** "Low disk: 3.1 GB free, 94% used (needs 5 GB and under 90%)" as Disk · 3.1 GB free, 94% used · 5 GB and under 90%. */
-function skipRow(reason: string) {
-  const m = reason.match(/^([^:]+):\s*(.+?)(?:\s*\(needs (.+)\))?$/);
-  if (!m) return { name: reason, cells: ["—", "—"] };
-  const [, check, now, needs] = m;
-  const fallback = check === "Busy" ? "none" : check === "Unhealthy" ? "all healthy" : "—";
-  return { name: CHECK_NAMES[check] ?? check, cells: [{ value: now, hot: true }, needs ?? fallback] };
-}

@@ -1281,17 +1281,6 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "system-update-skipped",
-    event: {
-      type: "system.update-skipped",
-      title: "Vardo update skipped",
-      message: "Busy: 1 deploy in progress",
-      fromVersion: "0.1.0 (e36c2e3)",
-      target: "v0.2.0",
-      reasons: ["Busy: 1 deploy in progress", "Low disk: 3.1 GB free, 94% used (needs 5 GB and under 90%)"],
-    },
-  },
-  {
     name: "system-update-available-self-deploy",
     event: {
       type: "system.update-available",

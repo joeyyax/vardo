@@ -57,7 +57,7 @@ Set under Updates, per instance:
 
 The channel is every commit on `main` or GitHub releases only. Auto follows releases unless a channel is set. The maintenance window is a start and end time in the instance's time zone, or its own when one is set; an end before the start runs past midnight.
 
-Before an automatic update starts, it checks that no deploy, backup, restore or restore drill is running, the disk has 5 GB free and is under 90% full, the core services are healthy and the target hasn't already failed here. Then it dumps the database. When any of that fails it skips the update and emails the reasons once a day per target; it tries again in the next window.
+Before an automatic update starts, it checks that no deploy, backup, restore or restore drill is running, the disk has 5 GB free and is under 90% full, the core services are healthy and the target hasn't already failed here. Then it dumps the database. While a deploy, backup, restore or drill is running the instance waits, and admins get one email if it's still waiting after an hour. Any other failed check pauses the rollout and admins get one email.
 
 ### Linked instances
 

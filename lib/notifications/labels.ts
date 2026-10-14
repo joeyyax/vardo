@@ -51,7 +51,6 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "system.update-started": "Update started",
   "system.updated": "Update finished",
   "system.update-failed": "Update failed",
-  "system.update-skipped": "Update skipped",
   "system.rollout-started": "Instance rollout started",
   "system.rollout-busy": "Instance waiting to update",
   "system.rollout-paused": "Instance rollout paused",

@@ -59,7 +59,7 @@ const store = vi.hoisted(() => ({ run: null as { deploymentId: string; rolloutId
 vi.mock("@/lib/self-update/store", () => ({ getUpdateRun: async () => store.run }));
 
 const lifecycle = await import("@/lib/self-update/lifecycle");
-const { activeUpdate, awaitResult, ingestUpdateMarker, reconcileUpdate, updateFailed, updateFinished, updateSkipped, updateStarted } = lifecycle;
+const { activeUpdate, awaitResult, ingestUpdateMarker, reconcileUpdate, updateFailed, updateFinished, updateStarted } = lifecycle;
 
 const T0 = Date.parse("2026-10-10T12:00:00Z");
 const facts = {
@@ -142,11 +142,6 @@ describe("update lifecycle", () => {
     await updateFailed({ ...facts, id: "20261010130000-1", startedAt: T0 + 3_600_000, step: "Health check" }, { now: T0 + 3_700_000 });
     expect(emitted[0].event.type).toBe("system.update-failed");
     expect(emitted[0].event).not.toHaveProperty("rolloutId");
-  });
-
-  it("sends skipped notices", async () => {
-    await updateSkipped({ fromVersion: "0.1.0", target: "v0.2.0", reasons: ["A backup is running"] });
-    expect(emitted[0].event).toMatchObject({ type: "system.update-skipped", target: "v0.2.0", message: "A backup is running" });
   });
 });
 
