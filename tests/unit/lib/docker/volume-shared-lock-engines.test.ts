@@ -9,7 +9,7 @@ import {
 import { ownsDataDirectory, isMajorLocked } from "@/lib/docker/image-updates/stateful-image";
 
 /**
- * notes-api as deployed on 10.0.0.19, which failed to deploy for six
+ * notes-api as deployed on a home server, which failed to deploy for six
  * weeks: meilisearch held the LMDB lock from the old slot, never went healthy,
  * and took the slot down through depends_on.
  */

@@ -12,7 +12,7 @@ const ctx = { ...FIXTURE_CONTEXT, timeZone: "America/Los_Angeles" };
 describe("digest email", () => {
   it("names the month and counts what needs a person", async () => {
     const email = (await renderNotificationEmail(monthly, ctx))!;
-    expect(email.subject).toBe("node-a · October in Long House · 3 need you");
+    expect(email.subject).toBe("node-a · October in Example Home · 3 need you");
     expect(email.text).toContain("391 deploys across 44 apps. Backups ran 98% of the time and all 12 alerts resolved.");
   });
 

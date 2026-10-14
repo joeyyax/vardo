@@ -66,7 +66,7 @@ describe("notification subjects", () => {
   });
 
   it("names every instance of a rollout and leaves the instance prefix off", () => {
-    expect(subject(fixture("system-rollout-finished"))).toBe("✓ Vardo updated on jy0 and Long House · 4f1a9b2");
+    expect(subject(fixture("system-rollout-finished"))).toBe("✓ Vardo updated on prod-1 and Example Home · 4f1a9b2");
     expect(subject(fixture("system-rollout-finished-skipped"))).toBe("⚠ Vardo updated on 1 of 2 instances · 4f1a9b2");
     expect(subject(fixture("system-rollout-paused"))).toBe("✗ Vardo update paused · 4f1a9b2");
   });
@@ -329,13 +329,13 @@ describe("notification emails", () => {
 
   it("sends one rollout email naming every instance", async () => {
     const done = (await renderNotificationEmail(fixture("system-rollout-finished"), FIXTURE_CONTEXT))!;
-    expect(done.text).toContain("jy0 and Long House are on 4f1a9b2. Your apps kept running throughout.");
+    expect(done.text).toContain("prod-1 and Example Home are on 4f1a9b2. Your apps kept running throughout.");
     expect(done.text).not.toContain("State");
     const skipped = (await renderNotificationEmail(fixture("system-rollout-finished-skipped"), FIXTURE_CONTEXT))!;
-    expect(skipped.text).toContain("jy0 is on 4f1a9b2. Skipped instances stay on their version");
-    expect(skipped.text).toContain("Long House: State Skipped\n  Skipped by an admin");
+    expect(skipped.text).toContain("prod-1 is on 4f1a9b2. Skipped instances stay on their version");
+    expect(skipped.text).toContain("Example Home: State Skipped\n  Skipped by an admin");
     const paused = (await renderNotificationEmail(fixture("system-rollout-paused"), FIXTURE_CONTEXT))!;
-    expect(paused.text).toContain("Long House: State Failed\n  Post-update health check failed; rolled back");
+    expect(paused.text).toContain("Example Home: State Failed\n  Post-update health check failed; rolled back");
   });
 
   it("shows rollout priority and status before technical details", async () => {
@@ -347,13 +347,13 @@ describe("notification emails", () => {
       targetSha: "f09896b",
       targetLabel: "f09896b",
       members: [
-        { instanceId: "lh1", name: "Long House", priority: "standard", state: "waiting", reason: null },
-        { instanceId: "jy0", name: "jy0", priority: "critical", state: "waiting", reason: null },
+        { instanceId: "prod-2", name: "Example Home", priority: "standard", state: "waiting", reason: null },
+        { instanceId: "prod-1", name: "prod-1", priority: "critical", state: "waiting", reason: null },
       ],
     } satisfies BusEvent;
     const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
-    expect(email.subject).toBe("Vardo update started for jy0 and Long House");
-    expect(email.text).toContain("1. jy0: Waiting · Critical priority\n2. Long House: Waiting · Standard priority");
+    expect(email.subject).toBe("Vardo update started for prod-1 and Example Home");
+    expect(email.text).toContain("1. prod-1: Waiting · Critical priority\n2. Example Home: Waiting · Standard priority");
     expect(email.text).toContain("Up to two can update at once; a busy instance waits until it's ready.");
     expect(email.text.indexOf("View rollout:")).toBeLessThan(email.text.indexOf("Skip priority order:"));
     expect(email.text.indexOf("Technical details")).toBeGreaterThan(email.text.indexOf("Skip priority order:"));

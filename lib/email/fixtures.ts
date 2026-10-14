@@ -213,10 +213,10 @@ function rollout(type: "system.rollout-finished" | "system.rollout-paused", stat
     targetSha: "4f1a9b2c",
     targetLabel: "4f1a9b2",
     members: [
-      { instanceId: "jy0", name: "jy0", priority: "critical", state: states[0], reason: null },
+      { instanceId: "prod-1", name: "prod-1", priority: "critical", state: states[0], reason: null },
       {
-        instanceId: "lh1",
-        name: "Long House",
+        instanceId: "prod-2",
+        name: "Example Home",
         priority: "standard",
         state: states[1],
         reason: states[1] === "failed" ? "Post-update health check failed; rolled back" : states[1] === "skipped" ? "Skipped by an admin" : null,
@@ -399,7 +399,7 @@ const RECAP_GROUP: AppRecap[] = [
 ];
 
 function recapEvent(recaps: AppRecap[]): DigestAppRecapEvent {
-  return { type: "digest.app-recap", title: "App recaps", message: `${recaps.length} new app recaps.`, orgName: "Long House", recaps };
+  return { type: "digest.app-recap", title: "App recaps", message: `${recaps.length} new app recaps.`, orgName: "Example Home", recaps };
 }
 
 export const RECAP_FIXTURES = { clean: RECAP_CLEAN, actions: RECAP_ACTIONS, month: RECAP_MONTH, group: RECAP_GROUP };
@@ -408,13 +408,13 @@ const OCTOBER = { since: "2026-10-01T07:00:00.000Z", until: "2026-11-01T07:00:00
 const octoberDays = (values: number[], failed: number[] = []) =>
   values.map((n, i) => ({ start: new Date(Date.parse(OCTOBER.since) + i * 86_400_000).toISOString(), succeeded: failed.includes(i) ? n - 1 : n, failed: failed.includes(i) ? 1 : 0 }));
 
-/** Long House's October. */
+/** Example Home's October. */
 const DIGEST_MONTH: DigestHealthEvent = {
   type: "digest.health",
-  title: "Monthly digest: Long House",
+  title: "Monthly digest: Example Home",
   message: "391 deploys, 19 failed.",
   cadence: "monthly",
-  orgName: "Long House",
+  orgName: "Example Home",
   windowLabel: "October 2026",
   ...OCTOBER,
   appCount: 44,

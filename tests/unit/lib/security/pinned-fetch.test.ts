@@ -61,13 +61,13 @@ describe("guardedLookup", () => {
   });
 
   it("refuses when any record is private", async () => {
-    resolveTo("93.184.216.34", "10.0.0.19");
+    resolveTo("93.184.216.34", "10.0.0.42");
     await expect(lookupOnce(false, "mixed.attacker.test")).rejects.toThrow(BlockedUrlError);
   });
 
   it("lets an allowlisted host resolve privately", async () => {
-    resolveTo("10.0.0.19");
-    await expect(lookupOnce(true, "internal.example.com")).resolves.toBe("10.0.0.19");
+    resolveTo("10.0.0.42");
+    await expect(lookupOnce(true, "internal.example.com")).resolves.toBe("10.0.0.42");
   });
 });
 

@@ -32,7 +32,7 @@ vi.mock("@/lib/incidents/store", () => ({
 }));
 vi.mock("@/lib/system-settings", () => ({
   getEmailProviderConfig: async () => ({ provider: "pouch", apiKey: "pk_test", fromEmail: "alerts@example.com" }),
-  getInstanceDisplayName: async () => "Long House",
+  getInstanceDisplayName: async () => "Example Home",
 }));
 vi.mock("@/lib/time-zone-settings", () => ({ getOrgTimeZone: async () => "UTC" }));
 vi.mock("@/lib/email/series", () => ({ loadMailSeries: async () => ({}) }));
@@ -90,21 +90,21 @@ describe("incident email threading, alert pass to Pouch", () => {
     m.open.mockResolvedValue(ref("opened"));
     await notifyObservations("org1", ["host.swap"], [{ type: "host.swap", about: "host", severity: "warning", fires: true, item: swap }], opened);
     await deliver();
-    expect(posted()).toMatchObject({ subject: "Long House · ⚠ Swap 55% used", headers: { References: root } });
+    expect(posted()).toMatchObject({ subject: "Example Home · ⚠ Swap 55% used", headers: { References: root } });
     expect(posted().headers).not.toHaveProperty("In-Reply-To");
 
     m.clear.mockResolvedValue([clearedRow]);
     m.resolve.mockResolvedValue(new Map([["host", ref("resolved")]]));
     await notifyObservations("org1", ["host.swap"], [], cleared);
     await deliver();
-    expect(posted()).toMatchObject({ subject: "Long House · ✓ Resolved · Swap 55% used", headers: { "In-Reply-To": root, References: root } });
+    expect(posted()).toMatchObject({ subject: "Example Home · ✓ Resolved · Swap 55% used", headers: { "In-Reply-To": root, References: root } });
   });
 
   it("sends a resolution without thread headers when the alert has no incident", async () => {
     m.clear.mockResolvedValue([clearedRow]);
     await notifyObservations("org1", ["host.swap"], [], cleared);
     await deliver();
-    expect(posted().subject).toBe("Long House · ✓ Resolved · Swap 55% used");
+    expect(posted().subject).toBe("Example Home · ✓ Resolved · Swap 55% used");
     expect(posted()).not.toHaveProperty("headers");
   });
 });
