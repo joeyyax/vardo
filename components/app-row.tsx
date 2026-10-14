@@ -8,6 +8,7 @@ import { type AppCondition } from "@/lib/docker/conditions";
 import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import type { DeployView } from "@/lib/ui/deploy-wait";
+import { RowDeployLabel } from "@/components/row-deploy-label";
 import {
   compactUptime,
   primaryDomain,
@@ -165,7 +166,7 @@ export function AppRow({
 
         {deploy ? (
           <span className={`min-w-0 shrink-[3] truncate font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`} title={deploy.why}>
-            {deploy.label}
+            <RowDeployLabel view={deploy} />
           </span>
         ) : (
           word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>

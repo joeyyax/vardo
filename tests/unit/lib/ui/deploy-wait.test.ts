@@ -304,6 +304,19 @@ describe("deployView", () => {
   type Wait = Parameters<typeof deployView>[0]["wait"];
   const view = (queued: boolean, wait: Wait, started = false, preparing = false) => deployView({ queued, wait, started, preparing, now: T0 });
 
+  it("gives rows on a phone the place without the estimate", () => {
+    const eta = T0 + 6 * 60_000;
+    const short = (queued: boolean, wait: Wait, started = false) => view(queued, wait, started).short;
+    expect(short(true, { reason: "deploy-slot", ahead: 2, total: 5, eta })).toBe("3rd in line");
+    expect(short(true, { reason: "deploy-slot", ahead: 0, total: 5, eta })).toBe("Next in line");
+    expect(short(false, { reason: "build-slot", ahead: 1, total: 3, eta }, true)).toBe("2nd in line to build");
+    expect(short(false, { reason: "build-slot", ahead: 0, total: 3, eta }, true)).toBe("Next to build");
+    expect(short(false, { reason: "build-slot" }, true)).toBe("Queued");
+    expect(short(true, { reason: "worker" })).toBe("Queued");
+    expect(short(false, null, true)).toBe("Deploying");
+    expect(view(true, { reason: "deploy-slot", ahead: 2, total: 5, eta }).label).toBe("Starts in about 6 min · 3rd in line");
+  });
+
   it("reads a held request as preparing", () => {
     expect(view(true, null, false, true)).toMatchObject({ word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" });
   });

@@ -27,6 +27,7 @@ import { statusMarkTone } from "@/lib/ui/status-colors";
 import { deployViewOf, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
 import { deployMarkOf } from "@/lib/ui/deploy-wait";
 import { useNow } from "@/components/deploy-progress";
+import { RowDeployLabel } from "@/components/row-deploy-label";
 import type { StarKind } from "@/lib/db/schema/enums";
 import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
@@ -233,7 +234,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           </span>
         ) : view && !quietParent ? (
           <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"} title={view.why}>
-            {view.label === "Deploying" ? <RowTerm text="Deploying" /> : view.label}
+            {view.label === "Deploying" ? <RowTerm text="Deploying" /> : <RowDeployLabel view={view} />}
           </span>
         ) : stopped && !quietParent ? (
           <span className="text-muted-foreground/70">

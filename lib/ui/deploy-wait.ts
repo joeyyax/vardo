@@ -179,6 +179,8 @@ export type DeployView = {
   word: DeployWord;
   /** The row label and the card's line. */
   label: string;
+  /** The row label on a phone: the place in line without the estimate. */
+  short: string;
   /** Mark color: amber only when no worker is running. */
   tone: "neutral" | "warn" | "info";
   /** Why a plain Queued is queued. */
@@ -217,15 +219,19 @@ export function deployView({
 }): DeployView {
   const reason = wait?.reason ?? null;
   const behind = (wait?.ahead ?? 0) > 0;
-  if (reason === "build-slot") return { word: "Deploying", label: lineLabel("build", wait!, now), tone: "neutral", held: "build", startNext: behind };
-  if (reason === "checkout") return { word: "Deploying", label: "Queued", tone: "neutral", why: WHY.checkout, held: "clone" };
-  if (queued || reason) {
-    if (preparing) return { word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" };
-    if (reason === "deploy-slot") return { word: "Queued", label: lineLabel("deploy", wait!, now), tone: "neutral", held: "queued", startNext: behind };
-    return { word: "Queued", label: "Queued", tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
+  if (reason === "build-slot") {
+    return { word: "Deploying", label: lineLabel("build", wait!, now), short: lineLabel("build", { ahead: wait!.ahead }, null), tone: "neutral", held: "build", startNext: behind };
   }
-  if (!started) return { word: "Starting", label: "Starting", tone: "info" };
-  return { word: "Deploying", label: "Deploying", tone: "info" };
+  if (reason === "checkout") return { word: "Deploying", label: "Queued", short: "Queued", tone: "neutral", why: WHY.checkout, held: "clone" };
+  if (queued || reason) {
+    if (preparing) return { word: "Preparing", label: "Preparing", short: "Preparing", tone: "neutral", held: "queued" };
+    if (reason === "deploy-slot") {
+      return { word: "Queued", label: lineLabel("deploy", wait!, now), short: lineLabel("deploy", { ahead: wait!.ahead }, null), tone: "neutral", held: "queued", startNext: behind };
+    }
+    return { word: "Queued", label: "Queued", short: "Queued", tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
+  }
+  if (!started) return { word: "Starting", label: "Starting", short: "Starting", tone: "info" };
+  return { word: "Deploying", label: "Deploying", short: "Deploying", tone: "info" };
 }
 
 /** How a deploy reads from its open stream, with the row filling in until the stream reports. */
