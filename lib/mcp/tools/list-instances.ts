@@ -6,7 +6,7 @@ import { canActOnLinkedInstances } from "../scope";
 export function registerListInstances(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_list_instances",
-    "List this Vardo instance and the instances linked to it, with name, URL, type, canary role, version, health and online status. Pass a name or id as any tool's instance argument to run it there. A token without linked-instance access sees only this instance.",
+    "List this Vardo instance and the instances linked to it, with name, URL, type, update priority, version, health and online status. Pass a name or id as any tool's instance argument to run it there. A token without linked-instance access sees only this instance.",
     {},
     async () => {
       const includePeers = await canActOnLinkedInstances(context);

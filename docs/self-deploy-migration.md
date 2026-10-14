@@ -49,19 +49,23 @@ Update now dumps the database to `/opt/vardo/lifecycle/backups/` first, keeping 
 
 Set under Updates, per instance:
 
-| Policy | What happens |
+| Setting | What it does |
 | --- | --- |
-| Off | No update notices. Update now still works. |
-| Notify | Admins get one email a day while an update is out. The default for new installs. |
-| Auto | Vardo updates itself inside the maintenance window. |
+| Mode | **Off**: no update notices; Update now still works. **Notify**: admins get one email a day while an update is out; the default for new installs. **Auto**: Vardo updates itself when an update is out and the instance is ready. |
+| Channel | Every commit on `main`, or GitHub releases only. Left at the default, Auto follows releases and the other modes follow `main`. |
+| Priority | Critical, Standard or Low. Sets the order instances take an update in a rollout. |
 
-The channel is every commit on `main` or GitHub releases only. Auto follows releases unless a channel is set. The maintenance window is a start and end time in the instance's time zone, or its own when one is set; an end before the start runs past midnight.
+There's no maintenance window: Auto starts as soon as the checks pass.
 
 Before an automatic update starts, it checks that no deploy, backup, restore or restore drill is running, the disk has 5 GB free and is under 90% full, the core services are healthy and the target hasn't already failed here. Then it dumps the database. While a deploy, backup, restore or drill is running the instance waits, and admins get one email if it's still waiting after an hour. Any other failed check pauses the rollout and admins get one email.
 
-### Linked instances
+### Rollouts
 
-On a mesh, mark one instance **Canary** and the others **Follows a canary**. Each heartbeat carries the instance's commit, since when it has run it and whether it's healthy. A follower on Auto takes a version once the canary has run that commit healthy for the configured hours, or once an admin approves it under Updates. Peers on a version without this report never satisfy the wait, so approval is the way through until they update.
+Every automatic update runs as a rollout, including on a single instance. The hub coordinates it for every instance linked to it directly; a standalone instance coordinates its own.
+
+A rollout takes in each instance on Auto that follows the channel and is behind the target. Instances update in priority order, Critical first, at most two at a time. A busy instance doesn't hold the ones after it. An offline instance, a failed check or a failed update pauses the rollout.
+
+From Updates, an admin can skip priority order for the current rollout, skip a busy instance or resume a paused rollout. A newer target on the channel ends the current rollout once no instance is mid-update, and the next one starts from there. No rollout starts until every linked instance reports the rollout protocol.
 
 The running console builds the new one, starts it beside itself, waits for it to pass its health check, records the deploy and stops itself last. Both serve during the cutover.
 
