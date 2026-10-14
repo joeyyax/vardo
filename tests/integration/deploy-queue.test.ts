@@ -431,6 +431,20 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
     });
   });
 
+  describe("awaitClaim", () => {
+    it("returns once claimed, and cancels a row nobody claims in time", async () => {
+      await seed("q1", "a1", "manual", "queued");
+      const pending = q.awaitClaim("q1", 5_000, { pollMs: 20 });
+      await sleep(60);
+      await q.claimDeploys("w", { capacity: 5 });
+      expect(await pending).toBe(true);
+
+      await seed("q2", "a2", "manual", "queued");
+      expect(await q.awaitClaim("q2", 100, { pollMs: 20 })).toBe(false);
+      expect(await row("q2")).toMatchObject({ status: "cancelled", cancel_reason: "timeout" });
+    });
+  });
+
   describe("awaitDeployment", () => {
     it("resolves on the terminal row", async () => {
       await seed("r1", "a1", "manual", "running");

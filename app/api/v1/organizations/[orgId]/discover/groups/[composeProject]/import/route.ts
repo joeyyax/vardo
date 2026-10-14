@@ -25,7 +25,9 @@ import { enqueueDeploy } from "@/lib/deploy/queue";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { gitUrlColumns } from "@/lib/api/git-credentials";
 import { readableApp } from "@/lib/api/readable-app";
+import { workerMissing } from "@/lib/deploy/waiting";
 import {
+  IMPORT_NEEDS_WORKER,
   resolveProjectForImport,
   runAsyncContainerMigration,
   parseContainerEnvVars,
@@ -71,6 +73,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const gate = await requirePlugin("container-import");
     if (gate) return gate;
+    if (await workerMissing()) return NextResponse.json({ error: IMPORT_NEEDS_WORKER }, { status: 503 });
 
     // Only safe identifiers.
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(composeProject)) {

@@ -17,7 +17,9 @@ import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { enqueueDeploy } from "@/lib/deploy/queue";
+import { workerMissing } from "@/lib/deploy/waiting";
 import {
+  IMPORT_NEEDS_WORKER,
   resolveProjectForImport,
   runAsyncContainerMigration,
 } from "@/lib/docker/import";
@@ -78,6 +80,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const gate = await requirePlugin("container-import");
     if (gate) return gate;
+    if (await workerMissing()) return NextResponse.json({ error: IMPORT_NEEDS_WORKER }, { status: 503 });
 
     if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });

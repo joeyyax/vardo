@@ -28,6 +28,8 @@ vi.mock("@/lib/auth/session", () => ({
   },
 }));
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
+const { mockWorkerMissing } = vi.hoisted(() => ({ mockWorkerMissing: vi.fn() }));
+vi.mock("@/lib/deploy/waiting", () => ({ workerMissing: mockWorkerMissing }));
 vi.mock("@/lib/docker/discover", () => ({
   discoverContainers: mockDiscover,
   getContainerDetail: mockDetail,
@@ -84,6 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockDiscover.mockResolvedValue({ standalone: [], groups: [] });
   mockDetail.mockResolvedValue({ id: CONTAINER_ID, env: { SECRET: "x" } });
+  mockWorkerMissing.mockResolvedValue(false);
 });
 
 describe.each(Object.entries(calls))("discover %s", (_name, call) => {
@@ -109,5 +112,16 @@ describe.each(Object.entries(calls))("discover %s", (_name, call) => {
   it("lets an instance admin through", async () => {
     as("member", true);
     expect((await call()).status).not.toBe(403);
+  });
+});
+
+describe.each([["importOne", calls.importOne], ["importGroup", calls.importGroup]])("discover %s without a worker", (_name, call) => {
+  it("refuses before touching anything", async () => {
+    as("member", true);
+    mockWorkerMissing.mockResolvedValue(true);
+    const res = await call();
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toMatch(/worker isn't running/);
+    expect(mockDetail).not.toHaveBeenCalled();
   });
 });

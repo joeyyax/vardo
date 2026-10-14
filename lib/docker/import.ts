@@ -7,8 +7,9 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { slugify } from "@/lib/ui/slugify";
 import { stopContainer, startContainer, removeContainer, inspectContainer } from "@/lib/docker/client";
-import { releaseHeldDeploy } from "@/lib/deploy/queue";
+import { awaitClaim, releaseHeldDeploy } from "@/lib/deploy/queue";
 import { waitForDeployment } from "@/lib/deploy/request";
+import { workerMissing } from "@/lib/deploy/waiting";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import type { ComposeFile } from "@/lib/docker/compose";
@@ -68,6 +69,12 @@ async function waitForContainerStopped(containerId: string): Promise<void> {
   }
 }
 
+/** The import routes' refusal when no worker would run the deploy. */
+export const IMPORT_NEEDS_WORKER = "The worker isn't running, so nothing would deploy the import. Start it and try again";
+
+/** How long the deploy may wait for an executor before the originals come back. */
+export const IMPORT_CLAIM_WAIT_MS = 5 * 60_000;
+
 export type MigrationParams = {
   /** IDs of the original containers to stop and (on success) remove. */
   containerIds: string[];
@@ -98,6 +105,25 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 
   void (async () => {
     const stoppedIds: string[] = [];
+
+    // The worker left after the route checked: leave the originals running.
+    if (await workerMissing()) {
+      const now = new Date();
+      await db
+        .update(deployments)
+        .set({ status: "cancelled", finishedAt: now, log: `[${now.toISOString()}] [CANCELLED] ${IMPORT_NEEDS_WORKER}` })
+        .where(eq(deployments.id, deploymentId));
+      addEvent(orgId, {
+        type: "deploy.status",
+        title: "Import cancelled",
+        message: IMPORT_NEEDS_WORKER,
+        appId,
+        deploymentId,
+        status: "cancelled",
+        success: false,
+      }).catch(() => {});
+      return;
+    }
 
     for (const containerId of containerIds) {
       try {
@@ -142,6 +168,7 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
     try {
       // The originals are stopped: the held deploy can run now.
       if (!(await releaseHeldDeploy(deploymentId))) throw new Error("The deployment was cancelled before it started");
+      if (!(await awaitClaim(deploymentId, IMPORT_CLAIM_WAIT_MS))) throw new Error("The deploy didn't start in time");
       const deployResult = await waitForDeployment(deploymentId);
 
       if (!deployResult.success) {

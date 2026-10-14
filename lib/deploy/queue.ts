@@ -393,6 +393,32 @@ export async function awaitDeployment(id: string, opts: { signal?: AbortSignal; 
   }
 }
 
+/** Waits for an executor to claim a queued deploy. Past the timeout it cancels the row and returns false. */
+export async function awaitClaim(id: string, timeoutMs: number, opts: { pollMs?: number } = {}): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const [row] = await db.select({ status: deployments.status }).from(deployments).where(eq(deployments.id, id));
+    if (!row) throw new Error(`Deployment ${id} not found`);
+    if (row.status !== "queued") return true;
+    if (Date.now() >= deadline) {
+      // Only a row still queued; one claimed just now runs on.
+      const cancelled = await db
+        .update(deployments)
+        .set({
+          status: "cancelled",
+          finishedAt: new Date(),
+          cancelRequestedAt: sql`now()`,
+          cancelReason: "timeout",
+          log: appendLog(logLine("CANCELLED", "No executor started it in time")),
+        })
+        .where(and(eq(deployments.id, id), eq(deployments.status, "queued")))
+        .returning({ id: deployments.id });
+      return cancelled.length === 0;
+    }
+    await sleep(Math.min(opts.pollMs ?? 1_000, Math.max(0, deadline - Date.now())));
+  }
+}
+
 /** Running deploys other than this one. */
 export async function runningExcept(id: string): Promise<number> {
   const [row] = await db
