@@ -102,17 +102,15 @@ export function buildConcurrency(input: { cpus: number; usableBytes: number; bud
   return Math.max(1, Math.min(byMemory, byCores));
 }
 
-/** Most builds at once. VARDO_MAX_CONCURRENT_BUILDS wins, floored at 1, then the admin value. Memory pressure makes it one. */
+/** Most builds at once. VARDO_MAX_CONCURRENT_BUILDS wins, floored at 1. Memory pressure makes it one. */
 export function resolveBuildConcurrency(
   rule: number,
-  opts: { env?: Env; admin?: number; memoryPressure?: boolean } = {},
+  opts: { env?: Env; memoryPressure?: boolean } = {},
 ): Resolved<number> {
   const parsed = parseInt((opts.env ?? process.env).VARDO_MAX_CONCURRENT_BUILDS ?? "", 10);
   const resolved: Resolved<number> = !isNaN(parsed)
     ? { value: Math.max(1, parsed), source: "override", rule }
-    : opts.admin !== undefined
-      ? { value: Math.max(1, opts.admin), source: "admin", rule }
-      : { value: rule, source: "detected", rule };
+    : { value: rule, source: "detected", rule };
   return opts.memoryPressure ? { ...resolved, value: 1 } : resolved;
 }
 

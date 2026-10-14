@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     exclude: ["tests/e2e/**"],
+    maxWorkers: "50%",
     coverage: {
       provider: "v8",
       include: ["lib/**/*.ts", "app/**/*.ts"],

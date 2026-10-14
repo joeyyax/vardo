@@ -1,4 +1,4 @@
-// FIFO wait for a slot in a Redis-backed queue, shared by the deploy queue and the build gate.
+// FIFO wait for a slot in a Redis-backed queue, used by the build gate.
 
 /** One queue's storage: take the slot when this id heads the queue and one is free, read its place, leave. */
 export type SlotStore<T> = {

@@ -20,7 +20,7 @@ import type { BoundedBuild } from "./build-memory";
 
 const log = logger.child("build-gate");
 
-export const BUILD_GATE_KEYS = {
+const BUILD_GATE_KEYS = {
   queue: "build:gate:queue",
   /** Waiters' last poll, so a dead process's entry leaves the head. */
   seen: "build:gate:seen",
@@ -227,7 +227,7 @@ async function largestRecentPeak(): Promise<number | null> {
   return peakCache.bytes;
 }
 
-export type BuildLimitInput = {
+type BuildLimitInput = {
   /** BuildKit's memory limit, 0 when it has none or builds run on the daemon. */
   limitBytes: number;
   hostMemoryBytes: number;
@@ -319,7 +319,7 @@ async function runningSteps(container: string): Promise<string[]> {
 }
 
 /** Kills build steps still running in an idle builder, left by a build whose client died. Returns how many, or null if unreadable. */
-export async function sweepOrphanSteps(container: string, opts: { waitMs?: number } = {}): Promise<{ killed: number; clean: boolean } | null> {
+async function sweepOrphanSteps(container: string, opts: { waitMs?: number } = {}): Promise<{ killed: number; clean: boolean } | null> {
   let steps: string[];
   try {
     steps = await runningSteps(container);
