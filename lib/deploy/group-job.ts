@@ -49,6 +49,12 @@ export async function enqueueGroupDeploy(request: GroupJobRequest): Promise<stri
   return id;
 }
 
+/** How many apps a group deploy covers, read the way the job reads them when it runs. */
+export async function groupDeployCount(request: GroupJobRequest): Promise<number> {
+  const { groupApps } = await import("@/lib/docker/deploy-group");
+  return (await groupApps(request)).members.length;
+}
+
 /** Claims queued group jobs whose scope is idle, oldest first. */
 export async function claimGroupJobs(executorId: string, limit: number): Promise<ClaimedGroupJob[]> {
   if (limit <= 0) return [];

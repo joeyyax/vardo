@@ -20,6 +20,7 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { queuedCount, queuedDeploysText } from "@/lib/ui/group-deploy";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -724,7 +725,7 @@ export function ProjectDetail({
         }
       );
       if (res.ok) {
-        toast.success("Deploying all apps...");
+        toast.success(queuedDeploysText(await queuedCount(res), project.displayName));
         // Subscribe to real-time deploy events for status transitions
         subscribeToDeployEvents();
       } else {

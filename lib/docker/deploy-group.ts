@@ -161,12 +161,8 @@ function topologicalTierSort(
   return tiers;
 }
 
-/** Deploy a project's apps tier by tier, stopping after a failed tier. */
-export async function deployGroup(
-  opts: GroupDeployOpts
-): Promise<GroupDeployResult> {
-  const startTime = Date.now();
-
+/** The apps a group deploy covers, with each one's environment in the group. Throws when the project isn't the org's. */
+export async function groupApps(opts: Pick<GroupDeployOpts, "projectId" | "organizationId" | "groupEnvironmentId">) {
   const { projects } = await import("@/lib/db/schema");
   const project = await db.query.projects.findFirst({
     where: and(
@@ -197,9 +193,19 @@ export async function deployGroup(
   }
 
   // Apps without an environment in the group would deploy to production.
-  const projectApps = opts.groupEnvironmentId
+  const members = opts.groupEnvironmentId
     ? topLevelApps.filter((a) => appEnvironmentIds.has(a.id))
     : topLevelApps;
+
+  return { project, members, appEnvironmentIds };
+}
+
+/** Deploy a project's apps tier by tier, stopping after a failed tier. */
+export async function deployGroup(
+  opts: GroupDeployOpts
+): Promise<GroupDeployResult> {
+  const startTime = Date.now();
+  const { project, members: projectApps, appEnvironmentIds } = await groupApps(opts);
 
   if (projectApps.length === 0) {
     return {

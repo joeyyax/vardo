@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { enqueueDeploy } from "@/lib/deploy/queue";
-import { enqueueGroupDeploy, tailGroupJob } from "@/lib/deploy/group-job";
+import { enqueueGroupDeploy, groupDeployCount, tailGroupJob } from "@/lib/deploy/group-job";
 import { tailDeployment } from "@/lib/stream/deploy-tail";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -51,14 +51,20 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     }
 
     if (app.projectId && (deployAll || groupEnvironmentId)) {
-      const jobId = await enqueueGroupDeploy({
+      const group = {
         projectId: app.projectId,
         organizationId: orgId,
-        trigger: "manual",
+        trigger: "manual" as const,
         triggeredBy: org.session.user.id,
         groupEnvironmentId,
+      };
+      const count = await groupDeployCount(group);
+      const jobId = await enqueueGroupDeploy(group);
+      // `queued` first: how many deploys the job will run.
+      return createSSEResponse(request, async (sendEvent) => {
+        sendEvent("queued", { count });
+        await tailGroupJob(jobId, sendEvent, { signal: request.signal });
       });
-      return createSSEResponse(request, (sendEvent) => tailGroupJob(jobId, sendEvent, { signal: request.signal }));
     }
 
     const { id } = await enqueueDeploy({
