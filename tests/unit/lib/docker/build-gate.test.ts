@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// The build gate: how many builds BuildKit takes at once, the FIFO wait and its wait entries, and peak recording.
+// The build gate: how many builds BuildKit takes at once, the FIFO wait and the sweeper clock, and peak recording.
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -10,6 +10,14 @@ const { state } = vi.hoisted(() => ({
     steps: [] as string[],
     killed: [] as string[],
     anon: [100, 400, 900, 300],
+    clock: [] as string[],
+  },
+}));
+
+vi.mock("@/lib/deploy/running-clock", () => ({
+  pauseRunningClock: (id: string) => {
+    state.clock.push(`pause:${id}`);
+    return { resume: async () => void state.clock.push(`resume:${id}`) };
   },
 }));
 
@@ -23,7 +31,7 @@ vi.mock("fs/promises", async (original) => ({
 vi.mock("@/lib/db", () => ({
   db: {
     select: () => ({ from: () => ({ where: async () => [{ peak: state.peak }] }) }),
-    update: () => ({ set: (values: unknown) => ({ where: async () => void state.recorded.push(values) }) }),
+    insert: () => ({ values: (values: unknown) => ({ onConflictDoUpdate: async () => void state.recorded.push(values) }) }),
   },
 }));
 vi.mock("@/lib/redis", () => ({ redis: {} }));
@@ -177,16 +185,13 @@ function fakeRedisStore() {
 
 const bounded = { env: {}, loadArgs: [], limitBytes: 6 * GiB, container: "vardo-buildkit" };
 
-function gateFor(deploymentId: string, signal?: AbortSignal) {
+function gateFor(deploymentId: string | undefined, signal?: AbortSignal) {
   const lines: string[] = [];
-  const waits: (string | null)[] = [];
   return {
     lines,
-    waits,
     gate: {
       deploymentId,
       log: (line: string) => void lines.push(line),
-      wait: (reason: string | null, ahead?: number) => void waits.push(reason === null ? null : ahead === undefined ? reason : `${reason}:${ahead}`),
       signal,
     },
   };
@@ -204,20 +209,21 @@ describe("withBuildSlot", () => {
   beforeEach(() => {
     store = fakeRedisStore();
     resetBuildGateForTests(store);
-    Object.assign(state, { peak: 3.2 * GB, recorded: [], steps: [], killed: [], anon: [100, 400, 900, 300] });
+    Object.assign(state, { peak: 3.2 * GB, recorded: [], steps: [], killed: [], anon: [100, 400, 900, 300], clock: [] });
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("writes no wait for a build that gets the builder straight away", async () => {
+  it("neither queues nor pauses the clock for a build that gets the builder straight away", async () => {
     const a = gateFor("dep-a");
     await withBuildSlot(a.gate, bounded, async () => {});
-    expect(a.waits).toEqual([]);
+    expect(state.clock).toEqual([]);
+    expect(a.lines.some((l) => l.startsWith("[queue]"))).toBe(false);
   });
 
-  it("queues a second build behind the first, says why and ends the wait when it starts", async () => {
+  it("queues a second build behind the first, says why and pauses its clock while it waits", async () => {
     const first = deferred();
     const a = gateFor("dep-a");
     const running = withBuildSlot(a.gate, bounded, () => first.promise);
@@ -229,16 +235,17 @@ describe("withBuildSlot", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(started).toBe(false);
     expect(b.lines).toContain("[queue] Waiting for the builder: 1 running, 1 at a time");
+    expect(state.clock).toEqual(["pause:dep-b"]);
 
     first.resolve();
     await running;
     await queued;
     expect(started).toBe(true);
-    expect(b.waits).toEqual(["build-slot", "build-slot:0", null]);
-    expect(b.lines).toContain("[queue] Builder free — starting the build");
+    expect(state.clock).toEqual(["pause:dep-b", "resume:dep-b"]);
+    expect(b.lines).toContain("[queue] Builder free, starting build");
   });
 
-  it("ends the wait and leaves the queue when the deploy is cancelled", async () => {
+  it("resumes the clock and leaves the queue when the deploy is cancelled", async () => {
     const first = deferred();
     const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
     await new Promise((r) => setTimeout(r, 10));
@@ -250,11 +257,23 @@ describe("withBuildSlot", () => {
     controller.abort();
 
     await expect(queued).rejects.toThrow("Deployment aborted");
-    expect(b.waits.at(0)).toBe("build-slot");
-    expect(b.waits.at(-1)).toBeNull();
+    expect(state.clock).toEqual(["pause:dep-b", "resume:dep-b"]);
     expect(store.queue).toEqual([]);
     first.resolve();
     await running;
+  });
+
+  it("gates a build without a deployment but records nothing for it", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor(undefined).gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    const queued = withBuildSlot(gateFor(undefined).gate, bounded, async () => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.queue).toHaveLength(1);
+    first.resolve();
+    await Promise.all([running, queued]);
+    expect(state.clock).toEqual([]);
+    expect(state.recorded).toHaveLength(0);
   });
 
   it("stops steps an earlier build left running before a build into an idle builder", async () => {

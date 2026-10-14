@@ -55,6 +55,7 @@ function options(over: Partial<ComposeBuildOpts> = {}): ComposeBuildOpts {
     withGitDir: false,
     log: () => {},
     exec,
+    gate: (run) => run(),
     ...over,
   };
 }

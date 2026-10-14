@@ -8,6 +8,7 @@ import { COMPOSE_BUILD_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT, GIT_METADATA_TIMEOUT }
 import { engineVersion } from "./engine-version";
 import { planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
 import type { BoundedBuild } from "./build-memory";
+import { withBuildSlot } from "./build-gate";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -37,7 +38,9 @@ export type ComposeBuildOpts = {
   log: (line: string) => void;
   signal?: AbortSignal;
   exec?: Exec;
-  /** Holds a builder slot for the build itself, after image reuse is settled. */
+  /** Records the build's memory peak against this deploy and pauses its sweeper clock while it waits. */
+  deploymentId?: string;
+  /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
   gate?: <T>(run: () => Promise<T>) => Promise<T>;
 };
 
@@ -97,7 +100,7 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     }
   }
   if (services.length === 0) return null;
-  const gate = opts.gate ?? ((run) => run());
+  const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, signal: opts.signal }, opts.bounded, run));
   return gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
 }
 

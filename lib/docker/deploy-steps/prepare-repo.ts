@@ -613,7 +613,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     // Every environment fetches into this checkout; one deploy at a time until its build tree is written.
     let checkoutLock: CheckoutLock;
     try {
-      checkoutLock = await acquireCheckoutLock(ctx.appId, { log, signal, wait: ctx.wait });
+      checkoutLock = await acquireCheckoutLock(ctx.appId, { log, signal });
     } catch (err) {
       if (sshKeyFile) await cleanupKeyFile(sshKeyFile);
       throw err;
@@ -862,7 +862,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,
-          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal },
+          gate: { deploymentId: ctx.deploymentId, log, signal },
           overrides,
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,

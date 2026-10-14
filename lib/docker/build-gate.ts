@@ -3,20 +3,20 @@
 
 import { readFile } from "fs/promises";
 import { totalmem } from "os";
-import { and, gt, isNotNull, max, sql, eq } from "drizzle-orm";
+import { gt, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { deployments } from "@/lib/db/schema";
+import { buildPeaks } from "@/lib/db/schema";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
 import { BUILDS_FORMULA, buildConcurrency, resolveBuildConcurrency } from "@/lib/resources/defaults";
 import { detectedHost, hostCpuCount } from "@/lib/resources/host";
+import { pauseRunningClock } from "@/lib/deploy/running-clock";
 import { dockerRequest } from "./client";
 import { dockerEnv } from "./docker-env";
 import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { waitForFifoSlot, type SlotStore } from "./fifo-slots";
 import type { BoundedBuild } from "./build-memory";
-import type { WaitWriter } from "./deploy-logger";
 
 const log = logger.child("build-gate");
 
@@ -216,9 +216,9 @@ async function largestRecentPeak(): Promise<number | null> {
   if (Date.now() - peakCache.at < CACHE_MS) return peakCache.bytes;
   try {
     const [row] = await db
-      .select({ peak: max(deployments.buildMemoryPeak) })
-      .from(deployments)
-      .where(and(isNotNull(deployments.buildMemoryPeak), gt(deployments.startedAt, new Date(Date.now() - PEAK_WINDOW_MS))));
+      .select({ peak: max(buildPeaks.peakBytes) })
+      .from(buildPeaks)
+      .where(gt(buildPeaks.recordedAt, new Date(Date.now() - PEAK_WINDOW_MS)));
     peakCache = { at: Date.now(), bytes: row?.peak ? Number(row.peak) : null };
   } catch (err) {
     log.warn("Couldn't read recorded build peaks; sizing builds by the default budget:", err);
@@ -353,16 +353,19 @@ async function sweep(container: string | undefined, logLine: (line: string) => v
 
 async function recordPeak(deploymentId: string, bytes: number): Promise<void> {
   await db
-    .update(deployments)
-    .set({ buildMemoryPeak: sql`greatest(coalesce(${deployments.buildMemoryPeak}, 0), ${bytes})` })
-    .where(eq(deployments.id, deploymentId));
+    .insert(buildPeaks)
+    .values({ deploymentId, peakBytes: bytes })
+    .onConflictDoUpdate({
+      target: buildPeaks.deploymentId,
+      set: { peakBytes: sql`greatest(${buildPeaks.peakBytes}, excluded.peak_bytes)`, recordedAt: new Date() },
+    });
   peakCache = { at: 0, bytes: null };
 }
 
 export type BuildGate = {
-  deploymentId: string;
+  /** Without it the build is gated but neither records a peak nor pauses the sweeper's clock. */
+  deploymentId?: string;
   log: (line: string) => void;
-  wait?: WaitWriter;
   signal?: AbortSignal;
 };
 
@@ -370,7 +373,7 @@ export type BuildGate = {
 export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, build: () => Promise<T>): Promise<T> {
   const store = gateStores.redis;
   // A build that retries in the same deploy queues on its own token.
-  const id = `${gate.deploymentId}:${Math.random().toString(36).slice(2, 8)}`;
+  const id = `${gate.deploymentId ?? "build"}:${Math.random().toString(36).slice(2, 8)}`;
   let latest = await currentLimit(bounded);
   const limit = async () => (latest = await currentLimit(bounded)).limit;
 
@@ -384,7 +387,6 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   const waitOpts = {
     limit,
     signal: gate.signal,
-    onPosition: (ahead: number) => void gate.wait?.("build-slot", ahead),
     timeoutMs: WAIT_TIMEOUT_MS,
     pollMs: POLL_MS,
     positionPollMs: POSITION_POLL_MS,
@@ -409,13 +411,14 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       `[queue] Waiting for the builder: ${running ?? "?"} running, ${latest.limit} at a time` +
         (latest.pressured ? " (host memory under pressure)" : ""),
     );
-    void gate.wait?.("build-slot");
+    // Waiting doesn't count against the sweeper's running budget.
+    const clock = gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
     try {
       slot = local ? await waitForFifoSlot(gateStores.local, id, localOpts()) : await waitForFifoSlot(store, id, waitOpts);
     } finally {
-      await gate.wait?.(null);
+      await clock?.resume();
     }
-    gate.log("[queue] Builder free — starting the build");
+    gate.log("[queue] Builder free, starting build");
   }
   return runHeld(slot);
 
@@ -449,7 +452,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       const rise = sampler ? await sampler.stop() : null;
       const admits = await store.release(id, !ok).catch(() => null);
       // Alone at admission and nobody admitted since: the builder's rise is this build's.
-      if (ok && held.alone && admits === held.gen && rise !== null && rise > 0) {
+      if (ok && gate.deploymentId && held.alone && admits === held.gen && rise !== null && rise > 0) {
         await recordPeak(gate.deploymentId, rise).catch((err) => log.warn("Couldn't record the build's memory peak:", err));
       }
       // A build that ended badly may have left steps running; clear them now if the builder is idle.
