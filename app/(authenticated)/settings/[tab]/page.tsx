@@ -5,6 +5,7 @@ import { currentActor } from "@/lib/app-services/session-actor";
 import { pageData } from "@/lib/app-services/page";
 import { loadOrgDomainSettings, loadOrgGeneralSettings } from "@/lib/app-services/settings";
 import { listBackupAppOptions } from "@/lib/app-services/backups";
+import { listProjectOptions } from "@/lib/app-services/projects";
 import { loadInvitationsTab, loadTeamTab } from "@/lib/app-services/team";
 import { OrgEnvVarsEditor } from "../org-env-vars";
 import { OrgDomainEditor } from "../org-domain-editor";
@@ -91,14 +92,18 @@ export default async function OrgSettingsTabPage({
       return <BackupPage scope="org" orgId={orgId} apps={appList} />;
     }
 
-    case "notifications":
+    case "notifications": {
+      const projectOptions = (await pageData(listProjectOptions(actor)))
+        .map((p) => ({ id: p.id, name: p.displayName || p.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       return (
         <div className="space-y-4">
-          <NotificationChannelsEditor orgId={orgId} />
+          <NotificationChannelsEditor orgId={orgId} projects={projectOptions} />
           <NotificationCategoriesEditor orgId={orgId} />
           <DigestSettingsEditor orgId={orgId} />
         </div>
       );
+    }
 
     case "team": {
       const [organizations, team] = await Promise.all([getUserOrganizations(), pageData(loadTeamTab(actor))]);
