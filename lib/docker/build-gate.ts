@@ -18,6 +18,7 @@ import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { waitForFifoSlot, type SlotStore } from "./fifo-slots";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
+import { builderLimitBytes, sizeBuildKit } from "./buildkit-size";
 
 const log = logger.child("build-gate");
 
@@ -252,8 +253,10 @@ export function buildLimit(input: BuildLimitInput): { limit: number; usableBytes
 
 async function currentLimit(bounded: BoundedBuild) {
   const host = detectedHost();
+  // The live limit: an earlier build into an empty builder may have resized it.
+  const live = bounded.container ? await builderLimitBytes(bounded.container) : null;
   return buildLimit({
-    limitBytes: bounded.limitBytes ?? 0,
+    limitBytes: live ?? bounded.limitBytes ?? 0,
     hostMemoryBytes: host?.memoryBytes ?? totalmem(),
     cpus: hostCpuCount(host),
     largestPeakBytes: await largestRecentPeak(),
@@ -445,6 +448,12 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       if (held.alone) {
         try {
           await sweep(bounded.container, gate.log);
+          // Nothing builds while the sweep hold is set, so BuildKit can be resized now.
+          const container = bounded.container;
+          if (container) {
+            const sized = await sizeBuildKit(container, { builderBytes: () => builderMemory(container), log: gate.log });
+            if (sized !== null) bounded.limitBytes = sized;
+          }
         } finally {
           await store.endSweep().catch(() => {});
         }
