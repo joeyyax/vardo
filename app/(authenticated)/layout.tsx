@@ -10,6 +10,7 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
+import { WorkerOfflineStrip } from "@/components/layout/worker-offline-strip";
 import { AttentionProvider } from "@/components/attention-provider";
 import { CapabilitiesProvider } from "@/components/capabilities-provider";
 import { capabilitiesFor } from "@/lib/auth/permissions";
@@ -75,6 +76,7 @@ export default async function AppLayout({
                 activityEnabled={activityEnabled}
                 cronEnabled={cronEnabled}
               />
+              <WorkerOfflineStrip />
               <AttentionBar />
             </div>
 

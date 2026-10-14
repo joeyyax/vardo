@@ -4,7 +4,7 @@ import { NextResponse, after } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
@@ -21,8 +21,6 @@ export type EventScope = {
   trigger: "webhook" | "relay";
   /** Orgs whose apps the event may deploy, or why it deploys nothing. */
   resolveOrgs: () => Promise<{ orgIds: string[] } | { skipped: string }>;
-  /** Await each deploy before answering. The relay answers first. */
-  waitForDeploys: boolean;
   onMatched?: (apps: MatchedApp[]) => void | Promise<void>;
 };
 
@@ -79,31 +77,23 @@ export async function handlePushEvent(event: PushEvent, scope: EventScope): Prom
 
   await scope.onMatched?.(matching.map((a) => ({ id: a.id, name: a.name, organizationId: a.organizationId })));
 
-  const deployOne = async (app: (typeof matching)[number]) => {
+  const results = [];
+  for (const app of matching) {
     log.info(`Auto-deploying ${app.displayName} (${app.name})`);
     try {
-      const result = await requestDeploy({
+      const { id } = await enqueueDeploy({
         appId: app.id,
-        organizationId: app.organizationId,
         trigger: scope.trigger,
         // The pushed commit, not whatever the branch points at when the deploy clones.
         gitSha: pushedSha(headSha),
         pinIntent: "push",
       });
-      return { app: app.name, deploymentId: result.deploymentId, success: result.success };
+      results.push({ app: app.name, deploymentId: id });
     } catch (err) {
-      return { app: app.name, error: err instanceof Error ? err.message : "Deploy failed" };
+      results.push({ app: app.name, error: err instanceof Error ? err.message : "Couldn't queue the deploy" });
     }
-  };
-
-  if (!scope.waitForDeploys) {
-    for (const app of matching) void deployOne(app);
-    return NextResponse.json({ ok: true, accepted: matching.map((a) => a.name) }, { status: 202 });
   }
-
-  const results = [];
-  for (const app of matching) results.push(await deployOne(app));
-  return NextResponse.json({ ok: true, deployments: results });
+  return NextResponse.json({ ok: true, accepted: matching.map((a) => a.name), deployments: results }, { status: 202 });
 }
 
 /** Creates, refreshes or tears down preview environments for a pull request. */

@@ -125,7 +125,7 @@ function stageCalls(): StageCall[] {
 
 const onStage = vi.fn();
 
-function abortedSignal(reason: { supersededBy?: string; killed?: boolean }): AbortSignal {
+function abortedSignal(reason: import("@/lib/docker/deploy").DeployAbortReason): AbortSignal {
   const controller = new AbortController();
   controller.abort(reason);
   return controller.signal;
@@ -157,7 +157,7 @@ describe("runDeployment terminal stages", () => {
     const result = await runDeployment("dep-1", {
       ...OPTS,
       onStage,
-      signal: abortedSignal({ killed: true }),
+      signal: abortedSignal({ killed: true, reason: "user" }),
     });
 
     expect(stageCalls().at(-1)?.[1]).toBe("failed");
@@ -168,7 +168,7 @@ describe("runDeployment terminal stages", () => {
     const result = await runDeployment("dep-1", {
       ...OPTS,
       onStage,
-      signal: abortedSignal({ supersededBy: "dep-2" }),
+      signal: abortedSignal({ superseded: true, supersededBy: "dep-2" }),
     });
 
     expect(stageCalls().at(-1)?.[1]).toBe("failed");

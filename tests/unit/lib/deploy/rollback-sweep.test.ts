@@ -44,11 +44,6 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis-lock", () => lockMock);
 vi.mock("@/lib/docker/slots", () => slotsMock);
 vi.mock("@/lib/docker/rollback-monitor", () => rollbackMock);
-vi.mock("@/lib/docker/deploy-concurrency", () => ({
-  removeFromQueue: vi.fn(),
-  reconcileActiveCounter: vi.fn(),
-  reconcileQueue: vi.fn(),
-}));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: vi.fn() }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("id") }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));

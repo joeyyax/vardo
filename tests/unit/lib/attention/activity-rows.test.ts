@@ -27,6 +27,31 @@ describe("activityRows", () => {
     });
   });
 
+  it("shows a queued deployment as queued, not deploying", () => {
+    const rows = activityRows([alpha], {
+      deployments: [{ id: "d1", appId: "app-alpha", gitSha: null, startedAt: new Date(), status: "queued" }],
+      backups: [],
+    });
+
+    expect(rows.map((r) => [r.key, r.label])).toEqual([["deploy-queued", "Queued"]]);
+    expect(rows[0].items[0]).toMatchObject({ id: "d1", name: "Alpha" });
+  });
+
+  it("shows an app with a running deploy as deploying even with one queued behind it", () => {
+    const rows = activityRows([alpha, beta], {
+      deployments: [
+        { id: "next", appId: "app-alpha", gitSha: null, startedAt: new Date("2026-08-01T12:00:00Z"), status: "queued" },
+        { id: "now", appId: "app-alpha", gitSha: null, startedAt: new Date("2026-08-01T11:00:00Z"), status: "running" },
+        { id: "waits", appId: "app-beta", gitSha: null, startedAt: new Date("2026-08-01T10:00:00Z"), status: "queued" },
+      ],
+      backups: [],
+    });
+
+    expect(rows.map((r) => r.label)).toEqual(["Deploying", "Queued"]);
+    expect(rows[0].items.map((i) => i.id)).toEqual(["now"]);
+    expect(rows[1].items.map((i) => i.id)).toEqual(["waits"]);
+  });
+
   it("builds a backup-running row from running backups", () => {
     const rows = activityRows([beta], {
       deployments: [],

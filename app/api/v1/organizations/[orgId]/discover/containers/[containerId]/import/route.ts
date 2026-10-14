@@ -16,8 +16,10 @@ import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
+import { workerMissing } from "@/lib/deploy/waiting";
 import {
+  IMPORT_NEEDS_WORKER,
   resolveProjectForImport,
   runAsyncContainerMigration,
 } from "@/lib/docker/import";
@@ -78,6 +80,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const gate = await requirePlugin("container-import");
     if (gate) return gate;
+    if (await workerMissing()) return NextResponse.json({ error: IMPORT_NEEDS_WORKER }, { status: 503 });
 
     if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
@@ -318,12 +321,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // The client polls this deployment ID while the migration runs async.
     // On deploy failure the original container restarts.
 
-    const deploymentId = await createDeployment({
-      appId,
-      organizationId: orgId,
-      trigger: "api",
-      triggeredBy: org.session.user.id,
-    });
+    // Held until the originals stop, so no executor claims it first.
+    const { id: deploymentId } = await enqueueDeploy(
+      { appId, trigger: "api", triggeredBy: org.session.user.id },
+      { hold: true },
+    );
 
     runAsyncContainerMigration({
       containerIds: [containerId],

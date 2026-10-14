@@ -6,7 +6,7 @@ vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.f
 
 const {
   dbMock,
-  requestDeployMock,
+  deployAndWaitMock,
   deleteAppMock,
   loadTemplatesMock,
   ensureVardoOrgMock,
@@ -48,7 +48,7 @@ const {
 
   return {
     dbMock,
-    requestDeployMock: vi.fn(),
+    deployAndWaitMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
     loadTemplatesMock: vi.fn(async () => [template("loki"), template("promtail")]),
     ensureVardoOrgMock: vi.fn(async () => ({ id: "org-1" })),
@@ -58,7 +58,8 @@ const {
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/templates/load", () => ({ loadTemplates: loadTemplatesMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: requestDeployMock }));
+vi.mock("@/lib/deploy/request", () => ({ deployAndWait: deployAndWaitMock }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: vi.fn() }));
 vi.mock("@/lib/docker/delete-app", () => ({ deleteApp: deleteAppMock }));
 vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: ensureVardoOrgMock }));
 vi.mock("@/lib/logger", () => ({
@@ -70,20 +71,20 @@ import { provisionForFlag } from "@/lib/infra/provision";
 
 describe("provisionForFlag — install rollback (#741)", () => {
   beforeEach(() => {
-    requestDeployMock.mockReset();
+    deployAndWaitMock.mockReset();
     deleteAppMock.mockClear();
     dbMock.query.apps.findFirst.mockResolvedValue(null);
   });
 
   it("does not roll back when the first deploy succeeds", async () => {
-    requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: true, log: "", durationMs: 1 });
+    deployAndWaitMock.mockResolvedValue({ deploymentId: "d1", status: "success", success: true, log: "", durationMs: 1 });
 
     await expect(provisionForFlag("logging", true)).resolves.toBeUndefined();
     expect(deleteAppMock).not.toHaveBeenCalled();
   });
 
   it("rolls back the app and throws when the first deploy fails", async () => {
-    requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: false, log: "boom", durationMs: 1 });
+    deployAndWaitMock.mockResolvedValue({ deploymentId: "d1", status: "failed", success: false, log: "boom", durationMs: 1 });
 
     await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
     expect(deleteAppMock).toHaveBeenCalledTimes(1);
@@ -93,7 +94,7 @@ describe("provisionForFlag — install rollback (#741)", () => {
   });
 
   it("rolls back a deploy that throws outright", async () => {
-    requestDeployMock.mockRejectedValue(new Error("queue exploded"));
+    deployAndWaitMock.mockRejectedValue(new Error("queue exploded"));
 
     await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
     expect(deleteAppMock).toHaveBeenCalledTimes(1);
@@ -101,9 +102,9 @@ describe("provisionForFlag — install rollback (#741)", () => {
 
   it("rolls back already-installed siblings when a later template fails (all-or-nothing)", async () => {
     // logging → [loki, promtail]: loki deploys, promtail fails.
-    requestDeployMock
-      .mockResolvedValueOnce({ deploymentId: "d1", success: true, log: "", durationMs: 1 })
-      .mockResolvedValueOnce({ deploymentId: "d2", success: false, log: "boom", durationMs: 1 });
+    deployAndWaitMock
+      .mockResolvedValueOnce({ deploymentId: "d1", status: "success", success: true, log: "", durationMs: 1 })
+      .mockResolvedValueOnce({ deploymentId: "d2", status: "failed", success: false, log: "boom", durationMs: 1 });
 
     await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
     // promtail rolls itself back + loki sibling rolled back = 2.
@@ -112,7 +113,7 @@ describe("provisionForFlag — install rollback (#741)", () => {
 
   it("is a no-op for a disabled flag (containers keep running)", async () => {
     await expect(provisionForFlag("logging", false)).resolves.toBeUndefined();
-    expect(requestDeployMock).not.toHaveBeenCalled();
+    expect(deployAndWaitMock).not.toHaveBeenCalled();
     expect(deleteAppMock).not.toHaveBeenCalled();
   });
 });

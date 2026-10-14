@@ -53,6 +53,7 @@ vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
   sendDeployNotification: vi.fn().mockResolvedValue(undefined),
   recordSelfUpdate: vi.fn().mockResolvedValue(undefined),
+  ownedRow: vi.fn(() => undefined),
 }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
@@ -75,9 +76,9 @@ vi.mock("@/lib/docker/image-updates/major-gate-store", () => ({
   clearMajorGateBlock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/restart-policy", () => ({ demoteStandbyRestart: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/docker/deploy-concurrency", () => ({
-  isDeployQueueDrained: queueDrained,
-  releaseConcurrencySlot: vi.fn().mockResolvedValue(undefined),
+// Drained: no other deploy running.
+vi.mock("@/lib/deploy/queue", () => ({
+  runningExcept: vi.fn(async () => ((await queueDrained()) ? 0 : 1)),
 }));
 vi.mock("child_process", () => ({
   execFile: (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, out?: unknown) => void) => {

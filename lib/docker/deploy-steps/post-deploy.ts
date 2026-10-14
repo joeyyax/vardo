@@ -29,8 +29,8 @@ import { syncComposeServices } from "../compose-sync";
 import { readProjectConfig } from "@/lib/config/vardo-config";
 import { observedMajors } from "./major-gate";
 import { clearMajorGateBlock } from "../image-updates/major-gate-store";
-import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
-import { drainForSelfStop, endSelfDrain, SELF_DRAIN_TIMEOUT_MS } from "../deploy-cancel";
+import { runningExcept } from "@/lib/deploy/queue";
+import { applyRollbackToApp } from "../rollback-target";
 import { backupDrainTimeoutMs, drainBackupsForStop, endBackupDrain } from "@/lib/backups/in-flight";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
@@ -42,7 +42,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS } from "../prune-lock";
 import { markDeployForReclaim } from "../host-reclaim/state";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
-import { checkEndpoint, recordSelfUpdate, sendDeployNotification } from "../deploy";
+import { checkEndpoint, ownedRow, recordSelfUpdate, sendDeployNotification } from "../deploy";
 import {
   announcePostDeployIncomplete,
   incompleteLogLine,
@@ -386,7 +386,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       slot: ctx.newSlot,
       ...(swapUnfinished.length > 0 && { postDeployError: swapUnfinished.join("\n") }),
     })
-    .where(and(eq(deployments.id, ctx.deploymentId), inArray(deployments.status, ["queued", "running"])))
+    .where(ownedRow(ctx.deploymentId, ctx.claimedBy))
     .returning({ id: deployments.id })
     .then((rows) => rows.length > 0);
 
@@ -424,6 +424,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
     // A successful deploy clears the operator stop.
     await setParked(ctx.appId, false);
+
+    if (ctx.rollbackTarget) await applyRollbackToApp(ctx.appId, app.organizationId, ctx.rollbackTarget, log);
   }
 
   for (const reason of swapUnfinished) await announcePostDeployIncomplete(ctx, reason);
@@ -515,7 +517,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
 
     // Host-global prunes delete layers other in-flight pulls are writing; only the last deploy prunes.
-    const drained = await isDeployQueueDrained();
+    const drained = (await runningExcept(ctx.deploymentId).catch(() => 1)) === 0;
     const pruneLock = drained ? await acquireLock(PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS) : null;
     if (!drained) {
       log("[deploy] Deferring image prune — other deploys are still in flight");
@@ -615,18 +617,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // The old slot runs this process, so this stop must stay last.
   if (ctx.stopOldSlot && ctx.stopOldSlotEndsDeploy) {
-    // The usual `finally` release never runs once this process stops.
-    await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
-    const [cutOff, backupsCutOff] = await Promise.all([
-      drainForSelfStop(ctx.appId, log).catch(() => [] as string[]),
-      // Waits on and pauses the old slot's worker too.
-      drainBackupsForStop(log, backupDrainTimeoutMs(), 1000, { slot: activeSlot }).catch(() => [] as string[]),
-    ]);
-    if (cutOff.length > 0) {
-      await unfinishedWork(
-        `the stop cut off deploy(s) still running after ${SELF_DRAIN_TIMEOUT_MS / 60_000} minutes: ${cutOff.join(", ")}`,
-      );
-    }
+    // Waits on and pauses the old slot's worker too.
+    const backupsCutOff = await drainBackupsForStop(log, backupDrainTimeoutMs(), 1000, { slot: activeSlot }).catch(() => [] as string[]);
     if (backupsCutOff.length > 0) {
       await unfinishedWork(
         `the stop cut off backup work still running after ${backupDrainTimeoutMs() / 60_000} minutes, so the new console reruns it: ${backupsCutOff.join(", ")}`,
@@ -634,10 +626,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
     // A slot that won't stop keeps serving, so it takes deploys and backups again.
-    if (!(await stopOldSlot())) {
-      endSelfDrain();
-      endBackupDrain();
-    }
+    if (!(await stopOldSlot())) endBackupDrain();
   }
 
   return ctx;

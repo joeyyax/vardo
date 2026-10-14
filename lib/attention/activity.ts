@@ -22,6 +22,7 @@ export async function getFleetActivity(appIds: string[]): Promise<FleetActivity>
         appId: deployments.appId,
         gitSha: deployments.gitSha,
         startedAt: deployments.startedAt,
+        status: deployments.status,
       })
       .from(deployments)
       .where(

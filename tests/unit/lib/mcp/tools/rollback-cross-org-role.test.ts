@@ -12,7 +12,7 @@ const appFindFirst = vi.fn();
 const environmentFindFirst = vi.fn();
 const deploymentFindFirst = vi.fn();
 const membershipFindFirst = vi.fn();
-const createDeployment = vi.fn();
+const enqueueDeploy = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -26,12 +26,8 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("@/lib/docker/deploy", () => ({
-  createDeployment: (...a: unknown[]) => createDeployment(...a),
-}));
-
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  requestDeploy: async () => ({ success: true }),
+vi.mock("@/lib/deploy/queue", () => ({
+  enqueueDeploy: (...a: unknown[]) => enqueueDeploy(...a),
 }));
 
 vi.mock("@/lib/api/rate-limit", () => ({
@@ -68,7 +64,7 @@ function parse(res: { content: { text: string }[] }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  createDeployment.mockResolvedValue("dep-new");
+  enqueueDeploy.mockResolvedValue({ id: "dep-new", scopeKey: "a1", superseded: [], cancelRequested: [] });
   appFindFirst.mockResolvedValue({ id: "a1", name: "vardo", organizationId: OTHER });
   environmentFindFirst.mockResolvedValue({ type: "production" });
   deploymentFindFirst.mockResolvedValue({
@@ -90,7 +86,7 @@ describe("GPU rollback in a widened org", () => {
 
     expect(res.isError).toBe(true);
     expect(parse(res).error).toMatch(/Only owners and admins/);
-    expect(createDeployment).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("allows it when the user is an owner of the app's org", async () => {
@@ -99,9 +95,13 @@ describe("GPU rollback in a widened org", () => {
     const res = await (await rollback(true))(args);
 
     expect(res.isError).toBeFalsy();
-    expect(createDeployment).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: OTHER })
-    );
+    expect(enqueueDeploy).toHaveBeenCalledWith({
+      appId: "a1",
+      trigger: "rollback",
+      triggeredBy: "u1",
+      rollback: { targetDeploymentId: "dep-old", includeEnvVars: false },
+    });
+    expect(parse(res)).toMatchObject({ deploymentId: "dep-new", status: "queued" });
   });
 
   it("refuses outright without a cross-org flag", async () => {
@@ -142,7 +142,7 @@ describe("restoring env vars through a rollback", () => {
     const res = await (await rollbackWithScope("deploy"))({ appId: "a1", deploymentId: "dep-old", includeEnvVars: true });
     expect(res.isError).toBe(true);
     expect(parse(res).error).toMatch(/permission to change them/);
-    expect(createDeployment).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("still lets a deploy-scoped token roll back without env vars", async () => {
@@ -153,5 +153,8 @@ describe("restoring env vars through a rollback", () => {
   it("allows a token that may write env vars", async () => {
     const res = await (await rollbackWithScope("full"))({ appId: "a1", deploymentId: "dep-old", includeEnvVars: true });
     expect(res.isError).toBeFalsy();
+    expect(enqueueDeploy).toHaveBeenCalledWith(
+      expect.objectContaining({ rollback: { targetDeploymentId: "dep-old", includeEnvVars: true } }),
+    );
   });
 });

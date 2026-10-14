@@ -88,11 +88,14 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(await q.claimDeploys("w", { capacity: 10 })).toEqual([]);
     });
 
-    it("takes the scope from a running row inserted outside the queue without throwing", async () => {
+    it("a pre-queue running row holds every scope of its app until it ends", async () => {
       await seed("q1", "a1", "manual", "queued");
-      // A legacy row with no scope doesn't block the scope.
+      await seed("q-stage", "a1", "manual", "queued", { scope: "a1:e-stage" });
+      await seed("other", "a2", "manual", "queued");
       await seed("legacy", "a1", "manual", "running", { scope: null });
-      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["q1"]);
+      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["other"]);
+      await finish("legacy");
+      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id).sort()).toEqual(["q-stage", "q1"]);
     });
   });
 
@@ -225,6 +228,28 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
     });
   });
 
+  describe("releasing a pre-queue push", () => {
+    it("gives way to a newer queued or running push and leaves it alone", async () => {
+      await seed("old", "a1", "webhook", "queued", { ageS: 300, scope: null });
+      await seed("new-build", "a1", "webhook", "running", { ageS: 60, stage: "build", claimedBy: "w" });
+      await seed("new-queued", "a1", "poll", "queued", { ageS: 30 });
+      expect(await q.releaseHeldDeploy("old")).toBe(false);
+      expect(await row("old")).toMatchObject({ status: "superseded", superseded_by: "new-queued", scope_key: null });
+      expect(await row("new-queued")).toMatchObject({ status: "queued", superseded_by: null });
+      expect(await row("new-build")).toMatchObject({ status: "running", cancel_requested_at: null });
+    });
+
+    it("supersedes older queued pushes when it is the newest", async () => {
+      await seed("older", "a1", "webhook", "queued", { ageS: 600 });
+      await seed("old", "a1", "webhook", "queued", { ageS: 300, scope: null });
+      await seed("other-env", "a1", "webhook", "queued", { ageS: 10, scope: "a1:e-stage" });
+      expect(await q.releaseHeldDeploy("old")).toBe(true);
+      expect(await row("old")).toMatchObject({ status: "queued", scope_key: "a1" });
+      expect(await row("older")).toMatchObject({ status: "superseded", superseded_by: "old" });
+      expect(await row("other-env")).toMatchObject({ status: "queued" });
+    });
+  });
+
   describe("cancel", () => {
     it("cancels a queued row outright; it is never claimed", async () => {
       await seed("q1", "a1", "manual", "queued");
@@ -324,6 +349,24 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(res.waitedMs).toBeGreaterThanOrEqual(100);
     });
 
+    it("waits for a claim already in flight and counts what it claimed", async () => {
+      await seed("self", "self", "manual", "running");
+      await seed("q1", "a1", "manual", "queued");
+      // A claim that has checked for a hold and not yet committed.
+      const claimer = await sql.reserve();
+      await claimer`begin`;
+      await claimer`select pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`;
+      await claimer`update deployment set status = 'running', claimed_by = 'w' where id = 'q1'`;
+      const pending = q.requestExclusive("self", { timeoutMs: 0 });
+      try {
+        await sleep(300);
+      } finally {
+        await claimer`commit`;
+        claimer.release();
+      }
+      expect((await pending).running).toBe(1);
+    });
+
     it("clears the flag when the wait is aborted", async () => {
       await seed("self", "self", "manual", "running");
       await seed("b1", "a1", "manual", "running");
@@ -410,6 +453,44 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       await sql`delete from deployment where id = 'q1'`;
       await seed("r2", "a2", "manual", "running");
       expect(await q.isDeployQueueDrainedInDb()).toBe(false);
+    });
+  });
+
+  describe("enterSwap", () => {
+    it("retries a failed write instead of reading it as a lost claim, and throws once Postgres stays away", async () => {
+      const { db } = await import("@/lib/db");
+      await seed("r1", "a1", "manual", "queued");
+      await q.claimDeploys("w", { capacity: 5 });
+      const update = vi.spyOn(db, "update");
+      try {
+        update.mockImplementationOnce(() => {
+          throw new Error("connection reset");
+        });
+        expect(await q.enterSwap("w", "r1", { retryEveryMs: 10 })).toBe(true);
+        expect((await sql`select stage from deployment where id = 'r1'`)[0].stage).toBe("deploy");
+
+        update.mockImplementation(() => {
+          throw new Error("connection reset");
+        });
+        await expect(q.enterSwap("w", "r1", { retryEveryMs: 10, retryForMs: 50 })).rejects.toThrow(/Couldn't confirm/);
+      } finally {
+        update.mockRestore();
+      }
+      expect(await q.enterSwap("other", "r1")).toBe(false);
+    });
+  });
+
+  describe("awaitClaim", () => {
+    it("returns once claimed, and cancels a row nobody claims in time", async () => {
+      await seed("q1", "a1", "manual", "queued");
+      const pending = q.awaitClaim("q1", 5_000, { pollMs: 20 });
+      await sleep(60);
+      await q.claimDeploys("w", { capacity: 5 });
+      expect(await pending).toBe(true);
+
+      await seed("q2", "a2", "manual", "queued");
+      expect(await q.awaitClaim("q2", 100, { pollMs: 20 })).toBe(false);
+      expect(await row("q2")).toMatchObject({ status: "cancelled", cancel_reason: "timeout" });
     });
   });
 

@@ -8,8 +8,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const SECRET = "whsec";
 
-const { requestDeploy, links, appRows } = vi.hoisted(() => ({
-  requestDeploy: vi.fn(),
+const { enqueueDeploy, links, appRows } = vi.hoisted(() => ({
+  enqueueDeploy: vi.fn(),
   links: new Map<number, string[]>(),
   appRows: [] as { id: string; name: string; displayName: string; organizationId: string; gitUrl: string; gitBranch: string; autoDeploy: boolean; isSystemManaged: boolean }[],
 }));
@@ -19,7 +19,7 @@ const dialect = new PgDialect();
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: async () => null }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: async () => null }));
 vi.mock("@/lib/system-settings", () => ({ getGitHubAppConfig: async () => ({ webhookSecret: SECRET }) }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy }));
 vi.mock("@/lib/docker/preview", () => ({ createPreview: vi.fn(), destroyPreview: vi.fn() }));
 vi.mock("@/lib/docker/self-preview", () => ({
   getSystemManagedApp: vi.fn(),
@@ -80,8 +80,8 @@ const app = (id: string, organizationId: string) => ({
 });
 
 beforeEach(() => {
-  requestDeploy.mockReset();
-  requestDeploy.mockResolvedValue({ deploymentId: "d1", success: true });
+  enqueueDeploy.mockReset();
+  enqueueDeploy.mockResolvedValue({ id: "d1", scopeKey: "vardo-site", superseded: [], cancelRequested: [] });
   links.clear();
   appRows.length = 0;
   appRows.push(app("ops-site", "org-ops"), app("vardo-site", "org-vardo"));
@@ -93,9 +93,11 @@ describe("push webhook scope", () => {
 
     const res = await push(2);
 
-    expect(res.status).toBe(200);
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
-    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", organizationId: "org-vardo" }));
+    // Queued and answered at once; the deploy runs in its executor.
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({ accepted: ["vardo-site"], deployments: [{ app: "vardo-site", deploymentId: "d1" }] });
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", trigger: "webhook" }));
   });
 
   it("pins the deploy to the pushed commit", async () => {
@@ -104,7 +106,7 @@ describe("push webhook scope", () => {
 
     await push(2, sha);
 
-    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha, pinIntent: "push" }));
+    expect(enqueueDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "vardo-site", gitSha: sha, pinIntent: "push" }));
   });
 
   it("deploys nothing when the push deleted the branch", async () => {
@@ -113,7 +115,7 @@ describe("push webhook scope", () => {
     const res = await push(2, "0000000000000000000000000000000000000000", { deleted: true });
 
     expect((await res.json()).skipped).toBe("branch deleted");
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("deploys nothing for an all-zero after, as a relayed deletion carries it", async () => {
@@ -122,7 +124,7 @@ describe("push webhook scope", () => {
     const res = await push(2, "0000000000000000000000000000000000000000");
 
     expect((await res.json()).skipped).toBe("branch deleted");
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it.each(["abc1234", "not-a-sha"])("pins nothing for after=%s", async (after) => {
@@ -130,14 +132,14 @@ describe("push webhook scope", () => {
 
     await push(2, after);
 
-    expect(requestDeploy).toHaveBeenCalledWith(expect.objectContaining({ gitSha: undefined }));
+    expect(enqueueDeploy).toHaveBeenCalledWith(expect.objectContaining({ gitSha: undefined }));
   });
 
   it("deploys nothing for an installation no org has linked", async () => {
     const res = await push(99);
 
     expect((await res.json()).skipped).toBe("installation not linked");
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("deploys nothing without an installation in the payload", async () => {
@@ -146,6 +148,6 @@ describe("push webhook scope", () => {
     const res = await push(undefined);
 
     expect((await res.json()).skipped).toBe("no installation");
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 });

@@ -8,7 +8,7 @@ import {
   } from "@/lib/db/schema";
 import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
-import { requestDeploy } from "./deploy-cancel";
+import { deployAndWait } from "@/lib/deploy/request";
 
 type GroupDeployOpts = {
   projectId: string;
@@ -241,17 +241,21 @@ export async function deployGroup(
         const node = graph.get(appName)!;
         const envId = appEnvironmentIds.get(node.id);
 
-        const result = await requestDeploy({
-          appId: node.id,
-          organizationId: opts.organizationId,
-          trigger: opts.trigger,
-          triggeredBy: opts.triggeredBy,
-          environmentId: envId,
-          groupEnvironmentId: opts.groupEnvironmentId,
-          onLog: (line) => opts.onLog?.(appName, line),
-          onStage: (stage, status) => opts.onStage?.(appName, stage, status),
-          signal: opts.signal,
-        });
+        const result = await deployAndWait(
+          {
+            appId: node.id,
+            trigger: opts.trigger,
+            triggeredBy: opts.triggeredBy,
+            environmentId: envId,
+            groupEnvironmentId: opts.groupEnvironmentId,
+          },
+          {
+            onLog: (line) => opts.onLog?.(appName, line),
+            onStage: (stage, status) => opts.onStage?.(appName, stage, status as "running" | "success" | "failed" | "skipped"),
+            onWaiting: (message) => opts.onLog?.(appName, `[queue] ${message}`),
+            signal: opts.signal,
+          },
+        );
 
         return {
           appId: node.id,

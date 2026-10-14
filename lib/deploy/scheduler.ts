@@ -1,6 +1,8 @@
 import {
+  sweepExpiredLeases,
+  sweepGroupJobs,
+  sweepQueuedDeployments,
   sweepStuckDeployments,
-  sweepStuckQueuedDeployments,
   sweepRollbackWatches,
   sweepStandbySlots,
 } from "./sweeper";
@@ -14,12 +16,15 @@ const STANDBY_INTERVAL_MS = 5 * 60_000;
 
 const STREAM_EXPIRY_INTERVAL_MS = 60 * 60_000;
 
+// Every 15 seconds: a lease lapses 45 seconds after its executor stops.
 export const deploySweepLoop = new IntervalLoop({
   name: "deploy-sweep",
-  intervalMs: 60_000,
+  intervalMs: 15_000,
   run: async () => {
+    await sweepExpiredLeases();
+    await sweepGroupJobs();
     await sweepStuckDeployments();
-    await sweepStuckQueuedDeployments();
+    await sweepQueuedDeployments();
   },
 });
 

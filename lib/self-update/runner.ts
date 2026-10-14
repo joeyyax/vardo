@@ -76,7 +76,8 @@ export async function collectGateInputs(targetSha: string, state: UpdateState): 
   const now = new Date();
   const staleBefore = new Date(now.getTime() - BACKUP_STALE_MS);
   const [active, runningBackupRows, openRuns, restores, drills, unhealthy] = await Promise.all([
-    db.select({ id: deployments.id }).from(deployments).where(inArray(deployments.status, ["queued", "running"])),
+    // Running only: queued deploys can wait for a worker this update may be fixing.
+    db.select({ id: deployments.id }).from(deployments).where(eq(deployments.status, "running")),
     db
       .select({ id: backups.id })
       .from(backups)
@@ -192,18 +193,12 @@ async function rollBack(run: UpdateRun, reason: string): Promise<void> {
     await reportFailed(run, reason, false);
     return;
   }
-  const { createDeployment } = await import("@/lib/docker/deploy");
-  const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
-  const opts = {
+  const { enqueueDeploy } = await import("@/lib/deploy/queue");
+  const { id: rollbackDeploymentId } = await enqueueDeploy({
     appId: app.id,
-    organizationId: app.organizationId,
-    trigger: "rollback" as const,
+    trigger: "rollback",
     rollback: { targetDeploymentId: run.previousDeploymentId },
-  };
-  const rollbackDeploymentId = await createDeployment(opts);
-  void requestDeploy({ ...opts, deploymentId: rollbackDeploymentId }).catch((err) =>
-    log.error(`Rollback ${rollbackDeploymentId} failed to run:`, err),
-  );
+  });
   await setUpdateRun({ ...run, state: "rolling-back", rollbackDeploymentId, error: reason });
   log.warn(`${reason}; rolling back as ${rollbackDeploymentId}`);
   await reportFailed(run, reason, true);

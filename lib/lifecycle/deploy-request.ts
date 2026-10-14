@@ -50,12 +50,10 @@ export async function triggerSelfDeploy(opts: { triggeredBy?: string; gitSha?: s
   });
   if (!app) throw new Error(`No system-managed "${VARDO_SELF_APP_NAME}" app to deploy`);
 
-  const { createDeployment } = await import("@/lib/docker/deploy");
-  const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
-  const deployOpts = { appId: app.id, organizationId: app.organizationId, trigger: "api" as const, triggeredBy: opts.triggeredBy };
-  const deploymentId = await createDeployment(deployOpts);
-  void requestDeploy({ ...deployOpts, deploymentId, gitSha: opts.gitSha }).catch((err) => log.error(`Deploy ${deploymentId} failed to run:`, err));
-  return { deploymentId };
+  // The console's claimer runs it.
+  const { enqueueDeploy } = await import("@/lib/deploy/queue");
+  const { id } = await enqueueDeploy({ appId: app.id, trigger: "api", triggeredBy: opts.triggeredBy, gitSha: opts.gitSha });
+  return { deploymentId: id };
 }
 
 async function writeJson(file: string, value: unknown): Promise<void> {

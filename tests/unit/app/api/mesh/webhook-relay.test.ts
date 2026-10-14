@@ -20,8 +20,8 @@ const state = vi.hoisted(() => ({
   githubSecret: "whsec" as string | null,
 }));
 
-const { requestDeploy, fanOutRelay, recordActivity, createPreview } = vi.hoisted(() => ({
-  requestDeploy: vi.fn(),
+const { enqueueDeploy, fanOutRelay, recordActivity, createPreview } = vi.hoisted(() => ({
+  enqueueDeploy: vi.fn(),
   fanOutRelay: vi.fn(),
   recordActivity: vi.fn(),
   createPreview: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock("@/lib/system-settings", () => ({
   getGitHubAppConfig: async () => (state.githubSecret ? { webhookSecret: state.githubSecret } : null),
   getInstanceDisplayName: async () => "edge-1",
 }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy }));
 vi.mock("@/lib/docker/preview", () => ({ createPreview, destroyPreview: vi.fn() }));
 vi.mock("@/lib/docker/self-preview", () => ({
   getSystemManagedApp: vi.fn(),
@@ -166,8 +166,8 @@ beforeEach(() => {
     acceptWebhookRelay: true,
     tokenHash: createHash("sha256").update(TOKEN).digest("hex"),
   };
-  requestDeploy.mockReset();
-  requestDeploy.mockResolvedValue({ deploymentId: "d", success: true });
+  enqueueDeploy.mockReset();
+  enqueueDeploy.mockResolvedValue({ id: "d", scopeKey: "site-a", superseded: [], cancelRequested: [] });
   fanOutRelay.mockReset();
   recordActivity.mockReset();
   recordActivity.mockResolvedValue(undefined);
@@ -178,13 +178,13 @@ describe("relay signing", () => {
   it("refuses an unsigned relay", async () => {
     const res = await postRelay(relayOf(pushBody()), { sign: false });
     expect(res.status).toBe(401);
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("refuses a relay signed with another token", async () => {
     const res = await postRelay(relayOf(pushBody()), { token: "b".repeat(64) });
     expect(res.status).toBe(401);
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("refuses a replayed nonce", async () => {
@@ -192,7 +192,7 @@ describe("relay signing", () => {
     expect((await postRelay(relayOf(pushBody(), "d-1"), { nonce })).status).toBe(202);
     const replay = await postRelay(relayOf(pushBody(), "d-2"), { nonce });
     expect(replay.status).toBe(401);
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -202,7 +202,7 @@ describe("relay opt-in", () => {
     const res = await postRelay(relayOf(pushBody()));
     expect(res.status).toBe(403);
     expect((await res.json()).error).toContain("doesn't accept relayed webhooks from hub");
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
     expect(state.peerUpdates.at(-1)?.lastRelayReceivedStatus).toMatch(/^refused/);
   });
 
@@ -217,43 +217,43 @@ describe("delivery dedupe", () => {
     await postRelay(relayOf(pushBody(), "d-9"));
     const again = await postRelay(relayOf(pushBody(), "d-9"));
     expect((await again.json()).skipped).toBe("duplicate delivery");
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
   });
 
   it("skips a relay of a delivery that already arrived from GitHub", async () => {
     await postGithub(pushBody(), "d-7");
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
     const relayed = await postRelay(relayOf(pushBody(), "d-7"));
     expect((await relayed.json()).skipped).toBe("duplicate delivery");
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
   });
 
   it("skips a GitHub delivery that already arrived by relay", async () => {
     await postRelay(relayOf(pushBody(), "d-8"));
     const direct = await postGithub(pushBody(), "d-8");
     expect((await direct.json()).skipped).toBe("duplicate delivery");
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("matching parity", () => {
   it("deploys the same apps a direct webhook would, with the relay trigger", async () => {
     await postGithub(pushBody(), "direct-1");
-    const direct = requestDeploy.mock.calls.map(([o]) => ({ appId: o.appId, organizationId: o.organizationId, trigger: o.trigger }));
-    requestDeploy.mockClear();
+    const direct = enqueueDeploy.mock.calls.map(([o]) => ({ appId: o.appId, trigger: o.trigger }));
+    enqueueDeploy.mockClear();
     state.redisKeys.clear();
 
     await postRelay(relayOf(pushBody(), "relay-1"));
-    const relayed = requestDeploy.mock.calls.map(([o]) => ({ appId: o.appId, organizationId: o.organizationId, trigger: o.trigger }));
+    const relayed = enqueueDeploy.mock.calls.map(([o]) => ({ appId: o.appId, trigger: o.trigger }));
 
-    expect(direct).toEqual([{ appId: "site-a", organizationId: "org-a", trigger: "webhook" }]);
-    expect(relayed).toEqual([{ appId: "site-a", organizationId: "org-a", trigger: "relay" }]);
+    expect(direct).toEqual([{ appId: "site-a", trigger: "webhook" }]);
+    expect(relayed).toEqual([{ appId: "site-a", trigger: "relay" }]);
   });
 
   it("reaches every org when the peer isn't bound to one", async () => {
     state.peer!.organizationId = null;
     await postRelay(relayOf(pushBody()));
-    expect(requestDeploy.mock.calls.map(([o]) => o.appId).sort()).toEqual(["site-a", "site-b"]);
+    expect(enqueueDeploy.mock.calls.map(([o]) => o.appId).sort()).toEqual(["site-a", "site-b"]);
   });
 
   it("records the relay on the deployed app", async () => {
@@ -314,13 +314,13 @@ describe("GitHub re-verification", () => {
     const relay = { ...relayOf(pushBody(), "g-2", true), branch: "staging", ref: "refs/heads/staging" };
     const res = await postRelay(relay);
     expect(res.status).toBe(400);
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("falls back to the summary when this instance has a different secret", async () => {
     state.githubSecret = "other";
     const res = await postRelay(relayOf(pushBody(), "g-3", true));
     expect(res.status).toBe(202);
-    expect(requestDeploy).toHaveBeenCalledTimes(1);
+    expect(enqueueDeploy).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { apps, deployments } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { rm, symlink, rename } from "fs/promises";
 import { join } from "path";
 import { nanoid } from "nanoid";
@@ -25,7 +25,8 @@ import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 import { clearCutoverPin } from "./traefik-cutover";
 import { execFileAsync } from "@/lib/utils/exec";
 import { assertSlotWithinApp } from "./slot-guard";
-import { claimAppForOperation } from "./deploy-cancel";
+import { isScopeConflict, scopeKeyFor } from "@/lib/deploy/queue";
+import { instanceId } from "@/lib/worker/instance";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { isSelfApp } from "./self-env";
 import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
@@ -95,26 +96,53 @@ export async function checkStandbyAvailable(
   return { activeSlot, standbySlot, standbyAvailable, standbyServiceCount };
 }
 
+/** Takes the environment's scope with a running row, as a deploy would. Null when a deploy holds it. */
+async function claimScopeRow(opts: InstantRollbackOpts): Promise<string | null> {
+  const id = nanoid();
+  try {
+    await db.insert(deployments).values({
+      id,
+      appId: opts.appId,
+      status: "running",
+      trigger: "rollback",
+      triggeredBy: opts.userId,
+      environmentId: opts.env.id,
+      scopeKey: await scopeKeyFor(opts.appId, opts.env.id),
+      claimedBy: instanceId(),
+      leaseExpiresAt: sql`now() + ${ROLLBACK_CLAIM_TTL_MS}::int * interval '1 millisecond'`,
+      log: "[rollback] Instant rollback in progress",
+    });
+    return id;
+  } catch (err) {
+    if (isScopeConflict(err)) return null;
+    throw err;
+  }
+}
+
 export async function performInstantRollback(
   opts: InstantRollbackOpts,
 ): Promise<InstantRollbackResult> {
   // A deploy mid-swap owns both slots; flipping under it can leave neither serving.
-  const claim = await claimAppForOperation(opts.appId, "instant-rollback", ROLLBACK_CLAIM_TTL_MS);
-  if (!claim) {
+  const claimId = await claimScopeRow(opts);
+  if (!claimId) {
     return {
       success: false, deploymentId: "", fromSlot: "", toSlot: "", durationMs: 0,
       error: "A deploy is running for this app — wait for it to finish or cancel it, then roll back",
     };
   }
+  let result: InstantRollbackResult | null = null;
   try {
-    return await rollbackClaimed(opts);
+    result = await rollbackClaimed(opts, claimId);
+    return result;
   } finally {
-    await claim.release();
+    // Only a rollback that swapped keeps its row.
+    if (!result?.success) await db.delete(deployments).where(eq(deployments.id, claimId)).catch(() => {});
   }
 }
 
 async function rollbackClaimed(
   opts: InstantRollbackOpts,
+  deploymentId: string,
 ): Promise<InstantRollbackResult> {
   const { appId, appName, organizationId, userId, env } = opts;
   const startTime = Date.now();
@@ -310,7 +338,6 @@ async function rollbackClaimed(
   } catch { /* best-effort */ }
 
   const durationMs = Date.now() - startTime;
-  const deploymentId = nanoid();
 
   const standbyDeploy = await db.query.deployments.findFirst({
     where: and(
@@ -322,22 +349,20 @@ async function rollbackClaimed(
     columns: { id: true, gitSha: true, gitMessage: true, environmentId: true },
   });
 
-  await db.insert(deployments).values({
-    id: deploymentId,
-    appId,
-    status: "success",
-    trigger: "rollback",
-    triggeredBy: userId,
-    gitSha: standbyDeploy?.gitSha ?? null,
-    gitMessage: standbyDeploy?.gitMessage ?? null,
-    log: `[rollback] Instant rollback: ${activeSlot} → ${standbySlot} (${durationMs}ms)`,
-    durationMs,
-    slot: standbySlot,
-    rollbackFromId: standbyDeploy?.id ?? null,
-    environmentId: standbyDeploy?.environmentId ?? env.id,
-    startedAt: new Date(),
-    finishedAt: new Date(),
-  });
+  await db
+    .update(deployments)
+    .set({
+      status: "success",
+      gitSha: standbyDeploy?.gitSha ?? null,
+      gitMessage: standbyDeploy?.gitMessage ?? null,
+      log: `[rollback] Instant rollback: ${activeSlot} → ${standbySlot} (${durationMs}ms)`,
+      durationMs,
+      slot: standbySlot,
+      rollbackFromId: standbyDeploy?.id ?? null,
+      environmentId: standbyDeploy?.environmentId ?? env.id,
+      finishedAt: new Date(),
+    })
+    .where(eq(deployments.id, deploymentId));
 
   addEvent(organizationId, {
     type: "deploy.status",

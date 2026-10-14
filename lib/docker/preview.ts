@@ -7,7 +7,7 @@ import {
   createGroupEnvironment,
   destroyGroupEnvironment,
 } from "./clone";
-import { deployGroup } from "./deploy-group";
+import { awaitGroupJob, enqueueGroupDeploy, type GroupJobRequest } from "@/lib/deploy/group-job";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 import { matchesGitHubRepo, previewScope } from "./preview-scope";
@@ -64,6 +64,11 @@ async function withPreviewLock<T>(
   } finally {
     await lock.release();
   }
+}
+
+/** Queues the preview's group deploy as a worker job and waits for it. True when every app deployed. */
+async function runGroupDeploy(request: GroupJobRequest): Promise<boolean> {
+  return (await awaitGroupJob(await enqueueGroupDeploy(request))) === "success";
 }
 
 /** Apps built from this GitHub repo, whatever form their git URL takes. */
@@ -133,7 +138,7 @@ async function createPreviewLocked(
   if (existing) {
     // Push to an existing PR: redeploy.
     try {
-      await deployGroup({
+      await runGroupDeploy({
         projectId,
         organizationId,
         trigger: "webhook",
@@ -180,13 +185,12 @@ async function createPreviewLocked(
 
   let deployed = false;
   try {
-    await deployGroup({
+    deployed = await runGroupDeploy({
       projectId,
       organizationId,
       trigger: "webhook",
       groupEnvironmentId: result.groupEnvironmentId,
     });
-    deployed = true;
   } catch (err) {
     log.error(`Deploy failed for PR #${opts.prNumber}:`, err);
   }

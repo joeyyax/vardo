@@ -11,13 +11,13 @@ import { NextRequest } from "next/server";
 
 let CADVISOR_COMPOSE: string;
 
-const { mockFindFirst, mockUpdateSet, mockGetCadvisorConfig, mockSetCadvisorConfig, mockRequestDeploy, mockLoadTemplates } =
+const { mockFindFirst, mockUpdateSet, mockGetCadvisorConfig, mockSetCadvisorConfig, mockEnqueueDeploy, mockLoadTemplates } =
   vi.hoisted(() => ({
     mockFindFirst: vi.fn(),
     mockUpdateSet: vi.fn(),
     mockGetCadvisorConfig: vi.fn(),
     mockSetCadvisorConfig: vi.fn().mockResolvedValue(undefined),
-    mockRequestDeploy: vi.fn(),
+    mockEnqueueDeploy: vi.fn(),
     mockLoadTemplates: vi.fn(),
   }));
 
@@ -52,7 +52,7 @@ vi.mock("@/lib/infra/cadvisor-config", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/templates/load", () => ({ loadTemplates: mockLoadTemplates }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: mockRequestDeploy }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: mockEnqueueDeploy }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -107,29 +107,28 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     const body = await res.json();
 
     expect(mockSetCadvisorConfig).toHaveBeenCalledWith({ diskMetricsEnabled: false });
-    expect(body).toEqual({ diskMetricsEnabled: false, installed: false, redeployed: false });
-    expect(mockRequestDeploy).not.toHaveBeenCalled();
+    expect(body).toEqual({ diskMetricsEnabled: false, installed: false, deploymentId: null });
+    expect(mockEnqueueDeploy).not.toHaveBeenCalled();
   });
 
-  it("turns disk metrics off: restores the template compose and redeploys", async () => {
+  it("turns disk metrics off: restores the template compose and queues a redeploy", async () => {
     mockFindFirst.mockResolvedValue({ id: "app-1", organizationId: "org-1", isSystemManaged: true });
-    mockRequestDeploy.mockResolvedValue({ success: true });
+    mockEnqueueDeploy.mockResolvedValue({ id: "dep-1" });
 
     const res = await POST(postRequest({ diskMetricsEnabled: false }), {});
     const body = await res.json();
 
+    expect(res.status).toBe(202);
     const composeContent = mockUpdateSet.mock.calls[0][0].composeContent as string;
     expect(composeContent).toBe(CADVISOR_COMPOSE);
     expect(mockUpdateSet.mock.calls[0][0].needsRedeploy).toBe(true);
-    expect(mockRequestDeploy).toHaveBeenCalledWith(
-      expect.objectContaining({ appId: "app-1", organizationId: "org-1" }),
-    );
-    expect(body).toEqual({ diskMetricsEnabled: false, installed: true, redeployed: true });
+    expect(mockEnqueueDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "app-1", trigger: "api" }));
+    expect(body).toEqual({ diskMetricsEnabled: false, installed: true, deploymentId: "dep-1" });
   });
 
-  it("turns disk metrics on: enables `disk`, raises the memory limit and redeploys", async () => {
+  it("turns disk metrics on: enables `disk`, raises the memory limit and queues a redeploy", async () => {
     mockFindFirst.mockResolvedValue({ id: "app-1", organizationId: "org-1", isSystemManaged: true });
-    mockRequestDeploy.mockResolvedValue({ success: true });
+    mockEnqueueDeploy.mockResolvedValue({ id: "dep-1" });
 
     const res = await POST(postRequest({ diskMetricsEnabled: true }), {});
     const body = await res.json();
@@ -137,16 +136,17 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     const composeContent = mockUpdateSet.mock.calls[0][0].composeContent as string;
     expect(composeContent).toContain("--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp\n");
     expect(composeContent).toContain("mem_limit: 512m");
-    expect(body).toEqual({ diskMetricsEnabled: true, installed: true, redeployed: true });
+    expect(body).toEqual({ diskMetricsEnabled: true, installed: true, deploymentId: "dep-1" });
   });
 
-  it("reports redeployed: false when the redeploy fails, without throwing", async () => {
+  it("reports no deployment when the redeploy can't be queued, without throwing", async () => {
     mockFindFirst.mockResolvedValue({ id: "app-1", organizationId: "org-1", isSystemManaged: true });
-    mockRequestDeploy.mockResolvedValue({ success: false });
+    mockEnqueueDeploy.mockRejectedValue(new Error("database down"));
 
     const res = await POST(postRequest({ diskMetricsEnabled: false }), {});
     const body = await res.json();
 
-    expect(body).toEqual({ diskMetricsEnabled: false, installed: true, redeployed: false });
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ diskMetricsEnabled: false, installed: true, deploymentId: null });
   });
 });

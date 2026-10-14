@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { instanceRestoreApps, instanceRestores, type RestoreArchivePlan } from "@/lib/db/schema/restore";
 import { restoreBackup } from "@/lib/backups/engine";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { deployAndWait } from "@/lib/deploy/request";
 import { execFileAsync } from "@/lib/utils/exec";
 import { logger } from "@/lib/logger";
 import { nextRunnable } from "./plan";
@@ -95,7 +95,7 @@ async function restoreApp(item: Item, at: Date): Promise<void> {
     if (item.redeploy) {
       await update(item, { status: "deploying" });
       note("Deploying");
-      const result = await requestDeploy({ appId: app.id, organizationId: app.organizationId, trigger: "api" });
+      const result = await deployAndWait({ appId: app.id, trigger: "api" });
       if (!result.success) {
         throw new AppRestoreError(`Deploy ${result.status}: ${result.error ?? "see the deployment log"}`);
       }

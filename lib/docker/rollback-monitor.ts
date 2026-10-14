@@ -3,7 +3,9 @@
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { isScopeConflict, scopeKeyFor } from "@/lib/deploy/queue";
+import { instanceId } from "@/lib/worker/instance";
 import { join } from "path";
 import { nanoid } from "nanoid";
 import { appEnvDir } from "@/lib/paths";
@@ -26,6 +28,9 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { repoWebUrl } from "@/lib/email/format";
 
 const log = logger.child("rollback-monitor");
+
+/** Outlasts every step of an auto-rollback, so deploy-sweep closes one whose process died. */
+const ROLLBACK_LEASE_MS = 2 * COMPOSE_UP_TIMEOUT + COMPOSE_DOWN_TIMEOUT + 4 * COMPOSE_QUERY_TIMEOUT;
 
 
 /** Container ids in a compose project (`all` includes stopped). Null when Docker is unreachable, never empty. */
@@ -150,18 +155,28 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       })
       .catch(() => null);
 
-    await db.insert(deployments).values({
-      id: rollbackId,
-      appId,
-      status: "running",
-      trigger: "rollback",
-      rollbackFromId: deploymentId,
-      slot: previousSlot,
-      gitSha: restored?.gitSha ?? null,
-      gitMessage: restored?.gitMessage ?? null,
-      environmentId: opts.environmentId ?? null,
-      startedAt: new Date(startedAt),
-    });
+    // Takes the environment's scope like a deploy; one running there already owns the slots.
+    try {
+      await db.insert(deployments).values({
+        id: rollbackId,
+        appId,
+        status: "running",
+        trigger: "rollback",
+        rollbackFromId: deploymentId,
+        slot: previousSlot,
+        gitSha: restored?.gitSha ?? null,
+        gitMessage: restored?.gitMessage ?? null,
+        environmentId: opts.environmentId ?? null,
+        startedAt: new Date(startedAt),
+        scopeKey: await scopeKeyFor(appId, opts.environmentId),
+        claimedBy: instanceId(),
+        leaseExpiresAt: sql`now() + ${ROLLBACK_LEASE_MS}::int * interval '1 millisecond'`,
+      });
+    } catch (err) {
+      if (!isScopeConflict(err)) throw err;
+      log.info(`Skipped the auto-rollback of ${appName}: a deploy is running for it`);
+      return false;
+    }
 
     // Owns apps.status like a deploy, so the stuck-deploy sweep recovers it if the process dies.
     await db

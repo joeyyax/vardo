@@ -3,12 +3,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
-// Abuse ceiling only: 60 deploys per minute per user/org pair. Bursts are serialized by requestDeploy (#682).
+// Abuse ceiling only: 60 deploys per minute per user/org pair. Bursts queue per app (#682).
 const DEPLOY_RATE_LIMIT = 60;
 const DEPLOY_RATE_WINDOW_MS = 60 * 1000;
 
@@ -61,26 +61,12 @@ export function registerDeployApp(
       }
 
       // Returns the ID immediately for polling.
-      const deploymentId = await createDeployment({
+      const { id: deploymentId } = await enqueueDeploy({
         appId,
-        organizationId: app.organizationId,
         trigger: "api",
         triggeredBy: context.userId,
-        environmentId,
-      });
-
-      // requestDeploy handles cancel-and-replace.
-      const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
-      requestDeploy({
-        appId,
-        organizationId: app.organizationId,
-        trigger: "api",
-        triggeredBy: context.userId,
-        deploymentId,
         environmentId,
         rebuild,
-      }).catch(() => {
-        // Failures are recorded on the deployment record.
       });
 
       return {

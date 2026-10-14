@@ -36,7 +36,7 @@ vi.mock("@/lib/docker/self-preview", () => ({
   createVardoPreview: vi.fn(),
   destroyVardoPreview: vi.fn(),
 }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: vi.fn() }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: vi.fn() }));
 vi.mock("@/lib/db", () => ({ db: { query: {} } }));
 vi.mock("@/lib/git-integration/org-installations", () => ({
   orgsForInstallation: vi.fn(async (id: number) => (id === 7 ? ["org-1"] : [])),

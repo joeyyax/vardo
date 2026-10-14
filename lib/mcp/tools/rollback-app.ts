@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps, deployments, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { McpAuthContext } from "../auth";
@@ -139,68 +139,12 @@ export function registerRollbackApp(
         }
       }
 
-      const newDeploymentId = await createDeployment({
+      // The engine writes the snapshot back to the app once the deploy commits.
+      const { id: newDeploymentId } = await enqueueDeploy({
         appId,
-        organizationId: app.organizationId,
         trigger: "rollback",
         triggeredBy: context.userId,
-      });
-
-      const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
-      requestDeploy({
-        appId,
-        organizationId: app.organizationId,
-        trigger: "rollback",
-        triggeredBy: context.userId,
-        deploymentId: newDeploymentId,
         rollback: { targetDeploymentId: deploymentId, includeEnvVars },
-      }).then(async (result) => {
-        try {
-          await db
-            .update(deployments)
-            .set({ rollbackFromId: deploymentId })
-            .where(eq(deployments.id, newDeploymentId));
-        } catch { /* best-effort */ }
-
-        // Written only after success so a failed rollback leaves the row untouched.
-        if (!result.success) return;
-
-        const appUpdates: Record<string, unknown> = { updatedAt: new Date() };
-
-        if (configSnapshot) {
-          appUpdates.cpuLimit = configSnapshot.cpuLimit;
-          appUpdates.memoryLimit = configSnapshot.memoryLimit;
-          appUpdates.gpuEnabled = configSnapshot.gpuEnabled ?? false;
-          appUpdates.containerPort = configSnapshot.containerPort;
-          appUpdates.imageName = configSnapshot.imageName;
-          appUpdates.gitBranch = configSnapshot.gitBranch;
-          appUpdates.composeFilePath = configSnapshot.composeFilePath;
-          appUpdates.rootDirectory = configSnapshot.rootDirectory;
-          appUpdates.restartPolicy = configSnapshot.restartPolicy;
-          appUpdates.autoTraefikLabels = configSnapshot.autoTraefikLabels;
-          appUpdates.backendProtocol = configSnapshot.backendProtocol ?? null;
-          if (configSnapshot.composeContent != null) {
-            appUpdates.composeContent = configSnapshot.composeContent;
-          }
-        }
-
-        if (includeEnvVars) {
-          try {
-            const target = await db.query.deployments.findFirst({
-              where: eq(deployments.id, deploymentId),
-              columns: { envSnapshot: true },
-            });
-            if (target?.envSnapshot) {
-              const { decrypt, encrypt } = await import("@/lib/crypto/encrypt");
-              const plainEnv = decrypt(target.envSnapshot, app.organizationId);
-              appUpdates.envContent = encrypt(plainEnv, app.organizationId);
-            }
-          } catch { /* env restore is best-effort */ }
-        }
-
-        await db.update(apps).set(appUpdates).where(eq(apps.id, appId)).catch(() => {});
-      }).catch(() => {
-        // Failures are recorded on the deployment record.
       });
 
       return {

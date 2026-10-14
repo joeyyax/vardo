@@ -5,6 +5,7 @@ import type { SecurityHeaderConfig } from "@/lib/security/response-headers";
 import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
 import type { HostConfig } from "@/lib/config/host-config";
 import type { DeployStage } from "./deploy-logger";
+import type { RollbackTarget } from "./rollback-target";
 
 import type { StageTimer } from "./stage-timings";
 import type { BuildCacheMode, RebuildMode } from "./build-key";
@@ -92,9 +93,15 @@ export type DeployContext = {
   environmentId?: string;
   groupEnvironmentId?: string;
   signal?: AbortSignal;
+  /** Executor holding the row's claim. */
+  claimedBy?: string;
+  /** Checked before the swap touches containers, and records the swap stage. False stops the deploy. */
+  fence?: () => Promise<boolean>;
 
   /** Set for a rollback; `app` is already overlaid with the target's snapshot. */
   rollback?: { targetDeploymentId: string; gitSha: string | null };
+  /** The rollback's target, applied to the app row once the deploy commits. */
+  rollbackTarget?: RollbackTarget;
 
   /** A commit on the branch to deploy instead of its tip. */
   pinnedGitSha?: string;

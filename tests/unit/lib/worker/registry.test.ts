@@ -21,6 +21,10 @@ function declaredLoopNames(): string[] {
   for (const file of sources(LIB)) {
     const source = readFileSync(file, "utf8");
     for (const match of source.matchAll(/new IntervalLoop\(\{\s*name: "([a-z-]+)"/g)) names.push(match[1]!);
+    // A factory `function f(name, …)` that returns `new IntervalLoop({ name, … })` declares each `f("…")` call.
+    for (const factory of source.matchAll(/function (\w+)\(name\b[^)]*\)[^{]*\{[^}]*?new IntervalLoop\(\{\s*name,/g)) {
+      for (const call of source.matchAll(new RegExp(`\\b${factory[1]}\\("([a-z-]+)"`, "g"))) names.push(call[1]!);
+    }
   }
   return names;
 }

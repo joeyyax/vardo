@@ -7,14 +7,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order, claimMock } = vi.hoisted(() => {
+  // Inserting the scope's running row is the claim.
   const claimMock = vi.fn();
   const order: string[] = [];
 
   const dbMock = {
     update: vi.fn().mockImplementation(() => ({
-      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      set: vi.fn().mockImplementation((set: { status?: string }) => {
+        if (set.status === "success") order.push("record");
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      }),
     })),
-    insert: vi.fn().mockImplementation(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
+    insert: vi.fn().mockImplementation(() => ({ values: claimMock })),
+    delete: vi.fn().mockImplementation(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
     query: { deployments: { findFirst: vi.fn().mockResolvedValue(null) } },
   };
 
@@ -40,7 +45,11 @@ const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order, claimMock }
 
 vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: claimMock }));
+vi.mock("@/lib/deploy/queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/deploy/queue")>()),
+  scopeKeyFor: vi.fn(async (appId: string) => appId),
+}));
+vi.mock("@/lib/worker/instance", () => ({ instanceId: () => "web-1" }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/docker/traefik-cutover", () => cutoverMock);
 vi.mock("@/lib/docker/restart-policy", () => ({
@@ -78,7 +87,7 @@ describe("performInstantRollback — cutover pin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     order.length = 0;
-    claimMock.mockResolvedValue({ release: async () => { order.push("release"); } });
+    claimMock.mockResolvedValue(undefined);
     execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
       if (args.includes("stop")) {
         order.push("stop-active");
@@ -99,7 +108,7 @@ describe("performInstantRollback — cutover pin", () => {
 
     expect(result.success).toBe(true);
     expect(cutoverMock.clearCutoverPin).toHaveBeenCalledWith("vardo", "production");
-    expect(order).toEqual(["clear-pin", "stop-active", "release"]);
+    expect(order).toEqual(["clear-pin", "stop-active", "record"]);
   });
 
   it("rolls back even when the pin cannot be removed", async () => {
@@ -109,7 +118,7 @@ describe("performInstantRollback — cutover pin", () => {
   });
 
   it("refuses while a deploy of the app is running, and touches nothing", async () => {
-    claimMock.mockResolvedValueOnce(null);
+    claimMock.mockRejectedValueOnce(Object.assign(new Error("duplicate key"), { constraint_name: "deployment_scope_running_uniq" }));
 
     const result = await performInstantRollback(OPTS);
 

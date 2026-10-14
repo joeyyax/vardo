@@ -47,9 +47,12 @@ async function drain(reason: string): Promise<void> {
   markDraining();
   log.info(`Draining (${reason}): up to ${Math.round(drainMs / 1000)}s for ${inFlight().join(", ") || "no passes in flight"}`);
   const { drainBackupsForStop } = await import("@/lib/backups/in-flight");
+  const { drainDeploys } = await import("@/lib/deploy/executor");
+  const { drainGroupJobs } = await import("@/lib/deploy/group-job");
   const settled = await drainWork({
     stopLoops: () => stopLoops(),
     drainBackups: (budgetMs) => drainBackupsForStop((line) => log.info(line), budgetMs),
+    drainDeploys: (budgetMs) => Promise.all([drainDeploys(budgetMs), drainGroupJobs(budgetMs)]),
     budgetMs: drainMs,
   });
   if (settled === "timeout") log.warn(`Drain budget spent with ${inFlight().join(", ") || "backup work"} still running`);

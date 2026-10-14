@@ -24,14 +24,17 @@ export type LoopEntry = {
 };
 
 const BOTH: LoopRole[] = ["web", "worker"];
-// Loops that serve this process's own memory or files, plus the deploy triggers that still run in web.
+// Loops that serve this process's own memory or files, plus deploy triggers that run in web.
 const WEB: LoopRole[] = ["web"];
+const WORKER: LoopRole[] = ["worker"];
 
 export const LOOP_REGISTRY: LoopEntry[] = [
   // Per process: feature flags and resource settings follow writes from any process.
   { name: "config-sync", roles: BOTH, singleton: false, perProcess: true, load: async () => (await import("@/lib/config/sync")).configSyncLoop },
 
-  // Deploys
+  // Deploys. The worker claims app deploys, web Vardo's own (lib/deploy/claim-scope.ts).
+  { name: "deploy-claim", roles: WORKER, singleton: false, critical: true, load: async () => (await import("@/lib/deploy/claim-loop")).deployClaimLoop },
+  { name: "deploy-claim-web", roles: WEB, singleton: false, load: async () => (await import("@/lib/deploy/claim-loop")).webDeployClaimLoop },
   { name: "deploy-sweep", roles: BOTH, singleton: true, critical: true, load: async () => (await import("@/lib/deploy/scheduler")).deploySweepLoop },
   { name: "rollback-watch", roles: BOTH, singleton: true, load: async () => (await import("@/lib/deploy/scheduler")).rollbackWatchLoop },
   { name: "standby-sweep", roles: BOTH, singleton: true, load: async () => (await import("@/lib/deploy/scheduler")).standbySweepLoop },

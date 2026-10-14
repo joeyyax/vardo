@@ -14,8 +14,17 @@ vi.mock("@/lib/docker/client", () => ({
   removeContainer: vi.fn(),
 }));
 
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  requestDeploy: vi.fn(),
+vi.mock("@/lib/deploy/queue", () => ({
+  releaseHeldDeploy: vi.fn(),
+  awaitClaim: vi.fn(),
+}));
+
+vi.mock("@/lib/deploy/waiting", () => ({
+  workerMissing: vi.fn(),
+}));
+
+vi.mock("@/lib/deploy/request", () => ({
+  waitForDeployment: vi.fn(),
 }));
 
 vi.mock("@/lib/events", () => ({
@@ -39,7 +48,9 @@ import {
   startContainer,
   inspectContainer,
 } from "@/lib/docker/client";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { awaitClaim, releaseHeldDeploy } from "@/lib/deploy/queue";
+import { waitForDeployment } from "@/lib/deploy/request";
+import { workerMissing } from "@/lib/deploy/waiting";
 import { addEvent } from "@/lib/stream/producer";
 
 // Flush all pending promises and microtasks. Needed because
@@ -75,6 +86,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     // inspectContainer throws (container not found) so waitForContainerStopped
     // exits immediately rather than polling for 5 seconds.
     vi.mocked(inspectContainer).mockRejectedValue(new Error("Not found"));
+    vi.mocked(workerMissing).mockResolvedValue(false);
+    vi.mocked(awaitClaim).mockResolvedValue(true);
 
     // db.transaction delegates to its callback with db as the tx so that
     // tx.update(...) calls the same db.update mock and existing call-count
@@ -109,8 +122,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
       expect.objectContaining({ type: "deploy.status", appId: BASE_PARAMS.appId, status: "error" }),
     );
 
-    // requestDeploy must NOT be called — abort happened before deploy.
-    expect(requestDeploy).not.toHaveBeenCalled();
+    // The held deploy is never released — abort happened before deploy.
+    expect(releaseHeldDeploy).not.toHaveBeenCalled();
   });
 
   it("restarts already-stopped containers when a later stop fails", async () => {
@@ -138,7 +151,7 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     expect(db.update).toHaveBeenCalledTimes(2);
 
     // Deploy must not have been attempted.
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(releaseHeldDeploy).not.toHaveBeenCalled();
 
     // deploy.status error event published.
     expect(addEvent).toHaveBeenCalledWith(
@@ -149,7 +162,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
 
   it("proceeds to deploy when all containers stop successfully", async () => {
     vi.mocked(stopContainer).mockResolvedValue(undefined);
-    vi.mocked(requestDeploy).mockResolvedValue({
+    vi.mocked(releaseHeldDeploy).mockResolvedValue(true);
+    vi.mocked(waitForDeployment).mockResolvedValue({
       success: true,
       deploymentId: BASE_PARAMS.deploymentId,
       log: "",
@@ -167,10 +181,41 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     });
     await flushPromises();
 
-    expect(requestDeploy).toHaveBeenCalledOnce();
+    expect(releaseHeldDeploy).toHaveBeenCalledWith(BASE_PARAMS.deploymentId);
+    expect(waitForDeployment).toHaveBeenCalledWith(BASE_PARAMS.deploymentId);
     expect(addEvent).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: "deploy.status", status: "error" }),
     );
+  });
+
+  it("leaves the originals running when no worker would deploy the import", async () => {
+    vi.mocked(workerMissing).mockResolvedValue(true);
+    const chain = makeUpdateChain();
+    vi.mocked(db.update).mockReturnValue({ set: chain.set } as unknown as ReturnType<typeof db.update>);
+
+    runAsyncContainerMigration({ ...BASE_PARAMS, containerIds: ["c1"], bailOnFirstStopFailure: true });
+    await flushPromises();
+
+    expect(stopContainer).not.toHaveBeenCalled();
+    expect(releaseHeldDeploy).not.toHaveBeenCalled();
+    expect(chain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }));
+  });
+
+  it("restarts the originals when no executor claims the deploy in time", async () => {
+    vi.mocked(stopContainer).mockResolvedValue(undefined);
+    vi.mocked(startContainer).mockResolvedValue(undefined);
+    vi.mocked(releaseHeldDeploy).mockResolvedValue(true);
+    vi.mocked(awaitClaim).mockResolvedValue(false);
+    const chain = makeUpdateChain();
+    vi.mocked(db.update).mockReturnValue({ set: chain.set } as unknown as ReturnType<typeof db.update>);
+
+    runAsyncContainerMigration({ ...BASE_PARAMS, containerIds: ["c1", "c2"], bailOnFirstStopFailure: true });
+    await flushPromises();
+
+    expect(waitForDeployment).not.toHaveBeenCalled();
+    expect(startContainer).toHaveBeenCalledWith("c1");
+    expect(startContainer).toHaveBeenCalledWith("c2");
+    expect(chain.set).toHaveBeenCalledWith({ status: "rolled_back" });
   });
 });

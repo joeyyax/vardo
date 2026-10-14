@@ -100,8 +100,9 @@ describe("GET deploy/stream — deployment ownership", () => {
     const res = await GET(request(), params);
 
     expect(res.status).toBe(200);
-    // The default path resolves the deploy from the app, so no extra check runs.
-    expect(dbMock.query.deployments.findFirst).toHaveBeenCalledTimes(1);
+    // The default path resolves the deploy from the app; the only other read is its status.
+    const reads = dbMock.query.deployments.findFirst.mock.calls.map(([q]) => (q as { columns?: object }).columns);
+    expect(reads).toEqual([{ id: true, status: true }, { status: true }]);
 
     vi.clearAllTimers();
   });

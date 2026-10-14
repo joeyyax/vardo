@@ -379,6 +379,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   });
 
   const statusTrigger = (() => {
+    if (deploy.deploying && deploy.deployQueued && app.status !== "deploying") {
+      return {
+        className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
+        content: <>Queued</>,
+      };
+    }
     if (deploy.deploying || app.status === "deploying") {
       return {
         className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
@@ -494,7 +500,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <div className="flex items-center gap-2">
             {actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
-                {deploy.deploying ? (
+                {deploy.deploying && deploy.deployQueued ? (
+                  "Queued"
+                ) : deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
                   <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>

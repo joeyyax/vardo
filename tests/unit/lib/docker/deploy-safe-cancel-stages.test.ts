@@ -10,9 +10,9 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/redis", () => ({ redis: {} }));
 vi.mock("@/lib/db", () => ({ db: {} }));
-vi.mock("@/lib/docker/deploy", () => ({ createDeployment: vi.fn(), runDeployment: vi.fn() }));
+vi.mock("@/lib/docker/deploy", () => ({ runDeployment: vi.fn() }));
 
-import { SAFE_CANCEL_STAGES } from "@/lib/docker/deploy-cancel";
+import { SAFE_CANCEL_STAGES } from "@/lib/deploy/executor";
 
 describe("SAFE_CANCEL_STAGES", () => {
   it("covers everything up to and including the image build", () => {

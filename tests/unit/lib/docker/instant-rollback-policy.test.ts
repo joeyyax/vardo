@@ -9,11 +9,19 @@ const { execFileAsyncMock, assertMock, clearPinMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/utils/exec", () => ({ execFileAsync: execFileAsyncMock }));
-vi.mock("@/lib/db", () => ({ db: { update: () => ({ set: () => ({ where: () => Promise.resolve() }) }) } }));
-vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: assertMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  claimAppForOperation: vi.fn().mockResolvedValue({ release: vi.fn() }),
+vi.mock("@/lib/db", () => ({
+  db: {
+    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    insert: () => ({ values: () => Promise.resolve() }),
+    delete: () => ({ where: () => Promise.resolve() }),
+  },
 }));
+vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: assertMock }));
+vi.mock("@/lib/deploy/queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/deploy/queue")>()),
+  scopeKeyFor: vi.fn(async (appId: string) => appId),
+}));
+vi.mock("@/lib/worker/instance", () => ({ instanceId: () => "web-1" }));
 vi.mock("@/lib/docker/traefik-cutover", () => ({ clearCutoverPin: clearPinMock }));
 vi.mock("@/lib/docker/restart-policy", () => ({
   demoteStandbyRestart: vi.fn(),

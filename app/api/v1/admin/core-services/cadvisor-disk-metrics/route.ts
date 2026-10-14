@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { getCadvisorConfig, setCadvisorConfig, applyCadvisorDiskMetrics } from "@/lib/infra/cadvisor-config";
 import { loadTemplates } from "@/lib/templates/load";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:core-services:cadvisor");
@@ -45,13 +45,13 @@ async function handlePost(request: NextRequest) {
     });
 
     if (!existing || !existing.isSystemManaged) {
-      return NextResponse.json({ ...parsed.data, installed: false, redeployed: false });
+      return NextResponse.json({ ...parsed.data, installed: false, deploymentId: null });
     }
 
     const templates = await loadTemplates();
     const template = templates.find((t) => t.name === "cadvisor");
     if (!template?.composeContent) {
-      return NextResponse.json({ ...parsed.data, installed: true, redeployed: false });
+      return NextResponse.json({ ...parsed.data, installed: true, deploymentId: null });
     }
 
     const composeContent = applyCadvisorDiskMetrics(template.composeContent, parsed.data.diskMetricsEnabled);
@@ -60,20 +60,13 @@ async function handlePost(request: NextRequest) {
       .set({ composeContent, needsRedeploy: true, updatedAt: new Date() })
       .where(eq(apps.id, existing.id));
 
-    let redeployed = false;
     try {
-      const result = await requestDeploy({
-        appId: existing.id,
-        organizationId: existing.organizationId,
-        trigger: "api",
-      });
-      redeployed = !!result?.success;
+      const { id } = await enqueueDeploy({ appId: existing.id, trigger: "api" });
+      return NextResponse.json({ ...parsed.data, installed: true, deploymentId: id }, { status: 202 });
     } catch (err) {
-      log.error("Redeploy threw after disk metrics toggle:", err);
+      log.error("Couldn't queue the redeploy after the disk metrics toggle:", err);
+      return NextResponse.json({ ...parsed.data, installed: true, deploymentId: null });
     }
-    if (!redeployed) log.error("Redeploy failed after disk metrics toggle");
-
-    return NextResponse.json({ ...parsed.data, installed: true, redeployed });
   } catch (error) {
     return handleRouteError(error, "core-services-cadvisor");
   }

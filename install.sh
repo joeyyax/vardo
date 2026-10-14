@@ -2366,14 +2366,15 @@ follow_self_deploy() {
   return 1
 }
 
-# Redis deploy:system:active, or empty when Redis can't say.
-deploy_slots_active() {
-  docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli get deploy:system:active' 2>/dev/null | tr -d '[:space:]' || true
+# "held" while the deploy still holds new deploys back for its swap, "clear" once released, empty when Postgres can't say.
+deploy_hold() {
+  docker exec vardo-postgres psql -U host -d host -tAc \
+    "select case when exclusive_requested_at is null then 'clear' else 'held' end from deployment where id = '$1'" 2>/dev/null | tr -d '[:space:]' || true
 }
 
 # Checks what has gone wrong after self-deploys before. Returns 1 when something needs a look.
 verify_self_deploy() {
-  local id="$1" ok=0 slot frontend consoles active="" waited=0
+  local id="$1" ok=0 slot frontend consoles hold="" waited=0
   is_self_deploy || { warn "No production/current symlink after the deploy"; return 1; }
   slot=$(self_deploy_slot)
   frontend=$(self_deploy_frontend)
@@ -2400,16 +2401,16 @@ verify_self_deploy() {
     ok=1
   fi
 
-  # The engine releases its slot after the row turns success.
+  # The new slot's worker releases the hold the swap took.
   waited=0
   while :; do
-    active=$(deploy_slots_active)
-    [ -z "$active" ] || [ "$active" = 0 ] || [ "$waited" -ge 60 ] && break
+    hold=$(deploy_hold "$id")
+    [ "$hold" != held ] || [ "$waited" -ge 60 ] && break
     sleep 3
     waited=$((waited + 3))
   done
-  if [ -n "$active" ] && [ "$active" != 0 ]; then
-    warn "Redis deploy:system:active is $active, not 0. Redeploy stays disabled until it drops."
+  if [ "$hold" = held ]; then
+    warn "Deployment $id still holds other deploys back. They start once the new worker is ready, or after 30 minutes."
     ok=1
   fi
 
