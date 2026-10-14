@@ -26,3 +26,5 @@ update.sh
 **/*.tsbuildinfo
 !drizzle/**
 dist
+# Read only by `drizzle-kit generate`; the migrator reads _journal.json and the .sql files.
+drizzle/meta/*_snapshot.json
