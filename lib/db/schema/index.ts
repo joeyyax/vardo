@@ -4,6 +4,7 @@ export * from "./organizations";
 export * from "./projects";
 export * from "./apps";
 export * from "./deployments";
+export * from "./build-peaks";
 export * from "./environments";
 export * from "./env-vars";
 export * from "./domains";

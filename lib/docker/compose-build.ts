@@ -37,6 +37,8 @@ export type ComposeBuildOpts = {
   log: (line: string) => void;
   signal?: AbortSignal;
   exec?: Exec;
+  /** Holds a builder slot for the build itself, after image reuse is settled. */
+  gate?: <T>(run: () => Promise<T>) => Promise<T>;
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -56,7 +58,7 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
 /** Builds the slot's services; returns the build output, or null when every service reused an image. */
 export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | null> {
   const exec = opts.exec ?? (execFileAsync as unknown as Exec);
-  const { slotDir, project, bounded, log } = opts;
+  const { slotDir, project, log } = opts;
 
   let services = opts.services;
   let keyFileArgs: string[] = [];
@@ -95,7 +97,12 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     }
   }
   if (services.length === 0) return null;
+  const gate = opts.gate ?? ((run) => run());
+  return gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
+}
 
+async function runComposeBuild(opts: ComposeBuildOpts, exec: Exec, services: string[], keyFileArgs: string[]): Promise<Output> {
+  const { slotDir, project, bounded } = opts;
   const files = [...opts.composeFileArgs, ...keyFileArgs];
   const env = { ...opts.env, ...bounded.env };
   const run = { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: MAX_BUFFER, signal: opts.signal };
