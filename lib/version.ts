@@ -153,7 +153,7 @@ export function channelHasUpdate(localSha: string, targetSha: string, compare: P
   return compare.status === "ahead" || (compare.status === "diverged" && compare.aheadBy > 0);
 }
 
-const channelCache = new Map<UpdateChannelName, { result: ChannelUpdate | null; checkedAt: number }>();
+const channelCache = new Map<UpdateChannelName, { check: ChannelCheck; checkedAt: number }>();
 const CHANNEL_CHECK_TTL_MS = 5 * 60_000;
 
 export function invalidateChannelUpdate(channel?: UpdateChannelName): void {
@@ -163,7 +163,10 @@ export function invalidateChannelUpdate(channel?: UpdateChannelName): void {
 
 const github = (path: string, accept: string, conditional = false) => githubGet(GITHUB_REPO, path, accept, { conditional });
 
-async function resolveTarget(channel: UpdateChannelName): Promise<{ sha: string; label: string; url: string; notes?: string } | null> {
+/** The release channel of a repo with no published release. */
+const NO_RELEASE = "no-release";
+
+async function resolveTarget(channel: UpdateChannelName): Promise<{ sha: string; label: string; url: string; notes?: string } | typeof NO_RELEASE | null> {
   if (channel === "main") {
     const res = await github(`/commits/${UPDATE_BRANCH}`, "application/vnd.github.sha", true);
     if (!res.ok) throw new GitHubError(`GitHub returned ${res.status} for ${UPDATE_BRANCH}`, res.status);
@@ -171,6 +174,7 @@ async function resolveTarget(channel: UpdateChannelName): Promise<{ sha: string;
     return SHA_RE.test(sha) ? { sha, label: sha.slice(0, 7), url: `https://github.com/${GITHUB_REPO}/commits/${UPDATE_BRANCH}` } : null;
   }
   const rel = await github("/releases/latest", "application/vnd.github+json", true);
+  if (rel.status === 404) return NO_RELEASE;
   if (!rel.ok) throw new GitHubError(`GitHub returned ${rel.status} for the latest release`, rel.status);
   const release = JSON.parse(rel.text) as { tag_name?: string; html_url?: string; body?: string };
   const tag = release.tag_name;
@@ -196,19 +200,31 @@ export async function fetchCompare(base: string, head: string): Promise<Compare 
   }
 }
 
-/** The channel's target against the build commit. Null without a build commit or when the check fails (see getGitHubCheckError). Cached five minutes. */
+/** The channel's target against the build commit. Null without a build commit, with no release yet, or when the check fails (see getGitHubCheckError). Cached five minutes. */
 export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh?: boolean } = {}): Promise<ChannelUpdate | null> {
+  return (await getChannelCheck(channel, opts)).update;
+}
+
+export type ChannelCheck = { update: ChannelUpdate | null; noRelease: boolean };
+
+/** getChannelUpdate, plus whether the releases channel has nothing published yet. */
+export async function getChannelCheck(channel: UpdateChannelName, opts: { fresh?: boolean } = {}): Promise<ChannelCheck> {
   const localSha = getBuildSha().trim();
-  if (!SHA_RE.test(localSha)) return null;
+  if (!SHA_RE.test(localSha)) return { update: null, noRelease: false };
 
   const now = Date.now();
   const cached = channelCache.get(channel);
-  if (cached && !opts.fresh && now - cached.checkedAt < CHANNEL_CHECK_TTL_MS) return cached.result;
-  channelCache.set(channel, { result: null, checkedAt: now });
+  if (cached && !opts.fresh && now - cached.checkedAt < CHANNEL_CHECK_TTL_MS) return cached.check;
+  channelCache.set(channel, { check: { update: null, noRelease: false }, checkedAt: now });
 
   try {
     const target = await resolveTarget(channel);
-    if (!target) return null;
+    if (target === NO_RELEASE) {
+      const check = { update: null, noRelease: true };
+      channelCache.set(channel, { check, checkedAt: now });
+      return check;
+    }
+    if (!target) return { update: null, noRelease: false };
     let compare: Compare | null = null;
     if (!target.sha.toLowerCase().startsWith(localSha.toLowerCase())) {
       const res = await github(`/compare/${localSha}...${target.sha}`, "application/vnd.github+json");
@@ -227,10 +243,11 @@ export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh
       ...(compare?.url ? { compareUrl: compare.url } : {}),
       ...(target.notes ? { releaseNotes: target.notes } : {}),
     };
-    channelCache.set(channel, { result, checkedAt: now });
-    return result;
+    const check = { update: result, noRelease: false };
+    channelCache.set(channel, { check, checkedAt: now });
+    return check;
   } catch (err) {
     log.debug("Channel update check failed:", err);
-    return null;
+    return { update: null, noRelease: false };
   }
 }

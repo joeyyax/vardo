@@ -217,6 +217,10 @@ export function UpdatesCard() {
                   <CheckCircle2 className="size-4" aria-hidden="true" />
                   Up to date
                 </p>
+              ) : status.noRelease ? (
+                <p className="text-sm text-muted-foreground">
+                  No release published yet. Releases-only updates start with the first one; set the channel to main to follow every commit.
+                </p>
               ) : (
                 <p className="flex items-start gap-2 text-sm text-muted-foreground">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

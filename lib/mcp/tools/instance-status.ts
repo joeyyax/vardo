@@ -36,6 +36,7 @@ async function updateSection() {
       ? { message: status.checkError.message, rateLimited: status.checkError.rateLimited, resetsAt: status.checkError.resetsAt }
       : null,
     available: update ? { hasUpdate: update.hasUpdate, version: update.targetLabel, commitsBehind: update.commitsBehind } : null,
+    noRelease: status.noRelease,
     updating: active ? { from: active.fromVersion, to: active.toVersion, startedAt: iso(new Date(active.startedAt)) } : null,
     lastRun: run
       ? {

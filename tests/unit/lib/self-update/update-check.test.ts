@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getChannelUpdate, resetCommitUpdateCache } from "@/lib/version";
+import { getChannelCheck, getChannelUpdate, resetCommitUpdateCache } from "@/lib/version";
 import { getGitHubCheckError, githubGet } from "@/lib/github-api";
 
 const install = vi.hoisted(() => ({ row: null as { installationId: number } | null, token: vi.fn(async () => "ghs_installation") }));
@@ -138,5 +138,19 @@ describe("GitHub update checks", () => {
 
     expect(res.ok).toBe(false);
     expect(getGitHubCheckError()).toBeNull();
+  });
+
+  it("reads a repo without releases as no release yet, not a failed check", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }));
+
+    expect(await getChannelCheck("releases")).toEqual({ update: null, noRelease: true });
+    expect(await getChannelUpdate("releases")).toBeNull();
+    expect(getGitHubCheckError()).toBeNull();
+  });
+
+  it("still fails a check when main is missing", async () => {
+    fetchMock.mockResolvedValue(new Response("nope", { status: 404 }));
+
+    expect(await getChannelCheck("main")).toEqual({ update: null, noRelease: false });
   });
 });
