@@ -510,6 +510,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           withGitDir: ctx.buildSourceHasGit === true,
           log,
           signal: ctx.signal,
+          deploymentId: ctx.deploymentId,
+          wait: ctx.wait,
         }).catch((err: unknown) => {
           ctx.timer.range("build", buildStart, Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);

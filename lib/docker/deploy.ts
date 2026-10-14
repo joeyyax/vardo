@@ -543,6 +543,7 @@ export async function runDeployment(
 
       log,
       addSecrets: streamLogger.addSecrets,
+      wait: streamLogger.wait,
       stage,
       checkAbort,
       timer,

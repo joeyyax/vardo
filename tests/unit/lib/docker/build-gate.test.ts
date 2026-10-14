@@ -263,6 +263,41 @@ describe("withBuildSlot", () => {
     await running;
   });
 
+  it("opens a build-slot wait with the deploy's place and ends it, leaving the clock to the wait writer", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const waits: unknown[] = [];
+    const b = gateFor("dep-b");
+    const queued = withBuildSlot({ ...b.gate, wait: async (reason, ahead) => void waits.push([reason, ahead]) }, bounded, async () => {});
+    await new Promise((r) => setTimeout(r, 30));
+    expect(waits[0]).toEqual(["build-slot", undefined]);
+    expect(waits).toContainEqual(["build-slot", 0]);
+
+    first.resolve();
+    await Promise.all([running, queued]);
+    expect(waits.at(-1)).toEqual([null, undefined]);
+    expect(state.clock).toEqual([]);
+  });
+
+  it("ends the wait when a waiting deploy is cancelled", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const waits: unknown[] = [];
+    const controller = new AbortController();
+    const b = gateFor("dep-b", controller.signal);
+    const queued = withBuildSlot({ ...b.gate, wait: async (reason) => void waits.push(reason) }, bounded, async () => {});
+    await new Promise((r) => setTimeout(r, 20));
+    controller.abort();
+    await expect(queued).rejects.toThrow("Deployment aborted");
+    expect(waits.at(-1)).toBeNull();
+    first.resolve();
+    await running;
+  });
+
   it("gates a build without a deployment but records nothing for it", async () => {
     const first = deferred();
     const running = withBuildSlot(gateFor(undefined).gate, bounded, () => first.promise);

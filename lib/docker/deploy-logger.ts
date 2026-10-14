@@ -41,8 +41,27 @@ export type StreamStage = DeployStage | RollbackStage;
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped" | "cancelled";
 
-/** What a deploy is waiting on: the app's running deploy, a deploy slot, the builder or the shared checkout. */
-export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout";
+/** What a deploy waits on: the app's running deploy, a deploy slot, the builder, the shared checkout, the worker or Vardo's own swap. */
+export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout" | "worker" | "exclusive";
+
+/** One line per reason, for callers that print why a deploy waits. */
+export function waitText(reason: WaitReason, ahead?: number): string {
+  const place = ahead ? ` (${ahead} ahead)` : "";
+  switch (reason) {
+    case "worker":
+      return "Waiting for the worker. Deploys start when it's back";
+    case "exclusive":
+      return "Waiting for Vardo's own update to finish its swap";
+    case "app":
+      return "Waiting for the deploy already running for this app";
+    case "deploy-slot":
+      return `Waiting for a free deploy slot${place}`;
+    case "build-slot":
+      return `Waiting for the builder${place}`;
+    case "checkout":
+      return "Waiting for another deploy of this app to finish with the repository checkout";
+  }
+}
 
 /** Writes a wait entry to a deploy's stream; null ends the open wait. */
 export type WaitWriter = (reason: WaitReason | null, ahead?: number) => Promise<void> | void;
@@ -67,20 +86,20 @@ function sanitize(line: string, values: Iterable<string>): string {
   return result;
 }
 
-/** A wait as the deploy streams send it; `reason` null ends it. */
-export type DeployWaitEvent = { deploymentId: string; reason: WaitReason | null; ahead?: number; streamId?: string };
-
-/** Told of stage and wait entries once written, with their stream id when Redis took them. */
-export type DeployStreamObservers = {
-  onStage?: (stage: StreamStage, status: DeployStatus, streamId?: string) => void;
-  onWait?: (wait: DeployWaitEvent) => void;
-};
+/** A deploy stream entry for a wait; null ends it. The `wait` field marks it, so readers never show it as a log line. */
+export function waitEntry(reason: WaitReason | null, ahead: number | undefined, stage: string) {
+  const next = reason === null ? undefined : ahead;
+  return {
+    line: reason === null ? "[wait] done" : `[wait] ${reason}${next === undefined ? "" : ` (${next} ahead)`}`,
+    stage,
+    status: "running",
+    wait: reason ?? "",
+    ahead: next,
+  };
+}
 
 /** Create `log()` and `stage()` writers bound to a deployment's stream. */
-export function createDeployLogger(deployId: string, observers: DeployStreamObservers = {}) {
-  const tell = (fn: () => void) => {
-    try { fn(); } catch { /* an observer never breaks the deploy */ }
-  };
+export function createDeployLogger(deployId: string) {
   let currentStage: StreamStage = "queued";
   let lastWrite: Promise<string> = Promise.resolve("");
   const secretValues = new Set<string>();
@@ -121,10 +140,6 @@ export function createDeployLogger(deployId: string, observers: DeployStreamObse
       stage,
       status,
     });
-    write.then(
-      (id) => tell(() => observers.onStage?.(stage, status, id)),
-      () => tell(() => observers.onStage?.(stage, status)),
-    );
 
     if (!isTerminal) {
       write.catch((err) => {
@@ -149,7 +164,7 @@ export function createDeployLogger(deployId: string, observers: DeployStreamObse
   let waitWrites: Promise<unknown> = Promise.resolve();
   let paused: ReturnType<typeof pauseRunningClock> | null = null;
 
-  /** Open, update or end (null) a wait. Writes are serialized; ending with no wait open writes nothing. */
+  /** Open, update or end (null) a wait on the stream and the row. Writes are serialized; ending with no wait open writes nothing. */
   function wait(reason: WaitReason | null, ahead?: number): Promise<void> {
     const next = reason === null ? undefined : ahead;
     if (reason === openWait && next === openAhead) return waitWrites.then(() => {});
@@ -159,25 +174,18 @@ export function createDeployLogger(deployId: string, observers: DeployStreamObse
       void paused.resume();
       paused = null;
     }
+    const restart = reason !== openWait;
     openWait = reason;
     openAhead = next;
-    const entry = {
-      line: reason === null ? "[wait] done" : `[wait] ${reason}${next === undefined ? "" : ` (${next} ahead)`}`,
-      stage: currentStage,
-      status: "running",
-      wait: reason ?? "",
-      ahead: next,
-    };
-    const event: DeployWaitEvent = { deploymentId: deployId, reason, ...(next === undefined ? {} : { ahead: next }) };
+    const entry = waitEntry(reason, next, currentStage);
     waitWrites = waitWrites
       .then(() => addDeployLog(deployId, entry))
-      .then(
-        (streamId) => tell(() => observers.onWait?.({ ...event, streamId })),
-        (err) => {
-          log.error(`Failed to write wait for ${deployId}:`, err);
-          tell(() => observers.onWait?.(event));
-        },
-      );
+      .catch((err) => log.error(`Failed to write wait for ${deployId}:`, err))
+      .then(async () => {
+        const { recordWait } = await import("@/lib/deploy/waiting");
+        await recordWait(deployId, reason, next, { restart });
+      })
+      .catch((err) => log.warn(`Failed to record the wait on ${deployId}:`, err));
     return waitWrites.then(() => {});
   }
 

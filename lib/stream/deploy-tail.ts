@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema";
-import { isTerminalStageEvent } from "@/lib/docker/deploy-logger";
+import { isTerminalStageEvent, waitText, type WaitReason } from "@/lib/docker/deploy-logger";
 import { logger } from "@/lib/logger";
 import { readStream } from "./consumer";
 import { deployStream } from "./keys";
@@ -12,10 +12,14 @@ const log = logger.child("deploy-tail");
 
 const TERMINAL = new Set(["success", "failed", "cancelled", "rolled_back", "superseded"]);
 
+export type TailWait = { reason: WaitReason | null; ahead?: number; streamId: string };
+
 export type TailHandlers = {
   onLog: (line: string, meta: { streamId: string; stage?: string }) => void;
   onStage: (stage: string, status: string, meta: { streamId: string }) => void;
-  /** Why the deploy hasn't started, each time that changes. */
+  /** A wait opened, moved or ended (reason null), queued or mid-deploy. */
+  onWait?: (wait: TailWait) => void;
+  /** Why the deploy waits, as a line, each time a wait opens or moves. */
   onWaiting?: (message: string) => void;
   /** The row went queued or running, including a requeue after its executor stopped. */
   onStatus?: (status: "queued" | "running") => void;
@@ -26,8 +30,6 @@ export type TailOpts = {
   /** Resume after this stream id. */
   fromId?: string;
   pollMs?: number;
-  /** Stands in for the queue notice in tests. */
-  notice?: (id: string) => Promise<string>;
 };
 
 export type TailedDeployment = {
@@ -85,8 +87,6 @@ const sleep = (ms: number, signal?: AbortSignal) =>
  */
 export async function tailDeployment(id: string, handlers: TailHandlers, opts: TailOpts = {}): Promise<TailedDeployment | null> {
   const pollMs = opts.pollMs ?? 1_000;
-  const notice = opts.notice ?? (async (deploymentId: string) => (await import("@/lib/deploy/waiting")).queuedNotice(deploymentId));
-  let lastNotice: string | null = null;
   let lastStatus: string | null = null;
   const noteStatus = (status: string) => {
     if (status === lastStatus || (status !== "queued" && status !== "running")) return;
@@ -94,23 +94,9 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
     handlers.onStatus?.(status as "queued" | "running");
   };
 
-  const waitWhileQueued = async (): Promise<Row | null> => {
-    for (;;) {
-      if (opts.signal?.aborted) return null;
-      const row = await readRow(id);
-      if (row) noteStatus(row.status);
-      if (!row || row.status !== "queued") return row;
-      const message = await notice(id).catch(() => null);
-      if (message && message !== lastNotice) {
-        lastNotice = message;
-        handlers.onWaiting?.(message);
-      }
-      await sleep(pollMs, opts.signal);
-    }
-  };
-
-  let row = await waitWhileQueued();
+  let row = opts.signal?.aborted ? null : await readRow(id);
   if (!row) return null;
+  noteStatus(row.status);
 
   const reader = new AbortController();
   const stop = () => reader.abort();
@@ -131,20 +117,19 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
         stop();
         return;
       }
-      if (current.status === "queued") {
-        const message = await notice(id).catch(() => null);
-        if (message && message !== lastNotice) {
-          lastNotice = message;
-          handlers.onWaiting?.(message);
-        }
-      }
     }
   })();
 
+  // From the start even while queued: the claim loop writes the queue's waits to the stream.
   try {
     for await (const entry of readStream(deployStream(id), { fromId: opts.fromId ?? "0-0", signal: reader.signal, blockMs: 1000 })) {
       const { fields } = entry;
-      if (fields.line?.startsWith("[stage]")) {
+      if (fields.wait !== undefined) {
+        const reason = (fields.wait || null) as WaitReason | null;
+        const ahead = fields.ahead !== undefined ? Number(fields.ahead) : undefined;
+        handlers.onWait?.({ reason, ...(ahead === undefined ? {} : { ahead }), streamId: entry.id });
+        if (reason) handlers.onWaiting?.(waitText(reason, ahead));
+      } else if (fields.line?.startsWith("[stage]")) {
         handlers.onStage(fields.stage, fields.status, { streamId: entry.id });
         if (isTerminalStageEvent(fields.stage, fields.status)) {
           const current = await readRow(id).catch(() => null);

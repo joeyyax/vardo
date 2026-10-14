@@ -17,6 +17,7 @@ import { dockerEnv } from "./docker-env";
 import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { waitForFifoSlot, type SlotStore } from "./fifo-slots";
 import type { BoundedBuild } from "./build-memory";
+import type { WaitWriter } from "./deploy-logger";
 
 const log = logger.child("build-gate");
 
@@ -366,6 +367,8 @@ export type BuildGate = {
   /** Without it the build is gated but neither records a peak nor pauses the sweeper's clock. */
   deploymentId?: string;
   log: (line: string) => void;
+  /** Opens a `build-slot` wait on the deploy's stream and row, which also pauses its sweeper clock. */
+  wait?: WaitWriter;
   signal?: AbortSignal;
 };
 
@@ -387,6 +390,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   const waitOpts = {
     limit,
     signal: gate.signal,
+    onPosition: (ahead: number) => void gate.wait?.("build-slot", ahead),
     timeoutMs: WAIT_TIMEOUT_MS,
     pollMs: POLL_MS,
     positionPollMs: POSITION_POLL_MS,
@@ -411,11 +415,13 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       `[queue] Waiting for the builder: ${running ?? "?"} running, ${latest.limit} at a time` +
         (latest.pressured ? " (host memory under pressure)" : ""),
     );
-    // Waiting doesn't count against the sweeper's running budget.
-    const clock = gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
+    // The wait writer pauses the sweeper's clock; without one the gate pauses it itself.
+    void gate.wait?.("build-slot");
+    const clock = !gate.wait && gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
     try {
       slot = local ? await waitForFifoSlot(gateStores.local, id, localOpts()) : await waitForFifoSlot(store, id, waitOpts);
     } finally {
+      await gate.wait?.(null);
       await clock?.resume();
     }
     gate.log("[queue] Builder free, starting build");
