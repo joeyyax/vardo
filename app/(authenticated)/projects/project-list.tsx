@@ -24,7 +24,7 @@ import type { Problem } from "@/lib/ui/conditions";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
-import { markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
+import { isDeployQueued, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
 import type { StarKind } from "@/lib/db/schema/enums";
 import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
@@ -228,6 +228,8 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           <span className="text-status-info">
             <RowTerm text="Deploying" />
           </span>
+        ) : isDeployQueued(app) && !quietParent ? (
+          <span className="text-muted-foreground">Deploy queued</span>
         ) : stopped && !quietParent ? (
           <span className="text-muted-foreground/70">
             <RowTerm text="Stopped" id={app.parked ? "parked" : "stopped"} />
@@ -366,6 +368,7 @@ function SectionNumbers({ section, ctx }: { section: Section; ctx: ListContext }
         </SectionNumber>
       )}
       {s.deploying > 0 && <SectionNumber tone="text-status-info">{s.deploying} deploying</SectionNumber>}
+      {s.queued > 0 && <SectionNumber>{s.queued} queued</SectionNumber>}
       {s.latestDeploy && s.latestDeploy.status !== "running" && s.latestDeploy.status !== "queued" && (
         <SectionNumber optional tone={s.latestDeploy.status === "failed" ? "text-status-error" : undefined}>
           <EntityLink href={deployHref(s.latestDeploy.appName, s.latestDeploy.id)} className="hover:text-foreground">

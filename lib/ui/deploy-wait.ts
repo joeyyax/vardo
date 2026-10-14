@@ -82,6 +82,11 @@ export function deployClock(
   return { wait: state.current, waitedMs, workingMs: total - waitedMs };
 }
 
+/** The deploy to show from a newest-first list: the running one, else the first in line. */
+export function activeDeploy<D extends { status: string }>(deployments: D[]): D | null {
+  return deployments.find((d) => d.status === "running") ?? deployments.findLast((d) => d.status === "queued") ?? null;
+}
+
 /** `deployClock` for a deploy's stream state and row: a queued row counts until a stage or wait event lands. */
 export function deployClockOf(
   { wait, stages }: { wait: WaitState; stages: Record<string, string> },

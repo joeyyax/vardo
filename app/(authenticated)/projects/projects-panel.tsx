@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress, useDeployStream } from "@/components/deploy-progress";
-import { deployWaitOf, waitLabel } from "@/lib/ui/deploy-wait";
+import { activeDeploy, deployWaitOf, waitLabel } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
 import { FixButton, type FixTarget, type RunAction } from "@/components/fix-action";
@@ -112,7 +112,7 @@ function ShowInList({ name, label }: { name: string; label: string }) {
 
 function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const app = loc.node.app;
-  const running = app.deployments.find((d) => d.status === "running" || d.status === "queued");
+  const running = activeDeploy(app.deployments);
   const stream = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id });
   const waiting = deployWaitOf(stream, running?.status) !== null;
   return (
@@ -325,7 +325,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const stopped = app.parked || app.status === "stopped";
   const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
   const related = relatedOf(loc, ctx.sections);
-  const running = app.deployments.find((d) => d.status === "running" || d.status === "queued");
+  const running = activeDeploy(app.deployments);
   const stream = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id, enabled: !!running });
   const wait = running ? deployWaitOf(stream, running.status) : null;
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";

@@ -3,9 +3,11 @@ import type { AppCondition } from "@/lib/docker/conditions";
 import { problem } from "@/lib/ui/conditions";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import {
+  appsIn,
   buildSections,
   buildTree,
   fleetCounts,
+  isDeployQueued,
   issueGroups,
   markSubject,
   sortNodes,
@@ -172,5 +174,36 @@ describe("issueGroups", () => {
       ["backups", 2],
     ]);
     expect(fleetCounts(sections)).toMatchObject({ attention: 3, critical: 1, backupsOverdue: 2, running: 2 });
+  });
+});
+
+describe("queued deploys", () => {
+  const deploy = (status: string) => ({ id: status, status, trigger: "manual", gitSha: null, startedAt: "2026-10-01T00:00:00.000Z", finishedAt: null, durationMs: null });
+  const project = { id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null };
+
+  it("counts an app whose deploy waits for a slot apart from those deploying", () => {
+    const sections = buildSections(
+      [project],
+      [
+        app("a-running", { status: "deploying", deployments: [deploy("running")] }),
+        app("b-queued", { deployments: [deploy("queued"), deploy("success")] }),
+        // Queued behind its own running deploy: still deploying.
+        app("c-both", { status: "deploying", deployments: [deploy("queued"), deploy("running")] }),
+        app("d-idle", { deployments: [deploy("success")] }),
+      ],
+    );
+    expect(fleetCounts(sections)).toMatchObject({ deploying: 2, queued: 1 });
+    expect(isDeployQueued(sections[0].nodes.find((n) => n.app.name === "b-queued")!.app)).toBe(true);
+  });
+
+  it("lists deploys at work before queued ones", () => {
+    const sections = buildSections(
+      [project],
+      [
+        app("a-queued", { deployments: [deploy("queued")] }),
+        app("b-running", { status: "deploying", deployments: [deploy("running")] }),
+      ],
+    );
+    expect(appsIn(sections, "deploying").map((l) => l.node.app.name)).toEqual(["b-running", "a-queued"]);
   });
 });

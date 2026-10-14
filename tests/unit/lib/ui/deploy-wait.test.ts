@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  activeDeploy,
   applyWait,
   deployClock,
   deployWaitOf,
@@ -141,6 +142,19 @@ describe("deployWaitOf", () => {
   it("reports the open wait whatever the row says", () => {
     const wait = fold([{ reason: "build-slot", streamId: at(0) }]);
     expect(deployWaitOf({ wait, stages: { build: "running" } }, "running")?.reason).toBe("build-slot");
+  });
+});
+
+describe("activeDeploy", () => {
+  it("prefers the running deploy over one queued behind it", () => {
+    const rows = [{ id: "new", status: "queued" }, { id: "now", status: "running" }, { id: "old", status: "success" }];
+    expect(activeDeploy(rows)?.id).toBe("now");
+  });
+
+  it("takes the first in line when nothing runs", () => {
+    const rows = [{ id: "second", status: "queued" }, { id: "first", status: "queued" }];
+    expect(activeDeploy(rows)?.id).toBe("first");
+    expect(activeDeploy([{ id: "x", status: "success" }])).toBeNull();
   });
 });
 
