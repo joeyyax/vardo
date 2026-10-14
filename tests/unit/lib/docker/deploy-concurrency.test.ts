@@ -112,7 +112,6 @@ import {
   waitForConcurrencySlot,
   releaseConcurrencySlot,
   removeFromQueue,
-  getConcurrencyState,
   reconcileActiveCounter,
   reconcileQueue,
   getConcurrencyLimit,
@@ -382,25 +381,6 @@ describe("deploy-concurrency", () => {
       redisList[QUEUE_KEY] = ["me"];
       redisState[ACTIVE_KEY] = "1";
       await expect(waitForConcurrencySlot("me", undefined, () => { throw new Error("listener"); })).resolves.toBeUndefined();
-    });
-  });
-
-  describe("getConcurrencyState", () => {
-    it("returns current state", async () => {
-      redisState[ACTIVE_KEY] = "1";
-      redisList[QUEUE_KEY] = ["deploy-a", "deploy-b"];
-
-      const state = await getConcurrencyState();
-      expect(state.active).toBe(1);
-      expect(state.queued).toBe(2);
-      expect(state.queuedIds).toEqual(["deploy-a", "deploy-b"]);
-      expect(state.limit).toBe(2);
-    });
-
-    it("returns zeros when nothing is running or queued", async () => {
-      const state = await getConcurrencyState();
-      expect(state.active).toBe(0);
-      expect(state.queued).toBe(0);
     });
   });
 

@@ -173,30 +173,6 @@ export async function removeFromQueue(deploymentId: string): Promise<void> {
   }
 }
 
-/** Current concurrency state for health checks and the admin UI. */
-export async function getConcurrencyState(): Promise<{
-  active: number;
-  limit: number;
-  queued: number;
-  queuedIds: string[];
-}> {
-  try {
-    const [activeRaw, queued, queuedIds] = await Promise.all([
-      redis.get(ACTIVE_KEY),
-      redis.llen(QUEUE_KEY),
-      redis.lrange(QUEUE_KEY, 0, -1),
-    ]);
-    return {
-      active: Math.max(0, parseInt(activeRaw ?? "0", 10)),
-      limit: getConcurrencyLimit(),
-      queued,
-      queuedIds,
-    };
-  } catch {
-    return { active: 0, limit: getConcurrencyLimit(), queued: 0, queuedIds: [] };
-  }
-}
-
 /** No deploy running or queued, for host-global cleanup outside a deploy. Fails closed. */
 export async function isDeployQueueIdle(): Promise<boolean> {
   try {

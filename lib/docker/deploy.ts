@@ -966,11 +966,6 @@ export async function sendDeployNotification(notice: DeployNotice) {
   } catch (err) { logger.child("notifications").error("Deploy notification error:", err); }
 }
 
-export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
-  const deploymentId = await createDeployment(opts);
-  return runDeployment(deploymentId, opts);
-}
-
 export async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
   const paths = ["/healthz", "/health", "/"];
   const timeout = ENDPOINT_CHECK_TIMEOUT;

@@ -105,23 +105,23 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (deployment.status === "running") {
-      // The engine writes the cancelled row itself at the end of its phase.
-      await publishKillSignal(deploymentId);
-      forceCancel(deploymentId, appId, orgId).catch(() => {});
-      return NextResponse.json({ ok: true, cancelling: true });
+    if (deployment.status === "queued") {
+      const cancelled = await db
+        .update(deployments)
+        .set({ status: "cancelled", finishedAt: new Date() })
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+        .returning({ id: deployments.id });
+      if (cancelled.length > 0) {
+        await removeFromQueue(deploymentId).catch(() => {});
+        return NextResponse.json({ ok: true });
+      }
+      // Started between the read and the write: cancel it as a running deploy.
     }
 
-    // Queued deployments have not started yet — update the DB directly.
-    await db
-      .update(deployments)
-      .set({ status: "cancelled", finishedAt: new Date() })
-      .where(eq(deployments.id, deploymentId));
-
-    // Remove from the concurrency queue.
-    await removeFromQueue(deploymentId).catch(() => {});
-
-    return NextResponse.json({ ok: true });
+    // The engine writes the cancelled row itself at the end of its phase.
+    await publishKillSignal(deploymentId);
+    forceCancel(deploymentId, appId, orgId).catch(() => {});
+    return NextResponse.json({ ok: true, cancelling: true });
   } catch (error) {
     return handleRouteError(error, "Error cancelling deployment");
   }
