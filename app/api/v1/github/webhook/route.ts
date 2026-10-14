@@ -44,7 +44,7 @@ async function handler(request: NextRequest) {
     const signature = request.headers.get("x-hub-signature-256");
     const deliveryId = request.headers.get("x-github-delivery");
 
-    // Signature is mandatory. DB config, then GITHUB_WEBHOOK_SECRET; never fall back to BETTER_AUTH_SECRET.
+    // Signature is mandatory, checked against the GitHub App's webhook secret; never BETTER_AUTH_SECRET.
     const githubConfig = await getGitHubAppConfig();
     const secret = githubConfig?.webhookSecret;
     if (!secret) {
