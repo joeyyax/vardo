@@ -1,6 +1,6 @@
 // Postgres deploy queue: enqueue, claim, lease, cancel and exclusive swaps. Times come from the database clock.
 
-import { and, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { deployments, environments, type DeployCancelReason, type DeployRequest } from "@/lib/db/schema";
@@ -173,22 +173,61 @@ export async function enqueueDeploy(opts: EnqueueOpts, { hold = false }: { hold?
   });
 }
 
-/** Gives a held deploy its scope so executors can claim it. False when it's no longer queued. */
+/** Gives a held or pre-queue deploy its scope so executors can claim it. False when it's no longer queued or a newer push replaced it. */
 export async function releaseHeldDeploy(id: string): Promise<boolean> {
   return db.transaction(async (tx) => {
+    const unreleased = and(eq(deployments.id, id), eq(deployments.status, "queued"), isNull(deployments.scopeKey));
     const [row] = await tx
-      .select({ appId: deployments.appId, environmentId: deployments.environmentId, trigger: deployments.trigger, request: deployments.request })
+      .select({
+        appId: deployments.appId,
+        environmentId: deployments.environmentId,
+        trigger: deployments.trigger,
+        request: deployments.request,
+        startedAt: deployments.startedAt,
+      })
       .from(deployments)
-      .where(and(eq(deployments.id, id), eq(deployments.status, "queued"), isNull(deployments.scopeKey)));
+      .where(unreleased);
     if (!row) return false;
     const scopeKey = await scopeKeyFor(row.appId, row.environmentId, tx);
     await lockScope(tx, scopeKey);
+
+    // A pre-queue push gives way to a newer one in its scope, as its enqueue would have.
+    if (!row.request?.held && isAutomaticTrigger(row.trigger)) {
+      const [newer] = await tx
+        .select({ id: deployments.id })
+        .from(deployments)
+        .where(
+          and(
+            eq(deployments.scopeKey, scopeKey),
+            inArray(deployments.status, ["queued", "running"]),
+            inArray(deployments.trigger, [...AUTOMATIC_TRIGGERS]),
+            gt(deployments.startedAt, row.startedAt),
+          ),
+        )
+        .orderBy(desc(deployments.startedAt))
+        .limit(1);
+      if (newer) {
+        await tx
+          .update(deployments)
+          .set({
+            status: "superseded",
+            supersededBy: newer.id,
+            finishedAt: new Date(),
+            log: appendLog(logLine("deploy", `Superseded by deployment ${newer.id}`)),
+          })
+          .where(unreleased);
+        return false;
+      }
+    }
+
     const rest: DeployRequest = { ...row.request };
     delete rest.held;
-    await tx
+    const released = await tx
       .update(deployments)
       .set({ scopeKey, request: Object.keys(rest).length > 0 ? rest : null })
-      .where(eq(deployments.id, id));
+      .where(unreleased)
+      .returning({ id: deployments.id });
+    if (released.length === 0) return false;
     await applySupersede(tx, id, scopeKey, { trigger: row.trigger, gitSha: rest.gitSha, rollback: rest.rollback });
     return true;
   });

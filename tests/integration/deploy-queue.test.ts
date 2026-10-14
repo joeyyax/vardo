@@ -228,6 +228,28 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
     });
   });
 
+  describe("releasing a pre-queue push", () => {
+    it("gives way to a newer queued or running push and leaves it alone", async () => {
+      await seed("old", "a1", "webhook", "queued", { ageS: 300, scope: null });
+      await seed("new-build", "a1", "webhook", "running", { ageS: 60, stage: "build", claimedBy: "w" });
+      await seed("new-queued", "a1", "poll", "queued", { ageS: 30 });
+      expect(await q.releaseHeldDeploy("old")).toBe(false);
+      expect(await row("old")).toMatchObject({ status: "superseded", superseded_by: "new-queued", scope_key: null });
+      expect(await row("new-queued")).toMatchObject({ status: "queued", superseded_by: null });
+      expect(await row("new-build")).toMatchObject({ status: "running", cancel_requested_at: null });
+    });
+
+    it("supersedes older queued pushes when it is the newest", async () => {
+      await seed("older", "a1", "webhook", "queued", { ageS: 600 });
+      await seed("old", "a1", "webhook", "queued", { ageS: 300, scope: null });
+      await seed("other-env", "a1", "webhook", "queued", { ageS: 10, scope: "a1:e-stage" });
+      expect(await q.releaseHeldDeploy("old")).toBe(true);
+      expect(await row("old")).toMatchObject({ status: "queued", scope_key: "a1" });
+      expect(await row("older")).toMatchObject({ status: "superseded", superseded_by: "old" });
+      expect(await row("other-env")).toMatchObject({ status: "queued" });
+    });
+  });
+
   describe("cancel", () => {
     it("cancels a queued row outright; it is never claimed", async () => {
       await seed("q1", "a1", "manual", "queued");
