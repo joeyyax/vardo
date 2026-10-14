@@ -53,6 +53,8 @@ export function startGateway(opts: GatewayOpts, send: SendFn): void {
       opts.signal,
       (entry) => {
         const { fields } = entry;
+        // Wait entries aren't log lines; the deploy stream route carries them.
+        if (fields.wait !== undefined) return;
         if (fields.line?.startsWith("[stage]")) {
           send("deploy-stage", {
             deployId: opts.deployId,

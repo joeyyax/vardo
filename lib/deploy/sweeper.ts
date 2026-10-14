@@ -34,6 +34,7 @@ import {
   MAX_GRACE_PERIOD_SECONDS,
   type Slot,
 } from "./rollback-watch";
+import { runningSinceKey } from "./running-clock";
 
 const log = logger.child("deploy-sweeper");
 
@@ -42,8 +43,6 @@ const TIMEOUT_MINUTES = DEPLOY_TIMEOUT_MS / 60_000;
 /** One rollback attempt per deployment. A failed attempt is not retried. */
 const ROLLBACK_ATTEMPT_TTL_MS = MAX_GRACE_PERIOD_SECONDS * 1000;
 
-/** When this sweep first saw a deployment in "running". */
-const runningSinceKey = (deploymentId: string) => `deploy:sweep:running-since:${deploymentId}`;
 
 /** Outlives the budget; an expired mark only restarts the clock. */
 const RUNNING_MARK_TTL_MS = TIMEOUT_MINUTES * 60_000 * 4;

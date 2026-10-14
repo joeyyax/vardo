@@ -27,7 +27,7 @@ describe("tailDeployment status", () => {
     const tail = tailDeployment(
       "d1",
       { onLog: () => {}, onStage: () => {}, onStatus: (s) => statuses.push(s) },
-      { pollMs: 5, notice: async () => "Waiting for the worker" },
+      { pollMs: 5 },
     );
 
     await wait(30);
@@ -50,7 +50,7 @@ describe("tailDeployment status", () => {
     const tail = tailDeployment(
       "d2",
       { onLog: () => {}, onStage: () => {}, onStatus: (s) => statuses.push(s) },
-      { pollMs: 5, notice: async () => "Queued" },
+      { pollMs: 5 },
     );
     await wait(30);
     state.status = "failed";

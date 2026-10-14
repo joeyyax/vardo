@@ -75,8 +75,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         id,
         {
           onLog: (line) => sendEvent("log", line),
-          onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
-          onWaiting: (message) => sendEvent("log", `[queue] ${message}`),
+          onStage: (stg, status, meta) => sendEvent("stage", { stage: stg, status, streamId: meta.streamId }),
+          onWait: (wait) => sendEvent("wait", { deploymentId: id, ...wait }),
           onStatus: (status) => sendEvent("status", { deploymentId: id, status }),
         },
         { signal: request.signal },

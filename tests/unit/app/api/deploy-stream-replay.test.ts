@@ -1,4 +1,4 @@
-// GET apps/[appId]/deploy/stream replays a whole batch of log lines without dropping those the client hasn't read yet.
+// GET apps/[appId]/deploy/stream replays a whole batch of log lines without dropping any, and sends waits as their own events.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { dbMock } from "@/tests/helpers/db";
@@ -61,5 +61,23 @@ describe("GET deploy/stream — replay", () => {
 
     expect(got.filter((e) => e.startsWith("event: log"))).toHaveLength(30);
     expect(got.at(-1)).toMatch(/^event: done/);
+  });
+
+  it("sends waits as wait events with their stream ids, not log lines", async () => {
+    mockTail.mockImplementation(async (_id: string, handlers: TailHandlers) => {
+      handlers.onWait?.({ reason: "deploy-slot", ahead: 2, total: 5, eta: "2026-10-14T12:06:00.000Z", streamId: "1-0" });
+      handlers.onWait?.({ reason: null, streamId: "1-1" });
+      return { deploymentId: "d1", status: "success", success: true, durationMs: 1, log: "" };
+    });
+
+    const res = await GET(new NextRequest("http://localhost/api/v1/organizations/org-1/apps/app-a/deploy/stream?deploymentId=d1"), params);
+    const got = await readEvents(res, 3);
+    const data = (e: string) => JSON.parse(e.split("\ndata: ")[1]);
+
+    expect(got.filter((e) => e.startsWith("event: log"))).toEqual([]);
+    expect(got.filter((e) => e.startsWith("event: wait")).map(data)).toEqual([
+      { deploymentId: "d1", reason: "deploy-slot", ahead: 2, total: 5, eta: "2026-10-14T12:06:00.000Z", streamId: "1-0" },
+      { deploymentId: "d1", reason: null, streamId: "1-1" },
+    ]);
   });
 });

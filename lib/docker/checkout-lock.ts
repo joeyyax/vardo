@@ -1,6 +1,7 @@
 // Serializes use of an app's shared checkout, which every environment fetches into.
 
 import { randomUUID } from "crypto";
+import type { WaitWriter } from "./deploy-logger";
 
 const LEASE_MS = 60_000;
 const RENEW_MS = 20_000;
@@ -52,12 +53,30 @@ const sleep = (ms: number, signal?: AbortSignal) => within(null, ms, signal);
  * Takes the app's checkout lock: in-process first, then a Redis lease for other processes.
  * Redis being down degrades to the in-process lock.
  */
-export async function acquireCheckoutLock(appId: string, opts: {
+export async function acquireCheckoutLock(appId: string, opts: CheckoutLockOpts): Promise<CheckoutLock> {
+  let waiting = false;
+  const onWait = () => {
+    waiting = true;
+    opts.log(WAITING);
+    void opts.wait?.("checkout");
+  };
+  try {
+    return await takeCheckoutLock(appId, opts, onWait);
+  } finally {
+    if (waiting) void opts.wait?.(null);
+  }
+}
+
+type CheckoutLockOpts = {
   log: (line: string) => void;
+  /** Opens a `checkout` wait while another deploy holds the lock and ends it on every exit. */
+  wait?: WaitWriter;
   signal?: AbortSignal;
   waitMs?: number;
   redis?: () => Promise<LockRedis>;
-}): Promise<CheckoutLock> {
+};
+
+async function takeCheckoutLock(appId: string, opts: CheckoutLockOpts, onWait: () => void): Promise<CheckoutLock> {
   const waitMs = opts.waitMs ?? CHECKOUT_LOCK_WAIT_MS;
   const deadline = Date.now() + waitMs;
 
@@ -75,7 +94,7 @@ export async function acquireCheckoutLock(appId: string, opts: {
   let waited = false;
   if (prev) {
     waited = true;
-    opts.log(WAITING);
+    onWait();
     try {
       await within(prev, deadline - Date.now(), opts.signal);
     } catch (err) {
@@ -103,7 +122,7 @@ export async function acquireCheckoutLock(appId: string, opts: {
     if (taken === "OK") break;
     if (!waited) {
       waited = true;
-      opts.log(WAITING);
+      onWait();
     }
     try {
       if (Date.now() >= deadline) throw new Error(TIMED_OUT);

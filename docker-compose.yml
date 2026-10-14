@@ -271,7 +271,7 @@ services:
     # Every build runs here when this profile is on, so this bounds them all.
     # install.sh sets it to a quarter of RAM.
     mem_limit: ${VARDO_BUILDKIT_MEM:-4g}
-    # No swap: a build over the limit fails with an OOM instead of paging the host.
+    # No swap, except autosize gives hosts under 6 GiB swap equal to memory.
     memswap_limit: ${VARDO_BUILDKIT_MEM:-4g}
     healthcheck:
       test: ["CMD", "buildctl", "debug", "workers"]

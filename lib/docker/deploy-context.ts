@@ -4,7 +4,7 @@ import type { SecurityHeaderConfig } from "@/lib/security/response-headers";
 
 import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
 import type { HostConfig } from "@/lib/config/host-config";
-import type { DeployStage } from "./deploy-logger";
+import type { DeployStage, WaitWriter } from "./deploy-logger";
 import type { RollbackTarget } from "./rollback-target";
 
 import type { StageTimer } from "./stage-timings";
@@ -252,6 +252,8 @@ export type DeployContext = {
   /** Registers the secret-looking values of an env to redact from this deploy's log lines. */
   addSecrets?: (env: Record<string, string>) => void;
   stage: (stage: DeployStage, status: DeployStatus) => void;
+  /** Opens or ends (null) a wait on this deploy's stream and row. */
+  wait?: WaitWriter;
   checkAbort: () => void;
   /** Phase timings, persisted to `deployment.stage_timings`. */
   timer: StageTimer;

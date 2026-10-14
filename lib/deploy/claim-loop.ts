@@ -7,6 +7,7 @@ import { executorId, isDraining, startClaimed } from "./executor";
 import { GROUP_JOBS_PER_EXECUTOR, claimGroupJobs, groupJobsHere, startGroupJob } from "./group-job";
 import { claimDeploys, clearFinishedExclusive, type ClaimOpts } from "./queue";
 import { markQueuedForOldSweeper } from "./legacy-compat";
+import { clearFinishedWaits, endQueueWaits, markQueueWaits } from "./waiting";
 
 const log = logger.child("deploy-claim");
 
@@ -21,9 +22,19 @@ const DESCRIBE: Record<ClaimScope, string> = {
   none: "no deploys (VARDO_DEPLOY_EXECUTOR=web)",
 };
 
-/** One pass: clears finished exclusive flags, then claims and starts. Returns the ids started. */
+/** One pass: clears finished exclusive flags, claims and starts, then records why the rest still wait. Returns the ids started. */
 export async function claimPass(scope: ClaimScope): Promise<string[]> {
   await markQueuedForOldSweeper();
+  try {
+    return await claimAndStart(scope);
+  } finally {
+    // Runs even with nothing to claim, so a missing worker still shows.
+    await markQueueWaits().catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
+    await clearFinishedWaits().catch(() => {});
+  }
+}
+
+async function claimAndStart(scope: ClaimScope): Promise<string[]> {
   if (scope === "none" || isDraining()) return [];
   const me = executorId();
   const started: string[] = [];
@@ -31,7 +42,9 @@ export async function claimPass(scope: ClaimScope): Promise<string[]> {
   const { ownSlot } = await import("@/lib/docker/own-slot");
   await clearFinishedExclusive(await ownSlot());
 
-  for (const row of await claimDeploys(me, { self: SELF_FILTER[scope] })) {
+  const claimed = await claimDeploys(me, { self: SELF_FILTER[scope] });
+  await endQueueWaits(claimed.filter((row) => row.waited).map((row) => row.id));
+  for (const row of claimed) {
     log.info(`Claimed deployment ${row.id} (${row.trigger}, ${row.scopeKey})`);
     void startClaimed(row);
     started.push(row.id);

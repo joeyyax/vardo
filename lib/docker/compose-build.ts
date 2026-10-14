@@ -8,6 +8,7 @@ import { COMPOSE_BUILD_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT, GIT_METADATA_TIMEOUT }
 import { engineVersion } from "./engine-version";
 import { planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
 import type { BoundedBuild } from "./build-memory";
+import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot } from "./build-gate";
 
 /** Bake file compose's own build would run, written into the slot. */
@@ -40,6 +41,8 @@ export type ComposeBuildOpts = {
   exec?: Exec;
   /** Records the build's memory peak against this deploy and pauses its sweeper clock while it waits. */
   deploymentId?: string;
+  /** Opens a `build-slot` wait while the build queues for the builder. */
+  wait?: WaitWriter;
   /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
   gate?: <T>(run: () => Promise<T>) => Promise<T>;
 };
@@ -100,7 +103,7 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     }
   }
   if (services.length === 0) return null;
-  const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, signal: opts.signal }, opts.bounded, run));
+  const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal }, opts.bounded, run));
   return gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
 }
 

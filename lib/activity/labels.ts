@@ -19,6 +19,7 @@ const PHRASES: Record<string, Phrase> = {
   "deployment.rolled_back": { text: "rolled back" },
   "deployment.post_deploy_incomplete": { text: "left post-deploy work unfinished on" },
   "deployment.instant_rollback": { text: "instantly rolled back" },
+  "deployment.bumped": { text: "jumped the queue for" },
 
   "app.created": { text: "created" },
   "app.updated": { text: "updated" },

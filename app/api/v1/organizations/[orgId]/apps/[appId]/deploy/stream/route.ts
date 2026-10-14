@@ -151,7 +151,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           {
             onLog: (message, meta) => sendEvent("log", { deploymentId: id, message, stage: meta.stage, streamId: meta.streamId }),
             onStage: (stage, status, meta) => sendEvent("stage", { deploymentId: id, stage, status, streamId: meta.streamId }),
-            onWaiting: (message) => sendEvent("log", { deploymentId: id, message: `[queue] ${message}`, stage: "queued" }),
+            onWait: (wait) => sendEvent("wait", { deploymentId: id, ...wait }),
             onStatus: (status) => sendEvent("status", { deploymentId: id, status }),
           },
           { signal: abortController.signal, fromId: lastId },

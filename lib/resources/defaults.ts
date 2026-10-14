@@ -99,7 +99,8 @@ export const BUILDS_FORMULA = {
 export function buildConcurrency(input: { cpus: number; usableBytes: number; budgetBytes: number }): number {
   const byMemory = Math.floor(input.usableBytes / Math.max(1, input.budgetBytes));
   const byCores = Math.floor(input.cpus / BUILDS_FORMULA.coresPer);
-  return Math.max(1, Math.min(byMemory, byCores));
+  // NaN from an unreadable input would pass through Math.max.
+  return Math.max(1, Math.min(byMemory, byCores) || 0);
 }
 
 /** Most builds at once. VARDO_MAX_CONCURRENT_BUILDS wins, floored at 1. Memory pressure makes it one. */

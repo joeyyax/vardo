@@ -341,16 +341,20 @@ async function reuseImage(
   }
 }
 
-/** Records a repo build as the build phase, with BuildKit's export split out as in compose builds. */
+/** Records a repo build as the build phase from the builder's admission, with BuildKit's export split out as in compose builds. */
 async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) => Promise<void>): Promise<void> {
   const capture = { text: "" };
-  const start = Date.now();
+  const began = Date.now();
+  const waitedBefore = ctx.timer.waited();
+  // Admitted after any wait for the builder.
+  const admitted = () => began + ctx.timer.waited() - waitedBefore;
   try {
     await run(capture);
   } catch (err) {
-    ctx.timer.range("build", start, Date.now());
+    ctx.timer.range("build", admitted(), Date.now());
     throw err;
   }
+  const start = admitted();
   const end = Date.now();
   const exportMs = Math.min(exportMsFromBuildOutput(capture.text), end - start);
   ctx.timer.range("build", start, end - exportMs);
@@ -613,7 +617,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     // Every environment fetches into this checkout; one deploy at a time until its build tree is written.
     let checkoutLock: CheckoutLock;
     try {
-      checkoutLock = await acquireCheckoutLock(ctx.appId, { log, signal });
+      checkoutLock = await acquireCheckoutLock(ctx.appId, { log, signal, wait: ctx.wait });
     } catch (err) {
       if (sshKeyFile) await cleanupKeyFile(sshKeyFile);
       throw err;
@@ -862,7 +866,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,
-          gate: { deploymentId: ctx.deploymentId, log, signal },
+          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal },
           overrides,
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,

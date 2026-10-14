@@ -14,7 +14,7 @@ import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { StageTimings } from "@/lib/docker/stage-timings";
 import type { BuildPlanRecord } from "@/lib/docker/build-plan";
 import type { RebuildMode } from "@/lib/docker/build-key";
-import type { DeployStage } from "@/lib/docker/deploy-logger";
+import type { DeployStage, WaitReason } from "@/lib/docker/deploy-logger";
 import { user } from "./auth";
 import { deploymentStatusEnum, deploymentTriggerEnum } from "./enums";
 import { apps } from "./apps";
@@ -88,6 +88,17 @@ export const deployments = pgTable("deployment", {
   cancelReason: text("cancel_reason").$type<DeployCancelReason>(),
   // Set while this deploy's swap needs every other deploy stopped. Blocks new claims.
   exclusiveRequestedAt: timestamp("exclusive_requested_at", { withTimezone: true }),
+  // What the deploy waits on and since when; in a deploy-slot or build-slot line, how many are ahead and in it.
+  waitReason: text("wait_reason").$type<WaitReason>(),
+  waitingSince: timestamp("waiting_since", { withTimezone: true }),
+  waitAhead: smallint("wait_ahead"),
+  waitTotal: smallint("wait_total"),
+  // When a deploy-slot or build-slot wait should end. Null without history.
+  waitEta: timestamp("wait_eta", { withTimezone: true }),
+  // An admin moved it to the front of its queue; the latest bump goes first. A claim clears it.
+  bumpedAt: timestamp("bumped_at", { withTimezone: true }),
+  // When an executor last claimed it.
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),
@@ -97,5 +108,6 @@ export const deployments = pgTable("deployment", {
     uniqueIndex("deployment_scope_running_uniq").on(t.scopeKey).where(sql`status = 'running'`),
     index("deployment_queued_idx").on(t.startedAt).where(sql`status = 'queued'`),
     index("deployment_exclusive_idx").on(t.exclusiveRequestedAt).where(sql`exclusive_requested_at is not null`),
+    index("deployment_waiting_idx").on(t.waitingSince).where(sql`wait_reason is not null`),
   ]
 );
