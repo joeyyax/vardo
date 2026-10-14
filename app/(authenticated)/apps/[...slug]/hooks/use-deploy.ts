@@ -481,7 +481,7 @@ export function useDeploy({
     deployStageTimes,
     deployWait,
     /** The lock or queue holding the running deploy, or null while it works. */
-    deployHeld: deploying ? deployWaitOf({ wait: deployWait, stages: deployStages }, serverRunningDeploy?.status) : null,
+    deployHeld: deploying ? deployWaitOf({ wait: deployWait, stages: deployStages }, deployQueued ? "queued" : "running") : null,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,
