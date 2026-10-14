@@ -19,6 +19,7 @@
     "test:redis": "bash scripts/test-redis-durability.sh",
     "test:load": "tsx scripts/load/run.ts",
     "email:preview": "tsx scripts/email-preview.ts",
+    "release": "tsx scripts/release.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:generate": "drizzle-kit generate",
