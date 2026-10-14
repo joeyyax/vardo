@@ -27,6 +27,8 @@ export type ProjectsDeployment = {
   /** What an in-flight deploy waits on, null while it works. */
   waitReason?: string | null;
   waitingSince?: Date | string | null;
+  /** Place in line while queued for a slot. */
+  waitAhead?: number | null;
 };
 
 /** One app or compose service as the page loads it. */

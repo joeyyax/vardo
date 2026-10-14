@@ -203,6 +203,13 @@ describe("row waits", () => {
     expect(holdLabel({ reason: "worker", since: null, queued: true })).toBe("Waiting for the worker to come back");
   });
 
+  it("counts the queue from the row's place in line", () => {
+    const hold = rowHold({ status: "queued", waitReason: "deploy-slot", waitingSince: null, waitAhead: 3 });
+    expect(hold?.ahead).toBe(3);
+    expect(holdLabel(hold!)).toBe("Queued behind 3 other deploys");
+    expect(rowHold({ status: "queued", waitReason: null, waitAhead: 3 })?.ahead).toBeUndefined();
+  });
+
   it("uses the row's wait until the stream reports one", () => {
     const hold = { reason: "build-slot" as const, since: T0, queued: false };
     expect(seedWait(NO_WAIT, hold).current).toEqual({ reason: "build-slot", since: T0 });

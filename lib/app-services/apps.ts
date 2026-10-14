@@ -96,6 +96,9 @@ const DETAIL_DEPLOYMENTS = {
     slot: true,
     startedAt: true,
     finishedAt: true,
+    waitReason: true,
+    waitingSince: true,
+    waitAhead: true,
   },
   with: {
     triggeredByUser: {

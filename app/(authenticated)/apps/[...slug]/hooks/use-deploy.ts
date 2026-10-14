@@ -472,6 +472,9 @@ export function useDeploy({
     }
   }
 
+  // The row's wait stands in until the stream reports one.
+  const seededWait = seedWait(deployWait, serverRunningDeploy ? rowHold(serverRunningDeploy) : null);
+
   return {
     deploying,
     deployQueued,
@@ -479,11 +482,9 @@ export function useDeploy({
     deployStartTime,
     deployStages,
     deployStageTimes,
-    deployWait,
+    deployWait: seededWait,
     /** The lock or queue holding the running deploy, or null while it works. */
-    deployHeld: deploying
-      ? deployWaitOf({ wait: seedWait(deployWait, serverRunningDeploy ? rowHold(serverRunningDeploy) : null), stages: deployStages }, deployQueued ? "queued" : "running")
-      : null,
+    deployHeld: deploying ? deployWaitOf({ wait: seededWait, stages: deployStages }, deployQueued ? "queued" : "running") : null,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,
