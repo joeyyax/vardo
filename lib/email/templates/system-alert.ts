@@ -54,17 +54,22 @@ function certExpiringMail(event: Extract<SystemAlertEvent, { type: "system.cert-
   const app = event.app;
 
   const blocker = challenge ? `, ${CHALLENGE_BLOCKER[challenge]}` : "";
-  const why = expired
-    ? `Browsers refuse the connection until it renews. ${issuer ? `${issuer} renewal is failing${blocker}.` : "Renewal is failing."}`
-    : `${issuer ?? "Traefik"} renews 30 days ahead, so something is blocking it${blocker}.`;
+  const why = !issuer
+    ? expired
+      ? "Browsers refuse the connection until it's replaced."
+      : `Port 443 serves a certificate that expires ${dayLabel(event.expiresAt, ctx.timeZone)}.`
+    : expired
+      ? `Browsers refuse the connection until it renews. ${issuer} renewal is failing${blocker}.`
+      : `${issuer} renews 30 days ahead, so something is blocking it${blocker}.`;
+  const unrenewed = issuer ? " and hasn't renewed" : "";
 
   const lead: MailInline[] = [];
   if (domains.length > 1) {
     const shown = domains.slice(0, CERT_DOMAINS_SHOWN).map((d) => ({ text: d, href: `https://${d}` }));
     const more = domains.length - shown.length;
     const list = more ? [...shown.flatMap((d, i) => (i ? [", ", nameLink(d.text, d.href)] : [nameLink(d.text, d.href)])), ` and ${plural(more, "more domain")}`] : linkedList(shown);
-    lead.push("It covers ", ...list, expired ? ". " : " and hasn't renewed. ");
-  } else if (!expired) {
+    lead.push("It covers ", ...list, expired ? ". " : `${unrenewed}. `);
+  } else if (!expired && issuer) {
     lead.push("It hasn't renewed. ");
   }
   lead.push(why);

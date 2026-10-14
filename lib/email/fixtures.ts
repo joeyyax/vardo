@@ -1081,6 +1081,19 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
+    name: "system-cert-expiring-custom",
+    event: {
+      type: "system.cert-expiring",
+      title: "Certificate expiring: shop.example.com",
+      message: "The TLS certificate served on port 443 for shop.example.com expires in 12 days, on 2026-10-21.",
+      domain: "shop.example.com",
+      domains: ["shop.example.com"],
+      daysLeft: 12,
+      expiresAt: "2026-10-21T12:00:00.000Z",
+      resolver: "unknown",
+    },
+  },
+  {
     name: "system-cert-expired",
     event: {
       type: "system.cert-expiring",

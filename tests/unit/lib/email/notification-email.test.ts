@@ -253,6 +253,20 @@ describe("notification emails", () => {
     expect(email.text).not.toContain("App:");
   });
 
+  it("doesn't promise a renewal for a certificate from an unknown resolver", async () => {
+    const event = { ...fixture<"system.cert-expiring">("system-cert-expiring"), resolver: "unknown" };
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.text).not.toMatch(/Traefik|renews 30 days|hasn't renewed/);
+    expect(email.text).toContain("Port 443 serves a certificate that expires Oct 15.");
+  });
+
+  it("says an expired certificate from an unknown resolver needs replacing, not that renewal is failing", async () => {
+    const event = { ...fixture<"system.cert-expiring">("system-cert-expired"), resolver: "unknown" };
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.text).not.toContain("Renewal is failing");
+    expect(email.text).toContain("Browsers refuse the connection until it's replaced.");
+  });
+
   it("says how far behind an available update is, with one button and the change history", async () => {
     const email = (await renderNotificationEmail(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT))!;
     expect(email.text).toContain("4f1a9b2 is 12 commits newer than what node-a runs. Your apps keep running during the update.");

@@ -7,6 +7,7 @@ import {
   groupByCertificate,
   describeResolver,
   certOwner,
+  certResolvedMessage,
   CERT_EXPIRY_THRESHOLD_DAYS,
   type CertProbe,
 } from "@/lib/system-alerts/cert-expiry";
@@ -213,5 +214,16 @@ describe("certOwner", () => {
   it("returns none when the certificate spans apps", () => {
     expect(certOwner([{ owner: app("a") }, { owner: app("b") }])).toBeUndefined();
     expect(certOwner([])).toBeUndefined();
+  });
+});
+
+describe("certResolvedMessage", () => {
+  it("says renewed only when the served certificate changed", () => {
+    expect(certResolvedMessage("shop.example.com", "aa", "bb")).toBe("The certificate for shop.example.com was renewed.");
+  });
+
+  it("says valid again when the certificate is the same one or wasn't seen before", () => {
+    expect(certResolvedMessage("shop.example.com", "aa", "aa")).toBe("The certificate for shop.example.com is valid again.");
+    expect(certResolvedMessage("shop.example.com", null, "bb")).toBe("The certificate for shop.example.com is valid again.");
   });
 });

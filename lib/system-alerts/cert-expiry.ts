@@ -1,6 +1,6 @@
 // Certificate expiry verdicts from a TLS handshake observation. Pure.
 
-/** Days remaining at or below which a certificate raises an alert. Traefik renews at 30, so this leaves nine days of retries. */
+/** Days remaining at or below which a certificate raises an alert. Traefik's ACME resolvers renew at 30, so this leaves nine days of retries. */
 export const CERT_EXPIRY_THRESHOLD_DAYS = 21;
 
 /** Days remaining at or below which the alert is critical. */
@@ -129,6 +129,13 @@ export function certAlertMessage(
     title: `Certificate expiring: ${who}`,
     message: `The TLS certificate served on port 443 for ${who} expires in ${verdict.daysLeft} day${verdict.daysLeft === 1 ? "" : "s"}, on ${on}.`,
   };
+}
+
+/** Resolve copy: renewed only when the served certificate changed. */
+export function certResolvedMessage(domain: string, before: string | null, after: string | null): string {
+  return before && after && before !== after
+    ? `The certificate for ${domain} was renewed.`
+    : `The certificate for ${domain} is valid again.`;
 }
 
 /** Groups domains by certificate. Domains without a fingerprint are keyed by name. */
