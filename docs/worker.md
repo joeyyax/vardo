@@ -16,7 +16,7 @@ A deploy is a row in the `deployment` table. Whatever asks for one (the deploy b
 | Console with `VARDO_WORKER=embedded` (`pnpm dev`) | Every deploy |
 
 - **One per app environment.** A second deploy of the same environment waits for the first. A push or poll replaces an older push still queued, and stops a running push during clone, compose or build. A deploy from the button or the API never stops a running one; it runs next.
-- **Capacity.** Running deploys across the host stay at or under the deploy concurrency setting. Explicit deploys are claimed before pushes.
+- **Capacity.** Running deploys across the host stay at or under the deploy concurrency setting. Bumped deploys are claimed first, then explicit deploys, then pushes.
 - **Leases.** The executor renews each claim every 3 seconds. A claim expires 45 seconds after its executor stops renewing it.
 - **Cancel.** A queued deploy is cancelled at once. A running one stops within seconds while it clones or builds; past that it stops at the next stage.
 - **Crash rule.** When a lease expires during clone, compose or build, the deploy is requeued once with a log line saying so; a second expiry fails it. One that expires before the first stage requeues it without counting. Expiring later than the build fails it, and `deploy-sweep` stops its slot only if nothing serves.
@@ -24,15 +24,88 @@ A deploy is a row in the `deployment` table. Whatever asks for one (the deploy b
 - **Fence.** Before the swap touches containers, the deploy checks it still holds its claim. A lost claim stops it with the old slot serving.
 - **Project deploys and previews** run as `deploy-group` jobs in the `worker_job` table. The job queues each tier's deploys and waits on them.
 
+### Waits
+
+A deploy that can't move on records why on its row and sends a `wait` event on its stream. A wait with no reason ends the one open.
+
+| Reason | Waits for |
+| --- | --- |
+| `worker` | A worker heartbeat. Never on Vardo's own deploys. |
+| `exclusive` | Vardo's own deploy to finish its swap |
+| `app` | The deploy running for this app environment, or one ahead of it in that environment's queue |
+| `deploy-slot` | A free deploy slot |
+| `build-slot` | The builder (see [Builds](#builds)) |
+| `checkout` | Another deploy of the app to finish with its shared repository checkout |
+
+The claim loop records the first four for queued deploys on every pass, in that order of precedence. A running deploy records `build-slot` and `checkout` itself. Waits don't count toward `DEPLOY_TIMEOUT_MINUTES`.
+
+| Column | Holds |
+| --- | --- |
+| `wait_reason` | The reason, null when the deploy isn't waiting |
+| `waiting_since` | When this reason started |
+| `wait_ahead`, `wait_total` | In a `deploy-slot` or `build-slot` line, how many are ahead and in the line |
+| `wait_eta` | When the wait should end, null without an estimate |
+| `bumped_at` | When an admin last moved it to the front |
+| `claimed_at` | When an executor last claimed it |
+
+A run's time spent waiting for the builder or the checkout goes in `stage_timings.waitMs` and the `[timing]` line, outside every phase.
+
+### Start estimates
+
+`deploy-slot` and `build-slot` waits get a start estimate. Each busy slot frees when its run reaches the app's typical time; each deploy in line then takes the earliest free slot for its own app's typical time.
+
+- **Deploy slots.** Typical is the app's last successful deploy, less its `waitMs`, counted from `claimed_at`.
+- **Builder.** Typical is the app's last successful build plus export, counted from the build's admission.
+- **Limits.** A run counts as an hour at most. An overdue run frees its slot now. An estimate past 6 hours isn't shown, and one that moves under 30 seconds isn't rewritten.
+- **No history.** Places that would follow a run without a past success get no estimate. The place and line length still show.
+
+### Jumping the queue
+
+`POST /api/v1/organizations/{orgId}/apps/{appId}/deployments/{deploymentId}/bump` moves a waiting deploy to the front. It needs `app.deploy` in the org and an instance admin.
+
+- **Queued.** The deploy goes first in claim order, the latest bump first. It never passes its own app environment's running deploy.
+- **Waiting for the builder.** The build moves to the head of the builder queue.
+- **Anything else** returns 409, including a deploy claimed before the bump lands.
+
+Each bump is recorded as `deployment.bumped` activity.
+
 ### Vardo's own deploys
 
 A deploy of Vardo queues and builds like any other. Its swap restarts the worker and console and can recreate Postgres and Redis, so before the swap it sets a hold on its row: executors claim nothing new, and the deploy waits up to 15 minutes for running deploys, logging `Waiting for N deploys to finish before the swap` every 30 seconds. Deploys still running at 15 minutes get the old worker's drain, then the crash rule. A successful deploy keeps the hold until the new slot's console or worker clears it; a failed one drops it. A hold older than 30 minutes stops counting.
 
 ### When the worker is down
 
-Deploys queue. The deploy log says `Waiting for the worker`, and every page shows how many deploys are waiting. `host.worker-down` opens after 3 minutes. An automatic update still goes ahead, since queued deploys don't count as busy, so a release that fixes the worker can land.
+Deploys queue with a `worker` wait, and every page shows how many deploys are waiting. `host.worker-down` opens after 3 minutes. An automatic update still goes ahead, since queued deploys don't count as busy, so a release that fixes the worker can land.
 
 If the worker can't boot, set `VARDO_DEPLOY_EXECUTOR=web` in `/opt/vardo/.env` and redeploy: the console runs every deploy until it's removed.
+
+## Builds
+
+Builds run in the `vardo-buildkit` container. A gate admits them in arrival order, as many at once as BuildKit's memory and the host's cores allow:
+
+```
+max(1, min(floor((buildkit limit − 640 MiB) / budget), floor(cores / 4)))
+```
+
+- **Budget.** The largest build peak recorded in the last 30 days, or 3 GiB without one. A peak is BuildKit's memory rise during a build that ran alone, recorded only from 64 MiB and from builds of 4 seconds or longer.
+- **Limit.** BuildKit's live memory limit, read every 10 seconds. Without a limit, half of RAM. Without a reading, the limit the deploy started with.
+- **Pressure.** Memory PSI `some avg10` at 20 or more drops the gate to 1, over `VARDO_MAX_CONCURRENT_BUILDS` too.
+- **Override.** `VARDO_MAX_CONCURRENT_BUILDS` replaces the formula, at least 1.
+- **Redis down.** Each process gates its own builds.
+
+A build waits for the gate up to 6 hours.
+
+### BuildKit's size
+
+Before a build into an empty builder, Vardo stops steps an earlier build left running and resizes BuildKit to the host:
+
+```
+free + BuildKit's current use − max(1 GiB, 10% of RAM)
+```
+
+clamped to at least `min(4 GiB, 70% of RAM)` and at most 50% of RAM, in 64 MiB steps. The floor wins on a small host. Under 6 GiB of RAM, BuildKit also gets swap equal to its memory. A change under 64 MiB isn't applied.
+
+`VARDO_BUILDKIT_MEM` pins the size only when it differs from what `install.sh` writes for the host, a quarter of RAM between 4 and 16 GiB. Recreating the container resets it to `VARDO_BUILDKIT_MEM` until the next build into an empty builder.
 
 ## How the console hands off
 
@@ -85,6 +158,8 @@ Set these in `/opt/vardo/.env` and redeploy.
 | `VARDO_LOOPS_IN_WEB` | `auto`. `always` keeps every loop in the console; `never` leaves them to the worker. |
 | `VARDO_WORKER` | `external` in production, `embedded` in dev, where `pnpm dev` runs every loop. |
 | `VARDO_DEPLOY_EXECUTOR` | Unset. `web` makes the console run every deploy and the worker none. For this release only. |
+| `VARDO_MAX_CONCURRENT_BUILDS` | Unset: the [build gate](#builds) formula. |
+| `VARDO_BUILDKIT_MEM` | A quarter of RAM, between 4g and 16g. `install.sh` writes it. Another value pins BuildKit's size. |
 
 ## Development
 
