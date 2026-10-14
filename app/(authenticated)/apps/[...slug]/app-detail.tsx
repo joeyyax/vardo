@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Trash2,
-  Loader2,
   Plus,
   Hammer,
   Play,
@@ -382,14 +381,9 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
     rebuildable: app.source === "git",
   });
 
+  // Deploying reads as running: the old container serves until the swap.
   const statusTrigger = (() => {
-    if (deploy.deploying || app.status === "deploying") {
-      return {
-        className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
-        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
-      };
-    }
-    if (app.status === "active") {
+    if (app.status === "active" || app.status === "deploying") {
       const lastDeploy = app.deployments.find((d) => d.status === "success");
       return {
         // Quiet when healthy; the dot carries the reading.
@@ -506,7 +500,7 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="status" className={statusTrigger.className}>
+                  <Button size="sm" variant="status" disabled={deploy.deploying || app.status === "deploying"} className={statusTrigger.className}>
                     {statusTrigger.content}
                     <ChevronDown className="ml-1.5 size-3.5" />
                   </Button>

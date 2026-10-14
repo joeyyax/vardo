@@ -12,7 +12,6 @@ import {
   Trash2,
   ChevronDown,
   Check,
-  Loader2,
   RotateCcw,
   Square,
   Variable,
@@ -911,11 +910,8 @@ export function ProjectDetail({
 
               return (
                 <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
-                  {deploying ? (
-                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                  ) : (
-                    <><Rocket className="mr-1.5 size-4" />Deploy all</>
-                  )}
+                  <Rocket className="mr-1.5 size-4" />
+                  Deploy all
                 </Button>
               );
             })()}
