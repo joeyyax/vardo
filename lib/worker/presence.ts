@@ -36,11 +36,6 @@ export async function beatWorker(id: string, beat: Beat): Promise<{ drainRequest
   return { drainRequested: !!row?.drainRequestedAt };
 }
 
-/** Asks a worker to stop claiming work. */
-export async function requestDrain(id: string): Promise<void> {
-  await db.update(workers).set({ drainRequestedAt: sql`now()` }).where(eq(workers.id, id));
-}
-
 /** Every worker row, with the database's now. */
 export async function readWorkers(): Promise<{ now: Date; rows: WorkerRow[] }> {
   const [rows, [clock]] = await Promise.all([
