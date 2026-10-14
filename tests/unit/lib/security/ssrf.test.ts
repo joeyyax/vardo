@@ -56,7 +56,7 @@ describe("blockedAddressReason", () => {
 
   it("blocks loopback, private and CGNAT ranges", () => {
     expect(blockedAddressReason("127.0.0.1")).toMatch(/loopback/);
-    expect(blockedAddressReason("10.0.0.19")).toMatch(/private/);
+    expect(blockedAddressReason("10.0.0.42")).toMatch(/private/);
     expect(blockedAddressReason("172.16.0.1")).toMatch(/private/);
     expect(blockedAddressReason("172.31.255.255")).toMatch(/private/);
     expect(blockedAddressReason("192.168.1.1")).toMatch(/private/);
@@ -121,7 +121,7 @@ describe("assertOutboundUrlAllowed", () => {
   });
 
   it("blocks a name that resolves into a private range — DNS rebinding", async () => {
-    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValue([{ address: "10.0.0.42", family: 4 }]);
     await expect(assertOutboundUrlAllowed("https://evil.example.com/")).rejects.toThrow(/private/);
   });
 
@@ -139,14 +139,14 @@ describe("assertOutboundUrlAllowed", () => {
   });
 
   it("honors an allowlist entry, since reaching an internal service on purpose is legitimate", async () => {
-    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValue([{ address: "10.0.0.42", family: 4 }]);
     await expect(
       assertOutboundUrlAllowed("http://ntfy.internal/topic", { allowlist: ["ntfy.internal"] }),
     ).resolves.toBeInstanceOf(URL);
   });
 
   it("matches an allowlist suffix entry only on the suffix", async () => {
-    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValue([{ address: "10.0.0.42", family: 4 }]);
     await expect(
       assertOutboundUrlAllowed("http://a.lab.internal/", { allowlist: [".lab.internal"] }),
     ).resolves.toBeInstanceOf(URL);
@@ -156,7 +156,7 @@ describe("assertOutboundUrlAllowed", () => {
   });
 
   it("does not let an allowlist entry match a lookalike domain", async () => {
-    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValue([{ address: "10.0.0.42", family: 4 }]);
     await expect(
       assertOutboundUrlAllowed("http://ntfy.internal.evil.com/", { allowlist: ["ntfy.internal"] }),
     ).rejects.toThrow(/private/);

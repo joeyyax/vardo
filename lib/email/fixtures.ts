@@ -213,10 +213,10 @@ function rollout(type: "system.rollout-finished" | "system.rollout-paused", stat
     targetSha: "4f1a9b2c",
     targetLabel: "4f1a9b2",
     members: [
-      { instanceId: "jy0", name: "jy0", priority: "critical", state: states[0], reason: null },
+      { instanceId: "prod-1", name: "prod-1", priority: "critical", state: states[0], reason: null },
       {
-        instanceId: "lh1",
-        name: "Long House",
+        instanceId: "prod-2",
+        name: "Example Home",
         priority: "standard",
         state: states[1],
         reason: states[1] === "failed" ? "Post-update health check failed; rolled back" : states[1] === "skipped" ? "Skipped by an admin" : null,
@@ -399,7 +399,7 @@ const RECAP_GROUP: AppRecap[] = [
 ];
 
 function recapEvent(recaps: AppRecap[]): DigestAppRecapEvent {
-  return { type: "digest.app-recap", title: "App recaps", message: `${recaps.length} new app recaps.`, orgName: "Long House", recaps };
+  return { type: "digest.app-recap", title: "App recaps", message: `${recaps.length} new app recaps.`, orgName: "Example Home", recaps };
 }
 
 export const RECAP_FIXTURES = { clean: RECAP_CLEAN, actions: RECAP_ACTIONS, month: RECAP_MONTH, group: RECAP_GROUP };
@@ -408,13 +408,13 @@ const OCTOBER = { since: "2026-10-01T07:00:00.000Z", until: "2026-11-01T07:00:00
 const octoberDays = (values: number[], failed: number[] = []) =>
   values.map((n, i) => ({ start: new Date(Date.parse(OCTOBER.since) + i * 86_400_000).toISOString(), succeeded: failed.includes(i) ? n - 1 : n, failed: failed.includes(i) ? 1 : 0 }));
 
-/** Long House's October. */
+/** Example Home's October. */
 const DIGEST_MONTH: DigestHealthEvent = {
   type: "digest.health",
-  title: "Monthly digest: Long House",
+  title: "Monthly digest: Example Home",
   message: "391 deploys, 19 failed.",
   cadence: "monthly",
-  orgName: "Long House",
+  orgName: "Example Home",
   windowLabel: "October 2026",
   ...OCTOBER,
   appCount: 44,
@@ -772,6 +772,23 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     ),
   },
   {
+    name: "backup-summary-not-backed-up",
+    event: backupSummary(
+      [
+        ...NIGHTLY,
+        { kind: "backup", appId: "app_0bs", appName: "Observability", volumeName: "etc-dashboards", jobName: "auto-app_0bs", outcome: "skipped", error: "Bind mount, not opted in", expected: true, at: "2026-10-09T02:22:00.000Z" },
+      ],
+      {
+        notBackedUp: [
+          { appId: "app_shop", appName: "Shop", volumeName: "cache", reason: "Rebuildable — reconstructed rather than restored" },
+          { appId: "app_mail", appName: "Mailpit", volumeName: "mailpit-data", reason: "Backups are off for the app" },
+          { appId: "app_mail", appName: "Mailpit", volumeName: "mailpit-uploads", reason: "Backups are off for the app" },
+          { appId: "app_0bs", appName: "Observability", volumeName: "etc-dashboards", reason: "Bind mount, not opted in" },
+        ],
+      },
+    ),
+  },
+  {
     name: "backup-summary-timed-out",
     event: backupSummary(
       [...NIGHTLY, ...OBSERVABILITY],
@@ -1078,6 +1095,19 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       expiresAt: "2026-10-15T12:00:00.000Z",
       resolver: "le-dns",
       app: { id: "app_acme", name: "acme-web", project: "Acme Nonprofit" },
+    },
+  },
+  {
+    name: "system-cert-expiring-custom",
+    event: {
+      type: "system.cert-expiring",
+      title: "Certificate expiring: shop.example.com",
+      message: "The TLS certificate served on port 443 for shop.example.com expires in 12 days, on 2026-10-21.",
+      domain: "shop.example.com",
+      domains: ["shop.example.com"],
+      daysLeft: 12,
+      expiresAt: "2026-10-21T12:00:00.000Z",
+      resolver: "unknown",
     },
   },
   {

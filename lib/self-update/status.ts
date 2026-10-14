@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { formatVersion } from "@/lib/lifecycle/self-deploy";
 import { getGitHubCheckError, type GitHubCheckError } from "@/lib/github-api";
-import { getBuildSha, getChannelUpdate, type ChannelUpdate } from "@/lib/version";
+import { getBuildSha, getChannelCheck, type ChannelUpdate } from "@/lib/version";
 import { effectiveChannel, type UpdateChannel, type UpdatePolicy } from "./policy";
 import { isRunActive } from "./decide";
 import { activeUpdate, type ActiveUpdate } from "./lifecycle";
@@ -18,6 +18,8 @@ export type UpdateStatus = {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   update: ChannelUpdate | null;
+  /** The releases channel has nothing published yet. */
+  noRelease: boolean;
   /** Why the last GitHub check failed. Null when it worked. */
   checkError: GitHubCheckError | null;
   run: UpdateRun | null;
@@ -39,12 +41,12 @@ export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<U
     db.query.meshPeers.findMany({ columns: { connectionType: true, type: true, vardoUpdate: true } }),
   ]);
   const channel = effectiveChannel(policy);
-  const update = await getChannelUpdate(channel, opts);
+  const { update, noRelease } = await getChannelCheck(channel, opts);
   const sha = getBuildSha();
   return {
     selfDeploy: isSelfDeployLayout(),
     current: { version: formatVersion(pkg.version, sha) ?? pkg.version, sha },
-    policy, channel, update, checkError: update ? null : getGitHubCheckError(), run, runActive: isRunActive(run), active,
+    policy, channel, update, noRelease, checkError: update || noRelease ? null : getGitHubCheckError(), run, runActive: isRunActive(run), active,
     rollout, rolloutCoordinator,
     protocolReady: peers.every((peer) => peer.connectionType !== "direct" || peer.type !== "persistent" || !!parseRolloutCapability(peer.vardoUpdate)),
     hostCommand: "sudo vardo update",

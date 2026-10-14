@@ -14,7 +14,7 @@ One MCP client entry, pointed at any instance's `/api/mcp`, can run tools on eve
 
 ### Use it
 
-- `vardo_list_instances` lists this instance and its directly linked peers: name, URL, type, canary role, version, health and status.
+- `vardo_list_instances` lists this instance and its directly linked peers: name, URL, type, update priority, version, health and status.
 - Every other tool takes an optional `instance`: a name or id from that list. Leave it out to run here.
 - Results carry an `instance` field naming where they ran and how (`tunnel` or `public`).
 

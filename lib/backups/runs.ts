@@ -12,7 +12,8 @@ import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
 import { backupLeaseHeld } from "./run-lease";
 import { backupFailureItem } from "./failure-alert";
-import { isUncapturedSource } from "./coverage";
+import { isUncapturedSource, volumeCoverage, type VolumeCoverage } from "./coverage";
+import type { BackupSummaryEvent } from "@/lib/bus/events";
 import { UTC } from "@/lib/time-zone";
 import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { exclusionReason, isBackupSelected } from "./durability";
@@ -447,8 +448,8 @@ async function loadHistory(
   return { history, lastGood };
 }
 
-/** Apps a scheduled run still takes: switched on, not retired and in an enabled job of their org or the instance. */
-async function appsStillScheduled(appIds: string[]): Promise<Set<string>> {
+/** Why a scheduled run skips each app, null when it takes it. Retired and unknown apps are left out. */
+async function appScheduleReasons(appIds: string[]): Promise<Map<string, string | null>> {
   const { getSystemBackupsDefault, resolveBackupSwitch } = await import("./switch");
   const [rows, links, systemDefault] = await Promise.all([
     db.query.apps.findMany({
@@ -468,21 +469,26 @@ async function appsStillScheduled(appIds: string[]): Promise<Set<string>> {
       .filter((l) => l.backupJob.enabled && (l.backupJob.organizationId === null || l.backupJob.organizationId === orgOf.get(l.appId)))
       .map((l) => l.appId),
   );
-  return new Set(
+  return new Map(
     (rows ?? [])
-      .filter((a) => a.status !== "missing" && inJob.has(a.id))
-      .filter((a) => resolveBackupSwitch(a.backupsEnabled, a.organization?.backupsEnabled, systemDefault).enabled)
-      .map((a) => a.id),
+      .filter((a) => a.status !== "missing")
+      .map((a) => [
+        a.id,
+        !resolveBackupSwitch(a.backupsEnabled, a.organization?.backupsEnabled, systemDefault).enabled
+          ? "Backups are off for the app"
+          : inJob.has(a.id)
+            ? null
+            : "No backup job covers the app",
+      ]),
   );
 }
 
-/** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
-export async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
-  const out = new Set<string>();
-  if (appIds.length === 0) return out;
-  const [vols, scheduled] = await Promise.all([
+/** Each live volume of these apps with whether a scheduled run backs it up. */
+async function coverageOf(appIds: string[]): Promise<{ appId: string; volumeName: string; coverage: VolumeCoverage }[]> {
+  if (appIds.length === 0) return [];
+  const [vols, schedule] = await Promise.all([
     db.query.volumes.findMany({ where: and(inArray(volumes.appId, appIds), isNull(volumes.removedAt)) }),
-    appsStillScheduled(appIds),
+    appScheduleReasons(appIds),
   ]);
   const linked = vols.length
     ? await db.query.backupJobVolumes.findMany({
@@ -491,18 +497,38 @@ export async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
       })
     : [];
   const direct = new Set((linked ?? []).filter((l) => l.backupJob.enabled).map((l) => l.volumeId));
+  const out: { appId: string; volumeName: string; coverage: VolumeCoverage }[] = [];
   for (const v of vols) {
-    if (exclusionReason(v.durability)) continue;
-    // A job linked to the volume itself takes it whatever the app's switch says.
-    if (direct.has(v.id)) {
-      out.add(volumeKey(v.appId, v.name));
-      continue;
-    }
-    if (!v.appId || !scheduled.has(v.appId)) continue;
-    if (!isBackupSelected(v) || isUncapturedSource(v) || (await skipsAsConfig(v))) continue;
-    out.add(volumeKey(v.appId, v.name));
+    if (!v.appId) continue;
+    const coverage = await volumeCoverage(v, {
+      direct: direct.has(v.id),
+      appReason: schedule.get(v.appId),
+      configReason: () => skipsAsConfig(v),
+    });
+    out.push({ appId: v.appId, volumeName: v.name, coverage });
   }
   return out;
+}
+
+/** `appId:volume` keys of the volumes a job still backs up, out of these apps'. */
+export async function stillBackedUp(appIds: string[]): Promise<Set<string>> {
+  const covered = (await coverageOf(appIds)).filter((c) => c.coverage.covered);
+  return new Set(covered.map((c) => volumeKey(c.appId, c.volumeName)));
+}
+
+/** The org's volumes a nightly run doesn't back up, with why, by app then volume. */
+export async function loadNotBackedUp(organizationId: string): Promise<NonNullable<BackupSummaryEvent["notBackedUp"]>> {
+  const orgApps = await db.query.apps.findMany({
+    where: eq(apps.organizationId, organizationId),
+    columns: { id: true, displayName: true },
+  });
+  const nameOf = new Map((orgApps ?? []).map((a) => [a.id, a.displayName]));
+  const out: NonNullable<BackupSummaryEvent["notBackedUp"]> = [];
+  for (const { appId, volumeName, coverage } of await coverageOf([...nameOf.keys()])) {
+    if (coverage.covered || !coverage.reason) continue;
+    out.push({ appId, appName: nameOf.get(appId) ?? appId, volumeName, reason: coverage.reason });
+  }
+  return out.sort((a, b) => a.appName.localeCompare(b.appName) || a.volumeName.localeCompare(b.volumeName));
 }
 
 /** Volumes backed up this week that a job still backs up, with no success in 48 hours. */
@@ -574,6 +600,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
   const { send, problemsOnly } = summaryEmails(run, rows, staleVolumes.length, unfinished.length, settings.categories.backupSummaries);
   // A clean scheduled run goes to the digest.
   if (!send) return;
+  const notBackedUp = run.kind === "nightly" ? await loadNotBackedUp(run.organizationId) : [];
 
   const backed = rows.filter((r) => r.kind === "backup" && !r.config);
   const succeeded = backed.filter((r) => r.outcome === "success").length;
@@ -602,6 +629,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
     hiddenRows: rows.length > MAX_SUMMARY_ROWS ? rows.length - MAX_SUMMARY_ROWS : undefined,
     apps: summarizeApps(rows),
     staleVolumes: staleVolumes.length ? staleVolumes : undefined,
+    notBackedUp: notBackedUp.length ? notBackedUp : undefined,
   });
 }
 

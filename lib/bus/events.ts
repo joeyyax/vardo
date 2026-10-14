@@ -261,6 +261,8 @@ export type BackupSummaryEvent = {
   apps?: BackupSummaryApp[];
   /** Volumes backed up this week with no success in 48 hours. */
   staleVolumes?: { appId?: string | null; appName: string; volumeName: string; lastSuccessAt: string | null }[];
+  /** Nightly runs: the org's volumes no job backs up, with why. */
+  notBackedUp?: { appId: string; appName: string; volumeName: string; reason: string }[];
 };
 
 export type CronFailedEvent = {

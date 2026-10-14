@@ -5,7 +5,7 @@ import type { SystemCertExpiringEvent } from "@/lib/bus/events";
 import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { getChannelUpdate, moreCommits } from "@/lib/version";
 import { shortSha } from "@/lib/email/format";
 import { isSelfDeployLayout } from "@/lib/paths";
@@ -21,6 +21,7 @@ import {
   evaluateCertExpiry,
   certVerdictAlerts,
   certAlertMessage,
+  certResolvedMessage,
   certOwner,
   groupByCertificate,
   type CertVerdict,
@@ -174,6 +175,20 @@ async function recordCertObservations(probed: ProbedDomain[]): Promise<void> {
   }
 }
 
+/** Fingerprints from the previous check, by domain id. */
+async function readCertFingerprints(domainIds: string[]): Promise<Map<string, string | null>> {
+  try {
+    const rows = await db
+      .select({ domainId: domainCertChecks.domainId, fingerprint: domainCertChecks.fingerprint })
+      .from(domainCertChecks)
+      .where(inArray(domainCertChecks.domainId, domainIds));
+    return new Map(rows.map((r) => [r.domainId, r.fingerprint]));
+  } catch (err) {
+    log.error("Cert observation read error:", err);
+    return new Map();
+  }
+}
+
 async function checkCertAlerts(): Promise<void> {
   if (Date.now() - lastCertCheck < CERT_CHECK_INTERVAL_MS) return;
   lastCertCheck = Date.now();
@@ -217,12 +232,14 @@ async function checkCertAlerts(): Promise<void> {
       ),
     );
 
+    const previousFingerprints = await readCertFingerprints(probed.map((p) => p.domainId));
     await recordCertObservations(probed);
 
     const orgIds = await getAllOrgIds();
     for (const p of probed) {
       if (p.verdict.kind === "ok" && clearFired("cert-expiring", p.domain)) {
-        await resolveSystemIncident(orgIds, "system.cert-expiring", p.domain, `The certificate for ${p.domain} was renewed.`);
+        const message = certResolvedMessage(p.domain, previousFingerprints.get(p.domainId) ?? null, p.fingerprint);
+        await resolveSystemIncident(orgIds, "system.cert-expiring", p.domain, message);
       }
     }
 

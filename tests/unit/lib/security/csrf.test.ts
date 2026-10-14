@@ -48,8 +48,8 @@ describe("csrfRejection", () => {
   });
 
   it("allows origins listed in VARDO_TRUSTED_ORIGINS", () => {
-    const env = { ...ENV, VARDO_TRUSTED_ORIGINS: "https://10.0.0.19:3000" } as unknown as NodeJS.ProcessEnv;
-    expect(check({ cookie: COOKIE, origin: "https://10.0.0.19:3000" }, { env })).toBeNull();
+    const env = { ...ENV, VARDO_TRUSTED_ORIGINS: "https://10.0.0.42:3000" } as unknown as NodeJS.ProcessEnv;
+    expect(check({ cookie: COOKIE, origin: "https://10.0.0.42:3000" }, { env })).toBeNull();
   });
 
   it("never blocks bearer, cookieless, safe-method or Better Auth requests", () => {

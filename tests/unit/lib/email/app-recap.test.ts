@@ -4,7 +4,7 @@ import { EMAIL_FIXTURES, FIXTURE_CONTEXT, RECAP_FIXTURES } from "@/lib/email/fix
 import { renderNotificationEmail } from "@/lib/email/notification-email";
 import { gigabytes, recapIssues, size } from "@/lib/email/templates/app-recap";
 
-const event = (recaps: AppRecap[]): DigestAppRecapEvent => ({ type: "digest.app-recap", title: "Recaps", message: "", orgName: "Long House", recaps });
+const event = (recaps: AppRecap[]): DigestAppRecapEvent => ({ type: "digest.app-recap", title: "Recaps", message: "", orgName: "Example Home", recaps });
 const render = async (recaps: AppRecap[]) => (await renderNotificationEmail(event(recaps), FIXTURE_CONTEXT))!;
 const MB = 1024 ** 2;
 

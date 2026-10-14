@@ -152,7 +152,7 @@ export function registerDomainTools(server: McpServer, context: McpAuthContext) 
 
   server.tool(
     "vardo_set_primary_domain",
-    "Choose the domain the app is known by: its URL in the dashboard and the VARDO_URL and VARDO_DOMAIN environment inside the container.",
+    "Choose the domain the app is known by: the one the dashboard links and the security scan checks, and whose port a deploy uses when the app sets none. It sets no environment variables in the container.",
     {
       appId: z.string().describe("The app the domain belongs to"),
       domainId: z.string().describe("The domain ID from vardo_list_domains"),
@@ -163,7 +163,7 @@ export function registerDomainTools(server: McpServer, context: McpAuthContext) 
 
       return outcome(
         await setPrimaryDomain(app, domainId),
-        "Deploy the app so its URL environment picks up the new primary domain."
+        "The dashboard uses it now. Deploy only when the app sets no port and this domain's port differs."
       );
     }
   );

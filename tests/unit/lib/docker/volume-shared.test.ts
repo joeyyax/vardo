@@ -20,7 +20,7 @@ volumes:
   postgres-data: {}
 `;
 
-/** paperless on 10.0.0.19: the same hazard reached through a host path. */
+/** paperless on a home server: the same hazard reached through a host path. */
 const BIND = `services:
   paperless:
     image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15

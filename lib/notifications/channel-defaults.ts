@@ -38,6 +38,8 @@ export const REPLACED_EVENT_TYPES: Partial<Record<BusEventType, string[]>> = {
   "alert.resolved": ["system.disk-alert"],
   "backup.summary": ["backup.success", "backup.failed"],
   "digest.health": ["digest.weekly"],
+  "system.rollout-paused": ["system.update-skipped"],
+  "system.rollout-busy": ["system.update-skipped"],
 };
 
 /** Whether a channel's subscribedEvents filter allows this event. Empty means all. */

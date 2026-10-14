@@ -442,6 +442,21 @@ describe("stale volumes in a summary", () => {
     expect(groupedBy[0]).toEqual([backups.appId, backups.volumeName]);
   });
 
+  it("lists the org's volumes no job backs up, with why", async () => {
+    const { loadNotBackedUp } = await import("@/lib/backups/runs");
+    dbMock.query.apps.findMany.mockResolvedValue([app("a1", "Shop"), app("a9", "Other", { backupsEnabled: false })]);
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "v1", appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v2", appId: "a1", name: "cache", type: "named", persistent: true, durability: "rebuildable", backupStrategy: "tar", backupSelection: null, source: null },
+      { id: "v3", appId: "a1", name: "scratch", type: "named", persistent: false, durability: null, backupStrategy: "tar", backupSelection: null, source: null },
+      { id: "v9", appId: "a9", name: "pgdata", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: null, source: null },
+    ]);
+    expect(await loadNotBackedUp("org1")).toEqual([
+      { appId: "a9", appName: "Other", volumeName: "pgdata", reason: "Backups are off for the app" },
+      { appId: "a1", appName: "Shop", volumeName: "cache", reason: "Rebuildable — reconstructed rather than restored" },
+    ]);
+  });
+
   it("lists only a single job's own apps", () => {
     const run = { kind: "job", plan: { jobs: [{ jobId: "j1", jobName: "Auto: Shop" }], apps: [], target: null }, items: [item()] };
     expect(staleForRun(run, stale).map((s) => s.appId)).toEqual(["a1"]);

@@ -40,7 +40,7 @@ describe("tickRecaps", () => {
   beforeEach(() => {
     dbMock.reset();
     vi.clearAllMocks();
-    dbMock.query.organizations.findMany.mockResolvedValue([{ id: "org1", name: "Long House", timeZone: null }]);
+    dbMock.query.organizations.findMany.mockResolvedValue([{ id: "org1", name: "Example Home", timeZone: null }]);
     mocks.collect.mockImplementation(async (row: { appId: string; kind: string }) => ({ ...RECAP_FIXTURES.clean, appId: row.appId, kind: row.kind }));
   });
 

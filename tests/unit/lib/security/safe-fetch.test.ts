@@ -32,7 +32,7 @@ describe("safeFetch", () => {
     fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
     await safeFetch("https://example.com/");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ allowPrivate: false });
-    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValue([{ address: "10.0.0.42", family: 4 }]);
     await safeFetch("https://internal.example.com/", { policy: { allowlist: ["internal.example.com"] } });
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ allowPrivate: true });
   });
@@ -57,7 +57,7 @@ describe("safeFetch", () => {
   it("blocks a redirect to a name that resolves privately", async () => {
     fetchMock.mockResolvedValueOnce(redirect(301, "https://internal.example.com/"));
     lookupMock.mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }]);
-    lookupMock.mockResolvedValueOnce([{ address: "10.0.0.19", family: 4 }]);
+    lookupMock.mockResolvedValueOnce([{ address: "10.0.0.42", family: 4 }]);
     await expect(safeFetch("https://example.com/")).rejects.toThrow(/private/);
   });
 

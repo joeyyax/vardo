@@ -176,11 +176,11 @@ const recap: NotificationMailBody = {
     ] },
   ],
   action: { label: "Open immich", href: url("/apps/immich") },
-  footer: { ...footer, instanceName: "Long House", note: "Next recap in 30 days." },
+  footer: { ...footer, instanceName: "Example Home", note: "Next recap in 30 days." },
 };
 
 export const KIT_SAMPLES: { name: string; subject: string; body: NotificationMailBody }[] = [
   { name: "kit", subject: "node-a · Email kit", body: kit },
   { name: "kit-deploy-failed", subject: "node-a · ✗ search-data failed at health check · still serving the previous version", body: deployFailed },
-  { name: "kit-recap", subject: "Long House · 72-hour recap: immich · library isn't backed up", body: recap },
+  { name: "kit-recap", subject: "Example Home · 72-hour recap: immich · library isn't backed up", body: recap },
 ];

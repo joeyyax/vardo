@@ -1,5 +1,7 @@
 // Which volume sources the backup engine can capture. Shared with the backups UI.
 
+import { exclusionReason, isBackupSelected, type Durability } from "./durability";
+
 export type CoverableVolume = {
   type: "named" | "bind";
   backupStrategy: string;
@@ -20,6 +22,27 @@ export function isUncapturedSource(vol: CoverableVolume): boolean {
 export function uncapturedReason(vol: CoverableVolume): string {
   const path = vol.source ? ` (${vol.source})` : "";
   return `Bind mount${path} is not backed up — mark the volume stateful to archive this host path`;
+}
+
+export type VolumeCoverage = { covered: true } | { covered: false; reason: string | null };
+
+/**
+ * Whether a nightly run backs up this volume. Not covered with a null reason holds nothing to list.
+ * `appReason`: null when a run takes the app, undefined when the app is gone.
+ */
+export async function volumeCoverage(
+  vol: CoverableVolume & { persistent: boolean; durability: Durability | null; backupSelection: "include" | "exclude" | null },
+  opts: { direct: boolean; appReason: string | null | undefined; configReason: () => Promise<string | null> },
+): Promise<VolumeCoverage> {
+  const excluded = exclusionReason(vol.durability);
+  if (excluded) return { covered: false, reason: excluded };
+  if (opts.direct) return { covered: true };
+  if (opts.appReason === undefined) return { covered: false, reason: null };
+  if (!isBackupSelected(vol)) return { covered: false, reason: vol.backupSelection === "exclude" ? "Switched off for this volume" : null };
+  if (opts.appReason) return { covered: false, reason: opts.appReason };
+  if (isUncapturedSource(vol)) return { covered: false, reason: "Bind mount, not opted in" };
+  const config = await opts.configReason();
+  return config ? { covered: false, reason: config } : { covered: true };
 }
 
 /** Why a dump can't be captured right now, or null. A dump needs a running container. */

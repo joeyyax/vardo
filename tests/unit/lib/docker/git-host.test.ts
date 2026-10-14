@@ -33,13 +33,13 @@ describe("assertGitHostAllowed", () => {
   }
 
   it("refuses a name that resolves to a private address", async () => {
-    lookup.mockResolvedValue([{ address: "10.0.0.19" }]);
-    await expect(assertGitHostAllowed("https://gitea.lan/acme/web.git")).rejects.toThrow(/resolves to 10\.0\.0\.19/);
+    lookup.mockResolvedValue([{ address: "10.0.0.42" }]);
+    await expect(assertGitHostAllowed("https://gitea.lan/acme/web.git")).rejects.toThrow(/resolves to 10\.0\.0\.42/);
   });
 
   it("allows a private host named in VARDO_OUTBOUND_ALLOWLIST", async () => {
     process.env.VARDO_OUTBOUND_ALLOWLIST = "gitea.lan";
-    lookup.mockResolvedValue([{ address: "10.0.0.19" }]);
+    lookup.mockResolvedValue([{ address: "10.0.0.42" }]);
     await expect(assertGitHostAllowed("https://gitea.lan/acme/web.git")).resolves.toBeUndefined();
   });
 });

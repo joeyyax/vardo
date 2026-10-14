@@ -42,6 +42,8 @@ import { activeUpdate } from "@/lib/self-update/lifecycle";
 import { activeRestart } from "@/lib/lifecycle/notices";
 import { vardoRestartingRow, vardoUpdateRow, vardoUpdatingRow } from "./vardo-update-row";
 import { integrationRows } from "./integration-rows";
+import { emailProviderRows } from "./email-provider-row";
+import { getEmailProviderConfig } from "@/lib/system-settings";
 import { ISSUE_TYPE, type StoredIssue } from "@/lib/integrations/sync";
 import { getElevatedApps } from "@/lib/logging/error-rate";
 import { majorNoticeRows } from "./major-notice-rows";
@@ -354,6 +356,16 @@ async function loadIntegrationIssues(orgId: string) {
   });
 }
 
+/** Whether email can go out. True when notifications are off or the check fails. */
+async function loadEmailConfigured(): Promise<boolean> {
+  try {
+    if (!(await isFeatureEnabledAsync("notifications"))) return true;
+    return !!(await getEmailProviderConfig());
+  } catch {
+    return true;
+  }
+}
+
 type BuildOptions = {
   /** Admin only. */
   isAppAdmin: boolean;
@@ -408,6 +420,7 @@ export async function buildAttentionRows(
     latestDeploys,
     anomalies,
     integrationIssues,
+    emailConfigured,
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
@@ -423,6 +436,7 @@ export async function buildAttentionRows(
     loadLatestDeploys(appIds, Date.now()),
     loadOpenAnomalies(orgId),
     loadIntegrationIssues(orgId).catch(() => []),
+    isAppAdmin ? loadEmailConfigured() : true,
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
@@ -586,6 +600,7 @@ export async function buildAttentionRows(
   rows.push(...activityRows(appRows, activity));
 
   rows.push(...integrationRows(integrationIssues, { orgId, isAppAdmin }));
+  rows.push(...emailProviderRows(emailConfigured));
 
   if (version) rows.push(version);
 

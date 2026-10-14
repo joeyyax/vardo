@@ -9,7 +9,7 @@ import { getUpdatePolicy } from "@/lib/self-update/store";
 import { recordActivity } from "@/lib/activity";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 
-// GET /api/v1/admin/updates — version, available update, policy, last run and canary state. `?fresh=1` asks GitHub again.
+// GET /api/v1/admin/updates — version, available update, policy, last run and rollout state. `?fresh=1` asks GitHub again.
 async function handleGet(request: NextRequest) {
   try {
     await requireAppAdmin();

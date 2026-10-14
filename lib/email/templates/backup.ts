@@ -1,5 +1,5 @@
 import { backupErrorCause, dayAt, firstErrorLine } from "@/lib/backups/failure-alert";
-import { summarizeApps } from "@/lib/backups/run-rules";
+import { summarizeApps, volumeKey } from "@/lib/backups/run-rules";
 import type { BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatClock, UTC, zoneAbbreviation } from "@/lib/time-zone";
@@ -8,6 +8,7 @@ import { linkedList, nameLink, type MailBlock, type MailInline, type MailLink, t
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 
 type Stale = NonNullable<BackupSummaryEvent["staleVolumes"]>[number];
+type NotBackedUp = NonNullable<BackupSummaryEvent["notBackedUp"]>[number];
 
 const FAILED_TITLE: Record<Exclude<BackupSummaryRow["kind"], "backup">, [string, string]> = {
   restore: ["Restore of ", " failed"],
@@ -177,6 +178,23 @@ function nameList(rows: BackupSummaryRow[], ctx: MailContext): MailInline[] {
   return rows.flatMap((row, i) => [...(i ? [i === rows.length - 1 ? " and " : ", "] : []), ...rowName(row, ctx)]);
 }
 
+/** Names a not-backed-up line lists per reason before "and N more". */
+const NOT_BACKED_UP_SHOWN = 5;
+
+/** "4 volumes aren't backed up. Switched off for this volume: Shop / cache." One sentence per reason. */
+function notBackedUpNote(vols: NotBackedUp[], ctx: MailContext): MailBlock {
+  const byReason = new Map<string, NotBackedUp[]>();
+  for (const v of vols) byReason.set(v.reason, [...(byReason.get(v.reason) ?? []), v]);
+  const text: MailInline[] = [vols.length === 1 ? "1 volume isn't backed up." : `${vols.length} volumes aren't backed up.`];
+  for (const [reason, group] of byReason) {
+    const shown = group.slice(0, NOT_BACKED_UP_SHOWN);
+    const more = group.length - shown.length;
+    const names = shown.flatMap((v, i) => [...(i ? [!more && i === shown.length - 1 ? " and " : ", "] : []), ...rowName(v, ctx)]);
+    text.push(` ${reason}: `, ...names, more ? ` and ${more} more.` : ".");
+  }
+  return { kind: "note", text };
+}
+
 function resultText(row: BackupSummaryRow): string {
   if (row.outcome === "skipped") return row.error ? `Skipped: ${row.error}` : "Skipped";
   switch (row.kind) {
@@ -197,6 +215,8 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   const nightly = event.run.kind === "nightly";
   const problemsOnly = event.run.problemsOnly === true;
   const total = backupRunTotal(event);
+  const notBackedUp = event.notBackedUp ?? [];
+  const listed = new Set(notBackedUp.map((v) => volumeKey(v.appId, v.volumeName)));
 
   const callouts: MailBlock[] = [
     ...failed.map((r) => failedCallout(r, ctx)),
@@ -276,9 +296,12 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
         rows: ofKind.map((r) => ({ name: rowText(r), href: r.appId ? appPage(ctx, r.appId, "backups") : undefined, cells: [resultText(r)] })),
       });
     }
-    if (routine.length) blocks.push({ kind: "note", text: ["Skipped as usual: ", ...nameList(routine, ctx), "."] });
+    const usual = routine.filter((r) => !listed.has(volumeKey(r.appId, r.volumeName)));
+    if (usual.length) blocks.push({ kind: "note", text: ["Skipped as usual: ", ...nameList(usual, ctx), "."] });
   }
-  if (config.length) blocks.push({ kind: "note", text: ["Not backed up — app config the engine leaves out: ", ...nameList(config, ctx), "."] });
+  if (notBackedUp.length) blocks.push(notBackedUpNote(notBackedUp, ctx));
+  const unlistedConfig = config.filter((r) => !listed.has(volumeKey(r.appId, r.volumeName)));
+  if (unlistedConfig.length) blocks.push({ kind: "note", text: ["Not backed up — app config the engine leaves out: ", ...nameList(unlistedConfig, ctx), "."] });
   if (event.hiddenRows) blocks.push({ kind: "note", text: `${plural(event.hiddenRows, "more result")} not listed.` });
 
   const action: MailLink = { label: problemsOnly ? "View the full run" : "View backups", href: consolePage(ctx, "/backups") };
