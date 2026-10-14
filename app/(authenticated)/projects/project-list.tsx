@@ -61,7 +61,7 @@ export type ListContext = {
   toggleStar: (kind: StarKind, id: string, name: string) => void;
 };
 
-/** A row's star: always shown when starred, else on hover or focus. */
+/** A row's star: always shown when starred, else on hover or focus. An app row's moves into its menu on a phone. */
 function RowStar({ kind, id, name, ctx }: { kind: StarKind; id: string; name: string; ctx: Pick<ListContext, "starred" | "toggleStar"> }) {
   const on = (kind === "project" ? ctx.starred.projects : ctx.starred.apps).has(id);
   return (
@@ -72,6 +72,7 @@ function RowStar({ kind, id, name, ctx }: { kind: StarKind; id: string; name: st
       onToggle={() => ctx.toggleStar(kind, id, name)}
       className={cn(
         "size-5",
+        kind === "app" && "max-sm:hidden",
         !on &&
           "opacity-0 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-data-[selected=true]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
       )}
@@ -150,10 +151,17 @@ function toneClass(p: Problem) {
   return p.tone === "error" ? "text-status-error" : "text-status-warning";
 }
 
-/** The row's menu: open, deploy, restart, visit, logs. */
-export function RowMenu({ node, ctx }: { node: TreeNode; ctx: Pick<ListContext, "open" | "run" | "busy"> }) {
+/** The row's menu: open, deploy, restart, visit, logs, and the star on a phone. */
+export function RowMenu({
+  node,
+  ctx,
+}: {
+  node: TreeNode;
+  ctx: Pick<ListContext, "open" | "run" | "busy"> & Partial<Pick<ListContext, "starred" | "toggleStar">>;
+}) {
   const app = node.app;
   const domain = app.domains[0];
+  const { starred, toggleStar } = ctx;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -172,6 +180,11 @@ export function RowMenu({ node, ctx }: { node: TreeNode; ctx: Pick<ListContext, 
         <DropdownMenuItem asChild>
           <Link href={`/apps/${app.name}`}>Open app page</Link>
         </DropdownMenuItem>
+        {starred && toggleStar && (
+          <DropdownMenuItem className="sm:hidden" onSelect={() => toggleStar("app", app.id, app.displayName)}>
+            {starred.apps.has(app.id) ? "Unstar" : "Star"}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={ctx.busy.has(app.name)} onSelect={() => ctx.run(fixTarget(node, "deploy"), "deploy")}>
           {node.relation === "service" ? `Deploy ${node.parent?.displayName}` : "Deploy"}
