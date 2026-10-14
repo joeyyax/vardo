@@ -53,7 +53,7 @@ export async function collectWatchedProject(
       .select({ appId: domains.appId, domain: domains.domain, isPrimary: domains.isPrimary, expiresAt: domainCertChecks.expiresAt })
       .from(domains)
       .leftJoin(domainCertChecks, eq(domainCertChecks.domainId, domains.id))
-      .where(inArray(domains.appId, appIds)),
+      .where(and(inArray(domains.appId, appIds), eq(domains.enabled, true))),
   ]);
 
   // Uptime and response combine across sites: checks add up and histograms merge.

@@ -58,7 +58,7 @@ function viewDomain(row: typeof domains.$inferSelect) {
 export function registerDomainTools(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_list_domains",
-    "List an app's domains: the host, the path it's limited to, its port and service, certificate resolver, redirects, middlewares, which one is primary, and whether Vardo or the app's compose file owns it.",
+    "List an app's domains: the host, the path it's limited to, its port and service, certificate resolver, redirects, middlewares, which one is primary, whether it's enabled, and whether Vardo or the app's compose file owns it.",
     {
       appId: z.string().describe("The app whose domains to list"),
       domainId: z.string().optional().describe("Only this domain"),
@@ -111,7 +111,7 @@ export function registerDomainTools(server: McpServer, context: McpAuthContext) 
 
   server.tool(
     "vardo_update_domain",
-    "Change a Vardo-managed domain: its host, port, service, resolver, redirect, path prefix or middlewares. Pass null to clear a port, redirect or path prefix. Renaming the host starts verification over.",
+    "Change a Vardo-managed domain: its host, port, service, resolver, redirect, path prefix or middlewares, or turn it off and on. Pass null to clear a port, redirect or path prefix. Renaming the host starts verification over.",
     {
       appId: z.string().describe("The app the domain belongs to"),
       domainId: z.string().describe("The domain ID from vardo_list_domains"),
@@ -123,6 +123,7 @@ export function registerDomainTools(server: McpServer, context: McpAuthContext) 
       pathPrefix: z.string().nullable().optional().describe('Path the host is limited to, or null for the whole host'),
       stripPathPrefix: z.boolean().optional().describe("Remove the path prefix before the request reaches the app"),
       middlewares: z.array(z.string()).nullable().optional().describe("Traefik middleware references, or null for none. Replaces the stored list"),
+      enabled: z.boolean().optional().describe("false drops the route and the host returns 404; the record and its certificate stay. A disabled domain stops being primary"),
     },
     async ({ appId, domainId, ...fields }) => {
       const app = await findApp(appId);

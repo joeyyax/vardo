@@ -6,13 +6,14 @@ import { apps, domains } from "@/lib/db/schema";
 import { loadInstanceHosts, loadVerifiedZones } from "./context";
 import { isRoutable } from "./ownership";
 
-type Candidate = { domain: string; verifiedAt?: Date | null };
+type Candidate = { domain: string; verifiedAt?: Date | null; enabled?: boolean };
 
-/** Splits rows into those that may route and those that may not. System-managed orgs route the console itself. */
+/** Splits rows into those that may route and those that may not. Disabled rows are in neither. System-managed orgs route the console itself. */
 export async function splitRoutable<T extends Candidate>(
-  rows: T[],
+  all: T[],
   org: { id: string; trusted: boolean; isSystemManaged?: boolean },
 ): Promise<{ routable: T[]; dropped: T[] }> {
+  const rows = all.filter((r) => r.enabled !== false);
   if (org.isSystemManaged || rows.length === 0) return { routable: rows, dropped: [] };
 
   const inst = await loadInstanceHosts();

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { domainChecks } from "@/lib/db/schema";
-import { desc, inArray, lt, lte, sql } from "drizzle-orm";
+import { domainChecks, domains } from "@/lib/db/schema";
+import { desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
@@ -68,6 +68,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   await pruneDomainChecks().catch(() => {});
 
   const allDomains = await db.query.domains.findMany({
+    where: eq(domains.enabled, true),
     with: {
       app: {
         columns: { id: true, name: true, status: true },

@@ -27,7 +27,7 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
     .select({ id: domains.id, domain: domains.domain, appName: apps.name })
     .from(domains)
     .leftJoin(apps, eq(apps.id, domains.appId))
-    .where(and(eq(apps.organizationId, orgId), eq(apps.status, "active")));
+    .where(and(eq(apps.organizationId, orgId), eq(apps.status, "active"), eq(domains.enabled, true)));
 
   if (orgDomains.length === 0) return [];
 

@@ -45,7 +45,7 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
   const hostRows = await db
     .select({ appId: domains.appId, domain: domains.domain })
     .from(domains)
-    .where(isNull(domains.pathPrefix));
+    .where(and(isNull(domains.pathPrefix), eq(domains.enabled, true)));
   const hosts = new Map<string, string[]>();
   for (const h of hostRows) {
     const owner = parentOf.get(h.appId);

@@ -168,7 +168,7 @@ async function expiringCerts(orgId: string, now: Date): Promise<DigestHealthEven
     .from(domainCertChecks)
     .innerJoin(domains, eq(domains.id, domainCertChecks.domainId))
     .innerJoin(apps, eq(apps.id, domains.appId))
-    .where(and(eq(apps.organizationId, orgId), lt(domainCertChecks.expiresAt, new Date(now.getTime() + CERT_EXPIRY_THRESHOLD_DAYS * DAY_MS))));
+    .where(and(eq(apps.organizationId, orgId), eq(domains.enabled, true), lt(domainCertChecks.expiresAt, new Date(now.getTime() + CERT_EXPIRY_THRESHOLD_DAYS * DAY_MS))));
   return rows
     .flatMap((r) => (r.expiresAt ? [{ domain: r.domain, daysLeft: Math.floor((r.expiresAt.getTime() - now.getTime()) / DAY_MS) }] : []))
     .sort((a, b) => a.daysLeft - b.daysLeft);
