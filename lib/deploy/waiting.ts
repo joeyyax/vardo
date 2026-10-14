@@ -5,16 +5,16 @@ import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { maxDeployConcurrency } from "@/lib/resources/host";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
-import { WORKER_FRESH_MS, workerExpected } from "@/lib/worker/mode";
+import { WORKER_FRESH_MS } from "@/lib/worker/mode";
 import { readWorkers } from "@/lib/worker/presence";
 import { executorFor } from "./claim-scope";
 import { EXCLUSIVE_MAX_AGE_MS } from "./queue";
 
 export const WAITING_FOR_WORKER = "Waiting for the worker. Deploys start when it's back";
 
-/** Whether a worker should be running deploys and none beats. A booting worker already claims, so readiness doesn't count. */
+/** Whether deploys need the worker and none beats, whatever runs the loops. A booting worker already claims, so readiness doesn't count. */
 export async function workerMissing(): Promise<boolean> {
-  if (!workerExpected() || executorFor(false) === "web") return false;
+  if (executorFor(false) === "web") return false;
   try {
     const { now, rows } = await readWorkers();
     return !rows.some((row) => now.getTime() - row.heartbeatAt.getTime() < WORKER_FRESH_MS && !row.drainingAt);
