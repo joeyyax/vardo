@@ -99,6 +99,7 @@ const DETAIL_DEPLOYMENTS = {
     waitReason: true,
     waitingSince: true,
     waitAhead: true,
+    waitTotal: true,
   },
   with: {
     triggeredByUser: {

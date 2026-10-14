@@ -51,6 +51,7 @@ const DEPLOYMENT_COLUMNS = {
   waitReason: true,
   waitingSince: true,
   waitAhead: true,
+  waitTotal: true,
 } as const;
 
 const PROJECT_APP_SUMMARY = { id: true, name: true, displayName: true, status: true } as const;
