@@ -334,7 +334,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           wait_total = NULL,
           wait_eta = NULL,
           waiting_since = NULL,
-          -- A requeued deploy doesn't jump the line again.
+          -- Cleared so a requeued deploy keeps its place in line.
           bumped_at = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,
