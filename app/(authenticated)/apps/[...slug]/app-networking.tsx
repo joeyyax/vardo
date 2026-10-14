@@ -795,17 +795,6 @@ export function AppNetworking({
                         <Star className="size-3.5" />
                       </Button>
                     )}
-                    {!domain.readOnly && !systemManaged && (
-                      <Switch
-                        size="sm"
-                        className="mx-1.5"
-                        aria-label={isOff ? `Enable ${domain.domain}` : `Disable ${domain.domain}`}
-                        title={isOff ? "Enable domain" : "Disable domain"}
-                        checked={!isOff}
-                        disabled={togglingDomainId === domain.id}
-                        onCheckedChange={(on) => handleDomainToggle(domain.id, on)}
-                      />
-                    )}
                     {!domain.readOnly && (
                     <Button
                       size="sm"
@@ -821,6 +810,17 @@ export function AppNetworking({
                         <X className="size-3.5" />
                       )}
                     </Button>
+                    )}
+                    {!domain.readOnly && !systemManaged && (
+                      <Switch
+                        size="sm"
+                        className="ml-2"
+                        aria-label={isOff ? `Enable ${domain.domain}` : `Disable ${domain.domain}`}
+                        title={isOff ? "Enable domain" : "Disable domain"}
+                        checked={!isOff}
+                        disabled={togglingDomainId === domain.id}
+                        onCheckedChange={(on) => handleDomainToggle(domain.id, on)}
+                      />
                     )}
                   </div>
                 </div>
