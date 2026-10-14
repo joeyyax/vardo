@@ -140,3 +140,7 @@ Notices covering several incidents aren't threaded.
 A `deploy.success` that follows a failure carries that failure's incident, resolved. A `deploy.failed` while one is open updates it with `reason: "repeated"`.
 
 These stay one-off with a stable `id` and no `incident`: other successful deploys, deploy incomplete and rollbacks, backup summaries and run starts, security scan findings, file exposure and claimed domains, disk write alerts, volume drift, auto-restarts, watchdog restarts, Vardo lifecycle and updates, invitations and the digest.
+
+## Project filter
+
+A channel's `projectIds` limits it to events from those projects; empty sends everything. An event about an app counts toward the app's project, and a compose service counts toward its parent's. Org-level events reach every channel whatever its filter: host alerts, updates and rollouts, lifecycle notices, invitations, the digest and anything without an app. `lib/bus/event-scope.ts` lists each event type's scope.

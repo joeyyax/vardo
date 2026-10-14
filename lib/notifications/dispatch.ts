@@ -9,7 +9,8 @@ import type { BusEvent } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
-import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
+import { isCriticalEvent } from "./channel-defaults";
+import { channelsForEvent } from "./project-filter";
 import { isConsumedAnywhere, isConsumedOrg } from "./consumer-state";
 import type { DeliveryReceipt } from "./port";
 
@@ -82,16 +83,15 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
           eq(notificationChannels.enabled, true),
         ),
       });
-      if (channels.length === 0) return;
+      const targets = await channelsForEvent(orgId, event, channels);
+      if (targets.length === 0) return;
 
       const members = await fetchOrgMembers(orgId);
       const memberIds = members.map((m) => m.userId);
       const prefs = await fetchEventPrefs(orgId, event.type, memberIds);
 
       await Promise.allSettled(
-        channels.map(async (row) => {
-          if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
-
+        targets.map(async (row) => {
           const { shouldSend } = resolveRecipients(
             row.id,
             row.type,

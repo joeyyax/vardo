@@ -5,7 +5,7 @@ import { notificationChannels } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, asc } from "drizzle-orm";
 import { presentChannel } from "@/lib/notifications/channel-config";
-import { channelCreateSchema, createChannelRow } from "@/lib/notifications/channels";
+import { ChannelConfigError, channelCreateSchema, createChannelRow } from "@/lib/notifications/channels";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -31,7 +31,10 @@ async function handlePost(req: NextRequest, { params }: RouteParams) {
     if (!parsed.success) return apiError.validation(parsed.error);
     const channel = await createChannelRow(orgId, parsed.data);
     return NextResponse.json({ channel: presentChannel(channel) }, { status: 201 });
-  } catch (error) { return handleRouteError(error, "Error creating notification channel"); }
+  } catch (error) {
+    if (error instanceof ChannelConfigError) return NextResponse.json({ error: error.message }, { status: 400 });
+    return handleRouteError(error, "Error creating notification channel");
+  }
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-notifications" });

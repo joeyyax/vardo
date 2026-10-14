@@ -25,6 +25,8 @@ export const notificationChannels = pgTable(
     config: jsonb("config").notNull().$type<Record<string, unknown>>(),
     enabled: boolean("enabled").default(true).notNull(),
     subscribedEvents: text("subscribed_events").array().default([]).notNull(),
+    // Projects whose events reach the channel; empty means all.
+    projectIds: text("project_ids").array().default([]).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

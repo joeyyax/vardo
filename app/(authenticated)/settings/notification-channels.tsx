@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/lib/messenger";
-import { Loader2, Plus, Trash2, Bell, Filter, Send } from "lucide-react";
+import { Loader2, Plus, Trash2, Bell, Filter, FolderOpen, Send } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
 import { CATEGORY_LABELS, EVENT_LABELS } from "@/lib/notifications/labels";
 import type { ChannelType } from "@/lib/notifications/channel-types";
@@ -46,7 +46,8 @@ const PUSH_FIELDS: Partial<Record<ChannelType, FieldDef[]>> = {
     { key: "appToken", label: "App token", placeholder: "30 characters", secret: true },
   ],
 };
-type Channel = { id: string; name: string; type: ChannelType; config: Record<string, unknown>; enabled: boolean; subscribedEvents: string[] };
+type Channel = { id: string; name: string; type: ChannelType; config: Record<string, unknown>; enabled: boolean; subscribedEvents: string[]; projectIds: string[] };
+type ProjectOption = { id: string; name: string };
 
 function EventFilterEditor({
   subscribedEvents,
@@ -82,6 +83,7 @@ function EventFilterEditor({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <DisclosureChevron open={expanded} />
@@ -123,6 +125,62 @@ function EventFilterEditor({
   );
 }
 
+function ProjectFilterEditor({
+  projects,
+  projectIds,
+  onChange,
+}: {
+  projects: ProjectOption[];
+  projectIds: string[];
+  onChange: (projectIds: string[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const selected = projectIds.filter((id) => projects.some((p) => p.id === id));
+  const summary =
+    projectIds.length === 0
+      ? "All projects"
+      : selected.length === 0
+        ? "Org-wide events only"
+        : selected.length === 1
+          ? projects.find((p) => p.id === selected[0])?.name
+          : `${selected.length} projects`;
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <DisclosureChevron open={expanded} />
+        <FolderOpen className="h-3 w-3" />
+        {summary}
+      </button>
+
+      {expanded && (
+        <div className="rounded-lg bg-muted p-3 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Pick projects to limit this channel to their events. None picked sends everything. Host alerts, updates and org notices always arrive.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+            {projects.map((project) => (
+              <label key={project.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5 min-w-0">
+                <Checkbox checked={selected.includes(project.id)} onCheckedChange={() => toggle(project.id)} />
+                <span className="truncate">{project.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 async function requestChannels(orgId: string): Promise<Channel[] | null> {
   try {
     const res = await fetch(`/api/v1/organizations/${orgId}/notifications`);
@@ -134,7 +192,7 @@ async function requestChannels(orgId: string): Promise<Channel[] | null> {
   }
 }
 
-export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
+export function NotificationChannelsEditor({ orgId, projects }: { orgId: string; projects: ProjectOption[] }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -181,8 +239,21 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
     } catch (err) { toast.error(err instanceof Error ? err.message : "Couldn't save channel"); } finally { setSaving(false); }
   };
 
+  /** PATCHes a channel; toasts the error and returns false when it fails. */
+  const patchChannel = async (id: string, body: Partial<Channel>, failure: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (res.ok) return true;
+      const d = await res.json().catch(() => ({}));
+      toast.error(d.error || failure);
+    } catch {
+      toast.error(failure);
+    }
+    return false;
+  };
+
   const handleToggle = async (id: string, enabled: boolean) => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }); if (res.ok) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c)); } catch { toast.error("Couldn't toggle channel"); }
+    if (await patchChannel(id, { enabled }, "Couldn't toggle channel")) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c));
   };
 
   const handleTest = async (id: string) => {
@@ -200,17 +271,14 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
   };
 
   const handleUpdateEvents = async (id: string, subscribedEvents: string[]) => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscribedEvents }),
-      });
-      if (res.ok) {
-        setChannels(prev => prev.map(c => c.id === id ? { ...c, subscribedEvents } : c));
-      }
-    } catch {
-      toast.error("Couldn't update event filters");
+    if (await patchChannel(id, { subscribedEvents }, "Couldn't update event filters")) {
+      setChannels(prev => prev.map(c => c.id === id ? { ...c, subscribedEvents } : c));
+    }
+  };
+
+  const handleUpdateProjects = async (id: string, projectIds: string[]) => {
+    if (await patchChannel(id, { projectIds }, "Couldn't update project filter")) {
+      setChannels(prev => prev.map(c => c.id === id ? { ...c, projectIds } : c));
     }
   };
 
@@ -272,6 +340,13 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
               subscribedEvents={ch.subscribedEvents ?? []}
               onChange={(events) => handleUpdateEvents(ch.id, events)}
             />
+            {projects.length > 0 && (
+              <ProjectFilterEditor
+                projects={projects}
+                projectIds={ch.projectIds ?? []}
+                onChange={(ids) => handleUpdateProjects(ch.id, ids)}
+              />
+            )}
           </Card>
         ))}</div>
       )}
