@@ -79,7 +79,7 @@ export function InProgressDeployCard({
     : allDone
       ? `${noun} completed successfully`
       : held
-        ? waitLabel(held.reason, held.ahead)
+        ? waitLabel(held)
         : runningStage
         ? `${isRollback ? "Rolling back" : "Deploying"}: ${STAGE_LABELS[runningStage]} in progress`
         : "";
@@ -143,7 +143,7 @@ export function InProgressDeployCard({
             <span className="text-xs text-foreground/50 tabular-nums">
               {held ? (
                 <>
-                  <span className="text-foreground/70">{waitLabel(held.reason, held.ahead)}</span>
+                  <span className="text-foreground/70">{waitLabel(held)}</span>
                   {` · ${formatUptime(Math.min(now! - held.since, clock.waitedMs) / 1000)}`}
                 </>
               ) : (

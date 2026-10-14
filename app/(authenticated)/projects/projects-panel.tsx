@@ -359,7 +359,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
               <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
             </span>
           ) : wait ? (
-            <span className="text-muted-foreground">{waitLabel(wait.reason, wait.ahead)}</span>
+            <span className="text-muted-foreground">{waitLabel(wait)}</span>
           ) : app.status === "deploying" ? (
             <span className="text-status-info">
               <Term id="deploying">Deploying</Term>

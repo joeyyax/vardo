@@ -4,11 +4,14 @@ import type { WaitReason } from "@/lib/docker/deploy-logger";
 
 export type { WaitReason };
 
-export type WaitEvent = { reason: WaitReason | null; ahead?: number; streamId: string };
+/** `ahead` and `total` place a deploy in a queue: 0 ahead of 3 is first of 3. */
+export type QueuePlace = { ahead?: number; total?: number };
+
+export type WaitEvent = QueuePlace & { reason: WaitReason | null; streamId: string };
 
 export type WaitState = {
   /** The open wait, stamped by its stream id. */
-  current: { reason: WaitReason; ahead?: number; since: number } | null;
+  current: (QueuePlace & { reason: WaitReason; since: number }) | null;
   /** Total of the waits that have ended. */
   closedMs: number;
   /** A wait event has arrived, so the stream speaks for the deploy. */
@@ -42,10 +45,15 @@ export function isWaitReason(value: unknown): value is WaitReason {
 /** A `wait` event's payload, or null when it doesn't match the contract. */
 export function parseWaitEvent(data: unknown): WaitEvent | null {
   if (!data || typeof data !== "object") return null;
-  const { reason, ahead, streamId } = data as Record<string, unknown>;
+  const { reason, ahead, total, streamId } = data as Record<string, unknown>;
   if (typeof streamId !== "string") return null;
   if (reason !== null && !isWaitReason(reason)) return null;
-  return { reason: reason as WaitReason | null, ahead: typeof ahead === "number" ? ahead : undefined, streamId };
+  return {
+    reason: reason as WaitReason | null,
+    ahead: typeof ahead === "number" ? ahead : undefined,
+    total: typeof total === "number" ? total : undefined,
+    streamId,
+  };
 }
 
 /** Folds one wait event into the running state. */
@@ -56,16 +64,16 @@ export function applyWait(state: WaitState, event: WaitEvent): WaitState {
   const seen = { heard: true, lastId: event.streamId };
 
   if (event.reason) {
-    if (current?.reason === event.reason) return { ...state, ...seen, current: { ...current, ahead: event.ahead } };
+    if (current?.reason === event.reason) return { ...state, ...seen, current: { ...current, ahead: event.ahead, total: event.total } };
     const closedMs = current ? state.closedMs + Math.max(0, at - current.since) : state.closedMs;
-    return { ...seen, closedMs, current: { reason: event.reason, ahead: event.ahead, since: at } };
+    return { ...seen, closedMs, current: { reason: event.reason, ahead: event.ahead, total: event.total, since: at } };
   }
 
   if (!current) return { ...state, ...seen };
   return { ...seen, current: null, closedMs: state.closedMs + Math.max(0, at - current.since) };
 }
 
-export type ActiveWait = { reason: WaitReason | null; ahead?: number; since: number };
+export type ActiveWait = QueuePlace & { reason: WaitReason | null; since: number };
 
 export type DeployClock = {
   /** What the deploy is waiting on now, or null while it works. */
@@ -89,7 +97,7 @@ export function deployClock(
   return { wait: state.current, waitedMs, workingMs: total - waitedMs };
 }
 
-export type HeldDeploy = { reason: WaitReason | null; ahead?: number; since: number | null; queued: boolean };
+export type HeldDeploy = QueuePlace & { reason: WaitReason | null; since: number | null; queued: boolean };
 
 /** What holds an in-flight deploy row still, from its wait columns. Null while it works or once it's done. */
 export function rowHold(d: {
@@ -97,6 +105,7 @@ export function rowHold(d: {
   waitReason?: string | null;
   waitingSince?: Date | string | null;
   waitAhead?: number | null;
+  waitTotal?: number | null;
 }): HeldDeploy | null {
   if (d.status !== "queued" && d.status !== "running") return null;
   const reason = isWaitReason(d.waitReason) ? d.waitReason : null;
@@ -104,6 +113,7 @@ export function rowHold(d: {
   return {
     reason,
     ...(reason && d.waitAhead != null ? { ahead: d.waitAhead } : {}),
+    ...(reason && d.waitTotal != null ? { total: d.waitTotal } : {}),
     since: d.waitingSince ? new Date(d.waitingSince).getTime() : null,
     queued: d.status === "queued",
   };
@@ -112,12 +122,12 @@ export function rowHold(d: {
 /** The stream's waits, or the row's open wait until the stream reports one. */
 export function seedWait(state: WaitState, hold: HeldDeploy | null): WaitState {
   if (state.heard || !hold?.reason || hold.since === null) return state;
-  return { ...state, current: { reason: hold.reason, ahead: hold.ahead, since: hold.since } };
+  return { ...state, current: { reason: hold.reason, ahead: hold.ahead, total: hold.total, since: hold.since } };
 }
 
 /** A held deploy in a few words, for a list row. */
 export function holdLabel(hold: HeldDeploy): string {
-  return hold.reason ? waitLabel(hold.reason, hold.ahead) : "Deploy queued";
+  return hold.reason ? waitLabel(hold) : "Deploy queued";
 }
 
 /** The deploy to show from a newest-first list: the running one, else the first in line. */
@@ -139,20 +149,22 @@ export function deployWaitOf(stream: { wait: WaitState; stages: Record<string, s
   return deployClockOf(stream, { startedAt: 0, status, now: 0 }).wait;
 }
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+/** " (2 of 3)", " (2)" without a total, or nothing without a place. */
+export function queuePlace({ ahead, total }: QueuePlace): string {
+  if (ahead == null || ahead < 0) return "";
+  const place = ahead + 1;
+  return total != null && total >= place ? ` (${place} of ${total})` : ` (${place})`;
 }
 
 /** What a waiting deploy is waiting for, in a few words. */
-export function waitLabel(reason: WaitReason | null, ahead?: number): string {
-  const queue = ahead && ahead > 0 ? ahead : 0;
+export function waitLabel({ reason, ...place }: QueuePlace & { reason: WaitReason | null }): string {
   switch (reason) {
     case "deploy-slot":
-      return queue ? `Queued behind ${plural(queue, "other deploy")}` : "Queued for a deploy slot";
+      return `Queued${queuePlace(place)}`;
     case "app":
       return "Queued behind this app's running deploy";
     case "build-slot":
-      return queue ? `Waiting for the builder, ${plural(queue, "build")} ahead` : "Waiting for the builder";
+      return `Queued for the builder${queuePlace(place)}`;
     case "checkout":
       return "Waiting for another deploy's checkout";
     case "worker":

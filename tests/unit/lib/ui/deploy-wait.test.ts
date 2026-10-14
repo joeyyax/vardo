@@ -167,9 +167,12 @@ describe("parseWaitEvent", () => {
     expect(parseWaitEvent({ deploymentId: "d", reason: "deploy-slot", ahead: 2, streamId: "1-0" })).toEqual({
       reason: "deploy-slot",
       ahead: 2,
+      total: undefined,
       streamId: "1-0",
     });
-    expect(parseWaitEvent({ reason: null, streamId: "1-0" })).toEqual({ reason: null, ahead: undefined, streamId: "1-0" });
+    expect(parseWaitEvent({ reason: null, streamId: "1-0" })).toEqual({ reason: null, ahead: undefined, total: undefined, streamId: "1-0" });
+    expect(parseWaitEvent({ reason: "deploy-slot", ahead: 1, total: 3, streamId: "1-0" })).toMatchObject({ ahead: 1, total: 3 });
+    expect(parseWaitEvent({ reason: "worker", streamId: "1-0" })?.reason).toBe("worker");
   });
 
   it("rejects an unknown reason or a missing stream id", () => {
@@ -204,9 +207,10 @@ describe("row waits", () => {
   });
 
   it("counts the queue from the row's place in line", () => {
-    const hold = rowHold({ status: "queued", waitReason: "deploy-slot", waitingSince: null, waitAhead: 3 });
-    expect(hold?.ahead).toBe(3);
-    expect(holdLabel(hold!)).toBe("Queued behind 3 other deploys");
+    const hold = rowHold({ status: "queued", waitReason: "deploy-slot", waitingSince: null, waitAhead: 3, waitTotal: 5 });
+    expect(hold).toMatchObject({ ahead: 3, total: 5 });
+    expect(holdLabel(hold!)).toBe("Queued (4 of 5)");
+    expect(holdLabel(rowHold({ status: "queued", waitReason: "deploy-slot", waitAhead: 3 })!)).toBe("Queued (4)");
     expect(rowHold({ status: "queued", waitReason: null, waitAhead: 3 })?.ahead).toBeUndefined();
   });
 
@@ -220,26 +224,29 @@ describe("row waits", () => {
 });
 
 describe("waitLabel", () => {
-  it("names the queue's new reasons", () => {
-    expect(waitLabel("worker")).toBe("Waiting for the worker to come back");
-    expect(waitLabel("exclusive")).toBe("Waiting for Vardo's own update to finish");
+  const label = (reason: Parameters<typeof waitLabel>[0]["reason"], ahead?: number, total?: number) => waitLabel({ reason, ahead, total });
+
+  it("places a deploy in its queue as X of Y", () => {
+    expect(label("deploy-slot", 1, 3)).toBe("Queued (2 of 3)");
+    expect(label("deploy-slot", 0, 1)).toBe("Queued (1 of 1)");
+    expect(label("build-slot", 2, 4)).toBe("Queued for the builder (3 of 4)");
+  });
+
+  it("drops what it doesn't know", () => {
+    expect(label("deploy-slot", 1)).toBe("Queued (2)");
+    expect(label("deploy-slot")).toBe("Queued");
+    expect(label("build-slot")).toBe("Queued for the builder");
+    // A total smaller than the place is stale; the place alone still holds.
+    expect(label("deploy-slot", 4, 2)).toBe("Queued (5)");
+  });
+
+  it("keeps sentences for waits that aren't a line", () => {
+    expect(label("app", 2, 3)).toBe("Queued behind this app's running deploy");
+    expect(label("checkout")).toBe("Waiting for another deploy's checkout");
+    expect(label("worker")).toBe("Waiting for the worker to come back");
+    expect(label("exclusive")).toBe("Waiting for Vardo's own update to finish");
+    expect(label(null)).toBe("Queued");
     expect(waitWord("worker")).toBe("Queued");
     expect(waitWord("exclusive")).toBe("Queued");
-    expect(parseWaitEvent({ reason: "worker", streamId: "1-0" })?.reason).toBe("worker");
-  });
-
-  it("counts the deploys ahead in the queue", () => {
-    expect(waitLabel("deploy-slot", 2)).toBe("Queued behind 2 other deploys");
-    expect(waitLabel("deploy-slot", 1)).toBe("Queued behind 1 other deploy");
-    expect(waitLabel("deploy-slot", 0)).toBe("Queued for a deploy slot");
-    expect(waitLabel("deploy-slot")).toBe("Queued for a deploy slot");
-  });
-
-  it("names what each wait is for", () => {
-    expect(waitLabel("app")).toBe("Queued behind this app's running deploy");
-    expect(waitLabel("build-slot")).toBe("Waiting for the builder");
-    expect(waitLabel("build-slot", 1)).toBe("Waiting for the builder, 1 build ahead");
-    expect(waitLabel("checkout")).toBe("Waiting for another deploy's checkout");
-    expect(waitLabel(null)).toBe("Queued");
   });
 });

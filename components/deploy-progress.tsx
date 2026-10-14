@@ -141,7 +141,7 @@ export function DeployProgress({
       <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 text-[13px]">
         <span>
           {clock === null ? null : wait ? (
-            waitLabel(wait.reason, wait.ahead)
+            waitLabel(wait)
           ) : typicalMs === null ? (
             "No earlier deploy to judge by"
           ) : working < typicalMs ? (

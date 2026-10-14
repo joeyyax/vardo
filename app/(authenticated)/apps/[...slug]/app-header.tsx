@@ -105,7 +105,7 @@ export function AppHeader({
   stackUptimeSince?: Date | null;
   /** Phase word of a running deploy — "Build", "Health", "Route". */
   deployStage?: string | null;
-  /** What a waiting deploy is waiting for, like "Queued behind 2 other deploys". */
+  /** What a waiting deploy is waiting for, like "Queued (2 of 3)". */
   deployWait?: ActiveWait | null;
 }) {
   const router = useRouter();
@@ -345,7 +345,7 @@ export function AppHeader({
           {deployWait ? (
             <span className="flex items-center gap-1.5">
               <StatusMark tone="neutral" pending />
-              {waitLabel(deployWait.reason, deployWait.ahead)}
+              {waitLabel(deployWait)}
             </span>
           ) : isDeploying ? (
             <span className="flex items-center gap-1.5 text-status-info">
