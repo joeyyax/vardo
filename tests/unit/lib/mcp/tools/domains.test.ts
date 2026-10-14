@@ -56,6 +56,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   middlewares: null,
   certResolver: "le-dns",
   isPrimary: false,
+  enabled: true,
   sslEnabled: true,
   redirectTo: null,
   redirectCode: 301,
@@ -147,6 +148,14 @@ describe("vardo_update_domain", () => {
     const res = await (await tools()).vardo_update_domain({ appId: "a1", domainId: "d1", domain: "ACME.COM" });
     expect(res.isError).toBeUndefined();
     expect(dbMock.updates[0].set).not.toHaveProperty("domain");
+  });
+
+  it("turns a domain off and drops its primary flag", async () => {
+    dbMock.query.domains.findFirst.mockResolvedValue(row({ isPrimary: true }));
+    dbMock.updateReturns([row({ enabled: false })]);
+    const res = await (await tools()).vardo_update_domain({ appId: "a1", domainId: "d1", enabled: false });
+    expect(res.isError).toBeUndefined();
+    expect(dbMock.updates[0].set).toEqual({ enabled: false, isPrimary: false });
   });
 });
 
