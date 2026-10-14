@@ -6,6 +6,8 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Brand } from "../brand";
 import { UserMenu } from "./user-menu";
+import { SystemStatus } from "./system-status";
+import type { WorkerOutage } from "@/lib/ui/system-status";
 import { MobileSidebar } from "./mobile-sidebar";
 import { openCommandPalette } from "@/components/command-palette";
 import type { Organization } from "@/lib/types";
@@ -16,6 +18,9 @@ type TopNavProps = {
   teamsEnabled?: boolean;
   activityEnabled?: boolean;
   cronEnabled?: boolean;
+  /** The missing worker, for the status chip. */
+  worker?: WorkerOutage | null;
+  version?: string;
 };
 
 const navItems: { label: string; href: string; requires?: "activity" | "cron" }[] = [
@@ -26,7 +31,7 @@ const navItems: { label: string; href: string; requires?: "activity" | "cron" }[
   { label: "Activity", href: "/activity", requires: "activity" },
 ];
 
-export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activityEnabled = true, cronEnabled = true }: TopNavProps) {
+export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activityEnabled = true, cronEnabled = true, worker = null, version = "" }: TopNavProps) {
   const pathname = usePathname();
   const enabled = { activity: activityEnabled, cron: cronEnabled };
   const visibleNavItems = navItems.filter((item) => !item.requires || enabled[item.requires]);
@@ -35,13 +40,14 @@ export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activ
     <header className="surface-sidebar bg-sidebar border-b shrink-0">
       <div className="container flex items-center h-16 gap-4">
         {/* Brand */}
-        <div className="flex-1 flex items-center gap-2">
+        <div className="flex-1 flex min-w-0 items-center gap-2">
           <MobileSidebar
             currentOrgId={currentOrgId}
             organizations={organizations}
             teamsEnabled={teamsEnabled}
           />
           <Brand />
+          <SystemStatus worker={worker} version={version} />
         </div>
 
         {/* Nav */}
