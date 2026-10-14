@@ -10,8 +10,6 @@ import type { Deployment, RollbackPreview } from "../types";
 
 type StageStatus = "running" | "success" | "failed" | "skipped";
 
-/** Wall-clock window per phase, filled in as stage events arrive. */
-
 /** Toast text for a deploy that ended without succeeding and without an error. */
 const TERMINAL_MESSAGES: Record<string, string> = {
   cancelled: "Deployment cancelled",

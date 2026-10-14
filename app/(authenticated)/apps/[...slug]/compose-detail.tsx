@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Rocket,
-  Loader2,
   RotateCcw,
   RefreshCw,
   ChevronDown,
@@ -847,7 +846,6 @@ export function ComposeDetail({
     }
   }, [app.composeContent, app.deployments.length, deploy]);
 
-
   const totalDeployments = app.deployments.length;
 
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
@@ -871,12 +869,6 @@ export function ComposeDetail({
   });
 
   const statusTrigger = (() => {
-    if (deploy.deploying || app.status === "deploying") {
-      return {
-        className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
-        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
-      };
-    }
     if (app.status === "active") {
       return {
         className: app.needsRedeploy

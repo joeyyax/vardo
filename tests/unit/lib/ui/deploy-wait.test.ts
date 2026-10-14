@@ -279,7 +279,7 @@ describe("lineLabel", () => {
     expect(lineLabel("build", { ahead: 0, eta: in6 }, now)).toBe("Building next");
     expect(lineLabel("build", { ahead: 1 }, now)).toBe("2nd in line to build");
     expect(lineLabel("build", { ahead: 0 }, now)).toBe("Next to build");
-    expect(lineLabel("build", {}, now)).toBe("Queued to build");
+    expect(lineLabel("build", {}, now)).toBe("Queued");
   });
 
   it("counts the estimate down, and drops it before the clock is known", () => {

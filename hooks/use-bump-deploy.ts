@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "@/lib/messenger";
 import { activeDeploy } from "@/lib/ui/deploy-wait";
 
@@ -14,11 +14,8 @@ export async function activeDeployId(orgId: string, appId: string): Promise<stri
 
 /** Moves a deploy waiting in the deploy or build line to the front. Instance admins only. */
 export function useBumpDeploy(orgId: string, appId: string) {
-  const [bumping, setBumping] = useState(false);
-
   const bumpDeploy = useCallback(
     async (deploymentId?: string) => {
-      setBumping(true);
       try {
         const targetId = deploymentId ?? (await activeDeployId(orgId, appId));
         if (!targetId) {
@@ -36,12 +33,10 @@ export function useBumpDeploy(orgId: string, appId: string) {
       } catch {
         toast.error("Couldn't move the deploy");
         return false;
-      } finally {
-        setBumping(false);
       }
     },
     [orgId, appId],
   );
 
-  return { bumping, bumpDeploy };
+  return { bumpDeploy };
 }

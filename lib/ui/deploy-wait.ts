@@ -39,7 +39,7 @@ function streamIdAfter(a: string, b: string): boolean {
 const REASONS = new Set<string>(["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive"]);
 
 /** Whether a value is a wait reason the UI knows. */
-export function isWaitReason(value: unknown): value is WaitReason {
+function isWaitReason(value: unknown): value is WaitReason {
   return typeof value === "string" && REASONS.has(value);
 }
 
@@ -168,7 +168,7 @@ export function lineLabel(line: "deploy" | "build", { ahead, eta }: QueuePlace, 
   const build = line === "build";
   if (place === 1) return left !== null ? (build ? "Building next" : "Starts next") : build ? "Next to build" : "Next in line";
   const starts = left !== null ? `${build ? "Build starts" : "Starts"} in ${aboutMinutes(left)}` : null;
-  if (place === null) return starts ?? (build ? "Queued to build" : "Queued");
+  if (place === null) return starts ?? "Queued";
   return starts ? `${starts} · ${ordinal(place)} in line` : `${ordinal(place)} in line${build ? " to build" : ""}`;
 }
 

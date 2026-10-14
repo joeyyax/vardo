@@ -56,7 +56,7 @@ import {
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
 import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
-import { isQueuedView, NO_WAIT, queuedRowLabel, rowHold, seedWait } from "@/lib/ui/deploy-wait";
+import { NO_WAIT, queuedRowLabel, rowHold, seedWait } from "@/lib/ui/deploy-wait";
 import {
   DEPLOY_WINDOW_DAYS,
   deployCounts,
@@ -543,13 +543,8 @@ export function AppDeployPanel({
               }
               action={
                 <Button size="sm" disabled={deploying} onClick={onDeploy}>
-                  {deploying && deploy.deployView && isQueuedView(deploy.deployView) ? (
-                    deploy.deployView.word
-                  ) : deploying ? (
-                    <><Loader2 className="mr-1.5 size-4 animate-spin" />{deploy.deployView?.word ?? "Deploying"}</>
-                  ) : (
-                    <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
-                  )}
+                  <Rocket className="mr-1.5 size-4" />
+                  {deployActionLabel}
                 </Button>
               }
             />

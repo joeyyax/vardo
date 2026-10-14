@@ -210,7 +210,7 @@ describe("deploys in flight", () => {
     expect(fleetCounts(sections)).toMatchObject({ deploying: 3, queued: 2 });
     const label = (name: string) => deployViewOf(sections[0].nodes.find((n) => n.app.name === name)!.app)?.label;
     expect(label("b-queued")).toBe("Queued");
-    expect(label("d-builder")).toBe("Queued to build");
+    expect(label("d-builder")).toBe("Queued");
     expect(label("a-running")).toBe("Deploying");
     expect(label("e-preparing")).toBe("Preparing");
     expect(label("c-both")).toBe("Deploying");
