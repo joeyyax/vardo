@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -7,18 +7,19 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps, backups } from "@/lib/db/schema";
 import { deleteBackups, isInProgress, storedBytes } from "@/lib/backups/delete-backups";
-import { orgBackupScope } from "@/lib/backups/org-backup";
+import { deletedAppBackupScope, orgBackupScope } from "@/lib/backups/org-backup";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
-/** The history of a deleted app (?appId=) or job (?jobName=), or an error response. */
+/** The history of a deleted app (?appId= or ?appName=) or job (?jobName=), or an error response. */
 async function deletedHistoryScope(request: NextRequest, orgId: string) {
   const appId = request.nextUrl.searchParams.get("appId");
+  const appName = request.nextUrl.searchParams.get("appName");
   const jobName = request.nextUrl.searchParams.get("jobName");
-  if (!appId === !jobName) {
-    return { denied: NextResponse.json({ error: "Pass appId or jobName" }, { status: 400 }) };
+  if ([appId, appName, jobName].filter(Boolean).length !== 1) {
+    return { denied: NextResponse.json({ error: "Pass appId, appName or jobName" }, { status: 400 }) };
   }
 
   if (appId) {
@@ -33,13 +34,34 @@ async function deletedHistoryScope(request: NextRequest, orgId: string) {
     }
     return { where: and(orgBackupScope(orgId), eq(backups.appId, appId))! };
   }
+  if (appName) {
+    return { where: and(deletedAppBackupScope(orgId), eq(backups.appName, appName))! };
+  }
   return {
     where: and(orgBackupScope(orgId), isNull(backups.jobId), eq(backups.jobName, jobName!))!,
   };
 }
 
-// GET /api/v1/organizations/[orgId]/backups/history?appId=|jobName=
-// What deleting that history would remove.
+/** The org's deleted apps that still have history, by name. */
+async function listDeletedApps(orgId: string) {
+  const rows = await db
+    .select({
+      appName: backups.appName,
+      appIds: sql<string[]>`array_agg(distinct ${backups.appId} order by ${backups.appId})`,
+      backups: count(),
+      archives: sql<number>`count(*) filter (where ${backups.storagePath} is not null and ${backups.status} not in ('pruned', 'pending', 'running'))::int`,
+      bytes: storedBytes,
+    })
+    .from(backups)
+    .where(deletedAppBackupScope(orgId))
+    .groupBy(backups.appName)
+    .orderBy(asc(backups.appName));
+
+  return rows.map((r) => ({ ...r, bytes: Number(r.bytes) }));
+}
+
+// GET /api/v1/organizations/[orgId]/backups/history?appId=|appName=|jobName=
+// What deleting that history would remove. With no query, the deleted apps that still have history.
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
@@ -47,6 +69,10 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return apiError.forbidden();
+
+    if (request.nextUrl.searchParams.size === 0) {
+      return NextResponse.json({ apps: await listDeletedApps(orgId) });
+    }
 
     const scope = await deletedHistoryScope(request, orgId);
     if (scope.denied) return scope.denied;
@@ -68,7 +94,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/v1/organizations/[orgId]/backups/history?appId=|jobName=
+// DELETE /api/v1/organizations/[orgId]/backups/history?appId=|appName=|jobName=
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
@@ -82,11 +108,21 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     const rows = await db.query.backups.findMany({
       where: scope.where,
-      columns: { id: true, targetId: true, status: true, storagePath: true },
+      columns: { id: true, targetId: true, status: true, storagePath: true, volumeName: true, startedAt: true },
     });
-    const { deleted, kept } = await deleteBackups(rows.filter((r) => !isInProgress(r.status)));
+    const { deleted, kept, failed } = await deleteBackups(rows.filter((r) => !isInProgress(r.status)));
+    const byId = new Map(rows.map((r) => [r.id, r]));
 
-    return NextResponse.json({ deleted, kept });
+    return NextResponse.json({
+      deleted,
+      kept,
+      failed: failed.map((f) => ({
+        id: f.id,
+        volumeName: byId.get(f.id)?.volumeName ?? null,
+        startedAt: byId.get(f.id)?.startedAt ?? null,
+        error: f.error,
+      })),
+    });
   } catch (error) {
     return handleRouteError(error, "Error deleting backup history");
   }

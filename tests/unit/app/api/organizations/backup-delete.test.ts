@@ -242,7 +242,7 @@ describe("deleting a deleted app's or job's history", () => {
     const res = await deleteHistory(del(`${HISTORY_URL}?appId=app-gone`), orgCtx);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: 2, kept: 0 });
+    expect(await res.json()).toEqual({ deleted: 2, kept: 0, failed: [] });
     expect(h.storageDelete).toHaveBeenCalledTimes(1);
   });
 
@@ -252,7 +252,7 @@ describe("deleting a deleted app's or job's history", () => {
     const res = await deleteHistory(del(`${HISTORY_URL}?jobName=Nightly`), orgCtx);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: 1, kept: 0 });
+    expect(await res.json()).toEqual({ deleted: 1, kept: 0, failed: [] });
   });
 
   it("refuses an app that still exists", async () => {
@@ -278,7 +278,11 @@ describe("deleting a deleted app's or job's history", () => {
 
     const res = await deleteHistory(del(`${HISTORY_URL}?appId=app-gone`), orgCtx);
 
-    expect(await res.json()).toEqual({ deleted: 0, kept: 1 });
+    expect(await res.json()).toEqual({
+      deleted: 0,
+      kept: 1,
+      failed: [{ id: "b-1", volumeName: null, startedAt: null, error: "AccessDenied" }],
+    });
     expect(h.deleted).toEqual([]);
   });
 });
