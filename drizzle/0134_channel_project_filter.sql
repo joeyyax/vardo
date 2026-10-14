@@ -1,0 +1,1 @@
+ALTER TABLE "notification_channel" ADD COLUMN "project_ids" text[] DEFAULT '{}' NOT NULL;
