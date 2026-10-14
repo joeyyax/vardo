@@ -40,6 +40,8 @@ export type Domain = {
   port: number | null;
   certResolver: string | null;
   isPrimary: boolean | null;
+  /** Off drops the route on the next deploy; the row stays. */
+  enabled?: boolean;
   redirectTo: string | null;
   redirectCode: number | null;
   sslEnabled?: boolean | null;
