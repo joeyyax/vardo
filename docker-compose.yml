@@ -241,7 +241,8 @@ services:
       # Unset on installs from before #889, which keep running without a password.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       # install.sh sizes both from RAM. Keep maxmemory about 62% of VARDO_REDIS_MEM: AOF rewrites and snapshots fork, and writes during a fork copy pages (at 75% a write burst OOM-killed the container). volatile-lru never evicts queues, streams or time series.
-      REDIS_ARGS: --appendonly yes --appendfsync everysec --maxmemory ${VARDO_REDIS_MAXMEMORY:-320mb} --maxmemory-policy volatile-lru${REDIS_PASSWORD:+ --requirepass ${REDIS_PASSWORD}}
+      # Hourly snapshots back up the AOF (redis-entrypoint.sh falls back to them). Don't quote the save value: REDIS_ARGS is word-split and quotes make Redis refuse to start.
+      REDIS_ARGS: --appendonly yes --appendfsync everysec --save 3600 1 --maxmemory ${VARDO_REDIS_MAXMEMORY:-320mb} --maxmemory-policy volatile-lru${REDIS_PASSWORD:+ --requirepass ${REDIS_PASSWORD}}
     ports:
       - "127.0.0.1:${REDIS_PORT:-7200}:6379"
     volumes:
