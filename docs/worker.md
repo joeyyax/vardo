@@ -19,7 +19,7 @@ A deploy is a row in the `deployment` table. Whatever asks for one (the deploy b
 - **Capacity.** Running deploys across the host stay at or under the deploy concurrency setting. Explicit deploys are claimed before pushes.
 - **Leases.** The executor renews each claim every 3 seconds. A claim expires 45 seconds after its executor stops renewing it.
 - **Cancel.** A queued deploy is cancelled at once. A running one stops within seconds while it clones or builds; past that it stops at the next stage.
-- **Crash rule.** When a lease expires during clone, compose or build, the deploy is requeued once with a log line saying so; a second expiry fails it. Expiring later than the build fails it, and `deploy-sweep` stops its slot only if nothing serves.
+- **Crash rule.** When a lease expires during clone, compose or build, the deploy is requeued once with a log line saying so; a second expiry fails it. One that expires before the first stage requeues it without counting. Expiring later than the build fails it, and `deploy-sweep` stops its slot only if nothing serves.
 - **Time limits.** A deploy running past `DEPLOY_TIMEOUT_MINUTES` (45) is asked to stop. Pushes and polls still queued after 24 hours are cancelled. Other queued deploys wait as long as it takes.
 - **Fence.** Before the swap touches containers, the deploy checks it still holds its claim. A lost claim stops it with the old slot serving.
 - **Project deploys and previews** run as `deploy-group` jobs in the `worker_job` table. The job queues each tier's deploys and waits on them.

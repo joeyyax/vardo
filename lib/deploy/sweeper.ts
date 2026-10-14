@@ -235,8 +235,12 @@ export async function sweepExpiredLeases(): Promise<void> {
 
       const stillExpired = and(eq(deployments.id, deploy.id), eq(deployments.status, "running"), lt(deployments.leaseExpiresAt, sql`now()`));
       const stage = deploy.stage ?? "queued";
-      if (deploy.stage && REQUEUE_STAGES.includes(deploy.stage) && deploy.attempts === 0 && !deploy.cancelRequestedAt) {
-        const text = line("deploy", `Requeued: the executor running it stopped during ${stage}. It runs once more from the start`);
+      // Nothing ran before the first stage, so that requeue doesn't use up the rerun.
+      const unstarted = !deploy.stage && !deploy.cancelRequestedAt;
+      if (unstarted || (deploy.stage && REQUEUE_STAGES.includes(deploy.stage) && deploy.attempts === 0 && !deploy.cancelRequestedAt)) {
+        const text = unstarted
+          ? line("deploy", "Requeued: the executor that claimed it stopped before it started")
+          : line("deploy", `Requeued: the executor running it stopped during ${stage}. It runs once more from the start`);
         const requeued = await db
           .update(deployments)
           .set({
@@ -244,7 +248,7 @@ export async function sweepExpiredLeases(): Promise<void> {
             claimedBy: null,
             leaseExpiresAt: null,
             stage: null,
-            attempts: sql`${deployments.attempts} + 1`,
+            attempts: unstarted ? sql`${deployments.attempts}` : sql`${deployments.attempts} + 1`,
             exclusiveRequestedAt: null,
             log: appendLog(text),
           })

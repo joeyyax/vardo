@@ -307,6 +307,15 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect(streamed.filter((e) => e.id === id).at(-1)?.line).toMatch(/ERROR: The executor stopped during compose again/);
     });
 
+    it("requeues a deploy whose executor died before its first stage without using up the rerun", async () => {
+      const id = await enqueue("a1", "manual");
+      await sql`update deployment set status = 'running', claimed_by = 'gone', lease_expires_at = now() - interval '1 second' where id = ${id}`;
+      await sweeper.sweepExpiredLeases();
+      const requeued = await row(id);
+      expect(requeued).toMatchObject({ status: "queued", attempts: 0, claimed_by: null });
+      expect(requeued.log).toMatch(/Requeued: the executor that claimed it stopped before it started/);
+    });
+
     it("fails a deploy whose executor died in the swap without a rerun", async () => {
       const id = await enqueue("a1", "manual");
       await claimAll();
