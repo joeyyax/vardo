@@ -4,10 +4,24 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
+import { DEFAULT_INSTANCE_PROBE_GUARD } from "@/lib/probe-guard/settings";
+import type * as InstanceModule from "@/lib/probe-guard/instance";
 
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: () => () => {} }));
 vi.mock("@/lib/redis", () => ({ redis: {} }));
+
+// Sharing itself is covered in the unit tests; here only whether bans.ts decides to share.
+const share = vi.hoisted(() => ({
+  on: false,
+  shareBan: vi.fn(async () => ({ sent: 0, failed: 0 })),
+  shareLift: vi.fn(async () => ({ sent: 0, failed: 0 })),
+}));
+vi.mock("@/lib/probe-guard/mesh-share", () => ({ shareBan: share.shareBan, shareLift: share.shareLift }));
+vi.mock("@/lib/probe-guard/instance", async (original) => ({
+  ...(await original<typeof InstanceModule>()),
+  getProbeGuardSettings: async () => ({ ...DEFAULT_INSTANCE_PROBE_GUARD, shareBans: share.on }),
+}));
 
 const conn = await connectScratchServer();
 const HOUR = 3_600_000;
@@ -69,5 +83,74 @@ describe.skipIf(!conn)("permanent probe bans on Postgres", { timeout: MIGRATE_TI
     await bans.pruneBans(now);
     const ids = (await sql`select id from probe_ban order by id`).map((r) => r.id);
     expect(ids).toEqual(["kept", "p1", "p2", "t1", "t2"]);
+  });
+
+  describe("lifts shared between linked instances", () => {
+    const row = (id: string, ip: string, reason: string, expiresAt: Date) =>
+      sql`insert into probe_ban (id, ip, reason, created_at, expires_at) values (${id}, ${ip}, ${reason}, now() - interval '5 minutes', ${expiresAt})`;
+    const lifted = async (id: string) => (await sql`select lifted_at, lifted_by from probe_ban where id = ${id}`)[0];
+    const future = () => new Date(Date.now() + HOUR);
+
+    it("ends another instance's temporary bans on the address and leaves everything else", async () => {
+      const ip = "198.51.100.10";
+      await row("lp-threshold", ip, "threshold", future());
+      await row("lp-mesh", ip, "mesh", future());
+      await row("lp-trap", ip, "trap", future());
+      await row("lp-blocklist", ip, "blocklist", future());
+      await row("lp-permanent", ip, "threshold", permanent.PERMANENT_UNTIL);
+      await row("lp-expired", ip, "threshold", new Date(Date.now() - HOUR));
+      await row("lp-other-ip", "198.51.100.11", "threshold", future());
+
+      expect(await bans.liftBansForPeer(ip, { id: "peer-east" })).toBe(3);
+
+      for (const id of ["lp-threshold", "lp-mesh", "lp-trap"]) {
+        const r = await lifted(id);
+        expect(r.lifted_at, id).not.toBeNull();
+        expect(r.lifted_by, id).toBe("mesh:peer-east");
+      }
+      for (const id of ["lp-blocklist", "lp-permanent", "lp-expired", "lp-other-ip"]) expect((await lifted(id)).lifted_at, id).toBeNull();
+      const stillActive = await sql`select id from probe_ban where ip = ${ip} and lifted_at is null and expires_at > now() order by id`;
+      expect(stillActive.map((r) => r.id)).toEqual(["lp-blocklist", "lp-permanent"]);
+      expect(share.shareLift).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for an address with no active ban, and doesn't redo a lifted one", async () => {
+      expect(await bans.liftBansForPeer("198.51.100.99", { id: "peer-east" })).toBe(0);
+      expect(await bans.liftBansForPeer("198.51.100.10", { id: "peer-east" })).toBe(0);
+    });
+
+    it("tells linked instances about an admin's lift only when sharing is on", async () => {
+      share.shareLift.mockClear();
+      await row("ls-off", "198.51.100.20", "threshold", future());
+      share.on = false;
+      expect(await bans.liftBan("ls-off", "user-1")).toBe(true);
+      expect(share.shareLift).not.toHaveBeenCalled();
+
+      await row("ls-on", "198.51.100.21", "threshold", future());
+      share.on = true;
+      expect(await bans.liftBan("ls-on", "user-1")).toBe(true);
+      expect(share.shareLift).toHaveBeenCalledExactlyOnceWith("198.51.100.21");
+      expect((await lifted("ls-on")).lifted_by).toBe("user-1");
+    });
+
+    it("shares the lift of a ban that came from a linked instance, so it spreads both ways", async () => {
+      share.shareLift.mockClear();
+      share.on = true;
+      await row("ls-mesh", "198.51.100.22", "mesh", future());
+      expect(await bans.liftBan("ls-mesh", "user-1")).toBe(true);
+      expect(share.shareLift).toHaveBeenCalledExactlyOnceWith("198.51.100.22");
+    });
+
+    it("shares nothing for a blocklist ban, an already-ended ban or a ban that isn't there", async () => {
+      share.shareLift.mockClear();
+      share.on = true;
+      await row("ls-blocklist", "198.51.100.23", "blocklist", future());
+      await row("ls-ended", "198.51.100.24", "threshold", new Date(Date.now() - HOUR));
+      expect(await bans.liftBan("ls-blocklist", "user-1")).toBe(true);
+      expect(await bans.liftBan("ls-ended", "user-1")).toBe(true);
+      expect(await bans.liftBan("ls-missing", "user-1")).toBe(false);
+      expect(await bans.liftBan("ls-on", "user-1")).toBe(false);
+      expect(share.shareLift).not.toHaveBeenCalled();
+    });
   });
 });
