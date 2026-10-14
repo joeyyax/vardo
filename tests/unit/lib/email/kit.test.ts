@@ -154,6 +154,18 @@ describe("layout", () => {
     expect(html).toMatch(/@media \(max-width:480px\)[^}]*\.vd-tile/);
   });
 
+  it("separates the footer note from the links", async () => {
+    const body: NotificationMailBody = {
+      tone: "success",
+      status: "Updated",
+      heading: "node-a updated",
+      footer: { instanceName: "node-a", settingsUrl: "https://x/settings", note: "Version 1.4.0" },
+    };
+    const html = await render(createElement(NotificationMail, body));
+    const visible = html.replace(/<!--.*?-->/g, "").replace(/<[^>]+>/g, "");
+    expect(visible).toContain("Version 1.4.0 · Notification settings");
+  });
+
   it("puts section titles on the block after them in text, and footer links last", () => {
     const body: NotificationMailBody = {
       tone: "fail",
