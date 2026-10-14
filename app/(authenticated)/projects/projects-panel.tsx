@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
-import { DeployProgress, useDeployStream, useNow, WaitWhy } from "@/components/deploy-progress";
+import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
@@ -150,6 +150,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           row={{ status: running?.status ?? "running", stage: running?.stage, held: !!running?.request?.held, startedAt: running?.startedAt ?? null }}
           typicalMs={typicalElapsedMs(app.deployments)}
           href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}
+          subject={app.displayName}
           onStartNext={ctx.instanceAdmin && running ? () => bumpDeploy(running.id) : undefined}
         />
       </div>
@@ -364,10 +365,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
             <span className="text-muted-foreground">
               <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
             </span>
-          ) : view && view.label !== "Deploying" ? (
-            <WaitWhy why={view.why} className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>
-              {view.label}
-            </WaitWhy>
+          ) : view && view.word !== "Deploying" ? (
+            <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>{view.word}</span>
           ) : app.status === "deploying" || view ? (
             <span className="text-status-info">
               <Term id="deploying">Deploying</Term>
@@ -412,6 +411,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           row={{ status: running.status, stage: running.stage, held: !!running.request?.held, startedAt: running.startedAt }}
           typicalMs={typicalElapsedMs(app.deployments)}
           href={deployHref(app.name, running.id)}
+          subject={app.displayName}
           onStartNext={ctx.instanceAdmin ? () => bumpDeploy(running.id) : undefined}
         />
       )}

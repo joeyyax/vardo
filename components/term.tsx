@@ -63,30 +63,34 @@ export function TermScope({ children }: { children: ReactNode }) {
 
 const noop = () => () => {};
 
-/** Whether this instance is the first of its id in the nearest scope. True outside a scope. */
-function useFirstInScope(id: GlossaryId, passive: boolean): boolean {
+/** Whether this instance is the first of its id in the nearest scope. True outside a scope and for free text. */
+function useFirstInScope(id: GlossaryId | null, passive: boolean): boolean {
   const scope = useContext(ScopeContext);
+  const scoped = id ? scope : null;
   const me = useId();
   useLayoutEffect(() => {
-    if (!scope) return;
-    scope.claim(id, me, passive);
-    return () => scope.release(id, me);
-  }, [scope, id, me, passive]);
+    if (!scoped || !id) return;
+    scoped.claim(id, me, passive);
+    return () => scoped.release(id, me);
+  }, [scoped, id, me, passive]);
   const owner = useSyncExternalStore(
-    scope ? scope.subscribe : noop,
-    () => (scope ? scope.owner(id) : me),
-    () => (scope ? null : me),
+    scoped ? scoped.subscribe : noop,
+    () => (scoped && id ? scoped.owner(id) : me),
+    () => (scoped ? null : me),
   );
   return owner === me;
 }
 
+/** A glossary word, or free text that explains the words it marks. */
+type TermSource = { id: GlossaryId; note?: undefined } | { note: string; id?: undefined };
+
 // --- Term --------------------------------------------------------------------
 
 /** A hidden explanation with a known id, for aria-describedby. */
-export function TermNote({ id, noteId }: { id: GlossaryId; noteId: string }) {
+export function TermNote({ id, note, noteId }: TermSource & { noteId: string }) {
   return (
     <span hidden id={noteId}>
-      {GLOSSARY[id].what}
+      {note ?? GLOSSARY[id!].what}
     </span>
   );
 }
@@ -101,7 +105,8 @@ export function useTermDescription(id: GlossaryId | null | undefined): {
   return { describedBy: descId, description: <TermNote id={id} noteId={descId} /> };
 }
 
-function Explanation({ id, linkable }: { id: GlossaryId; linkable: boolean }) {
+function Explanation({ id, note, linkable }: TermSource & { linkable: boolean }) {
+  if (note !== undefined) return <span className="text-left">{note}</span>;
   const entry = GLOSSARY[id];
   const href = glossaryHref(id);
   return (
@@ -125,26 +130,27 @@ function Explanation({ id, linkable }: { id: GlossaryId; linkable: boolean }) {
 }
 
 /**
- * A product word with a plain-language explanation: a tooltip on hover or focus, a popover on tap
- * or Enter. `passive` drops the tab stop and popover for text inside a clickable row or button.
+ * A product word, or words a `note` explains, with a plain-language explanation: a tooltip on hover or
+ * focus, a popover on tap or Enter. `passive` drops the tab stop and popover for text inside a clickable row or button.
  */
 export function Term({
   id,
+  note,
   children,
   passive = false,
   className,
-}: {
-  id: GlossaryId;
+}: TermSource & {
   children: ReactNode;
   passive?: boolean;
   className?: string;
 }) {
   const descId = useId();
   const popId = useId();
-  const first = useFirstInScope(id, passive);
+  const first = useFirstInScope(id ?? null, passive);
   const [tip, setTip] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const description = <TermNote id={id} noteId={descId} />;
+  const source = (id ? { id } : { note: note! }) as TermSource;
+  const description = <TermNote {...source} noteId={descId} />;
 
   if (!first) return <span className={className}>{children}</span>;
 
@@ -153,12 +159,12 @@ export function Term({
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span data-term={id} aria-describedby={descId} className={cn(UNDERLINE, className)}>
+            <span data-term={id ?? "note"} aria-describedby={descId} className={cn(UNDERLINE, className)}>
               {children}
             </span>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs">
-            <Explanation id={id} linkable={false} />
+            <Explanation {...source} linkable={false} />
           </TooltipContent>
         </Tooltip>
         {description}
@@ -174,7 +180,7 @@ export function Term({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                data-term={id}
+                data-term={id ?? "note"}
                 aria-describedby={descId}
                 // Keeps a surrounding row from also acting on the press.
                 onClick={(e) => e.stopPropagation()}
@@ -189,16 +195,16 @@ export function Term({
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs">
-            <Explanation id={id} linkable={false} />
+            <Explanation {...source} linkable={false} />
           </TooltipContent>
         </Tooltip>
         <PopoverContent
           id={popId}
-          aria-label={GLOSSARY[id].term}
+          aria-label={id ? GLOSSARY[id].term : typeof children === "string" ? children : undefined}
           className="w-72 text-[13px]"
           onClick={(e) => e.stopPropagation()}
         >
-          <Explanation id={id} linkable />
+          <Explanation {...source} linkable />
         </PopoverContent>
       </Popover>
       {description}

@@ -246,8 +246,16 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
             {inner[0].app.displayName}: {inner[1]!.title.toLowerCase()}
           </span>
         ) : view && !quietParent ? (
-          <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"} title={view.why}>
-            {view.label === "Deploying" ? <RowTerm text="Deploying" /> : <RowDeployLabel view={view} />}
+          <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>
+            {view.label === "Deploying" ? (
+              <RowTerm text="Deploying" />
+            ) : view.why ? (
+              <Term note={view.why} passive>
+                <RowDeployLabel view={view} />
+              </Term>
+            ) : (
+              <RowDeployLabel view={view} />
+            )}
           </span>
         ) : stopped && !quietParent ? (
           <span className="text-muted-foreground/70">

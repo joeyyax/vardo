@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, X } from "lucide-react";
 import { DEPLOY_STAGE_KEYS, ROLLBACK_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Term } from "@/components/term";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { quietLinkClass } from "@/components/entity-link";
 import { cn } from "@/lib/utils";
@@ -142,28 +142,13 @@ function announcement(view: DeployView, wait: WaitState, steps: StripStep[], sta
   return now ? `${rollback ? "Rolling back" : "Deploying"}: ${now.label} in progress` : "";
 }
 
-/** A wait's line, with why it waits on hover or keyboard focus. */
-export function WaitWhy({ why, className, children }: { why?: string; className?: string; children?: ReactNode }) {
-  const id = useId();
-  if (!why) return <span className={className}>{children}</span>;
+/** The card's line, with why a plain Queued waits on hover, focus or tap. */
+function WaitLine({ view, line, className }: { view: DeployView; line: string; className: string }) {
+  if (!view.why) return <span className={className}>{line}</span>;
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            aria-describedby={id}
-            className={cn("rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brass", className)}
-          >
-            {children}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">{why}</TooltipContent>
-      </Tooltip>
-      <span hidden id={id}>
-        {why}
-      </span>
-    </TooltipProvider>
+    <Term note={view.why} className={className}>
+      {line}
+    </Term>
   );
 }
 
@@ -178,6 +163,7 @@ export function DeployProgress({
   row,
   typicalMs,
   href,
+  subject,
   log,
   expanded = false,
   onToggleExpand,
@@ -193,6 +179,8 @@ export function DeployProgress({
   typicalMs: number | null;
   /** Compact: where "Open" goes. */
   href?: string;
+  /** Compact: the app, so each "Open" link names its deploy to a screen reader. */
+  subject?: string;
   /** Full: the deploy log, shown on expand. */
   log?: string[];
   expanded?: boolean;
@@ -219,7 +207,7 @@ export function DeployProgress({
   const full = variant === "full";
 
   const startNext = onStartNext && view.startNext && (
-    <Button ref={startNextRef} size="xs" variant="outline" className="pointer-coarse:h-10" disabled={moving} onClick={() => setConfirm(true)}>
+    <Button ref={startNextRef} size="xs" variant="outline" className="pointer-coarse:h-11" disabled={moving} onClick={() => setConfirm(true)}>
       Start next
     </Button>
   );
@@ -270,7 +258,7 @@ export function DeployProgress({
               )}
             >
               <StepMark state={state} warn={view.tone === "warn"} />
-              <span className={named ? undefined : "sr-only"} title={state === "held" ? view.why : undefined}>
+              <span className={named ? undefined : "sr-only"}>
                 {label}
               </span>
               <span className="sr-only">{SPOKEN[state]}</span>
@@ -300,15 +288,13 @@ export function DeployProgress({
         {bar}
         {text && (
           <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
-            <WaitWhy why={view.why} className="text-[13px] tabular-nums">
-              {text.line}
-            </WaitWhy>
+            <WaitLine view={view} line={text.line} className="text-[13px] tabular-nums" />
             {startNext}
           </div>
         )}
         {href && (
           <Link href={href} className={cn(quietLinkClass, "w-fit text-[13px]")}>
-            Open →
+            Open →{subject && <span className="sr-only"> deploy of {subject}</span>}
           </Link>
         )}
         {confirmStartNext}
@@ -330,7 +316,7 @@ export function DeployProgress({
             aria-expanded={expanded}
             aria-label={expanded ? "Hide deploy log" : "Show deploy log"}
             onClick={onToggleExpand}
-            className="shrink-0 rounded p-0.5 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
+            className="relative shrink-0 rounded p-0.5 after:absolute after:-inset-3 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass pointer-fine:after:hidden"
           >
             <DisclosureChevron open={expanded} />
           </button>
@@ -340,9 +326,7 @@ export function DeployProgress({
       {text && (
         <div className="grid gap-0.5">
           <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
-            <WaitWhy why={view.why} className="text-sm tabular-nums">
-              {text.line}
-            </WaitWhy>
+            <WaitLine view={view} line={text.line} className="text-sm tabular-nums" />
             {startNext}
           </div>
           {text.meta && <span className="text-[13px] text-muted-foreground tabular-nums">{text.meta}</span>}

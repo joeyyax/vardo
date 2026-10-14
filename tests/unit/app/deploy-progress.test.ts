@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DeployProgress, deploySteps, stagesUpTo, WaitWhy } from "@/components/deploy-progress";
+import { DeployProgress, deploySteps, stagesUpTo } from "@/components/deploy-progress";
 import { deployView, NO_WAIT } from "@/lib/ui/deploy-wait";
 
 type Props = Parameters<typeof DeployProgress>[0];
@@ -61,12 +61,9 @@ describe("DeployProgress", () => {
     expect(live).toBe("3rd in line");
   });
 
-  it("puts a plain queued wait's reason in reach of the keyboard", () => {
-    const html = renderToStaticMarkup(createElement(WaitWhy, { why: "Another deploy of this app is using its checkout" }, "Queued"));
-    const id = /<span tabindex="0" aria-describedby="([^"]+)"[^>]*>Queued<\/span>/.exec(html)?.[1];
-    expect(id).toBeTruthy();
-    expect(html).toContain(`<span hidden="" id="${id}">Another deploy of this app is using its checkout</span>`);
-    expect(renderToStaticMarkup(createElement(WaitWhy, {}, "Deploying"))).toBe("<span>Deploying</span>");
+  it("names each compact Open link's deploy to a screen reader", () => {
+    const html = render({ variant: "compact", stages: { clone: "running" }, row: { status: "running" }, href: "/apps/x/deployments/d", subject: "Queued app" });
+    expect(html).toContain('Open →<span class="sr-only"> deploy of Queued app</span>');
   });
 
   it("links compact to the deploy and keeps the log and time spent to full", () => {
