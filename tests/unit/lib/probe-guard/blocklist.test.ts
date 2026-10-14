@@ -173,6 +173,12 @@ describe("render priority", () => {
     expect(banRenderOrder(rows, 10)).toEqual(["203.0.113.9", "203.0.113.2", "203.0.113.1", "203.0.113.31", "203.0.113.30"]);
   });
 
+  it("breaks ties by address so one import renders in one order", () => {
+    const rows = ["198.51.100.7", "198.51.100.3", "198.51.100.5"].map((ip) => ({ ip, reason: "blocklist", hits: 100, createdAt: at(0), expiresAt: until }));
+    expect(banRenderOrder(rows, 10)).toEqual(["198.51.100.3", "198.51.100.5", "198.51.100.7"]);
+    expect(banRenderOrder([...rows].reverse(), 10)).toEqual(banRenderOrder(rows, 10));
+  });
+
   it("caps blocklist bans separately and never crowds out local ones", () => {
     const blocklist = Array.from({ length: 20 }, (_, i) => ({ ip: `198.51.100.${i}`, reason: "blocklist", hits: 100, createdAt: at(0), expiresAt: until }));
     const local = Array.from({ length: 4 }, (_, i) => ({ ip: `203.0.113.${i}`, reason: "threshold", hits: 5, createdAt: at(i), expiresAt: until }));

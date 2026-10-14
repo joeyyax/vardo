@@ -400,7 +400,6 @@ async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
       exitReason: u.exitReason,
       // Never cleared; idle age is measured from it.
       ...(u.running ? { lastRunningAt: now } : {}),
-      statusCheckedAt: now,
     })
     .where(eq(apps.id, u.id));
 
@@ -476,16 +475,8 @@ export async function tickStatusReconcile(): Promise<void> {
   }
 
   const touchedRunning = touched.filter((u) => u.running).map((u) => u.id);
-  const touchedIdle = touched.filter((u) => !u.running).map((u) => u.id);
-
   if (touchedRunning.length > 0) {
-    await db
-      .update(apps)
-      .set({ statusCheckedAt: now, lastRunningAt: now })
-      .where(inArray(apps.id, touchedRunning));
-  }
-  if (touchedIdle.length > 0) {
-    await db.update(apps).set({ statusCheckedAt: now }).where(inArray(apps.id, touchedIdle));
+    await db.update(apps).set({ lastRunningAt: now }).where(inArray(apps.id, touchedRunning));
   }
 
   await reportOomKills(changed);

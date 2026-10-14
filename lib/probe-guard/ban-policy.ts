@@ -148,7 +148,7 @@ export function banRenderOrder(rows: readonly RenderRow[], max: number, maxBlock
     const rank = renderRank(a) - renderRank(b);
     if (rank !== 0) return rank;
     if (renderRank(a) === 2 && (b.hits ?? 0) !== (a.hits ?? 0)) return (b.hits ?? 0) - (a.hits ?? 0);
-    return b.createdAt.getTime() - a.createdAt.getTime();
+    return b.createdAt.getTime() - a.createdAt.getTime() || (a.ip < b.ip ? -1 : a.ip > b.ip ? 1 : 0);
   });
   const out: string[] = [];
   const seen = new Set<string>();

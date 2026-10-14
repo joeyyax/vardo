@@ -132,6 +132,7 @@ describe("NVIDIA probe container lifecycle", () => {
     expect(runArgs).toContain("--name");
     expect(runArgs).toContain(PROBE_CONTAINER_NAME);
     expect(runArgs).not.toContain("--rm");
+    expect(runArgs.join(" ")).toContain("--network none");
 
     const removals = fake.docker("rm");
     expect(removals).toHaveLength(2);

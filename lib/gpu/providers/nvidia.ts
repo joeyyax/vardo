@@ -208,6 +208,8 @@ export class NvidiaProvider implements GpuProvider {
           "--gpus",
           "all",
           "--pid=host",
+          "--network",
+          "none",
           NVIDIA_SMI_IMAGE,
           "sh",
           "-c",
