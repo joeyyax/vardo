@@ -141,14 +141,12 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
       </div>
       <div onClick={(e) => e.stopPropagation()}>
         <DeployProgress
-          stream={stream}
-          appName={app.name}
-          deploymentId={running?.id}
-          startedAt={running?.startedAt ?? new Date()}
-          status={running?.status}
-          preparing={!!running?.request?.held}
-          stage={running?.stage}
+          variant="compact"
+          stages={stream.stages}
+          wait={stream.wait}
+          row={{ status: running?.status ?? "running", stage: running?.stage, held: !!running?.request?.held, startedAt: running?.startedAt ?? null }}
           typicalMs={typicalElapsedMs(app.deployments)}
+          href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}
         />
       </div>
     </div>
@@ -403,14 +401,12 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
 
       {running && (
         <DeployProgress
-          stream={stream}
-          appName={app.name}
-          deploymentId={running.id}
-          startedAt={running.startedAt}
-          status={running.status}
-          preparing={!!running.request?.held}
-          stage={running.stage}
+          variant="compact"
+          stages={stream.stages}
+          wait={stream.wait}
+          row={{ status: running.status, stage: running.stage, held: !!running.request?.held, startedAt: running.startedAt }}
           typicalMs={typicalElapsedMs(app.deployments)}
+          href={deployHref(app.name, running.id)}
         />
       )}
 

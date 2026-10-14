@@ -2,20 +2,23 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { DEPLOY_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
+import { Check, X } from "lucide-react";
+import { DEPLOY_STAGE_KEYS, ROLLBACK_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
 import {
   applyWait,
   deployCardText,
   deployClockOf,
-  deployView,
   NO_WAIT,
   parseWaitEvent,
   queuedStep,
+  streamView,
   type DeployView,
   type WaitState,
 } from "@/lib/ui/deploy-wait";
+import { Card } from "@/components/ui/card";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
+import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { quietLinkClass } from "@/components/entity-link";
-import { appHref, deployHref } from "@/lib/ui/hrefs";
 import { cn } from "@/lib/utils";
 
 type StageStatus = "running" | "success" | "failed" | "skipped";
@@ -70,12 +73,14 @@ export function useNow(intervalMs: number) {
 
 export type StripStep = { key: string; label: string; state: "done" | "held" | "now" | "failed" | "todo" };
 
-/** Queued, then the deploy phases, with the held one marked. */
-export function deploySteps(view: DeployView, stages: Record<string, string>, keys: string[]): StripStep[] {
+/** Queued, then the phases, with the held one marked. A rollback has no Queued step. */
+export function deploySteps(view: DeployView, stages: Record<string, string>): StripStep[] {
+  const rollback = ROLLBACK_STAGE_KEYS.some((k) => stages[k]);
+  const keys = (rollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS).filter((k) => k !== "cleanup" && stages[k] !== "skipped");
   const first = queuedStep(view);
   const current = keys.findIndex((k) => stages[k] === "running" || stages[k] === "failed");
   return [
-    { key: "queued", label: first.label, state: first.state },
+    ...(rollback ? [] : [{ key: "queued", label: first.label, state: first.state }]),
     ...keys.map((k, i): StripStep => ({
       key: k,
       label: STAGE_LABELS[k],
@@ -93,96 +98,174 @@ export function deploySteps(view: DeployView, stages: Record<string, string>, ke
   ];
 }
 
-/** Live phases of one deploy, a bar and the time left judged by the last good deploy. */
+const SPOKEN: Record<StripStep["state"], string> = { done: ", done", now: ", in progress", held: ", queued", failed: ", failed", todo: "" };
+
+/** One phase: a check when done, a ring while in flight or held, a hollow dot ahead. */
+function StepMark({ state, warn }: { state: StripStep["state"]; warn: boolean }) {
+  if (state === "done") return <Check aria-hidden="true" className="size-3 shrink-0 text-status-success" />;
+  if (state === "failed") return <X aria-hidden="true" className="size-3 shrink-0 text-status-error" />;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "size-2.5 shrink-0 rounded-full",
+        state === "todo" && "shadow-[inset_0_0_0_1.5px_currentColor] opacity-60",
+        state === "now" && "shadow-[inset_0_0_0_2px_currentColor] motion-safe:animate-pulse",
+        state === "held" && cn("shadow-[inset_0_0_0_2px_currentColor]", warn && "text-status-warning"),
+      )}
+    />
+  );
+}
+
+/** What a screen reader hears as the run moves, empty until a phase lands so it stays quiet on mount. */
+function announcement(view: DeployView, steps: StripStep[], stages: Record<string, string>): string {
+  const rollback = ROLLBACK_STAGE_KEYS.some((k) => stages[k]);
+  const noun = rollback ? "Rollback" : "Deployment";
+  const failed = steps.find((s) => s.state === "failed");
+  if (failed) return `${noun} failed at ${failed.label} stage`;
+  const phases = steps.filter((s) => s.key !== "queued");
+  if (Object.keys(stages).length > 0 && phases.every((s) => s.state === "done")) return `${noun} completed successfully`;
+  if (view.tone !== "info") return view.label;
+  const now = steps.find((s) => s.state === "now" && s.key !== "queued");
+  return now ? `${rollback ? "Rolling back" : "Deploying"}: ${now.label} in progress` : "";
+}
+
+/**
+ * A deploy in flight: the phase strip, a bar against the last good deploy and the time left.
+ * `full` names every phase and adds the time spent and the log; `compact` names only the phase in flight.
+ */
 export function DeployProgress({
-  stream,
-  appName,
-  deploymentId,
-  startedAt,
-  status,
-  preparing = false,
-  stage,
+  variant,
+  stages,
+  wait,
+  row,
   typicalMs,
+  href,
+  log,
+  expanded = false,
+  onToggleExpand,
+  cancelling = false,
 }: {
-  stream: DeployStream;
-  appName: string;
-  /** The running deploy, so the link opens it. */
-  deploymentId?: string;
-  startedAt: Date | string;
-  /** The deployment row's status; `queued` reads as queued until the stream says otherwise. */
-  status?: string;
-  /** Created but not released to the queue yet. */
-  preparing?: boolean;
-  /** The row's stage in flight, until the stream reports one. */
-  stage?: string | null;
+  variant: "full" | "compact";
+  stages: Record<string, string>;
+  wait: WaitState;
+  /** The deploy row, which speaks for the deploy until the stream does. */
+  row: { status: string; stage?: string | null; held?: boolean; startedAt: Date | string | number | null };
   /** Run time of the last successful deploy. Null when there is none. */
   typicalMs: number | null;
+  /** Compact: where "Open" goes. */
+  href?: string;
+  /** Full: the deploy log, shown on expand. */
+  log?: string[];
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  /** Full: a cancel was signaled and the engine is finishing its current phase. */
+  cancelling?: boolean;
 }) {
-  const { stages } = stream;
   const now = useNow(1000);
-  const clock = now === null ? null : deployClockOf(stream, { startedAt, status, now });
-  const started = Object.keys(stages).length > 0 || (status === "running" && !!stage);
-  const view = deployView({ queued: status === "queued" && !started, preparing, wait: clock?.wait ?? null, started, now });
+  const view = streamView({ wait, stages }, { status: row.status, stage: row.stage, request: { held: row.held } }, now);
+  const clock = now !== null && row.startedAt !== null ? deployClockOf({ wait, stages }, { startedAt: row.startedAt, status: row.status, now }) : null;
   const text = clock ? deployCardText(view, clock, typicalMs) : null;
-  const steps = deploySteps(view, stages, DEPLOY_STAGE_KEYS.filter((k) => k !== "cleanup" && stages[k] !== "skipped"));
-  const share = typicalMs && clock ? Math.min(0.97, clock.workingMs / typicalMs) : null;
+  const steps = deploySteps(view, stages);
+  const share = typicalMs && clock && view.word === "Deploying" ? Math.min(0.97, clock.workingMs / typicalMs) : null;
+  const full = variant === "full";
 
-  return (
-    <div className="grid gap-2">
-      <ol className="flex flex-wrap gap-1.5" aria-label="Phases">
-        {steps.map(({ key, label, state }, i) => (
+  const strip = (
+    <ol className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1" aria-label="Phases">
+      {steps.map(({ key, label, state }, i) => {
+        const named = full || state === "now" || state === "held" || state === "failed";
+        return (
           <li
             key={key}
             aria-current={state === "now" ? "step" : undefined}
             className={cn(
-              "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground/70",
+              "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground/60",
               i > 0 && "before:mr-0.5 before:w-3.5 before:border-t before:border-border",
               state === "done" && "text-muted-foreground",
-              state === "held" && (view.tone === "warn" ? "font-semibold text-status-warning" : "font-semibold text-foreground"),
               state === "now" && "font-semibold text-status-info",
+              state === "held" && (view.tone === "warn" ? "font-semibold text-status-warning" : "font-semibold text-foreground"),
               state === "failed" && "font-semibold text-status-error",
             )}
           >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "size-2.5 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_currentColor]",
-                state === "done" && "bg-status-success shadow-none",
-                (state === "now" || state === "held") && "shadow-[inset_0_0_0_2px_currentColor]",
-                state === "now" && "motion-safe:animate-pulse",
-                state === "failed" && "bg-status-error shadow-none",
-              )}
-            />
-            <span title={state === "held" ? view.why : undefined}>{label}</span>
-            <span className="sr-only">{state === "done" ? ", done" : state === "now" ? ", in progress" : state === "held" ? ", queued" : ""}</span>
+            <StepMark state={state} warn={view.tone === "warn"} />
+            <span className={named ? undefined : "sr-only"} title={state === "held" ? view.why : undefined}>
+              {label}
+            </span>
+            <span className="sr-only">{SPOKEN[state]}</span>
           </li>
-        ))}
-      </ol>
-      {share !== null && started && (
-        <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-accent">
-          <i
-            className={cn(
-              "block h-full rounded-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none",
-              view.tone === "info" ? "bg-status-info" : "bg-muted-foreground/40",
-            )}
-            style={{ width: `${(share * 100).toFixed(1)}%` }}
-          />
-        </div>
-      )}
-      {text && (
-        <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 text-[13px]">
-          <span className="tabular-nums" title={view.why}>
+        );
+      })}
+    </ol>
+  );
+
+  const bar = share !== null && (
+    <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-accent">
+      <i
+        className={cn(
+          "block h-full rounded-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none",
+          view.held ? "bg-muted-foreground/40" : "bg-status-info",
+        )}
+        style={{ width: `${(share * 100).toFixed(1)}%` }}
+      />
+    </div>
+  );
+
+  if (!full) {
+    return (
+      <div className="grid gap-2">
+        {strip}
+        {bar}
+        {text && (
+          <span className="text-[13px] tabular-nums" title={view.why}>
             {text.line}
           </span>
-          {text.meta && <span className="text-muted-foreground/70 tabular-nums">{text.meta}</span>}
+        )}
+        {href && (
+          <Link href={href} className={cn(quietLinkClass, "w-fit text-[13px]")}>
+            Open →
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  const hasLog = !!log?.length;
+  return (
+    <Card variant="surface" className="grid gap-3 p-4">
+      <span className="sr-only" aria-live="assertive" aria-atomic="true">
+        {announcement(view, steps, stages)}
+      </span>
+      <div className="flex items-start justify-between gap-4">
+        {strip}
+        {hasLog && onToggleExpand && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide deploy log" : "Show deploy log"}
+            onClick={onToggleExpand}
+            className="shrink-0 rounded p-0.5 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
+          >
+            <DisclosureChevron open={expanded} />
+          </button>
+        )}
+      </div>
+      {bar}
+      {text && (
+        <div className="grid gap-0.5">
+          <span className="text-sm tabular-nums" title={view.why}>
+            {text.line}
+          </span>
+          {text.meta && <span className="text-[13px] text-muted-foreground tabular-nums">{text.meta}</span>}
         </div>
       )}
-      <Link
-        href={deploymentId ? deployHref(appName, deploymentId) : appHref(appName, "deployments")}
-        className={cn(quietLinkClass, "w-fit text-[13px]")}
-      >
-        Stream logs →
-      </Link>
-    </div>
+      {cancelling && <p className="text-xs text-muted-foreground">Cancelling — the deploy will stop after the current phase.</p>}
+      {expanded && hasLog && (
+        <TerminalOutput
+          lines={log!.map((line) => ({ text: line, html: highlightLogLine(line), level: detectLogLevel(line) }))}
+          height="max-h-80"
+          showFilters={false}
+        />
+      )}
+    </Card>
   );
 }

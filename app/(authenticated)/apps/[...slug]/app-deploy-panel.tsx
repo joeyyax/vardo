@@ -45,7 +45,7 @@ import { formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { compactUptime } from "@/lib/ui/app-row";
-import { InProgressDeployCard } from "./in-progress-deploy-card";
+import { DeployProgress, useNow } from "@/components/deploy-progress";
 import { BuildPlanPanel } from "./build-plan-panel";
 import type { useCancelDeploy } from "./hooks/use-app-actions";
 import {
@@ -55,8 +55,7 @@ import {
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
 import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
-import { isQueuedView, queuedRowLabel, rowHold } from "@/lib/ui/deploy-wait";
-import { useNow } from "@/components/deploy-progress";
+import { isQueuedView, NO_WAIT, queuedRowLabel, rowHold, seedWait } from "@/lib/ui/deploy-wait";
 import {
   DEPLOY_WINDOW_DAYS,
   deployCounts,
@@ -203,7 +202,6 @@ export function AppDeployPanel({
     deploying,
     deployQueued,
     deployStages,
-    deployStageTimes,
     deployWait,
     deployLog,
     deployStartTime,
@@ -571,30 +569,34 @@ export function AppDeployPanel({
 
             {/* In-progress deploys */}
             {deploying && (
-              <InProgressDeployCard
+              <DeployProgress
+                variant="full"
                 stages={deployStages}
-                stageTimes={deployStageTimes}
+                wait={deployWait}
+                row={{
+                  status: deployQueued ? "queued" : "running",
+                  stage: serverRunningDeploy?.stage,
+                  held: !!serverRunningDeploy?.request?.held,
+                  startedAt: deployStartTime,
+                }}
+                typicalMs={typicalMs}
                 log={deployLog}
-                startTime={deployStartTime}
                 expanded={expandedDeployLog}
                 onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
                 cancelling={cancelRequested}
-                typicalElapsedMs={typicalMs}
-                queued={deployQueued}
-                preparing={!!serverRunningDeploy?.request?.held}
-                wait={deployWait}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
-              <InProgressDeployCard
+              <DeployProgress
+                variant="full"
                 stages={{}}
+                wait={seedWait(NO_WAIT, rowHold(serverRunningDeploy))}
+                row={serverRunningDeploy}
+                typicalMs={typicalMs}
                 log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
-                startTime={new Date(serverRunningDeploy.startedAt).getTime()}
                 expanded={expandedServerDeploy}
                 onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
                 cancelling={cancelRequested}
-                trigger={serverRunningDeploy.trigger}
-                typicalElapsedMs={typicalMs}
               />
             )}
 
