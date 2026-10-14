@@ -1,8 +1,38 @@
 # Worker
 
-`vardo-worker` runs Vardo's background loops: backups, cron, container health, alerts, metrics collection and the rest of `lib/worker/registry.ts`. It's the console's image with `command: ["worker"]`, in the same slot, so a deploy of Vardo replaces both together.
+`vardo-worker` runs Vardo's background loops and every app deploy and build: backups, cron, container health, alerts, metrics collection and the rest of `lib/worker/registry.ts`. It's the console's image with `command: ["worker"]`, in the same slot, so a deploy of Vardo replaces both together.
 
-Deploys, git polling and self-updates still run in the console.
+Deploys of Vardo itself, git polling and self-updates still run in the console.
+
+## Deploys
+
+A deploy is a row in the `deployment` table. Whatever asks for one (the deploy button, the API, a push, a poll, a restore) inserts it as `queued` and returns. Executors claim queued rows from Postgres once a second:
+
+| Process | Claims |
+| --- | --- |
+| Worker | Every deploy except Vardo's own |
+| Console | Vardo's own deploys |
+| Console with `VARDO_DEPLOY_EXECUTOR=web` | Every deploy; the worker claims none |
+| Console with `VARDO_WORKER=embedded` (`pnpm dev`) | Every deploy |
+
+- **One per app environment.** A second deploy of the same environment waits for the first. A push or poll replaces an older push still queued, and stops a running push during clone, compose or build. A deploy from the button or the API never stops a running one; it runs next.
+- **Capacity.** Running deploys across the host stay at or under the deploy concurrency setting. Explicit deploys are claimed before pushes.
+- **Leases.** The executor renews each claim every 3 seconds. A claim expires 45 seconds after its executor stops renewing it.
+- **Cancel.** A queued deploy is cancelled at once. A running one stops within seconds while it clones or builds; past that it stops at the next stage.
+- **Crash rule.** When a lease expires during clone, compose or build, the deploy is requeued once with a log line saying so; a second expiry fails it. Expiring later than the build fails it, and `deploy-sweep` stops its slot only if nothing serves.
+- **Time limits.** A deploy running past `DEPLOY_TIMEOUT_MINUTES` (45) is asked to stop. Pushes and polls still queued after 24 hours are cancelled. Other queued deploys wait as long as it takes.
+- **Fence.** Before the swap touches containers, the deploy checks it still holds its claim. A lost claim stops it with the old slot serving.
+- **Project deploys and previews** run as `deploy-group` jobs in the `worker_job` table. The job queues each tier's deploys and waits on them.
+
+### Vardo's own deploys
+
+A deploy of Vardo queues and builds like any other. Its swap restarts the worker and console and can recreate Postgres and Redis, so before the swap it sets a hold on its row: executors claim nothing new, and the deploy waits up to 15 minutes for running deploys, logging `Waiting for N deploys to finish before the swap` every 30 seconds. Deploys still running at 15 minutes get the old worker's drain, then the crash rule. A successful deploy keeps the hold until the new slot's worker claims; a failed one drops it. A hold older than 30 minutes stops counting.
+
+### When the worker is down
+
+Deploys queue. The deploy log says `Waiting for the worker`, and every page shows how many deploys are waiting. `host.worker-down` opens after 3 minutes. An automatic update still goes ahead, since queued deploys don't count as busy, so a release that fixes the worker can land.
+
+If the worker can't boot, set `VARDO_DEPLOY_EXECUTOR=web` in `/opt/vardo/.env` and redeploy: the console runs every deploy until it's removed.
 
 ## How the console hands off
 
@@ -23,13 +53,13 @@ Loops that serve one process, like config sync, stay in the console either way.
 | `200 degraded` | Redis is down |
 | `200 draining` | Finishing work after SIGTERM or a drain request |
 | `503 booting` | Waiting for the console to apply this release's migrations |
-| `503 unhealthy` | Database unreachable, or the deploy sweep, backup tick, cron tick or container health loop stopped beating |
+| `503 unhealthy` | Database unreachable, or the deploy claim, deploy sweep, backup tick, cron tick or container health loop stopped beating |
 
 `vardo worker status` prints the container state and this response. `vardo logs worker` follows its logs.
 
 ## Stopping
 
-SIGTERM stops new passes, lets running ones and backup work finish for up to `VARDO_WORKER_DRAIN_SECONDS` (540) and hands each loop's lease back. `stop_grace_period` is 10 minutes.
+SIGTERM stops claiming at once and lets running passes, deploys and backup work finish for up to `VARDO_WORKER_DRAIN_SECONDS` (540), renewing deploy leases meanwhile, then hands each loop's lease back. A deploy still running after that loses its lease, and the crash rule takes it. `stop_grace_period` is 10 minutes.
 
 ## Incidents
 
@@ -54,6 +84,7 @@ Set these in `/opt/vardo/.env` and redeploy.
 | `VARDO_WORKER_DRAIN_SECONDS` | `540` |
 | `VARDO_LOOPS_IN_WEB` | `auto`. `always` keeps every loop in the console; `never` leaves them to the worker. |
 | `VARDO_WORKER` | `external` in production, `embedded` in dev, where `pnpm dev` runs every loop. |
+| `VARDO_DEPLOY_EXECUTOR` | Unset. `web` makes the console run every deploy and the worker none. For this release only. |
 
 ## Development
 

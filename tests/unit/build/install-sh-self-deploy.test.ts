@@ -272,20 +272,20 @@ describe("the vardo wrapper", () => {
   });
 });
 
-describe("verify_self_deploy and the deploy slot", () => {
+describe("verify_self_deploy and the swap's hold", () => {
   const counting = (dropAfter: number) =>
     // A file, since the call runs in a subshell.
-    `deploy_slots_active() { echo x >> "$VARDO_DIR/polls"; [ "$(wc -l < "$VARDO_DIR/polls")" -gt ${dropAfter} ] && echo 0 || echo 1; }\nsleep() { :; }\n`;
+    `deploy_hold() { echo x >> "$VARDO_DIR/polls"; [ "$(wc -l < "$VARDO_DIR/polls")" -gt ${dropAfter} ] && echo clear || echo held; }\nsleep() { :; }\n`;
 
-  it("waits for the engine to release its slot", () => {
+  it("waits for the new worker to release the hold", () => {
     const r = sh(instance("self-deploy"), `${counting(3)}verify_self_deploy dep_123 && echo PASSED`);
-    expect(r.out).not.toContain("deploy:system:active");
+    expect(r.out).not.toContain("holds other deploys back");
     expect(r.out).toContain("PASSED");
   });
 
-  it("warns when the slot is still held after a minute", () => {
+  it("warns when the hold is still up after a minute", () => {
     const r = sh(instance("self-deploy"), `${counting(1000)}verify_self_deploy dep_123 || echo FLAGGED`);
-    expect(r.out).toContain("Redis deploy:system:active is 1, not 0");
+    expect(r.out).toContain("Deployment dep_123 still holds other deploys back");
     expect(r.out).toContain("FLAGGED");
   });
 });

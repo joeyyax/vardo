@@ -24,7 +24,7 @@ A container that isn't running is left to Docker's restart policy. A container w
 
 ## When it holds off
 
-- **During a deploy.** Any `deploy:active:*` lease in Redis means a deploy or rollback is running, and the count starts over.
+- **During a deploy.** Any `deploy:active:*` key in Redis, which the executor running a deploy renews every few seconds, means a deploy is running, and the count starts over.
 - **While the worker drains.** It reports `draining` on `/healthz` and is never restarted mid-drain.
 - **While the console or worker runs backup work.** A `backup:busy:*` key means a backup, restore, drill or import is running. The console's restart waits up to 20 minutes for it, then goes ahead; the new console reruns interrupted scheduled backups.
 - **When it can't read Redis.** The console and Traefik wait, since a missing Redis is usually why they're unhealthy. Postgres and Redis still restart after their 5-minute window.

@@ -75,7 +75,7 @@ The running console builds the new one, starts it beside itself, waits for it to
 
 - `production/current` points at the slot that's running and answering `/api/health`
 - one slot console is running
-- Redis `deploy:system:active` is back to 0
+- the deploy no longer holds other deploys back (its exclusive hold, which the new slot's worker releases)
 - the deployment row says `success`
 
 Nothing listens on the network for this. Only root and the console's own user can write the lifecycle directory. A console writes `deploy-requests.ready` every few seconds; when it's missing or stale, `vardo update` stops and says why.
