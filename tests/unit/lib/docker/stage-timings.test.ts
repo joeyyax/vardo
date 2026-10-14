@@ -1,5 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { createStageTimings, exportMsFromBuildOutput, formatTimings } from "@/lib/docker/stage-timings";
+import { createStageTimings, exportMsFromBuildOutput, formatTimings, timedWait } from "@/lib/docker/stage-timings";
+
+describe("waits", () => {
+  it("tallies waits apart from the phases and prints them", () => {
+    const t = createStageTimings();
+    t.waitBegin(1000);
+    t.waitBegin(2000);
+    t.waitEnd(61_000);
+    t.waitEnd(70_000);
+    t.range("build", 61_000, 101_000);
+    expect(t.waited()).toBe(60_000);
+    expect(t.snapshot()).toMatchObject({ waitMs: 60_000, build: { ms: 40_000 } });
+    expect(formatTimings(t.snapshot())).toBe("[timing] build 40.0s, waited 60.0s");
+  });
+
+  it("opens on a reason and ends on null, passing each through", async () => {
+    const t = createStageTimings();
+    const seen: unknown[] = [];
+    const wait = timedWait(t, (reason, place) => void seen.push([reason, place?.ahead]));
+    await wait("build-slot", { ahead: 1 });
+    expect(t.waited()).toBeGreaterThanOrEqual(0);
+    await wait(null);
+    const after = t.waited();
+    await new Promise((r) => setTimeout(r, 15));
+    expect(t.waited()).toBe(after);
+    expect(seen).toEqual([["build-slot", 1], [null, undefined]]);
+  });
+
+  it("leaves waitMs off a run that never waited", () => {
+    expect(createStageTimings().snapshot()).toEqual({});
+  });
+});
 
 describe("createStageTimings", () => {
   it("times a begun and ended phase", () => {

@@ -1,9 +1,12 @@
+import type { WaitWriter } from "./deploy-logger";
+
 /** Wall-clock timings for the deploy phases #777 breaks a build down by. */
 export const TIMED_PHASES = ["clone", "build", "export", "pull", "up", "healthWait", "cleanup"] as const;
 export type TimedPhase = (typeof TIMED_PHASES)[number];
 
 export type PhaseTiming = { startedAt: string; endedAt: string; ms: number };
-export type StageTimings = Partial<Record<TimedPhase, PhaseTiming>>;
+/** `waitMs` is time the run spent waiting for the builder or the checkout, which no phase counts. */
+export type StageTimings = Partial<Record<TimedPhase, PhaseTiming>> & { waitMs?: number };
 
 /** Deploy stages whose duration is a timed phase. */
 export const STAGE_PHASE: Partial<Record<string, TimedPhase>> = {
@@ -16,6 +19,8 @@ export const STAGE_PHASE: Partial<Record<string, TimedPhase>> = {
 export function createStageTimings() {
   const timings: StageTimings = {};
   const open = new Map<TimedPhase, number>();
+  let waitedMs = 0;
+  let waitOpen: number | null = null;
 
   function record(phase: TimedPhase, startMs: number, endMs: number) {
     const prev = timings[phase];
@@ -56,14 +61,40 @@ export function createStageTimings() {
     record(phase, startMs, endMs);
   }
 
-  function snapshot(): StageTimings {
-    return { ...timings };
+  /** Starts the wait tally; a wait already open keeps its start. */
+  function waitBegin(now = Date.now()) {
+    if (waitOpen === null) waitOpen = now;
   }
 
-  return { begin, end, endAll, span, range, snapshot };
+  function waitEnd(now = Date.now()) {
+    if (waitOpen === null) return;
+    waitedMs += Math.max(0, now - waitOpen);
+    waitOpen = null;
+  }
+
+  /** Time spent waiting so far, an open wait included. */
+  function waited(now = Date.now()): number {
+    return waitedMs + (waitOpen === null ? 0 : Math.max(0, now - waitOpen));
+  }
+
+  function snapshot(): StageTimings {
+    const ms = Math.round(waited());
+    return ms > 0 ? { ...timings, waitMs: ms } : { ...timings };
+  }
+
+  return { begin, end, endAll, span, range, snapshot, waitBegin, waitEnd, waited };
 }
 
 export type StageTimer = ReturnType<typeof createStageTimings>;
+
+/** A wait writer that also tallies the wait on `timer`, so phases it interrupts don't count it. */
+export function timedWait(timer: StageTimer, writer: WaitWriter): WaitWriter {
+  return (reason, place) => {
+    if (reason === null) timer.waitEnd();
+    else timer.waitBegin();
+    return writer(reason, place);
+  };
+}
 
 /** One line for the deploy log: `[timing] clone 3.2s, build 40.1s`. */
 export function formatTimings(timings: StageTimings): string {
@@ -71,6 +102,7 @@ export function formatTimings(timings: StageTimings): string {
     const t = timings[p];
     return t ? [`${p} ${(t.ms / 1000).toFixed(1)}s`] : [];
   });
+  if (timings.waitMs) parts.push(`waited ${(timings.waitMs / 1000).toFixed(1)}s`);
   return parts.length ? `[timing] ${parts.join(", ")}` : "";
 }
 

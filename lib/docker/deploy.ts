@@ -46,7 +46,7 @@ import { environmentDomains, withoutEnvironmentHosts } from "./environment-domai
 import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
-import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
+import { createStageTimings, formatTimings, STAGE_PHASE, timedWait, type StageTimings } from "./stage-timings";
 import type { RebuildMode } from "./build-key";
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
 import { resolveRebuild, buildCacheLogLine } from "./build-key";
@@ -543,7 +543,7 @@ export async function runDeployment(
 
       log,
       addSecrets: streamLogger.addSecrets,
-      wait: streamLogger.wait,
+      wait: timedWait(timer, streamLogger.wait),
       stage,
       checkAbort,
       timer,

@@ -218,6 +218,19 @@ describe.skipIf(!conn)("deploy waits on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(entries.find((e) => e.id === "q2")).toBeDefined();
     });
 
+    it("leaves a past run's waits for the builder or checkout out of its typical time", async () => {
+      // 9 minutes, 4 of them queued for the builder.
+      await sql`
+        insert into deployment (id, app_id, trigger, status, scope_key, started_at, duration_ms, stage_timings)
+        values ('h-a1', 'a1', 'manual', 'success', 'a1', now() - interval '1 day', ${9 * MIN}, ${sql.json({ waitMs: 4 * MIN })})`;
+      await seed("r1", "a1", "manual", "running");
+      await sql`update deployment set claimed_at = now() where id = 'r1'`;
+      await seed("q2", "a2", "manual", "queued");
+      const now = Date.now();
+      await w.markQueueWaits({ capacity: 1, workerMissing: false, now });
+      expect((await waits()).q2.eta!.getTime() - now).toBeCloseTo(5 * MIN, -4);
+    });
+
     it("gives a free slot now and an overdue deploy's slot now", async () => {
       await history("a1", 5);
       await history("a2", 4);

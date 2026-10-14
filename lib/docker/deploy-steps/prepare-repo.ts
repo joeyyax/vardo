@@ -341,16 +341,20 @@ async function reuseImage(
   }
 }
 
-/** Records a repo build as the build phase, with BuildKit's export split out as in compose builds. */
+/** Records a repo build as the build phase from the builder's admission, with BuildKit's export split out as in compose builds. */
 async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) => Promise<void>): Promise<void> {
   const capture = { text: "" };
-  const start = Date.now();
+  const began = Date.now();
+  const waitedBefore = ctx.timer.waited();
+  // The gate's wait comes before the build, so the build starts that much later.
+  const admitted = () => began + ctx.timer.waited() - waitedBefore;
   try {
     await run(capture);
   } catch (err) {
-    ctx.timer.range("build", start, Date.now());
+    ctx.timer.range("build", admitted(), Date.now());
     throw err;
   }
+  const start = admitted();
   const end = Date.now();
   const exportMs = Math.min(exportMsFromBuildOutput(capture.text), end - start);
   ctx.timer.range("build", start, end - exportMs);

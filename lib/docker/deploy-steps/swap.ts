@@ -493,7 +493,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
         const bounded = await boundedBuild(log, ctx.signal);
-        const buildStart = Date.now();
+        const buildBegan = Date.now();
+        const waitedBefore = ctx.timer.waited();
+        // Timed from the builder's admission: the gate's wait comes first.
+        const admitted = () => buildBegan + ctx.timer.waited() - waitedBefore;
         const built = await composeBuild({
           appId: ctx.appId,
           slotDir,
@@ -513,11 +516,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           deploymentId: ctx.deploymentId,
           wait: ctx.wait,
         }).catch((err: unknown) => {
-          ctx.timer.range("build", buildStart, Date.now());
+          ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);
         });
         const { stdout, stderr } = built ?? { stdout: "", stderr: "" };
         // BuildKit runs the export inside the build; split it out of the build time.
+        const buildStart = admitted();
         const buildEnd = Date.now();
         const exportMs = Math.min(exportMsFromBuildOutput(`${stdout}\n${stderr}`), buildEnd - buildStart);
         ctx.timer.range("build", buildStart, buildEnd - exportMs);
