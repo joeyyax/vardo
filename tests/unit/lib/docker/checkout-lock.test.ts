@@ -89,3 +89,47 @@ describe("acquireCheckoutLock", () => {
     expect(lines.some((l) => l.includes("in this process only"))).toBe(true);
   });
 });
+
+describe("acquireCheckoutLock wait events", () => {
+  const recorder = () => {
+    const waits: (string | null)[] = [];
+    return { waits, wait: (reason: string | null) => void waits.push(reason) };
+  };
+
+  it("writes nothing when the lock is free", async () => {
+    const { waits, wait } = recorder();
+    const lock = await acquireCheckoutLock("w1", { ...quiet, wait, redis: async () => fakeRedis() });
+    await lock.release();
+    expect(waits).toEqual([]);
+  });
+
+  it("opens one checkout wait behind a holder and ends it once the lock is taken", async () => {
+    const redis = fakeRedis();
+    redis.store.set("deploy:checkout:w2", "other-process");
+    setTimeout(() => redis.store.delete("deploy:checkout:w2"), 50);
+    const { waits, wait } = recorder();
+    const lock = await acquireCheckoutLock("w2", { ...quiet, wait, redis: async () => redis });
+    expect(waits).toEqual(["checkout", null]);
+    await lock.release();
+  });
+
+  it("ends the wait on timeout", async () => {
+    const redis = fakeRedis();
+    redis.store.set("deploy:checkout:w3", "stuck");
+    const { waits, wait } = recorder();
+    await expect(acquireCheckoutLock("w3", { ...quiet, wait, waitMs: 50, redis: async () => redis })).rejects.toThrow(/Timed out/);
+    expect(waits).toEqual(["checkout", null]);
+  });
+
+  it("ends the wait on abort behind an in-process holder", async () => {
+    const redis = fakeRedis();
+    const first = await acquireCheckoutLock("w4", { ...quiet, redis: async () => redis });
+    const controller = new AbortController();
+    const { waits, wait } = recorder();
+    const pending = acquireCheckoutLock("w4", { ...quiet, wait, signal: controller.signal, redis: async () => redis });
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toThrow(/aborted/);
+    expect(waits).toEqual(["checkout", null]);
+    await first.release();
+  });
+});
