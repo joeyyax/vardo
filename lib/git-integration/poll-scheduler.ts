@@ -7,7 +7,7 @@ import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { setSystemSetting } from "@/lib/system-settings";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
-import { deployInFlight, requestDeploy } from "@/lib/docker/deploy-cancel";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { RedisCooldownStore, type KeyedCooldown } from "@/lib/net/cooldown";
 import { lsRemoteHead } from "./remote-head";
 import {
@@ -48,14 +48,13 @@ export type PollableApp = {
 
 export type PollDeps = {
   lsRemoteHead: typeof lsRemoteHead;
-  deployInFlight: typeof deployInFlight;
   deployHistory: typeof deployHistory;
   recordPoll: typeof recordPoll;
-  requestDeploy: typeof requestDeploy;
+  enqueueDeploy: typeof enqueueDeploy;
   backoff: KeyedCooldown;
 };
 
-const defaultDeps: PollDeps = { lsRemoteHead, deployInFlight, deployHistory, recordPoll, requestDeploy, backoff };
+const defaultDeps: PollDeps = { lsRemoteHead, deployHistory, recordPoll, enqueueDeploy, backoff };
 
 type PollResult = PollDecision | { action: "error"; reason: string };
 
@@ -76,11 +75,11 @@ export async function pollApp(app: PollableApp, intervalMs: number, deps: PollDe
     return { action: "error", reason };
   }
 
-  const [inFlight, history] = await Promise.all([deps.deployInFlight(app.id), deps.deployHistory(app.id, remoteSha)]);
+  const history = await deps.deployHistory(app.id, remoteSha);
   const decision = decidePoll({
     parked: app.parked,
     status: app.status,
-    inFlight: history.queuedOrRunning ? true : inFlight,
+    inFlight: history.queuedOrRunning,
     remoteSha,
     lastDeployedSha: history.lastDeployedSha,
     polledSha: app.gitPolledSha,
@@ -90,9 +89,9 @@ export async function pollApp(app: PollableApp, intervalMs: number, deps: PollDe
   if (decision.action === "deploy") {
     await deps.recordPoll(app.id, { sha: remoteSha, error: null });
     log.info(`${app.name}: ${remoteSha.slice(0, 7)} is new; deploying`);
-    void deps
-      .requestDeploy({ appId: app.id, organizationId: app.organizationId, trigger: "poll" })
-      .catch((err) => log.warn(`Polled deploy of ${app.name} failed to start:`, err));
+    await deps
+      .enqueueDeploy({ appId: app.id, trigger: "poll" })
+      .catch((err) => log.warn(`Couldn't queue the polled deploy of ${app.name}:`, err));
   } else if (decision.action === "baseline") {
     await deps.recordPoll(app.id, { sha: remoteSha, error: null });
   } else {

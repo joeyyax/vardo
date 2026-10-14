@@ -3,7 +3,7 @@
 import { formatBytes } from "@/lib/metrics/format";
 
 export type GateInputs = {
-  /** Deployments queued or running on any app, imports included. */
+  /** Deployments running on any app, imports included. Queued ones don't hold an update. */
   activeDeploys: number;
   runningBackups: number;
   runningRestores: number;

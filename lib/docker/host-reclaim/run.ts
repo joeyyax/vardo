@@ -16,7 +16,7 @@ import {
   removeImage,
 } from "../client";
 import { BUILD_CACHE_MAX_BYTES } from "../constants";
-import { isDeployQueueIdle } from "../deploy-concurrency";
+import { isDeployQueueIdleInDb } from "@/lib/deploy/queue";
 import { PRUNE_LOCK_KEY } from "../prune-lock";
 import { olderThan, selectUnusedImages, staleOneOffs, type ImageSelection } from "./policy";
 import { loadProtection } from "./protect";
@@ -96,7 +96,7 @@ export async function runHostReclaim(trigger: ReclaimTrigger, now = Date.now()):
 
   const config = await getHostReclaimConfig();
   if (!config.enabled && trigger !== "manual") return finish("Turned off");
-  if (!(await isDeployQueueIdle())) return finish("Deploys in flight", false);
+  if (!(await isDeployQueueIdleInDb())) return finish("Deploys in flight", false);
   const lock = await acquireLock(PRUNE_LOCK_KEY, RECLAIM_LOCK_TTL_MS);
   if (!lock) return finish("Another prune is running", false);
 

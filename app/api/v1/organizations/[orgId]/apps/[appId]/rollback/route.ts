@@ -4,10 +4,11 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { enqueueDeploy } from "@/lib/deploy/queue";
+import { tailDeployment } from "@/lib/stream/deploy-tail";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { decrypt, encrypt } from "@/lib/crypto/encrypt";
+import { decrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { can } from "@/lib/auth/permissions";
@@ -53,23 +54,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         eq(apps.id, appId),
         eq(apps.organizationId, orgId),
       ),
-      columns: {
-        id: true,
-        organizationId: true,
-        isSystemManaged: true,
-        gitUrl: true,
-        gitBranch: true,
-        imageName: true,
-        envContent: true,
-        cpuLimit: true,
-        memoryLimit: true,
-        gpuEnabled: true,
-        containerPort: true,
-        composeFilePath: true,
-        rootDirectory: true,
-        restartPolicy: true,
-        autoTraefikLabels: true,
-      },
+      columns: { id: true, organizationId: true, isSystemManaged: true },
     });
 
     if (!app) {
@@ -84,14 +69,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         eq(deployments.id, deploymentId),
         eq(deployments.appId, appId),
       ),
-      columns: {
-        id: true,
-        status: true,
-        gitSha: true,
-        gitMessage: true,
-        envSnapshot: true,
-        configSnapshot: true,
-      },
+      columns: { id: true, status: true, configSnapshot: true },
     });
 
     if (!targetDeployment) {
@@ -115,59 +93,25 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       );
     }
 
-    // Deploys the target's snapshot; the app row is only rewritten on success.
+    // Deploys the target's snapshot; the engine rewrites the app row only once the deploy commits.
+    const { id } = await enqueueDeploy({
+      appId,
+      trigger: "rollback",
+      triggeredBy: org.session.user.id,
+      rollback: { targetDeploymentId: deploymentId, includeEnvVars },
+    });
+
     return createSSEResponse(request, async (sendEvent) => {
-      const result = await requestDeploy({
-        appId,
-        organizationId: orgId,
-        trigger: "rollback",
-        triggeredBy: org.session.user.id,
-        rollback: { targetDeploymentId: deploymentId, includeEnvVars },
-        onLog: (line) => sendEvent("log", line),
-        onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
-      });
-
-      // Tag the new deployment with rollback source
-      try {
-        await db
-          .update(deployments)
-          .set({ rollbackFromId: deploymentId })
-          .where(eq(deployments.id, result.deploymentId));
-      } catch { /* best-effort */ }
-
-      // Apply config snapshot and env restore only after a successful deploy
-      if (result.success) {
-        const appUpdates: Record<string, unknown> = { updatedAt: new Date() };
-
-        if (configSnapshot) {
-          appUpdates.cpuLimit = configSnapshot.cpuLimit;
-          appUpdates.memoryLimit = configSnapshot.memoryLimit;
-          appUpdates.gpuEnabled = configSnapshot.gpuEnabled ?? false;
-          appUpdates.containerPort = configSnapshot.containerPort;
-          appUpdates.imageName = configSnapshot.imageName;
-          appUpdates.gitBranch = configSnapshot.gitBranch;
-          appUpdates.composeFilePath = configSnapshot.composeFilePath;
-          appUpdates.rootDirectory = configSnapshot.rootDirectory;
-          appUpdates.restartPolicy = configSnapshot.restartPolicy;
-          appUpdates.autoTraefikLabels = configSnapshot.autoTraefikLabels;
-          appUpdates.backendProtocol = configSnapshot.backendProtocol ?? null;
-          if (configSnapshot.composeContent != null) {
-            appUpdates.composeContent = configSnapshot.composeContent;
-          }
-        }
-
-        if (includeEnvVars && targetDeployment.envSnapshot) {
-          try {
-            const plainEnv = decrypt(targetDeployment.envSnapshot, orgId);
-            appUpdates.envContent = encrypt(plainEnv, orgId);
-          } catch {
-            // If decryption fails, skip env restore
-          }
-        }
-
-        await db.update(apps).set(appUpdates).where(eq(apps.id, appId));
-      }
-
+      const result = await tailDeployment(
+        id,
+        {
+          onLog: (line) => sendEvent("log", line),
+          onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
+          onWaiting: (message) => sendEvent("log", `[queue] ${message}`),
+        },
+        { signal: request.signal },
+      );
+      if (!result) return;
       sendEvent("done", {
         deploymentId: result.deploymentId,
         success: result.success,

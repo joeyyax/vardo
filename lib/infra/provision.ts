@@ -9,7 +9,8 @@ import { apps, environments, projects } from "@/lib/db/schema";
 import { isAppNameViolation } from "@/lib/db/app-name";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { enqueueDeploy } from "@/lib/deploy/queue";
+import { deployAndWait } from "@/lib/deploy/request";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { ensureMonitoringNetwork } from "@/lib/infra/monitoring-network";
@@ -251,12 +252,9 @@ async function ensureAppDeployed(
       log.info(`Core service "${template.name}" ${reason} — redeploying`);
       let ok = false;
       try {
-        const result = await requestDeploy({
-          appId: existing.id,
-          organizationId: existing.organizationId,
-          trigger: "api",
-        });
-        ok = !!result?.success;
+        // Boot only queues it: the claimer that runs it may not be up yet.
+        if (opts?.waitForDeploy) ok = (await deployAndWait({ appId: existing.id, trigger: "api" })).success;
+        else ok = !!(await enqueueDeploy({ appId: existing.id, trigger: "api" })).id;
       } catch (err) {
         log.error(`Redeploy threw for core service "${template.name}":`, err);
       }
@@ -325,9 +323,9 @@ async function ensureAppDeployed(
 
   if (opts?.waitForDeploy) {
     // Interactive install (#741): wait for the first deploy and roll back on failure.
-    let result: Awaited<ReturnType<typeof requestDeploy>> | null = null;
+    let result: Awaited<ReturnType<typeof deployAndWait>> | null = null;
     try {
-      result = await requestDeploy({ appId, organizationId: orgId, trigger: "api" });
+      result = await deployAndWait({ appId, trigger: "api" });
     } catch (err) {
       log.error(`Deploy threw for core service "${template.name}":`, err);
     }
@@ -339,13 +337,9 @@ async function ensureAppDeployed(
     return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
   }
 
-  // Startup reconcile: fire-and-forget so boot isn't blocked.
-  requestDeploy({
-    appId,
-    organizationId: orgId,
-    trigger: "api",
-  }).catch((err) => {
-    log.error(`Deploy failed for core service "${template.name}":`, err);
+  // Startup reconcile: queued, so boot isn't blocked.
+  await enqueueDeploy({ appId, trigger: "api" }).catch((err) => {
+    log.error(`Couldn't queue the deploy of core service "${template.name}":`, err);
   });
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }

@@ -26,6 +26,8 @@ export type DeployRequest = {
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
   gitSha?: string;
   pinIntent?: "push" | "pin";
+  /** Inserted without a scope until its requester releases it, so no executor claims it first. */
+  held?: boolean;
 };
 
 export type DeployCancelReason = "user" | "supersede" | "timeout";

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { startOrRestartApp } from "@/lib/docker/start-app";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
@@ -72,23 +72,11 @@ export function registerRestartApp(
       if (result.failure === "no-slot") {
         const deployTargetId = app.parentAppId ?? app.id;
 
-        const deploymentId = await createDeployment({
-          appId: deployTargetId,
-          organizationId: app.organizationId,
-          trigger: "api",
-          triggeredBy: context.userId,
-        });
-
         // Returns the ID immediately for polling.
-        const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
-        requestDeploy({
+        const { id: deploymentId } = await enqueueDeploy({
           appId: deployTargetId,
-          organizationId: app.organizationId,
           trigger: "api",
           triggeredBy: context.userId,
-          deploymentId,
-        }).catch(() => {
-          // Failures are recorded on the deployment record.
         });
 
         return {

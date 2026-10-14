@@ -89,7 +89,6 @@ export async function receiveRelay(peer: RelayingPeer, body: unknown): Promise<N
   let matched: MatchedApp[] = [];
   const scope: EventScope = {
     trigger: "relay",
-    waitForDeploys: false,
     resolveOrgs: () => relayOrgs(peer),
     onMatched: (apps) => {
       matched = apps;

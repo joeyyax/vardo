@@ -1,18 +1,18 @@
 // Postgres deploy queue: enqueue, claim, lease, cancel and exclusive swaps. Times come from the database clock.
 
-import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { deployments, environments, type DeployCancelReason, type DeployRequest } from "@/lib/db/schema";
 import { maxDeployConcurrency } from "@/lib/resources/host";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
-import type { DeployOpts } from "@/lib/docker/deploy";
+import type { DeployOpts, DeployStage } from "@/lib/docker/deploy";
 
 /** Lease a claim holds without renewal. */
 export const LEASE_TTL_MS = 45_000;
 
-/** How often an executor renews its leases. */
-export const LEASE_RENEW_MS = 10_000;
+/** How often an executor renews its leases and reads cancel requests. */
+export const LEASE_RENEW_MS = 3_000;
 
 /** How long an exclusive swap waits for other deploys before going ahead. */
 export const EXCLUSIVE_WAIT_MS = 15 * 60_000;
@@ -72,17 +72,84 @@ function appendLog(line: string) {
   return sql`coalesce(${deployments.log} || E'\n', '') || ${line}`;
 }
 
-/** Inserts a queued deploy and applies the supersede rules for its scope, in one transaction. */
-export async function enqueueDeploy(opts: EnqueueOpts): Promise<EnqueueResult> {
-  const id = nanoid();
+/** Marks queued rows the new deploy replaces and asks running automatic ones to stop. */
+async function applySupersede(tx: Tx, id: string, scopeKey: string, opts: Pick<EnqueueOpts, "trigger" | "gitSha" | "rollback">) {
   const automatic = isAutomaticTrigger(opts.trigger);
   // An explicit deploy replaces queued pushes only when it builds the branch head.
   const tracksHead = !opts.gitSha && !opts.rollback && opts.trigger !== "rollback";
 
+  let superseded: string[] = [];
+  if (automatic || tracksHead) {
+    const rows = await tx
+      .update(deployments)
+      .set({
+        status: "superseded",
+        supersededBy: id,
+        finishedAt: new Date(),
+        log: appendLog(logLine("deploy", `Superseded by deployment ${id}`)),
+      })
+      .where(
+        and(
+          eq(deployments.scopeKey, scopeKey),
+          eq(deployments.status, "queued"),
+          inArray(deployments.trigger, [...AUTOMATIC_TRIGGERS]),
+          ne(deployments.id, id),
+        ),
+      )
+      .returning({ id: deployments.id });
+    superseded = rows.map((r) => r.id);
+  }
+
+  let cancelRequested: string[] = [];
+  if (automatic) {
+    const rows = await tx
+      .update(deployments)
+      .set({ cancelRequestedAt: sql`now()`, cancelReason: "supersede" })
+      .where(
+        and(
+          eq(deployments.scopeKey, scopeKey),
+          eq(deployments.status, "running"),
+          inArray(deployments.trigger, [...AUTOMATIC_TRIGGERS]),
+          isNull(deployments.cancelRequestedAt),
+          or(isNull(deployments.stage), inArray(deployments.stage, [...SUPERSEDABLE_STAGES])),
+        ),
+      )
+      .returning({ id: deployments.id });
+    cancelRequested = rows.map((r) => r.id);
+  }
+  return { superseded, cancelRequested };
+}
+
+async function lockScope(tx: Tx, scopeKey: string) {
+  // Enqueues in one scope run one at a time, so each sees the rows before it.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-scope'), hashtext(${scopeKey}))`);
+}
+
+/** Inserts a queued deploy and applies the supersede rules for its scope, in one transaction. With `hold`, nothing claims it until `releaseHeldDeploy`. */
+export async function enqueueDeploy(opts: EnqueueOpts, { hold = false }: { hold?: boolean } = {}): Promise<EnqueueResult> {
+  const id = nanoid();
+  const request = requestOf(opts);
+
+  if (hold) {
+    const scopeKey = await scopeKeyFor(opts.appId, opts.environmentId);
+    await db.insert(deployments).values({
+      id,
+      appId: opts.appId,
+      trigger: opts.trigger,
+      triggeredBy: opts.triggeredBy,
+      status: "queued",
+      environmentId: opts.environmentId,
+      groupEnvironmentId: opts.groupEnvironmentId,
+      rollbackFromId: opts.rollback?.targetDeploymentId,
+      scopeKey: null,
+      request: { ...request, held: true },
+    });
+    return { id, scopeKey, superseded: [], cancelRequested: [] };
+  }
+
   return db.transaction(async (tx) => {
     const scopeKey = await scopeKeyFor(opts.appId, opts.environmentId, tx);
-    // Enqueues in one scope run one at a time, so each sees the rows before it.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-scope'), hashtext(${scopeKey}))`);
+    await lockScope(tx, scopeKey);
 
     await tx.insert(deployments).values({
       id,
@@ -92,51 +159,33 @@ export async function enqueueDeploy(opts: EnqueueOpts): Promise<EnqueueResult> {
       status: "queued",
       environmentId: opts.environmentId,
       groupEnvironmentId: opts.groupEnvironmentId,
+      rollbackFromId: opts.rollback?.targetDeploymentId,
       scopeKey,
-      request: requestOf(opts),
+      request,
     });
 
-    let superseded: string[] = [];
-    if (automatic || tracksHead) {
-      const rows = await tx
-        .update(deployments)
-        .set({
-          status: "superseded",
-          supersededBy: id,
-          finishedAt: new Date(),
-          log: appendLog(logLine("deploy", `Superseded by deployment ${id}`)),
-        })
-        .where(
-          and(
-            eq(deployments.scopeKey, scopeKey),
-            eq(deployments.status, "queued"),
-            inArray(deployments.trigger, [...AUTOMATIC_TRIGGERS]),
-            ne(deployments.id, id),
-          ),
-        )
-        .returning({ id: deployments.id });
-      superseded = rows.map((r) => r.id);
-    }
+    return { id, scopeKey, ...(await applySupersede(tx, id, scopeKey, opts)) };
+  });
+}
 
-    let cancelRequested: string[] = [];
-    if (automatic) {
-      const rows = await tx
-        .update(deployments)
-        .set({ cancelRequestedAt: sql`now()`, cancelReason: "supersede" })
-        .where(
-          and(
-            eq(deployments.scopeKey, scopeKey),
-            eq(deployments.status, "running"),
-            inArray(deployments.trigger, [...AUTOMATIC_TRIGGERS]),
-            isNull(deployments.cancelRequestedAt),
-            or(isNull(deployments.stage), inArray(deployments.stage, [...SUPERSEDABLE_STAGES])),
-          ),
-        )
-        .returning({ id: deployments.id });
-      cancelRequested = rows.map((r) => r.id);
-    }
-
-    return { id, scopeKey, superseded, cancelRequested };
+/** Gives a held deploy its scope so executors can claim it. False when it's no longer queued. */
+export async function releaseHeldDeploy(id: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ appId: deployments.appId, environmentId: deployments.environmentId, trigger: deployments.trigger, request: deployments.request })
+      .from(deployments)
+      .where(and(eq(deployments.id, id), eq(deployments.status, "queued"), isNull(deployments.scopeKey)));
+    if (!row) return false;
+    const scopeKey = await scopeKeyFor(row.appId, row.environmentId, tx);
+    await lockScope(tx, scopeKey);
+    const rest: DeployRequest = { ...row.request };
+    delete rest.held;
+    await tx
+      .update(deployments)
+      .set({ scopeKey, request: Object.keys(rest).length > 0 ? rest : null })
+      .where(eq(deployments.id, id));
+    await applySupersede(tx, id, scopeKey, { trigger: row.trigger, gitSha: rest.gitSha, rollback: rest.rollback });
+    return true;
   });
 }
 
@@ -160,7 +209,8 @@ export type ClaimedDeploy = {
   attempts: number;
 };
 
-function isScopeConflict(err: unknown): boolean {
+/** A write that hit the one-running-row-per-scope index. */
+export function isScopeConflict(err: unknown): boolean {
   for (let e: unknown = err; e && typeof e === "object"; e = (e as { cause?: unknown }).cause) {
     if ((e as { constraint_name?: string }).constraint_name === "deployment_scope_running_uniq") return true;
   }
@@ -338,7 +388,8 @@ export async function awaitDeployment(id: string, opts: { signal?: AbortSignal; 
   }
 }
 
-async function runningExcept(id: string): Promise<number> {
+/** Running deploys other than this one. */
+export async function runningExcept(id: string): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(deployments)
@@ -388,6 +439,84 @@ export async function requestExclusive(id: string, opts: ExclusiveOpts = {}): Pr
 /** Clears the exclusive flag so claims resume. */
 export async function releaseExclusive(id: string): Promise<void> {
   await db.update(deployments).set({ exclusiveRequestedAt: null }).where(eq(deployments.id, id));
+}
+
+/** Records the stage in flight. Returns the row's cancel request, or null once this executor no longer holds it. */
+export async function markStage(
+  executorId: string,
+  id: string,
+  stage: DeployStage,
+): Promise<{ cancel: DeployCancelReason | null } | null> {
+  const [row] = await db
+    .update(deployments)
+    .set({ stage })
+    .where(and(eq(deployments.id, id), eq(deployments.claimedBy, executorId), eq(deployments.status, "running")))
+    .returning({ cancelRequestedAt: deployments.cancelRequestedAt, cancelReason: deployments.cancelReason });
+  if (!row) return null;
+  return { cancel: row.cancelRequestedAt ? (row.cancelReason ?? "user") : null };
+}
+
+/** Whether this executor still holds the row under an unexpired lease. False when the check can't be made. */
+export async function holdsClaim(executorId: string, id: string): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(
+        and(
+          eq(deployments.id, id),
+          eq(deployments.claimedBy, executorId),
+          eq(deployments.status, "running"),
+          sql`${deployments.leaseExpiresAt} > now()`,
+        ),
+      );
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+/** The newest queued deploy in a scope: what a supersede hands over to. */
+export async function newestQueuedIn(scopeKey: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: deployments.id })
+    .from(deployments)
+    .where(and(eq(deployments.scopeKey, scopeKey), eq(deployments.status, "queued")))
+    .orderBy(desc(deployments.startedAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/** Drops a supersede request that has nothing left to hand over to. */
+export async function dropSupersede(id: string): Promise<void> {
+  await db
+    .update(deployments)
+    .set({ cancelRequestedAt: null, cancelReason: null })
+    .where(and(eq(deployments.id, id), eq(deployments.cancelReason, "supersede")));
+}
+
+/**
+ * Clears exclusive flags left on finished rows. A self-deploy's success keeps its flag until a claimer
+ * in the new slot clears it, so the old slot's worker never claims in between.
+ */
+export async function clearFinishedExclusive(mySlot: string | null): Promise<number> {
+  const rows = await db
+    .update(deployments)
+    .set({ exclusiveRequestedAt: null })
+    .where(
+      and(
+        sql`${deployments.exclusiveRequestedAt} IS NOT NULL`,
+        ne(deployments.status, "running"),
+        ne(deployments.status, "queued"),
+        or(
+          ne(deployments.status, "success"),
+          isNull(deployments.slot),
+          mySlot === null ? sql`true` : eq(deployments.slot, mySlot),
+        ),
+      ),
+    )
+    .returning({ id: deployments.id });
+  return rows.length;
 }
 
 /** No deploy queued or running, counted in Postgres. Fails closed. */

@@ -3,14 +3,13 @@ import { statusChange } from "@/lib/db/app-status";
 import { deployments } from "@/lib/db/schema/apps";
 import { apps } from "@/lib/db/schema/apps";
 import { environments } from "@/lib/db/schema/environments";
+import { workerJobs } from "@/lib/db/schema";
 import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
-import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
-import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
+import { eq, and, lt, gt, desc, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
-import { deployScope, deployWorker, publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
 import { DEPLOY_TIMEOUT_MS } from "@/lib/docker/constants";
 import { detectActiveSlot, type Slot as SlotName } from "@/lib/docker/slots";
@@ -28,6 +27,8 @@ import {
   slotIsDown,
 } from "@/lib/docker/rollback-monitor";
 import { deployTimedOut, queuedDeployCancelled } from "@/lib/git-integration/github-feedback";
+import { releaseHeldDeploy, requestCancel, scopeKeyFor } from "./queue";
+import { addGroupEvent } from "./group-job";
 import {
   evaluateWatch,
   MAX_GRACE_PERIOD_SECONDS,
@@ -41,46 +42,26 @@ const TIMEOUT_MINUTES = DEPLOY_TIMEOUT_MS / 60_000;
 /** One rollback attempt per deployment. A failed attempt is not retried. */
 const ROLLBACK_ATTEMPT_TTL_MS = MAX_GRACE_PERIOD_SECONDS * 1000;
 
-/** Held by deploy-cancel while a deploy owns the app environment. */
-const activeDeployKey = (scope: string) => `deploy:active:${scope}`;
-
 /** When this sweep first saw a deployment in "running". */
 const runningSinceKey = (deploymentId: string) => `deploy:sweep:running-since:${deploymentId}`;
 
 /** Outlives the budget; an expired mark only restarts the clock. */
 const RUNNING_MARK_TTL_MS = TIMEOUT_MINUTES * 60_000 * 4;
 
-/** Rate-limits the "still alive" log line to once per timeout budget. */
-const ABORT_LOG_TTL_MS = TIMEOUT_MINUTES * 60_000;
+/** Stages a crashed deploy can rerun from scratch: nothing it did touched a container. */
+const REQUEUE_STAGES = ["clone", "compose", "build"];
 
-type ActiveDeployEntry = { deploymentId: string; stage?: string };
+/** Automatic deploys still queued after this are cancelled. Explicit ones never expire. */
+export const AUTOMATIC_QUEUE_TTL_MS = 24 * 60 * 60_000;
 
-/**
- * Who owns `deploy:active:{appId}` right now.
- * `known: false` means unknown, never "nothing is running", or a Redis blip becomes a fleet-wide outage.
- */
-type Liveness = { known: true; active: ActiveDeployEntry | null } | { known: false };
+/** A held deploy whose requester never released it. */
+const HELD_TTL_MS = 15 * 60_000;
 
-async function readActiveDeploy(scope: string): Promise<Liveness> {
-  let raw: string | null;
-  try {
-    raw = await redis.get(activeDeployKey(scope));
-  } catch (err) {
-    log.warn(`Could not read the active-deploy key for ${scope}:`, err);
-    return { known: false };
-  }
+/** A row the pre-queue code wrote is left to its process for this long. */
+const LEGACY_GRACE_MS = 2 * 60_000;
 
-  if (raw === null) return { known: true, active: null };
-
-  try {
-    const parsed = JSON.parse(raw) as ActiveDeployEntry;
-    if (typeof parsed?.deploymentId !== "string") return { known: false };
-    return { known: true, active: parsed };
-  } catch {
-    log.warn(`Unparseable active-deploy entry for ${scope} — treating as unknown`);
-    return { known: false };
-  }
-}
+const line = (tag: string, message: string) => `[${new Date().toISOString()}] [${tag}] ${message}`;
+const appendLog = (text: string) => sql`coalesce(${deployments.log} || E'\n', '') || ${text}`;
 
 /**
  * How long this sweep has seen a deployment "running", or null when Redis can't answer.
@@ -102,12 +83,12 @@ async function observedRunningMs(deploymentId: string, now: number): Promise<num
   }
 }
 
-/** Stop a still-live deploy through its own cancellation path. */
-async function requestDeployAbort(deploymentId: string): Promise<void> {
+/** Whether the pre-queue code's process still renews this deployment's liveness key. "unknown" is not dead. */
+async function legacyOwner(deploymentId: string): Promise<"live" | "gone" | "unknown"> {
   try {
-    await publishKillSignal(deploymentId);
-  } catch (err) {
-    log.warn(`Could not signal deployment ${deploymentId} to cancel:`, err);
+    return (await redis.get(`deploy:worker:${deploymentId}`)) !== null ? "live" : "gone";
+  } catch {
+    return "unknown";
   }
 }
 
@@ -130,323 +111,261 @@ async function stopDeadDeployEnvironment(
   await stopProject(appId, appName, envName);
 }
 
-/** Fail deployments running past the timeout budget, measured from when this sweep first saw them. */
-export async function sweepStuckDeployments(): Promise<void> {
-  const running = await db
-    .select({
-      id: deployments.id,
-      appId: deployments.appId,
-      log: deployments.log,
-      environmentId: deployments.environmentId,
-    })
+type DeadRow = { id: string; appId: string; environmentId: string | null; scopeKey: string | null; stage: string | null; startedAt: Date };
+
+/** Fails a deploy whose executor stopped: records it, resets the app status and stops a slot that serves nothing. */
+async function failDeadDeploy(deploy: DeadRow, reason: string, guard: ReturnType<typeof and>): Promise<boolean> {
+  const now = new Date();
+  const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+  const failed = await db
+    .update(deployments)
+    .set({ status: "failed", finishedAt: now, durationMs, exclusiveRequestedAt: null, log: appendLog(line("deploy", `ERROR: ${reason}`)) })
+    .where(guard)
+    .returning({ id: deployments.id });
+  if (failed.length === 0) return false;
+
+  Promise.resolve()
+    .then(() => deployTimedOut(deploy.id, reason, durationMs))
+    .catch((err) => log.warn(`Failure feedback for ${deploy.id} failed:`, err));
+
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, deploy.appId),
+    columns: { id: true, organizationId: true, name: true, displayName: true },
+  });
+  if (!app) return true;
+
+  const scope = deploy.scopeKey ?? (await scopeKeyFor(deploy.appId, deploy.environmentId).catch(() => deploy.appId));
+  // Only the default environment owns the app status; a deploy that took the scope since owns the containers.
+  const [taken] = await db
+    .select({ id: deployments.id })
     .from(deployments)
-    .where(eq(deployments.status, "running"));
-
-  // Always reconcile; the counter drifts whenever a process crashes mid-deploy.
-  try {
-    const queued = await db
-      .select({ id: deployments.id })
-      .from(deployments)
-      .where(eq(deployments.status, "queued"));
-
-    await reconcileActiveCounter(running.length);
-
-    // Drop queue entries orphaned by a partial Redis failure.
-    const activeIds = new Set([...running, ...queued].map((d) => d.id));
-    await reconcileQueue(activeIds);
-  } catch (err) {
-    log.warn("Failed to reconcile deploy concurrency state:", err);
-  }
-
-  if (running.length === 0) return;
-
-  // Mark each running deployment on first sight; keep those past the budget.
-  const budgetMs = TIMEOUT_MINUTES * 60_000;
-  const markedAt = Date.now();
-  const stuck: typeof running = [];
-  for (const deploy of running) {
-    const elapsed = await observedRunningMs(deploy.id, markedAt);
-    if (elapsed !== null && elapsed >= budgetMs) stuck.push(deploy);
-  }
-
-  if (stuck.length === 0) return;
-
-  log.info(`Found ${stuck.length} stuck deployment(s)`);
-
-  const stuckAppIds = [...new Set(stuck.map((d) => d.appId))];
-  const appRows = await db
-    .select({
-      id: apps.id,
-      organizationId: apps.organizationId,
-      name: apps.name,
-      displayName: apps.displayName,
-    })
-    .from(apps)
-    .where(inArray(apps.id, stuckAppIds));
-  const appMap = new Map(appRows.map((a) => [a.id, a]));
-
-  for (const deploy of stuck) {
-    const lockKey = `sweep:deploy:${deploy.id}`;
-    const acquired = await acquireLock(lockKey, 60_000);
-    if (!acquired) continue;
-
+    .where(and(eq(deployments.scopeKey, scope), eq(deployments.status, "running")))
+    .limit(1);
+  if (!taken) {
+    if (scope === deploy.appId) {
+      await db.update(apps).set(statusChange("stopped", now)).where(and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")));
+    }
     try {
-      const scope = await deployScope(deploy.appId, deploy.environmentId);
-      const liveness = await readActiveDeploy(scope);
-
-      // Unknown isn't dead; leave the row for the next pass.
-      if (!liveness.known) {
-        log.warn(
-          `Deployment ${deploy.id} is past its budget but the active-deploy key is unreadable — skipping`,
-        );
-        continue;
-      }
-
-      // Still holding the app: ask it to cancel through its own path.
-      if (liveness.active?.deploymentId === deploy.id) {
-        await requestDeployAbort(deploy.id);
-        if (await acquireLock(`sweep:abort:${deploy.id}`, ABORT_LOG_TTL_MS)) {
-          log.warn(
-            `Deployment ${deploy.id} is past its budget but still registered as active — signalled it to cancel`,
-          );
-        }
-        continue;
-      }
-
-      // Another deploy holds the app and owns the containers; only record the failure.
-      const supersededByLiveDeploy = liveness.active !== null;
-
-      const now = new Date();
-      const timeoutMessage = `Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
-      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] ${timeoutMessage}`;
-      const updatedLog = deploy.log
-        ? `${deploy.log}\n${timeoutLine}`
-        : timeoutLine;
-
-      // The budget itself.
-      const durationMs = TIMEOUT_MINUTES * 60_000;
-
-      const failed = await db
-        .update(deployments)
-        .set({
-          status: "failed",
-          log: updatedLog,
-          finishedAt: now,
-          durationMs,
-        })
-        .where(
-          and(eq(deployments.id, deploy.id), eq(deployments.status, "running")),
-        )
-        .returning({ id: deployments.id });
-
-      // The deploy finished on its own between the liveness read and here.
-      if (failed.length === 0) continue;
-
-      // GitHub statuses and PR comments. Fire-and-forget; never throws.
-      Promise.resolve()
-        .then(() => deployTimedOut(deploy.id, timeoutMessage, durationMs))
-        .catch((err) => log.warn(`Timeout feedback for ${deploy.id} failed:`, err));
-
-      const app = appMap.get(deploy.appId);
-
-      if (app && !supersededByLiveDeploy) {
-        // Only the default environment owns the app status.
-        if (scope === deploy.appId) {
-          await db
-            .update(apps)
-            .set(statusChange("stopped", now))
-            .where(
-              and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
-            );
-        }
-
-        // Re-read liveness before touching Docker; a new deploy may have claimed the app.
-        const recheck = await readActiveDeploy(scope);
-        if (recheck.known && recheck.active === null) {
-          try {
-            const envName = await envNameFor(deploy.environmentId, deploy.appId);
-            await stopDeadDeployEnvironment(deploy.appId, app.name, envName);
-          } catch (err) {
-            log.warn(`Could not clear the environment for deployment ${deploy.id}:`, err);
-          }
-        }
-      }
-
-      if (app) {
-        addEvent(app.organizationId, {
-          type: "deploy.status",
-          title: "Deploy timed out",
-          message: timeoutMessage,
-          appId: deploy.appId,
-          deploymentId: deploy.id,
-          status: "error",
-          success: false,
-          durationMs,
-        }).catch(() => {});
-      }
-
-      try {
-        const { emit } = await import("@/lib/notifications/dispatch");
-        const app = appMap.get(deploy.appId);
-        if (app) {
-          const projectName = app.displayName || app.name;
-          const { deployIncident } = await import("@/lib/incidents/deploy");
-          const incident = await deployIncident(
-            app.organizationId,
-            { appId: deploy.appId, deploymentId: deploy.id, displayName: projectName },
-            false,
-          );
-          emit(app.organizationId, {
-            ...(incident ? { incident } : {}),
-            type: "deploy.failed",
-            title: `Deploy timed out: ${projectName}`,
-            message: `Deployment exceeded the ${TIMEOUT_MINUTES}-minute timeout and was marked as failed.`,
-            projectName,
-            appId: deploy.appId,
-            deploymentId: deploy.id,
-            errorMessage: timeoutMessage,
-            appName: app.name,
-            durationMs,
-          });
-        }
-      } catch {
-        // notification failure is non-fatal
-      }
-
-      log.info(
-        `Marked deployment ${deploy.id} (app ${deploy.appId}) as failed — timed out after ${TIMEOUT_MINUTES}m`,
-      );
+      await stopDeadDeployEnvironment(deploy.appId, app.name, await envNameFor(deploy.environmentId, deploy.appId));
     } catch (err) {
-      log.error(`Failed to sweep deployment ${deploy.id}:`, err);
+      log.warn(`Could not clear the environment for deployment ${deploy.id}:`, err);
     }
   }
 
+  addEvent(app.organizationId, {
+    type: "deploy.status",
+    title: "Deploy failed",
+    message: reason,
+    appId: deploy.appId,
+    deploymentId: deploy.id,
+    status: "error",
+    success: false,
+    durationMs,
+  }).catch(() => {});
+
+  try {
+    const { emit } = await import("@/lib/notifications/dispatch");
+    const projectName = app.displayName || app.name;
+    const { deployIncident } = await import("@/lib/incidents/deploy");
+    const incident = await deployIncident(app.organizationId, { appId: deploy.appId, deploymentId: deploy.id, displayName: projectName }, false);
+    emit(app.organizationId, {
+      ...(incident ? { incident } : {}),
+      type: "deploy.failed",
+      title: `Deploy failed: ${projectName}`,
+      message: reason,
+      projectName,
+      appId: deploy.appId,
+      deploymentId: deploy.id,
+      errorMessage: reason,
+      appName: app.name,
+      failedStage: deploy.stage ?? undefined,
+      durationMs,
+    });
+  } catch {
+    // notification failure is non-fatal
+  }
+  log.info(`Failed deployment ${deploy.id} (app ${deploy.appId}): ${reason}`);
+  return true;
 }
 
-/** A queued deploy with no live worker for this long was orphaned by a stopped process. */
-const ORPHAN_QUEUED_MS = 2 * 60_000;
-
-/** Cancel queued deployments whose process died, or that sat in the queue past twice the timeout. */
-export async function sweepStuckQueuedDeployments(): Promise<void> {
-  const queueTimeoutMinutes = TIMEOUT_MINUTES * 2;
-  const now = Date.now();
-  const timeoutCutoff = now - queueTimeoutMinutes * 60_000;
-
-  const candidates = await db
+/**
+ * The crash rule. A running deploy whose lease lapsed reruns once when it died in clone, compose or build;
+ * otherwise it fails through the dead-owner path. Rows from before the queue fail once their process is gone.
+ */
+export async function sweepExpiredLeases(): Promise<void> {
+  const expired = await db
     .select({
       id: deployments.id,
       appId: deployments.appId,
+      environmentId: deployments.environmentId,
+      scopeKey: deployments.scopeKey,
+      stage: deployments.stage,
+      attempts: deployments.attempts,
+      claimedBy: deployments.claimedBy,
+      cancelRequestedAt: deployments.cancelRequestedAt,
       startedAt: deployments.startedAt,
-      log: deployments.log,
     })
     .from(deployments)
     .where(
       and(
-        eq(deployments.status, "queued"),
-        lt(deployments.startedAt, new Date(now - ORPHAN_QUEUED_MS)),
+        eq(deployments.status, "running"),
+        or(lt(deployments.leaseExpiresAt, sql`now()`), and(isNull(deployments.claimedBy), isNull(deployments.leaseExpiresAt))),
       ),
     );
 
-  const stuck: (typeof candidates[number] & { reason: string })[] = [];
-  for (const deploy of candidates) {
-    if (new Date(deploy.startedAt).getTime() < timeoutCutoff) {
-      stuck.push({ ...deploy, reason: `was stuck in the queue for ${queueTimeoutMinutes} minutes` });
-    } else if ((await deployWorker(deploy.id)) === "gone") {
-      stuck.push({ ...deploy, reason: "never started — the process that queued it stopped" });
-    }
-  }
-
-  if (stuck.length === 0) return;
-
-  log.info(`Found ${stuck.length} stuck queued deployment(s)`);
-
-  const stuckAppIds = [...new Set(stuck.map((d) => d.appId))];
-  const appRows = await db
-    .select({
-      id: apps.id,
-      organizationId: apps.organizationId,
-      name: apps.name,
-      displayName: apps.displayName,
-    })
-    .from(apps)
-    .where(inArray(apps.id, stuckAppIds));
-  const appMap = new Map(appRows.map((a) => [a.id, a]));
-
-  for (const deploy of stuck) {
-    const lockKey = `sweep:queued:${deploy.id}`;
-    const acquired = await acquireLock(lockKey, 60_000);
-    if (!acquired) continue;
-
+  for (const deploy of expired) {
     try {
-      const now = new Date();
-      const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
-      const message = `Deployment ${deploy.reason} and was cancelled`;
-      const line = `[${now.toISOString()}] [CANCELLED] ${message}`;
-
-      const cancelled = await db
-        .update(deployments)
-        .set({
-          status: "cancelled",
-          log: deploy.log ? `${deploy.log}\n${line}` : line,
-          finishedAt: now,
-          durationMs,
-        })
-        .where(
-          and(eq(deployments.id, deploy.id), eq(deployments.status, "queued")),
-        )
-        .returning({ id: deployments.id });
-
-      // It left the queue between the read and here.
-      if (cancelled.length === 0) continue;
-
-      await removeFromQueue(deploy.id).catch(() => {});
-
-      // GitHub statuses and PR comments. Fire-and-forget; never throws.
-      Promise.resolve()
-        .then(() => queuedDeployCancelled(deploy.id, message))
-        .catch((err) => log.warn(`Queue cancel feedback for ${deploy.id} failed:`, err));
-
-      const app = appMap.get(deploy.appId);
-      if (app) {
-        addEvent(app.organizationId, {
-          type: "deploy.status",
-          title: "Queued deploy cancelled",
-          message,
-          appId: deploy.appId,
-          deploymentId: deploy.id,
-          status: "cancelled",
-          success: false,
-          durationMs,
-        }).catch(() => {});
+      if (!deploy.claimedBy) {
+        if (Date.now() - new Date(deploy.startedAt).getTime() < LEGACY_GRACE_MS) continue;
+        if ((await legacyOwner(deploy.id)) !== "gone") continue;
+        await failDeadDeploy(
+          deploy,
+          "The process running this deploy stopped",
+          and(eq(deployments.id, deploy.id), eq(deployments.status, "running"), isNull(deployments.claimedBy)),
+        );
+        continue;
       }
 
-      try {
-        const { emit } = await import("@/lib/notifications/dispatch");
-        if (app) {
-          const projectName = app.displayName || app.name;
-          emit(app.organizationId, {
-            type: "deploy.failed",
-            title: `Deploy cancelled: ${projectName}`,
-            message: `${message}.`,
-            projectName,
-            appId: deploy.appId,
-            deploymentId: deploy.id,
-            errorMessage: message,
-            appName: app.name,
-            failedStage: "queued",
-          });
-        }
-      } catch {
-        // notification failure is non-fatal
+      const stillExpired = and(eq(deployments.id, deploy.id), eq(deployments.status, "running"), lt(deployments.leaseExpiresAt, sql`now()`));
+      const stage = deploy.stage ?? "queued";
+      if (deploy.stage && REQUEUE_STAGES.includes(deploy.stage) && deploy.attempts === 0 && !deploy.cancelRequestedAt) {
+        const requeued = await db
+          .update(deployments)
+          .set({
+            status: "queued",
+            claimedBy: null,
+            leaseExpiresAt: null,
+            stage: null,
+            attempts: sql`${deployments.attempts} + 1`,
+            exclusiveRequestedAt: null,
+            log: appendLog(line("deploy", `Requeued: the executor running it stopped during ${stage}. It runs once more from the start`)),
+          })
+          .where(stillExpired)
+          .returning({ id: deployments.id });
+        if (requeued.length > 0) log.info(`Requeued deployment ${deploy.id}: its executor stopped during ${stage}`);
+        continue;
       }
 
-      log.info(`Cancelled queued deployment ${deploy.id} (app ${deploy.appId}) — ${deploy.reason}`);
+      const reason = deploy.cancelRequestedAt
+        ? `Cancelled: the executor running it stopped during ${stage}`
+        : deploy.attempts > 0 && REQUEUE_STAGES.includes(stage)
+          ? `Failed: the executor stopped during ${stage} again, after one rerun`
+          : `Failed: the executor running it stopped during ${stage}`;
+      await failDeadDeploy(deploy, reason, stillExpired);
     } catch (err) {
-      log.error(`Failed to sweep queued deployment ${deploy.id}:`, err);
+      log.error(`Failed to sweep deployment ${deploy.id}:`, err);
     }
   }
 }
 
+/** Asks deploys running past the time budget to stop. Their executor cancels at the next safe point; a dead one hits the crash rule. */
+export async function sweepStuckDeployments(): Promise<void> {
+  const running = await db
+    .select({ id: deployments.id, claimedBy: deployments.claimedBy, cancelReason: deployments.cancelReason })
+    .from(deployments)
+    .where(eq(deployments.status, "running"));
+  if (running.length === 0) return;
+
+  const budgetMs = TIMEOUT_MINUTES * 60_000;
+  const markedAt = Date.now();
+  for (const deploy of running) {
+    const elapsed = await observedRunningMs(deploy.id, markedAt);
+    if (elapsed === null || elapsed < budgetMs || !deploy.claimedBy) continue;
+    if (deploy.cancelReason === "timeout" || deploy.cancelReason === "user") continue;
+    const outcome = await requestCancel(deploy.id, "timeout").catch(() => "inactive" as const);
+    if (outcome === "requested") log.warn(`Deployment ${deploy.id} passed ${TIMEOUT_MINUTES} minutes; asked it to stop`);
+  }
+}
+
+/** Cancels automatic deploys queued past their TTL, held deploys nobody released, and handles queued rows from before the queue. */
+export async function sweepQueuedDeployments(): Promise<void> {
+  const now = Date.now();
+
+  // Automatic deploys queued past the TTL. Explicit ones wait as long as it takes.
+  const stale = await db
+    .update(deployments)
+    .set({
+      status: "cancelled",
+      finishedAt: new Date(),
+      log: appendLog(line("CANCELLED", `Still queued after ${AUTOMATIC_QUEUE_TTL_MS / 3_600_000} hours, so it was cancelled`)),
+    })
+    .where(
+      and(
+        eq(deployments.status, "queued"),
+        inArray(deployments.trigger, ["webhook", "relay", "poll"]),
+        lt(deployments.startedAt, new Date(now - AUTOMATIC_QUEUE_TTL_MS)),
+      ),
+    )
+    .returning({ id: deployments.id, appId: deployments.appId });
+  for (const row of stale) {
+    log.info(`Cancelled deployment ${row.id}: queued for over ${AUTOMATIC_QUEUE_TTL_MS / 3_600_000} hours`);
+    Promise.resolve()
+      .then(() => queuedDeployCancelled(row.id, "Still queued after a day"))
+      .catch((err) => log.warn(`Queue cancel feedback for ${row.id} failed:`, err));
+  }
+
+  // Held deploys whose requester never released them.
+  const abandoned = await db
+    .update(deployments)
+    .set({
+      status: "cancelled",
+      finishedAt: new Date(),
+      log: appendLog(line("CANCELLED", "The import stopped before its deploy started")),
+    })
+    .where(
+      and(
+        eq(deployments.status, "queued"),
+        isNull(deployments.scopeKey),
+        sql`(${deployments.request}->>'held')::boolean IS TRUE`,
+        lt(deployments.startedAt, new Date(now - HELD_TTL_MS)),
+      ),
+    )
+    .returning({ id: deployments.id });
+  for (const row of abandoned) log.info(`Cancelled held deployment ${row.id}: never released`);
+
+  // Rows the pre-queue code queued and whose process is gone: pushes and polls rejoin the queue, the rest are cancelled.
+  const legacy = await db
+    .select({ id: deployments.id, trigger: deployments.trigger })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.status, "queued"),
+        isNull(deployments.scopeKey),
+        isNull(deployments.request),
+        lt(deployments.startedAt, new Date(now - LEGACY_GRACE_MS)),
+      ),
+    );
+  for (const row of legacy) {
+    if ((await legacyOwner(row.id)) !== "gone") continue;
+    if (row.trigger === "webhook" || row.trigger === "relay" || row.trigger === "poll") {
+      if (await releaseHeldDeploy(row.id)) log.info(`Queued deployment ${row.id} from before the update`);
+      continue;
+    }
+    const cancelled = await db
+      .update(deployments)
+      .set({
+        status: "cancelled",
+        finishedAt: new Date(),
+        log: appendLog(line("CANCELLED", "Queued before Vardo updated, without the options it needs to run. Deploy again")),
+      })
+      .where(and(eq(deployments.id, row.id), eq(deployments.status, "queued"), isNull(deployments.scopeKey)))
+      .returning({ id: deployments.id });
+    if (cancelled.length > 0) log.info(`Cancelled deployment ${row.id}: queued before the update`);
+  }
+}
+
+/** Fails group jobs whose executor stopped. The app deploys they queued carry on. */
+export async function sweepGroupJobs(): Promise<void> {
+  const dead = await db
+    .update(workerJobs)
+    .set({ status: "failed", finishedAt: sql`now()` })
+    .where(and(eq(workerJobs.status, "running"), isNotNull(workerJobs.leaseExpiresAt), lt(workerJobs.leaseExpiresAt, sql`now()`)))
+    .returning({ id: workerJobs.id });
+  for (const job of dead) {
+    log.info(`Failed group deploy ${job.id}: its executor stopped`);
+    await addGroupEvent(job.id, "done", { success: false, error: "The executor running this group deploy stopped", results: [] }).catch(() => {});
+  }
+}
 // Auto-rollback grace period
 
 type RollbackCandidate = {
@@ -632,8 +551,12 @@ export async function sweepStandbySlots(): Promise<void> {
 
       // A deploy runs both slots on purpose.
       if (row.appStatus === "deploying") continue;
-      const liveness = await readActiveDeploy(await deployScope(row.appId, row.envId));
-      if (!liveness.known || liveness.active !== null) continue;
+      const [holder] = await db
+        .select({ id: deployments.id })
+        .from(deployments)
+        .where(and(eq(deployments.scopeKey, await scopeKeyFor(row.appId, row.envId)), eq(deployments.status, "running")))
+        .limit(1);
+      if (holder) continue;
 
       const latest = await db.query.deployments.findFirst({
         where: eq(deployments.appId, row.appId),

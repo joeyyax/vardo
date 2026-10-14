@@ -7,7 +7,8 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { slugify } from "@/lib/ui/slugify";
 import { stopContainer, startContainer, removeContainer, inspectContainer } from "@/lib/docker/client";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { releaseHeldDeploy } from "@/lib/deploy/queue";
+import { waitForDeployment } from "@/lib/deploy/request";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import type { ComposeFile } from "@/lib/docker/compose";
@@ -139,13 +140,9 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
     }
 
     try {
-      const deployResult = await requestDeploy({
-        appId,
-        organizationId: orgId,
-        trigger: "api",
-        triggeredBy: userId,
-        deploymentId,
-      });
+      // The originals are stopped: the held deploy can run now.
+      if (!(await releaseHeldDeploy(deploymentId))) throw new Error("The deployment was cancelled before it started");
+      const deployResult = await waitForDeployment(deploymentId);
 
       if (!deployResult.success) {
         throw new Error(deployResult.log || "Deployment did not succeed");

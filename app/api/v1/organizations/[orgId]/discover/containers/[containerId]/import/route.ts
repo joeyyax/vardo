@@ -16,7 +16,7 @@ import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import {
   resolveProjectForImport,
   runAsyncContainerMigration,
@@ -318,12 +318,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // The client polls this deployment ID while the migration runs async.
     // On deploy failure the original container restarts.
 
-    const deploymentId = await createDeployment({
-      appId,
-      organizationId: orgId,
-      trigger: "api",
-      triggeredBy: org.session.user.id,
-    });
+    // Held until the originals stop, so no executor claims it first.
+    const { id: deploymentId } = await enqueueDeploy(
+      { appId, trigger: "api", triggeredBy: org.session.user.id },
+      { hold: true },
+    );
 
     runAsyncContainerMigration({
       containerIds: [containerId],

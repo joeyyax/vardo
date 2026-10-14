@@ -21,7 +21,7 @@ import {
 import type { ComposeFile } from "@/lib/docker/compose";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
-import { createDeployment } from "@/lib/docker/deploy";
+import { enqueueDeploy } from "@/lib/deploy/queue";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { gitUrlColumns } from "@/lib/api/git-credentials";
 import { readableApp } from "@/lib/api/readable-app";
@@ -460,12 +460,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    const deploymentId = await createDeployment({
-      appId,
-      organizationId: orgId,
-      trigger: "api",
-      triggeredBy: org.session.user.id,
-    });
+    // Held until the originals stop, so no executor claims it first.
+    const { id: deploymentId } = await enqueueDeploy(
+      { appId, trigger: "api", triggeredBy: org.session.user.id },
+      { hold: true },
+    );
 
     const containerIds = validDetails.map((d) => d.id);
 

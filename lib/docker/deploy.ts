@@ -5,7 +5,6 @@ import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, inArray, isNotNull, ne, desc } from "drizzle-orm";
 import { logger } from "@/lib/logger";
-import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
 import { readlink } from "fs/promises";
 import { join } from "path";
@@ -106,7 +105,24 @@ export type DeployOpts = {
   pinIntent?: "push" | "pin";
   /** Build even when an earlier image matches; "no-cache" skips the layer cache too. */
   rebuild?: RebuildMode;
+  /** Executor holding the row's claim. Every write that ends the row requires it. */
+  executorId?: string;
+  /** Checked before the swap touches containers. False stops the deploy. */
+  fence?: () => Promise<boolean>;
 };
+
+/** Why an executor aborted a run. */
+export type DeployAbortReason =
+  | { superseded: true; supersededBy?: string }
+  | { killed: true; reason: "user" | "timeout" }
+  | { lost: true };
+
+/** The row while this run still owns it: claimed by its executor, or in progress for a run without one. */
+export function ownedRow(deploymentId: string, executorId?: string) {
+  return executorId
+    ? and(eq(deployments.id, deploymentId), eq(deployments.status, "running"), eq(deployments.claimedBy, executorId))
+    : and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"]));
+}
 
 export type DeployResult = {
   deploymentId: string;
@@ -122,23 +138,6 @@ export type DeployResult = {
   /** Another process, such as the sweeper, closed the row first and reported it. */
   closedElsewhere?: boolean;
 };
-
-export async function createDeployment(opts: DeployOpts): Promise<string> {
-  const [deployment] = await db
-    .insert(deployments)
-    .values({
-      id: nanoid(),
-      appId: opts.appId,
-      trigger: opts.trigger,
-      triggeredBy: opts.triggeredBy,
-      status: "queued",
-      environmentId: opts.environmentId,
-      groupEnvironmentId: opts.groupEnvironmentId,
-    })
-    .returning({ id: deployments.id });
-
-  return deployment.id;
-}
 
 /** The app's production hostnames and those of the other apps in its project. */
 async function productionHostsFor(
@@ -252,13 +251,19 @@ export async function runDeployment(
   let ownsAppStatus = false;
 
   try {
-    // Only while still queued: the sweeper may have cancelled it while it waited.
-    const claimed = await db
-      .update(deployments)
-      .set({ status: "running" })
-      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
-      .returning({ id: deployments.id })
-      .then((rows) => rows.length > 0);
+    // A claimed row is already running; without an executor, only while still queued.
+    const claimed = opts.executorId
+      ? await db
+          .select({ id: deployments.id })
+          .from(deployments)
+          .where(ownedRow(deploymentId, opts.executorId))
+          .then((rows) => rows.length > 0)
+      : await db
+          .update(deployments)
+          .set({ status: "running" })
+          .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+          .returning({ id: deployments.id })
+          .then((rows) => rows.length > 0);
     if (!claimed) {
       log("[deploy] Not started: the deployment was closed while it waited in the queue");
       await streamLogger.flush();
@@ -490,9 +495,12 @@ export async function runDeployment(
       environmentId: opts.environmentId,
       groupEnvironmentId: opts.groupEnvironmentId,
       signal: opts.signal,
+      claimedBy: opts.executorId,
+      fence: opts.fence,
       rollback: rollbackTarget
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
+      rollbackTarget: rollbackTarget ?? undefined,
       pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
       pinIntent: opts.pinIntent,
       rebuild,
@@ -602,14 +610,21 @@ export async function runDeployment(
     const blamed = runningStage() ?? pendingStage();
     const fail = () => stage(blamed, "failed");
 
-    // Superseded or killed.
+    // Superseded, killed or no longer this executor's.
     if (opts.signal?.aborted) {
-      const reason = opts.signal.reason as { supersededBy?: string; killed?: boolean } | undefined;
-      const supersededById = reason?.supersededBy;
+      const reason = opts.signal.reason as Partial<{ superseded: true; supersededBy: string; killed: true; reason: string; lost: true }> | undefined;
 
-      if (supersededById) {
+      if (reason?.lost) {
+        log("[deploy] Stopped: this executor lost its claim on the deployment. The old slot keeps serving");
+        fail();
+        await streamLogger.flush();
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled", closedElsewhere: true };
+      }
+
+      if (reason?.superseded) {
+        const supersededById = reason.supersededBy ?? null;
         // The superseding deploy owns apps.status.
-        log(`[deploy] Superseded by deployment ${supersededById}`);
+        log(supersededById ? `[deploy] Superseded by deployment ${supersededById}` : "[deploy] Superseded by a newer deploy");
         fail();
         await db
           .update(deployments)
@@ -620,17 +635,17 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
+          .where(ownedRow(deploymentId, opts.executorId));
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
           title: "Deploy superseded",
-          message: `Deployment ${deploymentId} superseded by ${supersededById}`,
+          message: supersededById ? `Deployment ${deploymentId} superseded by ${supersededById}` : `Deployment ${deploymentId} superseded`,
           appId: opts.appId,
           deploymentId,
           status: "superseded",
           success: false,
-          supersededBy: supersededById,
+          supersededBy: supersededById ?? undefined,
         }).catch(() => {});
 
         await streamLogger.flush();
@@ -638,7 +653,7 @@ export async function runDeployment(
       }
 
       if (reason?.killed) {
-        log(`[deploy] Cancelled by user`);
+        log(reason.reason === "timeout" ? "[deploy] Cancelled: ran past the deploy time limit" : "[deploy] Cancelled by user");
         fail();
         await db
           .update(deployments)
@@ -648,7 +663,7 @@ export async function runDeployment(
             durationMs,
             finishedAt: new Date(),
           })
-          .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])));
+          .where(ownedRow(deploymentId, opts.executorId));
 
         // Guarded so a newer deploy keeps ownership; the reconciler corrects "stopped" from Docker.
         if (ownsAppStatus) {
@@ -723,7 +738,7 @@ export async function runDeployment(
     const recorded = await db
       .update(deployments)
       .set({ status: "failed", log: logLines.join("\n"), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
-      .where(and(eq(deployments.id, deploymentId), inArray(deployments.status, ["queued", "running"])))
+      .where(ownedRow(deploymentId, opts.executorId))
       .returning({ id: deployments.id })
       .then((rows) => rows.length > 0);
 

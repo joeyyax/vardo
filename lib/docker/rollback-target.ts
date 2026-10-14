@@ -2,7 +2,8 @@
 // Anything unresolvable throws; never deploy the branch tip as a "rollback".
 
 import { db } from "@/lib/db";
-import { deployments } from "@/lib/db/schema";
+import { apps, deployments } from "@/lib/db/schema";
+import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import { eq, and } from "drizzle-orm";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { DeployApp } from "./deploy-context";
@@ -150,6 +151,44 @@ export function applyRollbackTarget(
       `[deploy] Warning: rollback target ${target.targetDeploymentId} has no compose snapshot — ` +
       `deploying the app's current compose content`,
     );
+  }
+}
+
+/** Writes a committed rollback's config snapshot, and its env when asked, back to the app row. */
+export async function applyRollbackToApp(
+  appId: string,
+  organizationId: string,
+  target: RollbackTarget,
+  log: (line: string) => void,
+): Promise<void> {
+  const updates: Partial<typeof apps.$inferInsert> = { updatedAt: new Date() };
+  const config = target.config;
+  if (config) {
+    updates.cpuLimit = config.cpuLimit;
+    updates.memoryLimit = config.memoryLimit;
+    updates.gpuEnabled = config.gpuEnabled ?? false;
+    updates.containerPort = config.containerPort;
+    updates.imageName = config.imageName;
+    updates.gitBranch = config.gitBranch;
+    updates.composeFilePath = config.composeFilePath;
+    updates.rootDirectory = config.rootDirectory;
+    updates.restartPolicy = config.restartPolicy;
+    updates.autoTraefikLabels = config.autoTraefikLabels;
+    updates.backendProtocol = config.backendProtocol ?? null;
+    if (config.composeContent != null) updates.composeContent = config.composeContent;
+  }
+  if (target.includeEnvVars && target.envSnapshot) {
+    try {
+      updates.envContent = encrypt(decrypt(target.envSnapshot, organizationId), organizationId);
+    } catch {
+      log("[deploy] Warning: couldn't decrypt the rollback target's env snapshot; the app keeps its current env");
+    }
+  }
+  try {
+    await db.update(apps).set(updates).where(eq(apps.id, appId));
+    log(`[deploy] Rollback: the app's settings now match deployment ${target.targetDeploymentId}`);
+  } catch (err) {
+    log(`[deploy] Warning: couldn't write the rollback's settings to the app: ${err instanceof Error ? err.message : err}`);
   }
 }
 

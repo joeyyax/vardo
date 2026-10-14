@@ -102,9 +102,9 @@ export function CoreServicesSettings() {
         toast.success(`Disk metrics ${next ? "on" : "off"}`, {
           description: "Applies once cAdvisor is installed.",
         });
-      } else if (data.redeployed) {
+      } else if (data.deploymentId) {
         toast.success(`Disk metrics ${next ? "on" : "off"}`, {
-          description: "cAdvisor redeployed.",
+          description: "cAdvisor is redeploying.",
         });
         void fetchServices();
       } else {

@@ -83,7 +83,6 @@ async function handler(request: NextRequest) {
     if (event.kind === "pull_request") {
       return handlePullRequestEvent(event, {
         trigger: "webhook",
-        waitForDeploys: true,
         resolveOrgs: async () => {
           const orgIds = event.installationId !== null ? await orgsForInstallation(event.installationId) : [];
           return orgIds.length > 0 ? { orgIds } : { skipped: "installation not linked" };
@@ -93,7 +92,6 @@ async function handler(request: NextRequest) {
 
     return handlePushEvent(event, {
       trigger: "webhook",
-      waitForDeploys: true,
       resolveOrgs: async () => {
         // Only orgs the delivering installation is linked to.
         if (event.installationId === null) return { skipped: "no installation" };

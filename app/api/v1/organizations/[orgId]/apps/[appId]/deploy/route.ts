@@ -3,8 +3,9 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { deployGroup } from "@/lib/docker/deploy-group";
+import { enqueueDeploy } from "@/lib/deploy/queue";
+import { enqueueGroupDeploy, tailGroupJob } from "@/lib/deploy/group-job";
+import { tailDeployment } from "@/lib/stream/deploy-tail";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -12,7 +13,7 @@ import { refuseSystemManaged } from "@/lib/api/system-managed";
 import type { RebuildMode } from "@/lib/docker/build-key";
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
-// Returns SSE stream of deploy log lines, final event is the result
+// Queues the deploy and returns an SSE stream of its log lines; the final event is the result.
 async function handler(request: NextRequest, { params }: { params: Promise<{ orgId: string; appId: string }> }) {
   const { orgId, appId } = await params;
 
@@ -50,41 +51,36 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     }
 
     if (app.projectId && (deployAll || groupEnvironmentId)) {
-      return createSSEResponse(request, async (sendEvent) => {
-        const result = await deployGroup({
-          projectId: app.projectId!,
-          organizationId: orgId,
-          trigger: "manual",
-          triggeredBy: org.session.user.id,
-          groupEnvironmentId,
-          onLog: (appName, line) =>
-            sendEvent("log", { app: appName, line }),
-          onStage: (appName, stage, status) =>
-            sendEvent("stage", { app: appName, stage, status }),
-          onTier: (tier, appNames) =>
-            sendEvent("tier", { tier, apps: appNames }),
-        });
-        sendEvent("done", {
-          success: result.success,
-          results: result.results,
-          totalDurationMs: result.totalDurationMs,
-        });
-      });
-    }
-
-    // requestDeploy cancels or waits on an in-progress build.
-    // Don't pass request.signal: it fires when SSE drops, not on abort.
-    return createSSEResponse(request, async (sendEvent) => {
-      const result = await requestDeploy({
-        appId: appId,
+      const jobId = await enqueueGroupDeploy({
+        projectId: app.projectId,
         organizationId: orgId,
         trigger: "manual",
         triggeredBy: org.session.user.id,
-        environmentId,
-        rebuild,
-        onLog: (line) => sendEvent("log", line),
-        onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
+        groupEnvironmentId,
       });
+      return createSSEResponse(request, (sendEvent) => tailGroupJob(jobId, sendEvent, { signal: request.signal }));
+    }
+
+    const { id } = await enqueueDeploy({
+      appId,
+      trigger: "manual",
+      triggeredBy: org.session.user.id,
+      environmentId,
+      rebuild,
+    });
+
+    // The deploy runs in its executor; a dropped stream stops only the tail.
+    return createSSEResponse(request, async (sendEvent) => {
+      const result = await tailDeployment(
+        id,
+        {
+          onLog: (line) => sendEvent("log", line),
+          onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
+          onWaiting: (message) => sendEvent("log", `[queue] ${message}`),
+        },
+        { signal: request.signal },
+      );
+      if (!result) return;
       sendEvent("done", {
         deploymentId: result.deploymentId,
         success: result.success,
@@ -99,5 +95,5 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   }
 }
 
-// Coarse abuse ceiling; requestDeploy already serializes deploys.
+// Coarse abuse ceiling; the queue serializes deploys per app.
 export const POST = withRateLimit(handler, { tier: "mutation", key: "deploy" });

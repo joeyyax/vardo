@@ -25,7 +25,7 @@ export async function setPollIntervalMinutes(minutes: number): Promise<void> {
 export type PollInput = {
   parked: boolean;
   status: string;
-  inFlight: boolean | "unknown";
+  inFlight: boolean;
   remoteSha: string;
   lastDeployedSha: string | null;
   /** Last head the poller deployed or recorded as the baseline. */
@@ -43,7 +43,7 @@ export type PollDecision =
 export function decidePoll(input: PollInput): PollDecision {
   if (input.parked) return { action: "skip", reason: "parked" };
   if (input.status === "stopped") return { action: "skip", reason: "stopped" };
-  if (input.inFlight !== false) return { action: "skip", reason: "deploy in flight" };
+  if (input.inFlight) return { action: "skip", reason: "deploy in flight" };
   if (input.remoteSha === input.lastDeployedSha) return { action: "skip", reason: "up to date" };
   // Already tried: a failure on this SHA isn't retried until the branch moves.
   if (input.remoteSha === input.polledSha) return { action: "skip", reason: "already handled" };
@@ -74,7 +74,8 @@ export async function deployHistory(appId: string, sha: string): Promise<DeployH
       columns: { id: true },
     }),
     db.query.deployments.findFirst({
-      where: and(eq(deployments.appId, appId), inArray(deployments.status, ["queued", "running"])),
+      // The default environment's scope, which a polled deploy queues in.
+      where: and(eq(deployments.scopeKey, appId), inArray(deployments.status, ["queued", "running"])),
       columns: { id: true },
     }),
   ]);
