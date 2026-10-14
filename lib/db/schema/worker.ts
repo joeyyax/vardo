@@ -1,4 +1,5 @@
-import { bigint, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigint, index, integer, jsonb, pgTable, smallint, text, timestamp } from "drizzle-orm/pg-core";
 
 // Background loop coordination. Every time here comes from the database clock.
 
@@ -48,6 +49,29 @@ export const workers = pgTable("worker", {
   inFlight: jsonb("in_flight").$type<string[]>().notNull().default([]),
 });
 
+export type WorkerJobKind = "deploy-group";
+export type WorkerJobStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+
+/** Jobs a worker claims from Postgres. */
+export const workerJobs = pgTable(
+  "worker_job",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").$type<WorkerJobKind>().notNull(),
+    request: jsonb("request").$type<Record<string, unknown>>().notNull(),
+    status: text("status").$type<WorkerJobStatus>().notNull().default("queued"),
+    scopeKey: text("scope_key"),
+    claimedBy: text("claimed_by"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    attempts: smallint("attempts").notNull().default(0),
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("worker_job_queued_idx").on(t.createdAt).where(sql`status = 'queued'`)],
+);
+
+export type WorkerJobRow = typeof workerJobs.$inferSelect;
 export type LeaderLeaseRow = typeof leaderLeases.$inferSelect;
 export type WorkerRow = typeof workers.$inferSelect;
 export type JobHeartbeatRow = typeof jobHeartbeats.$inferSelect;
