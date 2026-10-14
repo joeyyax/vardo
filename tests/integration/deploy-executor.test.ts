@@ -336,6 +336,37 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
     });
   });
 
+  describe("keys the pre-queue sweeper reads", () => {
+    it("names a running deploy in its scope's active key until it ends, and leases this code's queued rows", async () => {
+      const compat = await import("@/lib/deploy/legacy-compat");
+      const id = await enqueue("a1", "manual");
+      const held = (await q.enqueueDeploy({ appId: "a2", trigger: "api" }, { hold: true })).id;
+      await sql`insert into deployment (id, app_id, trigger, status, started_at) values ('old-queued', 'a3', 'manual', 'queued', now())`;
+
+      compat.resetLegacyCompatForTests();
+      expect(await claimAll()).toEqual([id]);
+      expect(store.get(`deploy:worker:${held}`)).toBe("1");
+      // The old code leases its own rows.
+      expect(store.has("deploy:worker:old-queued")).toBe(false);
+
+      await until(() => store.get("deploy:active:a1"), Boolean);
+      await enter(id, "build");
+      await exec.renewNowForTests();
+      expect(JSON.parse(store.get("deploy:active:a1")!)).toEqual({ deploymentId: id, stage: "build" });
+
+      await runs.get(id)!.succeed();
+      await until(() => exec.runningHere(), (ids) => !ids.includes(id));
+      expect(store.has("deploy:active:a1")).toBe(false);
+    });
+
+    it("leaves a scope's active key that names another deploy", async () => {
+      const compat = await import("@/lib/deploy/legacy-compat");
+      store.set("deploy:active:a1", JSON.stringify({ deploymentId: "old-run", stage: "build" }));
+      await compat.clearRunningForOldSweeper({ id: "new-run", scopeKey: "a1" });
+      expect(store.has("deploy:active:a1")).toBe(true);
+    });
+  });
+
   describe("queued rows", () => {
     it("rows the old code queued rejoin the queue as pushes, or are cancelled, once their process is gone", async () => {
       await sql`insert into deployment (id, app_id, trigger, status, started_at) values

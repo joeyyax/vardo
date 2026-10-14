@@ -266,6 +266,11 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           FROM deployment d JOIN app a ON a.id = d.app_id
           WHERE d.status = 'queued' AND d.scope_key IS NOT NULL ${selfFilter}
             AND NOT EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running')
+            -- Delete next release: a pre-queue running row has no scope, so it holds every scope of its app.
+            AND NOT EXISTS (
+              SELECT 1 FROM deployment l
+              WHERE l.app_id = d.app_id AND l.status = 'running' AND l.scope_key IS NULL AND l.claimed_by IS NULL
+            )
           ORDER BY d.scope_key, ${automatic}, d.started_at, d.id
         ), picked AS (
           SELECT d.id, h.explicit FROM deployment d JOIN heads h ON h.id = d.id

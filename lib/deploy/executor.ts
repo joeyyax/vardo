@@ -17,6 +17,7 @@ import {
   renewLeases,
   type ClaimedDeploy,
 } from "./queue";
+import { clearRunningForOldSweeper, markRunningForOldSweeper } from "./legacy-compat";
 
 const log = logger.child("deploy-executor");
 
@@ -108,6 +109,7 @@ async function renewPass(): Promise<void> {
   state.renewing = true;
   try {
     void markActive(runningHere());
+    void markRunningForOldSweeper([...state.jobs.values()].map((j) => ({ id: j.row.id, scopeKey: j.row.scopeKey, stage: j.stage })));
     const { cancel, lost } = await renewLeases(executorId(), runningHere());
     for (const { id, reason } of cancel) {
       const job = state.jobs.get(id);
@@ -225,6 +227,7 @@ export function startClaimed(row: ClaimedDeploy, opts: StartOpts = {}): Promise<
   state.jobs.set(row.id, job);
   ensureRenewing();
   void markActive([row.id]);
+  void markRunningForOldSweeper([{ id: row.id, scopeKey: row.scopeKey, stage: null }]);
   job.done = (async () => {
     let result: DeployResult | null = null;
     try {
@@ -241,6 +244,7 @@ export function startClaimed(row: ClaimedDeploy, opts: StartOpts = {}): Promise<
       state.jobs.delete(row.id);
       stopRenewingWhenIdle();
       await clearActive(row.id);
+      await clearRunningForOldSweeper(row);
     }
   })();
   return job.done;

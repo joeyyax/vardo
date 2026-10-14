@@ -88,11 +88,14 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(await q.claimDeploys("w", { capacity: 10 })).toEqual([]);
     });
 
-    it("takes the scope from a running row inserted outside the queue without throwing", async () => {
+    it("a pre-queue running row holds every scope of its app until it ends", async () => {
       await seed("q1", "a1", "manual", "queued");
-      // A legacy row with no scope doesn't block the scope.
+      await seed("q-stage", "a1", "manual", "queued", { scope: "a1:e-stage" });
+      await seed("other", "a2", "manual", "queued");
       await seed("legacy", "a1", "manual", "running", { scope: null });
-      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["q1"]);
+      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["other"]);
+      await finish("legacy");
+      expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id).sort()).toEqual(["q-stage", "q1"]);
     });
   });
 

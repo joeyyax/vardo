@@ -6,6 +6,7 @@ import { claimScope, type ClaimScope } from "./claim-scope";
 import { executorId, isDraining, startClaimed } from "./executor";
 import { GROUP_JOBS_PER_EXECUTOR, claimGroupJobs, groupJobsHere, startGroupJob } from "./group-job";
 import { claimDeploys, clearFinishedExclusive, type ClaimOpts } from "./queue";
+import { markQueuedForOldSweeper } from "./legacy-compat";
 
 const log = logger.child("deploy-claim");
 
@@ -22,6 +23,7 @@ const DESCRIBE: Record<ClaimScope, string> = {
 
 /** One pass: clears finished exclusive flags, then claims and starts. Returns the ids started. */
 export async function claimPass(scope: ClaimScope): Promise<string[]> {
+  await markQueuedForOldSweeper();
   if (scope === "none" || isDraining()) return [];
   const me = executorId();
   const started: string[] = [];
