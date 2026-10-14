@@ -100,6 +100,7 @@ const DETAIL_DEPLOYMENTS = {
     waitingSince: true,
     waitAhead: true,
     waitTotal: true,
+    request: true,
   },
   with: {
     triggeredByUser: {

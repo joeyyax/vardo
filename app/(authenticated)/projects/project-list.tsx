@@ -24,8 +24,8 @@ import type { Problem } from "@/lib/ui/conditions";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
-import { heldDeployOf, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
-import { holdLabel } from "@/lib/ui/deploy-wait";
+import { deployViewOf, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
+import { deployMarkOf } from "@/lib/ui/deploy-wait";
 import type { StarKind } from "@/lib/db/schema/enums";
 import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
@@ -216,9 +216,11 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
         const quietParent = node.relation === "service" && node.parent?.status === app.status && app.status !== "active";
         const inner = !p && expanded === false ? walk(node.children).map((c) => [c, problemOf(c)] as const).find(([, cp]) => cp) : null;
         const stopped = app.parked || app.status === "stopped";
-        const hold = heldDeployOf(app);
+        const view = deployViewOf(app);
         const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
-        const mark = statusMarkTone(markSubject(node));
+        const health = statusMarkTone(markSubject(node));
+        // A deploy in flight takes the mark unless something needs attention.
+        const mark = view && (health.label === "Running" || health.label === "Deploying" || health.label === "Stopped") ? deployMarkOf(view) : health;
         const status = p ? (
           <span className={toneClass(p)}>
             <RowTerm text={p.title} />
@@ -227,11 +229,9 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           <span className={toneClass(inner[1]!)}>
             {inner[0].app.displayName}: {inner[1]!.title.toLowerCase()}
           </span>
-        ) : hold && !quietParent ? (
-          <span className="text-muted-foreground">{holdLabel(hold)}</span>
-        ) : app.status === "deploying" && !quietParent ? (
-          <span className="text-status-info">
-            <RowTerm text="Deploying" />
+        ) : view && !quietParent ? (
+          <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"} title={view.why}>
+            {view.label === "Deploying" ? <RowTerm text="Deploying" /> : view.label}
           </span>
         ) : stopped && !quietParent ? (
           <span className="text-muted-foreground/70">
@@ -247,7 +247,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           <div key={app.id} role="none">
             <ListRow
               navKey={app.name}
-              mark={hold && mark.label === "Deploying" ? { ...mark, tone: "neutral" } : mark}
+              mark={mark}
               name={app.displayName}
               nameTitle={app.name}
               href={appHref(app.name)}
@@ -300,7 +300,7 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
         const kids = node.children.filter((c) => ctx.matches(c, section));
         const expanded = kids.length ? ctx.isAppOpen(node, section) : false;
         const app = node.app;
-        const hold = heldDeployOf(app);
+        const view = deployViewOf(app);
         return (
           <div key={app.id} role="none" className={cn("group/row rounded-md", depth > 1 && "pl-5", ctx.flash === app.name && "animate-row-flash")}>
             <AppRow
@@ -309,7 +309,7 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
               series={ctx.history.get(app.id)?.cpu}
               updateCount={ctx.updatesByApp.get(app.id) ?? 0}
               sharedStatus={node.relation === "service" ? node.parent?.status : null}
-              held={hold ? holdLabel(hold) : null}
+              deploy={view}
               indented={depth > 0}
               connector={{ last: i === shown.length - 1, dashed: node.relation === "dependency" }}
               related={ctx.selected === app.name}
@@ -373,7 +373,7 @@ function SectionNumbers({ section, ctx }: { section: Section; ctx: ListContext }
         </SectionNumber>
       )}
       {s.deploying > 0 && <SectionNumber tone="text-status-info">{s.deploying} deploying</SectionNumber>}
-      {s.waiting > 0 && <SectionNumber>{s.waiting} waiting</SectionNumber>}
+      {s.queued > 0 && <SectionNumber>{s.queued} queued</SectionNumber>}
       {s.latestDeploy && s.latestDeploy.status !== "running" && s.latestDeploy.status !== "queued" && (
         <SectionNumber optional tone={s.latestDeploy.status === "failed" ? "text-status-error" : undefined}>
           <EntityLink href={deployHref(s.latestDeploy.appName, s.latestDeploy.id)} className="hover:text-foreground">

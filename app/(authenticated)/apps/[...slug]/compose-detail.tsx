@@ -23,7 +23,6 @@ import {
   X,
   Zap,
   type LucideIcon,
-  Hourglass,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -88,7 +87,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { activeDeploy, waitWord } from "@/lib/ui/deploy-wait";
+import { activeDeploy } from "@/lib/ui/deploy-wait";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -844,7 +843,6 @@ export function ComposeDetail({
     }
   }, [app.composeContent, app.deployments.length, deploy]);
 
-  const heldDeploy = deploy.deployHeld;
 
   const totalDeployments = app.deployments.length;
 
@@ -869,12 +867,6 @@ export function ComposeDetail({
   });
 
   const statusTrigger = (() => {
-    if (heldDeploy) {
-      return {
-        className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
-        content: <><Hourglass className="mr-1.5 size-3.5" />{waitWord(heldDeploy.reason)}</>,
-      };
-    }
     if (deploy.deploying || app.status === "deploying") {
       return {
         className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
@@ -978,15 +970,15 @@ export function ComposeDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {actions.length === 1 && actions[0].action === "deploy" ? (
-              <Button size="sm" disabled={deploy.deploying} onClick={handleDeployClick}>
-                {deploy.deploying && deploy.deployQueued ? (
-                  "Queued"
-                ) : deploy.deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />Deploy stack</>
-                )}
+            {(deploy.deploying || app.status === "deploying") ? (
+              <Button size="sm" variant="outline" disabled={cancelling} onClick={() => void cancelDeploy()}>
+                <X className="mr-1.5 size-3.5" />
+                {cancelling ? "Cancelling..." : "Cancel"}
+              </Button>
+            ) : actions.length === 1 && actions[0].action === "deploy" ? (
+              <Button size="sm" onClick={handleDeployClick}>
+                <Rocket className="mr-1.5 size-4" />
+                Deploy stack
               </Button>
             ) : (
               <DropdownMenu>
@@ -1094,7 +1086,7 @@ export function ComposeDetail({
         stack={rollupHealth(services)}
         stackUptimeSince={rollupUptimeSince(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
-        deployWait={heldDeploy}
+        deployView={deploy.deployView}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />

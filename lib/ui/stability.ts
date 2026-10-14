@@ -270,8 +270,6 @@ export type VerdictInput = {
   trend: StabilityTrend;
   /** Docker's live counter, or null when it could not be read. */
   restarts: RestartReading | null;
-  /** The deploy in progress is held on a queue or lock, as "Queued" or "Waiting". */
-  deployHeld?: string | null;
 };
 
 /** Conditions that mean the app is failing even while Docker calls it running. */
@@ -283,7 +281,7 @@ export function stabilityVerdict(input: VerdictInput): StabilityVerdict {
   const lastFault = input.incidents.find((i) => isFault(i.kind));
 
   if (input.status === "deploying") {
-    return { level: "unknown", headline: input.deployHeld ?? "Deploying", detail: "Ask again when the deploy settles" };
+    return { level: "unknown", headline: "Deploying", detail: "Ask again when the deploy settles" };
   }
   if (unstable) {
     return { level: "unstable", headline: "Unstable", detail: unstable.detail };

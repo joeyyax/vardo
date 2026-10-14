@@ -1,7 +1,7 @@
 // The Projects screen's model: sections, nesting, ordering and the panel's lists. No React.
 
 import type { AppCondition } from "@/lib/docker/conditions";
-import { activeDeploy, rowHold, type HeldDeploy } from "@/lib/ui/deploy-wait";
+import { activeDeploy, deployView, isQueuedView, rowHold, type DeployView } from "@/lib/ui/deploy-wait";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import {
   PROBLEM_GROUP_ORDER,
@@ -30,6 +30,8 @@ export type ProjectsDeployment = {
   /** Place in line while queued for a slot, and how many wait in that queue. */
   waitAhead?: number | null;
   waitTotal?: number | null;
+  /** `held` while the requester prepares it. */
+  request?: { held?: boolean } | null;
 };
 
 /** One app or compose service as the page loads it. */
@@ -207,10 +209,10 @@ export type ProjectStats = {
   up: number;
   down: number;
   stopped: number;
-  /** Apps whose deploy is doing work. */
+  /** Apps whose deploy has started work. */
   deploying: number;
-  /** Apps whose deploy is queued or held on a lock. */
-  waiting: number;
+  /** Apps whose deploy hasn't started yet. */
+  queued: number;
   issues: number;
   critical: number;
   latestDeploy: (ProjectsDeployment & { appName: string }) | null;
@@ -220,16 +222,24 @@ export type ProjectStats = {
   lastBackupAt: Date | string | null;
 };
 
-/** What holds the app's in-flight deploy still, or null while it works or none is in flight. */
-export function heldDeployOf(app: Pick<ProjectsApp, "deployments">): HeldDeploy | null {
+/** How the app's in-flight deploy reads from its row, or null when none is in flight. */
+export function deployViewOf(app: Pick<ProjectsApp, "status" | "deployments">): DeployView | null {
   const active = activeDeploy(app.deployments);
-  return active ? rowHold(active) : null;
+  // A running row on another environment leaves this app's status alone.
+  if (active?.status === "queued" || (active && app.status === "deploying")) {
+    return deployView({ queued: active.status === "queued", preparing: !!active.request?.held, wait: rowHold(active), started: true });
+  }
+  return app.status === "deploying" ? deployView({ queued: false, wait: null, started: true }) : null;
 }
 
-/** The app has a deploy doing work rather than waiting. */
-export function isDeployWorking(app: Pick<ProjectsApp, "status" | "deployments">): boolean {
-  return app.status === "deploying" && !heldDeployOf(app);
-}
+const isDeploying = (a: Pick<ProjectsApp, "status" | "deployments">) => {
+  const view = deployViewOf(a);
+  return !!view && !isQueuedView(view);
+};
+const isQueued = (a: Pick<ProjectsApp, "status" | "deployments">) => {
+  const view = deployViewOf(a);
+  return !!view && isQueuedView(view);
+};
 
 export function projectStats(nodes: TreeNode[]): ProjectStats {
   const tops = nodes.map((n) => n.app);
@@ -248,8 +258,8 @@ export function projectStats(nodes: TreeNode[]): ProjectStats {
     up: tops.filter((a) => a.status === "active" && !a.parked).length,
     down: tops.filter((a) => !a.parked && (a.status === "error" || a.status === "missing")).length,
     stopped: tops.filter((a) => a.parked || a.status === "stopped").length,
-    deploying: tops.filter(isDeployWorking).length,
-    waiting: tops.filter((a) => !!heldDeployOf(a)).length,
+    deploying: tops.filter(isDeploying).length,
+    queued: tops.filter(isQueued).length,
     issues: problems.length,
     critical: problems.filter((p) => p.tone === "error").length,
     latestDeploy,
@@ -309,7 +319,7 @@ export const PANEL_KEYS = ["deploying", "running", "stopped", "attention"] as co
 export type PanelKey = (typeof PANEL_KEYS)[number];
 
 export const PANEL_TITLE: Record<PanelKey, string> = {
-  deploying: "Deploys in progress",
+  deploying: "Deploys",
   running: "Running",
   stopped: "Stopped",
   attention: "Needs attention",
@@ -352,10 +362,10 @@ export function appsIn(sections: Section[], key: "running" | "stopped" | "deploy
       ? a.status === "active" && !a.parked
       : key === "stopped"
         ? a.parked || a.status === "stopped"
-        : isDeployWorking(a) || !!heldDeployOf(a);
+        : !!deployViewOf(a);
   const found = sections.flatMap((s) => s.nodes.filter((n) => test(n.app)).map((node) => ({ node, project: s.project })));
-  // Deploys doing work before those waiting.
-  return key === "deploying" ? found.sort((a, b) => Number(!!heldDeployOf(a.node.app)) - Number(!!heldDeployOf(b.node.app))) : found;
+  // Deploys at work before queued ones.
+  return key === "deploying" ? found.sort((a, b) => Number(isQueued(a.node.app)) - Number(isQueued(b.node.app))) : found;
 }
 
 export type FleetCounts = {
@@ -364,7 +374,7 @@ export type FleetCounts = {
   attention: number;
   critical: number;
   deploying: number;
-  waiting: number;
+  queued: number;
   stopped: number;
   backupsOverdue: number;
 };
@@ -378,7 +388,7 @@ export function fleetCounts(sections: Section[]): FleetCounts {
     attention: items.length,
     critical: items.filter((i) => i.problem.tone === "error").length,
     deploying: sections.reduce((n, s) => n + s.stats.deploying, 0),
-    waiting: sections.reduce((n, s) => n + s.stats.waiting, 0),
+    queued: sections.reduce((n, s) => n + s.stats.queued, 0),
     stopped: sections.reduce((n, s) => n + s.stats.stopped, 0),
     backupsOverdue: items.filter((i) => i.problem.group === "backups").length,
   };

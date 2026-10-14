@@ -61,7 +61,7 @@ export function deployMark(d: DeployRowInput, role: DeployRole, appStatus: strin
   if (d.status === "rolled_back") return mark("warn", "Rolled back");
   if (d.status === "cancelled") return mark("stopped", "Cancelled");
   if (d.postDeployError) return mark("warn", "Post-deploy incomplete");
-  return mark("neutral", "Superseded");
+  return mark("neutral", "Replaced");
 }
 
 /** What went wrong, for a row that has a problem. Null when nothing did. */

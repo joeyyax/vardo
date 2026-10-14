@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress, useDeployStream } from "@/components/deploy-progress";
-import { activeDeploy, deployWaitOf, seedWait, waitLabel } from "@/lib/ui/deploy-wait";
+import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
 import { FixButton, type FixTarget, type RunAction } from "@/components/fix-action";
@@ -21,7 +21,6 @@ import { SERVICE_KIND_LABEL } from "@/lib/ui/service-kind";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import {
   appsIn,
-  heldDeployOf,
   issueGroups,
 
   markSubject,
@@ -115,16 +114,16 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const app = loc.node.app;
   const running = activeDeploy(app.deployments);
   const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id });
-  const stream = { ...live, wait: seedWait(live.wait, heldDeployOf(app)) };
-  const waiting = deployWaitOf(stream, running?.status) !== null;
+  const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
+  const view = running ? streamView(stream, running) : null;
   return (
     <div
       onClick={() => ctx.jump(app.name)}
       className="squircle grid cursor-pointer gap-2.5 rounded-md bg-background-deep p-3.5 has-[[data-panel-item]:focus-visible]:outline-2 has-[[data-panel-item]:focus-visible]:outline-offset-1 has-[[data-panel-item]:focus-visible]:outline-brass"
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className={waiting ? undefined : "motion-safe:animate-pulse"}>
-          <StatusMark tone={waiting ? "neutral" : "info"} pending />
+        <span className={view?.tone === "info" ? "motion-safe:animate-pulse" : undefined}>
+          <StatusMark tone={view?.tone ?? "info"} pending />
         </span>
         <EntityLink href={appHref(app.name)} className="font-semibold">
           {app.displayName}
@@ -146,6 +145,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           deploymentId={running?.id}
           startedAt={running?.startedAt ?? new Date()}
           status={running?.status}
+          preparing={!!running?.request?.held}
           typicalMs={typicalElapsedMs(app.deployments)}
         />
       </div>
@@ -329,8 +329,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const related = relatedOf(loc, ctx.sections);
   const running = activeDeploy(app.deployments);
   const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id, enabled: !!running });
-  const stream = { ...live, wait: seedWait(live.wait, heldDeployOf(app)) };
-  const wait = running ? deployWaitOf(stream, running.status) : null;
+  const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
+  const view = running ? streamView(stream, running) : null;
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
   const primaryLabel = stopped ? "Start" : node.relation === "service" ? "Restart" : "Deploy";
 
@@ -338,7 +338,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
     <>
       <div className="flex items-baseline gap-2 text-sm">
         <span className="translate-y-px">
-          {!p && wait ? <StatusMark tone="neutral" pending /> : <StatusMark tone={mark.tone} pending={mark.pending} />}
+          {!p && view ? <StatusMark tone={view.tone} pending /> : <StatusMark tone={mark.tone} pending={mark.pending} />}
         </span>
         <span className="grid gap-0.5">
           {p ? (
@@ -358,9 +358,11 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
             <span className="text-muted-foreground">
               <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
             </span>
-          ) : wait ? (
-            <span className="text-muted-foreground">{waitLabel(wait)}</span>
-          ) : app.status === "deploying" ? (
+          ) : view && view.label !== "Deploying" ? (
+            <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"} title={view.why}>
+              {view.label}
+            </span>
+          ) : app.status === "deploying" || view ? (
             <span className="text-status-info">
               <Term id="deploying">Deploying</Term>
             </span>
@@ -558,7 +560,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
                         : "ml-auto text-muted-foreground/70"
                   }
                 >
-                  {d.status === "success" ? (i === 0 ? "live" : "") : d.status.replace("_", " ")}
+                  {d.status === "success" ? (i === 0 ? "live" : "") : d.status === "superseded" ? "replaced" : d.status === "running" ? "deploying" : d.status.replace("_", " ")}
                 </span>
               </Link>
             ))}

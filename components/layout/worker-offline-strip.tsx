@@ -10,9 +10,8 @@ export async function WorkerOfflineStrip() {
       <div className="container flex h-9 min-w-0 items-center gap-2.5">
         <Clock aria-hidden="true" className="size-4 shrink-0 text-status-warning" />
         <span className="truncate">
-          {waiting} {waiting === 1 ? "deploy is" : "deploys are"} waiting for the worker
+          Worker offline. {waiting} {waiting === 1 ? "deploy" : "deploys"} queued.
         </span>
-        <span className="hidden text-muted-foreground sm:inline">They start when it&apos;s back. Running apps aren&apos;t affected.</span>
       </div>
     </div>
   );

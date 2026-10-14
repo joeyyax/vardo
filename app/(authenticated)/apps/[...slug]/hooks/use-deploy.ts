@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { formatDuration } from "@/lib/metrics/format";
-import { applyWait, deployWaitOf, NO_WAIT, parseWaitEvent, rowHold, seedWait, streamIdMs, type WaitState } from "@/lib/ui/deploy-wait";
+import { applyWait, NO_WAIT, parseWaitEvent, rowHold, seedWait, streamIdMs, streamView, type WaitState } from "@/lib/ui/deploy-wait";
 
 import type { Deployment, RollbackPreview } from "../types";
 
@@ -16,7 +16,7 @@ export type StageTiming = { startedAt: number; endedAt?: number };
 /** Toast text for a deploy that ended without succeeding and without an error. */
 const TERMINAL_MESSAGES: Record<string, string> = {
   cancelled: "Deployment cancelled",
-  superseded: "Superseded by a newer deploy",
+  superseded: "Replaced by a newer deploy",
   rolled_back: "Deployment rolled back",
 };
 
@@ -483,8 +483,10 @@ export function useDeploy({
     deployStages,
     deployStageTimes,
     deployWait: seededWait,
-    /** The lock or queue holding the running deploy, or null while it works. */
-    deployHeld: deploying ? deployWaitOf({ wait: seededWait, stages: deployStages }, deployQueued ? "queued" : "running") : null,
+    /** How the deploy in flight reads, or null when none is. */
+    deployView: deploying
+      ? streamView({ wait: seededWait, stages: deployStages }, { status: deployQueued ? "queued" : "running", request: serverRunningDeploy?.request })
+      : null,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,

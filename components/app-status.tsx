@@ -136,7 +136,7 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
     case "success":
       return <Badge variant="success">Success</Badge>;
     case "running":
-      return <Badge variant="info" className="animate-pulse">Running</Badge>;
+      return <Badge variant="info" className="animate-pulse">Deploying</Badge>;
     case "failed":
       return <Badge variant="error">Failed</Badge>;
     case "rolled_back":
@@ -144,9 +144,9 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
     case "cancelled":
       return <Badge variant="neutral">Cancelled</Badge>;
     case "superseded":
-      return <Badge variant="neutral">Superseded</Badge>;
+      return <Badge variant="neutral">Replaced</Badge>;
     case "queued":
-      return <Badge variant="info">Queued</Badge>;
+      return <Badge variant="neutral">Queued</Badge>;
     default:
       return <Badge variant="neutral">{status}</Badge>;
   }

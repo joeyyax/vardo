@@ -114,7 +114,7 @@ export function ProjectsView({
 
   // Healthy projects start as one calm line.
   const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set(sections.filter((s) => s.stats.issues === 0 && s.stats.deploying === 0 && s.stats.waiting === 0 && s.nodes.length > 0).map((s) => s.project.id)),
+    () => new Set(sections.filter((s) => s.stats.issues === 0 && s.stats.deploying === 0 && s.stats.queued === 0 && s.nodes.length > 0).map((s) => s.project.id)),
   );
   const [openApps, setOpenApps] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
@@ -484,8 +484,8 @@ export function ProjectsView({
           : attention.loaded &&
             attentionStat("all", routine.routineFaults, routine.routineFaults === 1 ? "needs attention" : "need attention", routine.routineFaults ? "text-status-warning" : undefined)}
         {counts.deploying > 0
-          ? stat("deploying", counts.deploying, "deploying now", "text-status-info", counts.waiting > 0 ? `· ${counts.waiting} waiting` : undefined)
-          : counts.waiting > 0 && stat("deploying", counts.waiting, counts.waiting === 1 ? "deploy waiting" : "deploys waiting")}
+          ? stat("deploying", counts.deploying, counts.queued > 0 ? `deploying · ${counts.queued} queued` : "deploying", "text-status-info")
+          : counts.queued > 0 && stat("deploying", counts.queued, "queued")}
         {counts.stopped > 0 && stat("stopped", counts.stopped, "stopped")}
         {/* Org-wide lists; a project page counts its own above. */}
         {!project && backups > 0 && attentionStat({ group: "backups" }, backups, backups === 1 ? "backup needs a look" : "backups need a look", "text-status-warning")}

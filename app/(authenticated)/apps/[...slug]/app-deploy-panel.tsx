@@ -588,6 +588,7 @@ export function AppDeployPanel({
                 cancelling={cancelRequested}
                 typicalElapsedMs={typicalMs}
                 queued={deployQueued}
+                preparing={!!serverRunningDeploy?.request?.held}
                 wait={deployWait}
               />
             )}

@@ -4,14 +4,13 @@ import {
   applyWait,
   deployClock,
   deployWaitOf,
-  holdLabel,
+  deployCardText,
+  deployView,
   NO_WAIT,
   parseWaitEvent,
   rowHold,
   seedWait,
   streamIdMs,
-  waitLabel,
-  waitWord,
   type WaitEvent,
   type WaitState,
 } from "@/lib/ui/deploy-wait";
@@ -201,16 +200,10 @@ describe("row waits", () => {
     expect(rowHold(row("queued", "disk"))?.reason).toBeNull();
   });
 
-  it("labels a held row", () => {
-    expect(holdLabel({ reason: null, since: null, queued: true })).toBe("Deploy queued");
-    expect(holdLabel({ reason: "worker", since: null, queued: true })).toBe("Waiting for the worker to come back");
-  });
-
   it("counts the queue from the row's place in line", () => {
     const hold = rowHold({ status: "queued", waitReason: "deploy-slot", waitingSince: null, waitAhead: 3, waitTotal: 5 });
     expect(hold).toMatchObject({ ahead: 3, total: 5 });
-    expect(holdLabel(hold!)).toBe("Queued (4 of 5)");
-    expect(holdLabel(rowHold({ status: "queued", waitReason: "deploy-slot", waitAhead: 3 })!)).toBe("Queued (4)");
+    expect(rowHold({ status: "queued", waitReason: "deploy-slot", waitAhead: 3 })).toMatchObject({ ahead: 3 });
     expect(rowHold({ status: "queued", waitReason: null, waitAhead: 3 })?.ahead).toBeUndefined();
   });
 
@@ -223,30 +216,78 @@ describe("row waits", () => {
   });
 });
 
-describe("waitLabel", () => {
-  const label = (reason: Parameters<typeof waitLabel>[0]["reason"], ahead?: number, total?: number) => waitLabel({ reason, ahead, total });
+describe("deployView", () => {
+  type Wait = Parameters<typeof deployView>[0]["wait"];
+  const view = (queued: boolean, wait: Wait, started = false, preparing = false) => deployView({ queued, wait, started, preparing });
 
-  it("places a deploy in its queue as X of Y", () => {
-    expect(label("deploy-slot", 1, 3)).toBe("Queued (2 of 3)");
-    expect(label("deploy-slot", 0, 1)).toBe("Queued (1 of 1)");
-    expect(label("build-slot", 2, 4)).toBe("Queued for the builder (3 of 4)");
+  it("reads a held request as preparing", () => {
+    expect(view(true, null, false, true)).toMatchObject({ word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" });
   });
 
-  it("drops what it doesn't know", () => {
-    expect(label("deploy-slot", 1)).toBe("Queued (2)");
-    expect(label("deploy-slot")).toBe("Queued");
-    expect(label("build-slot")).toBe("Queued for the builder");
+  it("marks only a missing worker amber", () => {
+    expect(view(true, { reason: "worker" })).toMatchObject({ word: "Queued", label: "Queued", tone: "warn", why: "The worker is offline" });
+    expect(view(true, { reason: "app" })).toMatchObject({ label: "Queued", tone: "neutral", why: "This app is already deploying" });
+    expect(view(true, { reason: "exclusive" })).toMatchObject({ label: "Queued", tone: "neutral", why: "Vardo is updating" });
+    expect(view(true, null)).toMatchObject({ word: "Queued", label: "Queued", tone: "neutral" });
+  });
+
+  it("places a deploy in the slot queue as X of Y", () => {
+    expect(view(true, { reason: "deploy-slot", ahead: 2, total: 5 }).label).toBe("Queued (3 of 5)");
+    expect(view(true, { reason: "deploy-slot", ahead: 2 }).label).toBe("Queued (3)");
+    expect(view(true, { reason: "deploy-slot" }).label).toBe("Queued");
     // A total smaller than the place is stale; the place alone still holds.
-    expect(label("deploy-slot", 4, 2)).toBe("Queued (5)");
+    expect(view(true, { reason: "deploy-slot", ahead: 4, total: 2 }).label).toBe("Queued (5)");
   });
 
-  it("keeps sentences for waits that aren't a line", () => {
-    expect(label("app", 2, 3)).toBe("Queued behind this app's running deploy");
-    expect(label("checkout")).toBe("Waiting for another deploy's checkout");
-    expect(label("worker")).toBe("Waiting for the worker to come back");
-    expect(label("exclusive")).toBe("Waiting for Vardo's own update to finish");
-    expect(label(null)).toBe("Queued");
-    expect(waitWord("worker")).toBe("Queued");
-    expect(waitWord("exclusive")).toBe("Queued");
+  it("keeps a deploy queued to build counted as deploying", () => {
+    expect(view(false, { reason: "build-slot", ahead: 1, total: 3 }, true)).toMatchObject({
+      word: "Deploying",
+      label: "Queued to build (2 of 3)",
+      tone: "neutral",
+      held: "build",
+    });
+    expect(view(false, { reason: "checkout" }, true)).toMatchObject({ word: "Deploying", label: "Queued to clone", held: "clone" });
   });
+
+  it("starts, then deploys", () => {
+    expect(view(false, null, false)).toMatchObject({ word: "Starting", tone: "info" });
+    expect(view(false, null, true)).toMatchObject({ word: "Deploying", label: "Deploying", tone: "info" });
+  });
+
+  it("never says waiting", () => {
+    const reasons = ["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive", null] as const;
+    for (const reason of reasons) {
+      for (const queued of [true, false]) expect(view(queued, { reason, ahead: 0, total: 2 }, !queued).label).not.toMatch(/wait/i);
+    }
+  });
+});
+
+describe("deployCardText", () => {
+  const working = { wait: null, waitedMs: 119_000, workingMs: 145_000 };
+
+  it("gives the estimate with what's done so far and what was spent queued", () => {
+    const text = deployCardText(view0(), working, { now: T0, typicalMs: 277_000, started: true });
+    expect(text).toEqual({ line: "About 2m 12s left · last deploy took 4m 37s", meta: "2m 25s so far · queued 1m 59s first" });
+  });
+
+  it("owns the held step's line and time", () => {
+    const held = { wait: { reason: "build-slot" as const, ahead: 1, total: 3, since: T0 - 168_000 }, waitedMs: 168_000, workingMs: 50_000 };
+    const v = deployView({ queued: false, wait: held.wait, started: true });
+    expect(deployCardText(v, held, { now: T0, typicalMs: 277_000, started: true })).toEqual({
+      line: "Queued to build (2 of 3) · 2m 48s",
+      meta: "50s so far",
+    });
+  });
+
+  it("says when it's running long", () => {
+    const late = { wait: null, waitedMs: 0, workingMs: 300_000 };
+    expect(deployCardText(view0(), late, { now: T0, typicalMs: 277_000, started: true })).toEqual({
+      line: "Taking longer than last time",
+      meta: "5m 0s so far",
+    });
+  });
+
+  function view0() {
+    return deployView({ queued: false, wait: null, started: true });
+  }
 });

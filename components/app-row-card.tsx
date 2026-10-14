@@ -97,7 +97,7 @@ export function AppRowCard({
         <span className="truncate font-medium text-foreground">{app.displayName}</span>
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(app.status)}`} />
-          {deploy?.status === "queued" && app.status !== "deploying" ? "Deploy queued" : (STATUS_LABEL[app.status] ?? app.status)}
+          {deploy?.status === "queued" && app.status !== "deploying" ? "Queued" : (STATUS_LABEL[app.status] ?? app.status)}
         </span>
       </div>
 

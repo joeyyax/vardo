@@ -31,7 +31,7 @@ import { DependencySelector } from "./dependency-selector";
 import { TabLink } from "@/components/tab-link";
 import { quietLinkClass } from "@/components/entity-link";
 import { StatusMark } from "@/components/ui/status-dot";
-import { waitLabel, waitWord, type ActiveWait } from "@/lib/ui/deploy-wait";
+import type { DeployView } from "@/lib/ui/deploy-wait";
 import { appHref, deployHref, imageUrl } from "@/lib/ui/hrefs";
 import { AppUpdateStat } from "./app-updates";
 import { useNow } from "./app-stability";
@@ -83,7 +83,7 @@ export function AppHeader({
   stack,
   stackUptimeSince,
   deployStage,
-  deployWait,
+  deployView,
   stabilityIncidents = [],
   restarts = null,
 }: {
@@ -105,8 +105,8 @@ export function AppHeader({
   stackUptimeSince?: Date | null;
   /** Phase word of a running deploy — "Build", "Health", "Route". */
   deployStage?: string | null;
-  /** What a waiting deploy is waiting for, like "Queued (2 of 3)". */
-  deployWait?: ActiveWait | null;
+  /** How the deploy in flight reads, or null when none is. */
+  deployView?: DeployView | null;
 }) {
   const router = useRouter();
 
@@ -171,7 +171,6 @@ export function AppHeader({
     incidents: stabilityIncidents,
     trend,
     restarts,
-    deployHeld: deployWait ? waitWord(deployWait.reason) : null,
   });
   const cue = stabilityCue(trend, restarts);
 
@@ -342,16 +341,15 @@ export function AppHeader({
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <HeaderStat label="Status">
           {/* A deploy replaces the roll-up. */}
-          {deployWait ? (
-            <span className="flex items-center gap-1.5">
-              <StatusMark tone="neutral" pending />
-              {waitLabel(deployWait)}
+          {deployView && deployView.word !== "Deploying" ? (
+            <span className={`flex items-center gap-1.5 ${deployView.tone === "info" ? "text-status-info" : ""}`} title={deployView.why}>
+              <StatusMark tone={deployView.tone} pending />
+              {deployView.word}
             </span>
-          ) : isDeploying ? (
+          ) : isDeploying || deployView ? (
             <span className="flex items-center gap-1.5 text-status-info">
               <span aria-hidden="true" className="size-2 rounded-full bg-current animate-pulse" />
               Deploying
-              {deployStage && <span className="text-muted-foreground">· {deployStage}</span>}
             </span>
           ) : stack ? (
             <RollupStatus rollup={stack} noun="service" />

@@ -6,16 +6,14 @@ import { StatusMark } from "@/components/ui/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
-import { formatDuration, formatUptime } from "@/lib/metrics/format";
 import { useNow } from "@/components/deploy-progress";
 import { Timer } from "./timer";
 import {
   DEPLOY_STAGE_KEYS,
   ROLLBACK_STAGE_KEYS,
   STAGE_LABELS,
-  stageProgress,
 } from "@/lib/ui/deploy-stage";
-import { deployClockOf, NO_WAIT, waitLabel, waitWord, type WaitState } from "@/lib/ui/deploy-wait";
+import { deployCardText, deployClockOf, deployView, NO_WAIT, queuedStep, type WaitState } from "@/lib/ui/deploy-wait";
 import type { StageTiming } from "./hooks/use-deploy";
 import { Card } from "@/components/ui/card";
 
@@ -26,6 +24,7 @@ const STAGE_STATUS_WORDS: Record<string, string> = {
   failed: "failed",
   skipped: "skipped",
   pending: "pending",
+  held: "queued",
 };
 
 export function InProgressDeployCard({
@@ -41,6 +40,7 @@ export function InProgressDeployCard({
   trigger,
   typicalElapsedMs,
   queued,
+  preparing = false,
   wait = NO_WAIT,
 }: {
   stages: Record<string, "running" | "success" | "failed" | "skipped">;
@@ -58,18 +58,21 @@ export function InProgressDeployCard({
   typicalElapsedMs?: number | null;
   /** Waiting for an executor to claim it; `startTime` is when it queued. */
   queued?: boolean;
+  /** Created but not released to the queue yet. */
+  preparing?: boolean;
   /** Waits from the deploy stream. */
   wait?: WaitState;
 }) {
   const now = useNow(1000);
-  const clock = startTime && now !== null ? deployClockOf({ wait, stages }, { startedAt: startTime, status: queued ? "queued" : undefined, now }) : null;
-  const held = clock?.wait ?? null;
   const hasStages = Object.keys(stages).length > 0;
+  const clock = startTime && now !== null ? deployClockOf({ wait, stages }, { startedAt: startTime, status: queued ? "queued" : undefined, now }) : null;
+  const view = deployView({ queued: !!queued && !hasStages, preparing, wait: clock?.wait ?? null, started: hasStages });
+  const text = clock && now !== null ? deployCardText(view, clock, { now, typicalMs: typicalElapsedMs ?? null, started: hasStages }) : null;
   // The phases in the stream name the run: only a rollback reports rollback phases.
   const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
   const stageKeys = isRollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS;
+  const first = queuedStep(view, hasStages);
   const noun = isRollback ? "Rollback" : "Deployment";
-  const progress = stageProgress(stages, stageKeys);
   const runningStage = stageKeys.find((s) => stages[s] === "running");
   const failedStage = stageKeys.find((s) => stages[s] === "failed");
   const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
@@ -78,14 +81,18 @@ export function InProgressDeployCard({
     ? `${noun} failed at ${STAGE_LABELS[failedStage]} stage`
     : allDone
       ? `${noun} completed successfully`
-      : held
-        ? waitLabel(held)
+      : view.tone !== "info"
+        ? view.label
         : runningStage
-        ? `${isRollback ? "Rolling back" : "Deploying"}: ${STAGE_LABELS[runningStage]} in progress`
-        : "";
+          ? `${isRollback ? "Rolling back" : "Deploying"}: ${STAGE_LABELS[runningStage]} in progress`
+          : "";
+  const steps: { key: string; label: string; status?: string }[] = [
+    ...(isRollback ? [] : [{ key: "queued", label: first.label, status: first.state === "done" ? "success" : first.state === "now" ? "running" : "held" }]),
+    ...stageKeys.map((s) => ({ key: s, label: STAGE_LABELS[s], status: stages[s] === "running" && view.held === s ? "held" : stages[s] })),
+  ];
 
   return (
-    <Card variant="surface" className={`${held ? "bg-status-neutral-muted" : "bg-status-info-muted"} overflow-hidden`}>
+    <Card variant="surface" className={`${view.tone === "info" ? "bg-status-info-muted" : "bg-status-neutral-muted"} overflow-hidden`}>
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
       {/* The row is a mouse target; the chevron button is the control, so Abort isn't nested in one. */}
       <div
@@ -93,40 +100,44 @@ export function InProgressDeployCard({
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          {held && !cancelling ? (
-            <Badge variant="neutral" className="shrink-0">{waitWord(held.reason)}</Badge>
+          {view.tone !== "info" && !cancelling ? (
+            <Badge variant={view.tone === "warn" ? "warning" : "neutral"} className="shrink-0" title={view.why}>
+              {view.word}
+            </Badge>
           ) : (
             <Badge variant="info" className="animate-pulse shrink-0">
               <Loader2 className="mr-1 size-3 animate-spin" />
-              {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
+              {cancelling ? "Cancelling" : isRollback ? "Rolling back" : view.word}
             </Badge>
           )}
-          {/* Only the phase in flight carries color. No phases run while queued. */}
-          <div className={`items-center gap-1.5 flex-wrap ${queued ? "hidden" : "flex"}`}>
-            {stageKeys.map((s, i) => {
-              const status = stages[s];
-              const timing = stageTimes?.[s];
-              const running = status === "running" && !held;
-              const waiting = status === "running" && !!held;
+          {/* Only the phase in flight carries color. */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {steps.map(({ key, label, status }, i) => {
+              const timing = stageTimes?.[key];
+              const running = status === "running";
+              const held = status === "held";
               const failed = status === "failed";
               return (
-                <div key={s} className="flex items-center gap-1">
+                <div key={key} className="flex items-center gap-1">
                   {i > 0 && <span className="text-muted-foreground/25 text-xs">·</span>}
                   {running && <Loader2 className="size-3 animate-spin text-status-info" />}
                   {failed && <X className="size-3 text-status-error" />}
                   {status === "success" && <Check className="size-3 text-status-success" />}
-                  {waiting && <StatusMark tone="neutral" pending />}
-                  <span className={`text-xs transition-colors duration-300 ${
-                    failed ? "text-status-error font-medium" :
-                    running ? "text-status-info font-medium" :
-                    waiting ? "text-foreground font-medium" :
-                    status === "skipped" ? "text-muted-foreground/50 line-through" :
-                    status ? "text-muted-foreground" :
-                    "text-muted-foreground/40"
-                  }`}>
-                    {STAGE_LABELS[s]}
+                  {held && <StatusMark tone={view.tone === "warn" ? "warn" : "neutral"} pending />}
+                  <span
+                    title={held ? view.why : undefined}
+                    className={`text-xs transition-colors duration-300 ${
+                      failed ? "text-status-error font-medium" :
+                      running ? "text-status-info font-medium" :
+                      held ? "text-foreground font-medium" :
+                      status === "skipped" ? "text-muted-foreground/50 line-through" :
+                      status ? "text-muted-foreground" :
+                      "text-muted-foreground/40"
+                    }`}
+                  >
+                    {label}
                   </span>
-                  <span className="sr-only">{waiting ? "waiting" : STAGE_STATUS_WORDS[status ?? "pending"]}</span>
+                  <span className="sr-only">{STAGE_STATUS_WORDS[status ?? "pending"]}</span>
                   {running && timing && (
                     <Timer since={timing.startedAt} className="text-xs text-status-info/70" />
                   )}
@@ -134,26 +145,15 @@ export function InProgressDeployCard({
               );
             })}
           </div>
-          {!hasStages && trigger && !held && (
+          {!hasStages && trigger && view.word === "Deploying" && (
             <span className="text-xs text-foreground/60 capitalize">{trigger} deploy in progress...</span>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {clock && (
-            <span className="text-xs text-foreground/50 tabular-nums">
-              {held ? (
-                <>
-                  <span className="text-foreground/70">{waitLabel(held)}</span>
-                  {` · ${formatUptime(Math.min(now! - held.since, clock.waitedMs) / 1000)}`}
-                </>
-              ) : (
-                <>
-                  {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
-                  {formatUptime(clock.workingMs / 1000)}
-                  {typicalElapsedMs ? ` / usually ${formatDuration(typicalElapsedMs)}` : ""}
-                  {clock.waitedMs >= 1000 && ` · waited ${formatUptime(clock.waitedMs / 1000)}`}
-                </>
-              )}
+          {text && (
+            <span className="text-xs tabular-nums" title={view.why}>
+              <span className="text-foreground/70">{text.line}</span>
+              {text.meta && <span className="text-foreground/50"> · {text.meta}</span>}
             </span>
           )}
           {canAbort && onAbort && (

@@ -1,6 +1,7 @@
 // Time a deploy spends waiting on locks and queues, from the deploy stream's wait events.
 
 import type { WaitReason } from "@/lib/docker/deploy-logger";
+import type { StatusMarkState } from "@/lib/ui/status-colors";
 
 export type { WaitReason };
 
@@ -125,11 +126,6 @@ export function seedWait(state: WaitState, hold: HeldDeploy | null): WaitState {
   return { ...state, current: { reason: hold.reason, ahead: hold.ahead, total: hold.total, since: hold.since } };
 }
 
-/** A held deploy in a few words, for a list row. */
-export function holdLabel(hold: HeldDeploy): string {
-  return hold.reason ? waitLabel(hold) : "Deploy queued";
-}
-
 /** The deploy to show from a newest-first list: the running one, else the first in line. */
 export function activeDeploy<D extends { status: string }>(deployments: D[]): D | null {
   return deployments.find((d) => d.status === "running") ?? deployments.findLast((d) => d.status === "queued") ?? null;
@@ -156,27 +152,108 @@ export function queuePlace({ ahead, total }: QueuePlace): string {
   return total != null && total >= place ? ` (${place} of ${total})` : ` (${place})`;
 }
 
-/** What a waiting deploy is waiting for, in a few words. */
-export function waitLabel({ reason, ...place }: QueuePlace & { reason: WaitReason | null }): string {
-  switch (reason) {
-    case "deploy-slot":
-      return `Queued${queuePlace(place)}`;
-    case "app":
-      return "Queued behind this app's running deploy";
-    case "build-slot":
-      return `Queued for the builder${queuePlace(place)}`;
-    case "checkout":
-      return "Waiting for another deploy's checkout";
-    case "worker":
-      return "Waiting for the worker to come back";
-    case "exclusive":
-      return "Waiting for Vardo's own update to finish";
-    default:
-      return "Queued";
+/** Queued before work starts, Deploying once it has. */
+export type DeployWord = "Preparing" | "Queued" | "Starting" | "Deploying";
+
+export type DeployView = {
+  word: DeployWord;
+  /** The row label and the card's line. */
+  label: string;
+  /** Mark color: amber only when no worker is running. */
+  tone: "neutral" | "warn" | "info";
+  /** Why a plain Queued is queued. */
+  why?: string;
+  /** The strip step shown held. */
+  held?: "queued" | "clone" | "build";
+};
+
+const WHY: Partial<Record<WaitReason, string>> = {
+  worker: "The worker is offline",
+  exclusive: "Vardo is updating",
+  app: "This app is already deploying",
+  checkout: "Another deploy of this app is using its checkout",
+};
+
+/** How an in-flight deploy reads, from its status, the request's hold, what it waits on and whether a phase has started. */
+export function deployView({
+  queued,
+  preparing = false,
+  wait,
+  started,
+}: {
+  queued: boolean;
+  preparing?: boolean;
+  wait: (QueuePlace & { reason: WaitReason | null }) | null;
+  started: boolean;
+}): DeployView {
+  const reason = wait?.reason ?? null;
+  if (reason === "build-slot") return { word: "Deploying", label: `Queued to build${queuePlace(wait!)}`, tone: "neutral", held: "build" };
+  if (reason === "checkout") return { word: "Deploying", label: "Queued to clone", tone: "neutral", why: WHY.checkout, held: "clone" };
+  if (queued || reason) {
+    if (preparing) return { word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" };
+    const label = reason === "deploy-slot" ? `Queued${queuePlace(wait!)}` : "Queued";
+    return { word: "Queued", label, tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
   }
+  if (!started) return { word: "Starting", label: "Starting", tone: "info" };
+  return { word: "Deploying", label: "Deploying", tone: "info" };
 }
 
-/** The one-word status for a waiting deploy: queued before it runs, waiting once it has. */
-export function waitWord(reason: WaitReason | null): "Queued" | "Waiting" {
-  return reason === "build-slot" || reason === "checkout" ? "Waiting" : "Queued";
+/** How a deploy reads from its open stream, with the row filling in until the stream reports. */
+export function streamView(
+  stream: { wait: WaitState; stages: Record<string, string> },
+  row: { status: string; request?: { held?: boolean } | null },
+): DeployView {
+  const started = Object.keys(stream.stages).length > 0;
+  return deployView({
+    queued: row.status === "queued" && !started,
+    preparing: !!row.request?.held,
+    wait: deployWaitOf(stream, row.status),
+    started,
+  });
+}
+
+/** A ring in the view's tone: gray queued, amber with no worker, blue deploying. */
+export function deployMarkOf(view: DeployView): StatusMarkState {
+  return { tone: view.tone, pending: true, label: view.word };
+}
+
+/** Before work starts: counted as queued rather than deploying. */
+export function isQueuedView(view: DeployView): boolean {
+  return view.word === "Queued" || view.word === "Preparing";
+}
+
+/** "2m 48s", "45s". */
+export function formatSpan(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(s / 60);
+  return m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+
+/** The deploy card's line and meta, the same on the app page and the projects panel. */
+export function deployCardText(
+  view: DeployView,
+  clock: DeployClock,
+  { now, typicalMs, started }: { now: number; typicalMs: number | null; started: boolean },
+): { line: string; meta: string | null } {
+  const soFar = started ? `${formatSpan(clock.workingMs)} so far` : null;
+  if (clock.wait) {
+    const held = Math.min(now - clock.wait.since, clock.waitedMs);
+    return { line: `${view.label} · ${formatSpan(held)}`, meta: soFar };
+  }
+  if (view.word === "Starting") return { line: "Starting", meta: null };
+  const line =
+    typicalMs === null
+      ? "No earlier deploy to judge by"
+      : clock.workingMs < typicalMs
+        ? `About ${formatSpan(typicalMs - clock.workingMs)} left · last deploy took ${formatSpan(typicalMs)}`
+        : "Taking longer than last time";
+  const queued = clock.waitedMs >= 1000 ? ` · queued ${formatSpan(clock.waitedMs)} first` : "";
+  return { line, meta: `${formatSpan(clock.workingMs)} so far${queued}` };
+}
+
+/** The strip's first step: its label until cloning starts, then done. */
+export function queuedStep(view: DeployView, started: boolean): { label: string; state: "done" | "held" | "now" } {
+  if (started) return { label: "Queued", state: "done" };
+  if (view.word === "Starting") return { label: "Starting", state: "now" };
+  return { label: view.label, state: "held" };
 }

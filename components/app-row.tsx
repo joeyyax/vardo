@@ -7,6 +7,7 @@ import { CircleDashed, Cpu, Package, ShieldCheck } from "lucide-react";
 import { type AppCondition } from "@/lib/docker/conditions";
 import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
+import type { DeployView } from "@/lib/ui/deploy-wait";
 import {
   compactUptime,
   primaryDomain,
@@ -50,6 +51,8 @@ export type AppRowApp = {
 };
 
 export type { RowNote };
+
+const DEPLOY_DOT: Record<DeployView["tone"], string> = { neutral: "bg-status-neutral", warn: "bg-status-warning", info: "bg-status-info" };
 
 // Client-only so server and client never disagree.
 function RowUptime({ since }: { since: Date | string }) {
@@ -98,7 +101,7 @@ export function AppRow({
   connector,
   related = false,
   trailing,
-  held,
+  deploy,
   ref,
   ...rest
 }: {
@@ -116,8 +119,8 @@ export function AppRow({
   related?: boolean;
   /** Controls that must stay clickable, stacked above the row link. */
   trailing?: React.ReactNode;
-  /** What a queued or waiting deploy is held on, said in place of the status word. */
-  held?: string | null;
+  /** A deploy in flight, said in place of the status word. */
+  deploy?: DeployView | null;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   // An operator-stopped row keeps its rail off.
@@ -155,13 +158,15 @@ export function AppRow({
         )}
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
-        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${held && app.status === "deploying" ? "bg-status-neutral" : statusDotColor(app.status)}`} />
+        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${deploy ? DEPLOY_DOT[deploy.tone] : statusDotColor(app.status)}`} />
         <span className={ROW_NAME_CELL}>{app.displayName}</span>
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
-        {held ? (
-          <span className="shrink-0 font-normal text-muted-foreground">{held}</span>
+        {deploy ? (
+          <span className={`shrink-0 font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`} title={deploy.why}>
+            {deploy.label}
+          </span>
         ) : (
           word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>
         )}

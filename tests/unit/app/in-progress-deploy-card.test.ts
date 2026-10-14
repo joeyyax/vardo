@@ -24,21 +24,32 @@ describe("InProgressDeployCard", () => {
   it("shows a queued deploy as queued, never deploying", () => {
     const html = render({ queued: true });
     expect(html).toContain("Queued");
-    expect(html).toContain("waiting");
     expect(html).toContain("Cancel");
     expect(html).not.toContain("Deploying");
+    expect(html).not.toContain("Waiting");
     expect(html).not.toContain("Abort");
     expect(html).not.toContain("animate-spin");
     expect(html).not.toContain("in progress");
-    expect(html).toMatch(/class="items-center gap-1.5 flex-wrap hidden"/);
   });
 
-  it("shows a running deploy as deploying", () => {
+  it("names a held request as preparing", () => {
+    const html = render({ queued: true, preparing: true });
+    expect(html).toContain("Preparing");
+    expect(html).not.toContain("Deploying");
+  });
+
+  it("shows a running deploy as deploying with the queued step ticked off", () => {
     const html = render({ queued: false, stages: { clone: "running" } });
     expect(html).toContain("Deploying");
     expect(html).toContain("Abort");
     expect(html).toContain("animate-spin");
-    expect(html).not.toContain("Queued");
+    expect(html).toMatch(/Queued<\/span><span class="sr-only">done/);
+  });
+
+  it("shows a claimed deploy with no phase yet as starting", () => {
+    const html = render({ queued: false });
+    expect(html).toContain("Starting");
+    expect(html).not.toContain("Queued<");
   });
 });
 

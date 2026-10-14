@@ -32,6 +32,8 @@ export type Deployment = {
   /** Place in line while queued for a slot, and how many wait in that queue. */
   waitAhead?: number | null;
   waitTotal?: number | null;
+  /** `held` while the requester prepares it. */
+  request?: { held?: boolean } | null;
   triggeredByUser: {
     id: string;
     name: string | null;

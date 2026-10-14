@@ -7,7 +7,7 @@ import {
   buildSections,
   buildTree,
   fleetCounts,
-  heldDeployOf,
+  deployViewOf,
   issueGroups,
   markSubject,
   sortNodes,
@@ -177,8 +177,8 @@ describe("issueGroups", () => {
   });
 });
 
-describe("waiting deploys", () => {
-  const deploy = (status: string, waitReason: string | null = null) => ({
+describe("deploys in flight", () => {
+  const deploy = (status: string, waitReason: string | null = null, held = false) => ({
     id: status,
     status,
     trigger: "manual",
@@ -188,10 +188,11 @@ describe("waiting deploys", () => {
     durationMs: null,
     waitReason,
     waitingSince: waitReason ? "2026-10-01T00:01:00.000Z" : null,
+    request: held ? { held: true } : null,
   });
   const project = { id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null };
 
-  it("counts deploys held on a queue or lock apart from those at work", () => {
+  it("counts deploys that haven't started apart from those that have", () => {
     const sections = buildSections(
       [project],
       [
@@ -199,21 +200,23 @@ describe("waiting deploys", () => {
         app("b-queued", { deployments: [deploy("queued", "deploy-slot"), deploy("success")] }),
         // Queued behind its own running deploy: the running one is at work.
         app("c-both", { status: "deploying", deployments: [deploy("queued", "app"), deploy("running")] }),
-        // Running, but held for the builder.
+        // Started, then queued to build: still deploying.
         app("d-builder", { status: "deploying", deployments: [deploy("running", "build-slot")] }),
-        app("e-idle", { deployments: [deploy("success")] }),
+        app("e-preparing", { deployments: [deploy("queued", null, true)] }),
+        app("f-idle", { deployments: [deploy("success")] }),
       ],
     );
-    expect(fleetCounts(sections)).toMatchObject({ deploying: 2, waiting: 2 });
-    const held = (name: string) => heldDeployOf(sections[0].nodes.find((n) => n.app.name === name)!.app);
-    expect(held("b-queued")).toMatchObject({ reason: "deploy-slot", queued: true });
-    expect(held("d-builder")).toMatchObject({ reason: "build-slot", queued: false });
-    expect(held("c-both")).toBeNull();
-    expect(held("a-running")).toBeNull();
+    expect(fleetCounts(sections)).toMatchObject({ deploying: 3, queued: 2 });
+    const label = (name: string) => deployViewOf(sections[0].nodes.find((n) => n.app.name === name)!.app)?.label;
+    expect(label("b-queued")).toBe("Queued");
+    expect(label("d-builder")).toBe("Queued to build");
+    expect(label("e-preparing")).toBe("Preparing");
+    expect(label("c-both")).toBe("Deploying");
+    expect(label("f-idle")).toBeUndefined();
   });
 
-  it("holds a queued row with no reason yet", () => {
-    expect(heldDeployOf({ deployments: [deploy("queued")] })).toMatchObject({ reason: null, queued: true });
+  it("reads a queued row with no reason yet as queued", () => {
+    expect(deployViewOf({ status: "active", deployments: [deploy("queued")] })).toMatchObject({ word: "Queued", label: "Queued" });
   });
 
   it("lists deploys at work before queued ones", () => {

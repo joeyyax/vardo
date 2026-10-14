@@ -22,7 +22,6 @@ import {
   Zap,
   type LucideIcon,
   ChevronsUpDown,
-  Hourglass,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -84,7 +83,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { activeDeploy, waitWord } from "@/lib/ui/deploy-wait";
+import { activeDeploy } from "@/lib/ui/deploy-wait";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import { RECOMMENDED_HEADERS } from "@/lib/security/response-headers";
@@ -183,7 +182,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     onDeployStarted: () => setActiveTab("deployments"),
     initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
-  const heldDeploy = deploy.deployHeld;
 
   const handleDeploy = deploy.handleDeploy;
 
@@ -382,12 +380,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   });
 
   const statusTrigger = (() => {
-    if (heldDeploy) {
-      return {
-        className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
-        content: <><Hourglass className="mr-1.5 size-3.5" />{waitWord(heldDeploy.reason)}</>,
-      };
-    }
     if (deploy.deploying || app.status === "deploying") {
       return {
         className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
@@ -501,15 +493,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {actions.length === 1 && actions[0].action === "deploy" ? (
-              <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
-                {deploy.deploying && deploy.deployQueued ? (
-                  "Queued"
-                ) : deploy.deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>
-                )}
+            {!isChildService && (deploy.deploying || app.status === "deploying") ? (
+              <Button size="sm" variant="outline" disabled={cancelling} onClick={() => void cancelDeploy()}>
+                <X className="mr-1.5 size-3.5" />
+                {cancelling ? "Cancelling..." : "Cancel"}
+              </Button>
+            ) : actions.length === 1 && actions[0].action === "deploy" ? (
+              <Button size="sm" onClick={handleDeploy}>
+                <Rocket className="mr-1.5 size-4" />
+                {app.status === "error" ? "Retry" : "Deploy"}
               </Button>
             ) : (
               <DropdownMenu>
@@ -686,7 +678,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
-        deployWait={heldDeploy}
+        deployView={deploy.deployView}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />
