@@ -37,6 +37,7 @@ export function InProgressDeployCard({
   cancelling,
   trigger,
   typicalElapsedMs,
+  queued,
 }: {
   stages: Record<string, "running" | "success" | "failed" | "skipped">;
   stageTimes?: Record<string, StageTiming>;
@@ -51,6 +52,8 @@ export function InProgressDeployCard({
   trigger?: string;
   /** End-to-end time of this app's last successful deploy, for comparison. */
   typicalElapsedMs?: number | null;
+  /** Waiting for an executor to claim it; `startTime` is when it queued. */
+  queued?: boolean;
 }) {
   const hasStages = Object.keys(stages).length > 0;
   // The phases in the stream name the run: only a rollback reports rollback phases.
@@ -71,7 +74,7 @@ export function InProgressDeployCard({
         : "";
 
   return (
-    <Card variant="surface" className="bg-status-info-muted overflow-hidden">
+    <Card variant="surface" className={`${queued ? "bg-status-neutral-muted" : "bg-status-info-muted"} overflow-hidden`}>
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
       {/* The row is a mouse target; the chevron button is the control, so Abort isn't nested in one. */}
       <div
@@ -79,12 +82,16 @@ export function InProgressDeployCard({
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <Badge variant="info" className="animate-pulse shrink-0">
-            <Loader2 className="mr-1 size-3 animate-spin" />
-            {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
-          </Badge>
-          {/* Only the phase in flight carries color. */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          {queued ? (
+            <Badge variant="neutral" className="shrink-0">Queued</Badge>
+          ) : (
+            <Badge variant="info" className="animate-pulse shrink-0">
+              <Loader2 className="mr-1 size-3 animate-spin" />
+              {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
+            </Badge>
+          )}
+          {/* Only the phase in flight carries color. No phases run while queued. */}
+          <div className={`items-center gap-1.5 flex-wrap ${queued ? "hidden" : "flex"}`}>
             {stageKeys.map((s, i) => {
               const status = stages[s];
               const timing = stageTimes?.[s];
@@ -112,12 +119,17 @@ export function InProgressDeployCard({
               );
             })}
           </div>
-          {!hasStages && trigger && (
+          {!hasStages && trigger && !queued && (
             <span className="text-xs text-foreground/60 capitalize">{trigger} deploy in progress...</span>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {startTime && (
+          {startTime && queued && (
+            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              <Timer since={startTime} /> waiting
+            </span>
+          )}
+          {startTime && !queued && (
             <span className="text-xs text-foreground/50 tabular-nums">
               {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
               <Timer since={startTime} />
@@ -132,7 +144,7 @@ export function InProgressDeployCard({
               onClick={(e) => { e.stopPropagation(); onAbort(); }}
             >
               <X className="mr-1 size-3" />
-              {cancelling ? "Cancelling..." : "Abort"}
+              {queued ? "Cancel" : cancelling ? "Cancelling..." : "Abort"}
             </Button>
           )}
           {log.length > 0 && (

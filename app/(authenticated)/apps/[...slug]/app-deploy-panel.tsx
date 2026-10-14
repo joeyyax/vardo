@@ -196,6 +196,7 @@ export function AppDeployPanel({
 }: AppDeployPanelProps) {
   const {
     deploying,
+    deployQueued,
     deployStages,
     deployStageTimes,
     deployLog,
@@ -543,7 +544,9 @@ export function AppDeployPanel({
               }
               action={
                 <Button size="sm" disabled={deploying} onClick={onDeploy}>
-                  {deploying ? (
+                  {deploying && deployQueued ? (
+                    "Queued"
+                  ) : deploying ? (
                     <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                   ) : (
                     <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
@@ -583,6 +586,7 @@ export function AppDeployPanel({
                 canAbort={!abortingDeploy}
                 cancelling={cancelRequested}
                 typicalElapsedMs={typicalMs}
+                queued={deployQueued}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (

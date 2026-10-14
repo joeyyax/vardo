@@ -17,6 +17,8 @@ export type TailHandlers = {
   onStage: (stage: string, status: string, meta: { streamId: string }) => void;
   /** Why the deploy hasn't started, each time that changes. */
   onWaiting?: (message: string) => void;
+  /** The row went queued or running, including a requeue after its executor stopped. */
+  onStatus?: (status: "queued" | "running") => void;
 };
 
 export type TailOpts = {
@@ -85,11 +87,18 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
   const pollMs = opts.pollMs ?? 1_000;
   const notice = opts.notice ?? (async (deploymentId: string) => (await import("@/lib/deploy/waiting")).queuedNotice(deploymentId));
   let lastNotice: string | null = null;
+  let lastStatus: string | null = null;
+  const noteStatus = (status: string) => {
+    if (status === lastStatus || (status !== "queued" && status !== "running")) return;
+    lastStatus = status;
+    handlers.onStatus?.(status as "queued" | "running");
+  };
 
   const waitWhileQueued = async (): Promise<Row | null> => {
     for (;;) {
       if (opts.signal?.aborted) return null;
       const row = await readRow(id);
+      if (row) noteStatus(row.status);
       if (!row || row.status !== "queued") return row;
       const message = await notice(id).catch(() => null);
       if (message && message !== lastNotice) {
@@ -115,6 +124,7 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
       if (reader.signal.aborted) return;
       const current = await readRow(id).catch(() => null);
       if (!current) continue;
+      noteStatus(current.status);
       if (TERMINAL.has(current.status)) {
         finished = current;
         await sleep(pollMs, reader.signal);

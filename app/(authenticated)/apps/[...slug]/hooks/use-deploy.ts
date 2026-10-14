@@ -68,6 +68,8 @@ export function useDeploy({
   }, []);
   const router = useRouter();
   const [deploying, setDeploying] = useState(false);
+  // Waiting for an executor to claim it; the stream's status events move it to running.
+  const [deployQueued, setDeployQueued] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<Record<string, StageStatus>>({});
@@ -106,6 +108,7 @@ export function useDeploy({
     setAttachedDeployId(attach ? runningDeployId : null);
     if (attach) {
       setDeploying(true);
+      setDeployQueued(serverRunningDeploy.status === "queued");
       setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
       setExpandedDeployLog(true);
     }
@@ -126,6 +129,13 @@ export function useDeploy({
         if (data.message) {
           setDeployLog((prev) => [...prev, data.message]);
         }
+      } catch { /* skip malformed */ }
+    });
+
+    es.addEventListener("status", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.status) setDeployQueued(data.status === "queued");
       } catch { /* skip malformed */ }
     });
 
@@ -191,6 +201,7 @@ export function useDeploy({
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
             }
+            if (dep?.status === "queued" || dep?.status === "running") setDeployQueued(dep.status === "queued");
             if (dep?.status && dep.status !== "running" && dep.status !== "queued") {
               if (dep.status === "success") {
                 toastDeployed(dep.durationMs, dep.postDeployError);
@@ -229,6 +240,7 @@ export function useDeploy({
   const runDeploy = useCallback(async (rebuild?: "force" | "no-cache") => {
     announce("");
     setDeploying(true);
+    setDeployQueued(true);
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
@@ -276,6 +288,8 @@ export function useDeploy({
             const data = JSON.parse(line.slice(6));
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
+            } else if (eventType === "status") {
+              setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
               recordStage(stage, status);
@@ -349,6 +363,7 @@ export function useDeploy({
     setRollbackPreview(null);
 
     setDeploying(true);
+    setDeployQueued(true);
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
@@ -400,6 +415,8 @@ export function useDeploy({
             const data = JSON.parse(line.slice(6));
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
+            } else if (eventType === "status") {
+              setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
               recordStage(stage, status);
@@ -435,6 +452,7 @@ export function useDeploy({
 
   return {
     deploying,
+    deployQueued,
     deployLog,
     deployStartTime,
     deployStages,
