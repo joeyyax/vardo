@@ -1,6 +1,6 @@
 // Builds the guard file from the database and writes it. Every writer renders the whole file from current rows.
 
-import { and, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, domains, probeBans, probeCanaries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -29,7 +29,7 @@ const log = logger.child("probe-guard");
 
 const MARKER_TTL_MS = 30 * 24 * 3_600_000;
 
-/** Guarded apps with their hosts. Children's domains count toward their parent. */
+/** Guarded apps with their hosts, in a stable order. Children's domains count toward their parent. */
 export async function loadGuardApps(): Promise<GuardApp[]> {
   const rows = await db
     .select({
@@ -37,7 +37,8 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
       parentAppId: apps.parentAppId,
       probeGuard: apps.probeGuard,
     })
-    .from(apps);
+    .from(apps)
+    .orderBy(asc(apps.id));
   const top = rows.filter((r) => !r.parentAppId);
   const parentOf = new Map(rows.map((r) => [r.id, r.parentAppId ?? r.id]));
   const instance = await getProbeGuardSettings();
@@ -45,7 +46,8 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
   const hostRows = await db
     .select({ appId: domains.appId, domain: domains.domain })
     .from(domains)
-    .where(and(isNull(domains.pathPrefix), eq(domains.enabled, true)));
+    .where(and(isNull(domains.pathPrefix), eq(domains.enabled, true)))
+    .orderBy(asc(domains.domain));
   const hosts = new Map<string, string[]>();
   for (const h of hostRows) {
     const owner = parentOf.get(h.appId);
@@ -57,7 +59,7 @@ export async function loadGuardApps(): Promise<GuardApp[]> {
     if (!guard.enabled) return [];
     return [{
       id: app.id,
-      hosts: hosts.get(app.id) ?? [],
+      hosts: (hosts.get(app.id) ?? []).sort(),
       exceptions: [...new Set([...instance.exceptions, ...guard.exceptions])],
       rules: guard.rules,
       blocks: [...instance.blocks, ...guard.blocks],
@@ -86,13 +88,13 @@ async function renderedBans(now: Date): Promise<{ ips: string[]; blocklist: Set<
       .select(columns)
       .from(probeBans)
       .where(and(active, ne(probeBans.reason, "blocklist")))
-      .orderBy(desc(sql`${probeBans.expiresAt} >= ${PERMANENT_UNTIL.toISOString()}::timestamptz`), desc(probeBans.createdAt))
+      .orderBy(desc(sql`${probeBans.expiresAt} >= ${PERMANENT_UNTIL.toISOString()}::timestamptz`), desc(probeBans.createdAt), asc(probeBans.ip))
       .limit(MAX_RENDERED_BANS),
     db
       .select(columns)
       .from(probeBans)
       .where(and(active, eq(probeBans.reason, "blocklist")))
-      .orderBy(desc(probeBans.hits), desc(probeBans.createdAt))
+      .orderBy(desc(probeBans.hits), desc(probeBans.createdAt), asc(probeBans.ip))
       .limit(MAX_RENDERED_BLOCKLIST),
   ]);
   return {
@@ -132,7 +134,7 @@ export async function activeMarkers(now = new Date()): Promise<string[]> {
     .select({ marker: probeCanaries.marker })
     .from(probeCanaries)
     .where(gt(probeCanaries.lastFetchedAt, new Date(now.getTime() - MARKER_TTL_MS)))
-    .orderBy(desc(probeCanaries.lastFetchedAt))
+    .orderBy(desc(probeCanaries.lastFetchedAt), asc(probeCanaries.marker))
     .limit(MAX_RENDERED_MARKERS);
   return rows.map((r) => r.marker);
 }
