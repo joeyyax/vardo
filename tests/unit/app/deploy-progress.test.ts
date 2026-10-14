@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DeployProgress, deploySteps, stagesUpTo } from "@/components/deploy-progress";
+import { DeployProgress, deploySteps, stagesUpTo, startNextConsequence } from "@/components/deploy-progress";
 import { deployView, NO_WAIT } from "@/lib/ui/deploy-wait";
 
 type Props = Parameters<typeof DeployProgress>[0];
@@ -114,5 +114,12 @@ describe("deploy streams", () => {
 
   it.each(routes)("%s tells the client when a deploy is queued or running", (route) => {
     expect(readFileSync(join(process.cwd(), route), "utf8")).toMatch(/onStatus: \(status\) => sendEvent\("status"/);
+  });
+});
+
+describe("startNextConsequence", () => {
+  it("counts the deploys it jumps", () => {
+    expect(startNextConsequence(2)).toBe("It starts before the 2 deploys ahead of it.");
+    expect(startNextConsequence(1)).toBe("It starts before the deploy ahead of it.");
   });
 });

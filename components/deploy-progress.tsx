@@ -137,9 +137,15 @@ function announcement(view: DeployView, wait: WaitState, steps: StripStep[], sta
   const phases = steps.filter((s) => s.key !== "queued");
   if (Object.keys(stages).length > 0 && phases.every((s) => s.state === "done")) return `${noun} completed successfully`;
   if (view.held && wait.current?.ahead != null) return lineLabel(view.held === "build" ? "build" : "deploy", { ahead: wait.current.ahead }, null);
+  if (view.held && view.why) return view.line ?? view.word;
   if (view.tone !== "info") return view.word;
   const now = steps.find((s) => s.state === "now" && s.key !== "queued");
   return now ? `${rollback ? "Rolling back" : "Deploying"}: ${now.label} in progress` : "";
+}
+
+/** What Start next does: "It starts before the 2 deploys ahead of it." */
+export function startNextConsequence(ahead: number): string {
+  return ahead === 1 ? "It starts before the deploy ahead of it." : `It starts before the ${ahead} deploys ahead of it.`;
 }
 
 /** The card's line, with why a plain Queued waits on hover, focus or tap. */
@@ -216,7 +222,7 @@ export function DeployProgress({
       open={confirm}
       onOpenChange={setConfirm}
       title="Start next"
-      description="Move this deploy to the front of the line?"
+      description={startNextConsequence(wait.current?.ahead ?? 0)}
       confirmLabel="Start next"
       loadingLabel="Moving..."
       variant="default"
@@ -249,10 +255,9 @@ export function DeployProgress({
               key={key}
               aria-current={state === "now" ? "step" : undefined}
               className={cn(
-                "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground/70",
+                "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground",
                 "before:mr-0.5 before:w-3.5 before:border-t before:border-border",
-                state === "done" && "text-muted-foreground",
-                state === "now" && "font-semibold text-status-info",
+                  state === "now" && "font-semibold text-status-info",
                 state === "held" && (view.tone === "warn" ? "font-semibold text-status-warning" : "font-semibold text-foreground"),
                 state === "failed" && "font-semibold text-status-error",
               )}
