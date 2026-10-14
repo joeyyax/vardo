@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useAttention } from "@/components/attention-provider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusMark } from "@/components/ui/status-dot";
+import { chipVariants } from "@/components/ui/chip";
 import { VARDO_UPDATING_ROW_KEY } from "@/lib/attention/vardo-update-row";
 import { chipLabel, systemProblems, workerLines, type SystemProblem, type WorkerOutage } from "@/lib/ui/system-status";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,7 @@ function clockTime(iso: string): string {
 function Mark({ problem }: { problem: SystemProblem | undefined }) {
   if (!problem) return <StatusMark tone="good" />;
   if (problem.kind === "worker") return <StatusMark tone="warn" pending />;
-  return <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  return <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />;
 }
 
 function ProblemNote({ problem }: { problem: SystemProblem }) {
@@ -32,6 +33,7 @@ function ProblemNote({ problem }: { problem: SystemProblem }) {
             {line}
           </p>
         ))}
+        <p className="text-muted-foreground">Running apps aren&apos;t affected.</p>
         {problem.queued > 0 && (
           <Link href="/projects?panel=deploying" className="w-fit font-medium underline underline-offset-2 hover:no-underline">
             See queued deploys
@@ -74,8 +76,11 @@ export function SystemStatus({ worker: initial, version }: { worker: WorkerOutag
         <PopoverTrigger
           aria-label={label ? `System status: ${label.full}` : "System status: running normally"}
           className={cn(
-            "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full text-xs font-medium after:absolute after:-inset-1.5 focus-visible:outline-2 focus-visible:outline-brass pointer-fine:after:hidden",
-            label ? "border bg-card px-2.5 hover:bg-accent" : "hover:bg-sidebar-accent/50",
+            // The ::after widens a touch to 44px without changing the look.
+            "relative after:absolute focus-visible:outline-2 focus-visible:outline-brass pointer-fine:after:hidden",
+            worst
+              ? cn(chipVariants({ tone: worst.kind === "worker" ? "warn" : "info", caps: false }), "after:-inset-3")
+              : "inline-flex size-8 shrink-0 items-center justify-center rounded-full after:-inset-1.5 hover:bg-sidebar-accent/50",
           )}
         >
           <Mark problem={worst} />
