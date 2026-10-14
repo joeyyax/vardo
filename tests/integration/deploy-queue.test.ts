@@ -456,6 +456,30 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
     });
   });
 
+  describe("enterSwap", () => {
+    it("retries a failed write instead of reading it as a lost claim, and throws once Postgres stays away", async () => {
+      const { db } = await import("@/lib/db");
+      await seed("r1", "a1", "manual", "queued");
+      await q.claimDeploys("w", { capacity: 5 });
+      const update = vi.spyOn(db, "update");
+      try {
+        update.mockImplementationOnce(() => {
+          throw new Error("connection reset");
+        });
+        expect(await q.enterSwap("w", "r1", { retryEveryMs: 10 })).toBe(true);
+        expect((await sql`select stage from deployment where id = 'r1'`)[0].stage).toBe("deploy");
+
+        update.mockImplementation(() => {
+          throw new Error("connection reset");
+        });
+        await expect(q.enterSwap("w", "r1", { retryEveryMs: 10, retryForMs: 50 })).rejects.toThrow(/Couldn't confirm/);
+      } finally {
+        update.mockRestore();
+      }
+      expect(await q.enterSwap("other", "r1")).toBe(false);
+    });
+  });
+
   describe("awaitClaim", () => {
     it("returns once claimed, and cancels a row nobody claims in time", async () => {
       await seed("q1", "a1", "manual", "queued");

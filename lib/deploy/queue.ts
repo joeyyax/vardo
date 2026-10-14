@@ -534,24 +534,32 @@ export async function markStage(
   return { cancel: row.cancelRequestedAt ? (row.cancelReason ?? "user") : null };
 }
 
-/** Records the swap stage and renews the lease while this executor holds the row under a live one. False once it doesn't, or when the write can't be made. */
-export async function enterSwap(executorId: string, id: string, leaseMs = LEASE_TTL_MS): Promise<boolean> {
-  try {
-    const rows = await db
-      .update(deployments)
-      .set({ stage: "deploy", leaseExpiresAt: sql`now() + ${leaseMs}::int * interval '1 millisecond'` })
-      .where(
-        and(
-          eq(deployments.id, id),
-          eq(deployments.claimedBy, executorId),
-          eq(deployments.status, "running"),
-          sql`${deployments.leaseExpiresAt} > now()`,
-        ),
-      )
-      .returning({ id: deployments.id });
-    return rows.length > 0;
-  } catch {
-    return false;
+export type EnterSwapOpts = { leaseMs?: number; retryForMs?: number; retryEveryMs?: number };
+
+/** Records the swap stage and renews the lease while this executor holds the row under a live one. False once it doesn't; throws when Postgres stays unreachable. */
+export async function enterSwap(executorId: string, id: string, opts: EnterSwapOpts = {}): Promise<boolean> {
+  const leaseMs = opts.leaseMs ?? LEASE_TTL_MS;
+  const deadline = Date.now() + (opts.retryForMs ?? 30_000);
+  for (;;) {
+    try {
+      const rows = await db
+        .update(deployments)
+        .set({ stage: "deploy", leaseExpiresAt: sql`now() + ${leaseMs}::int * interval '1 millisecond'` })
+        .where(
+          and(
+            eq(deployments.id, id),
+            eq(deployments.claimedBy, executorId),
+            eq(deployments.status, "running"),
+            sql`${deployments.leaseExpiresAt} > now()`,
+          ),
+        )
+        .returning({ id: deployments.id });
+      return rows.length > 0;
+    } catch (err) {
+      // A blip isn't a lost claim; past the window the swap doesn't go ahead unconfirmed.
+      if (Date.now() >= deadline) throw new Error("Couldn't confirm the deploy's claim before the swap", { cause: err });
+      await sleep(opts.retryEveryMs ?? 1_000);
+    }
   }
 }
 
