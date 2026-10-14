@@ -90,6 +90,8 @@ export type MailFact = {
   label: string;
   value: string;
   href?: string;
+  /** Links the label, for a row named after an app. */
+  labelHref?: string;
   mono?: boolean;
   /** Shown in place of `value` in the HTML part. */
   rich?: MailRich;
@@ -875,6 +877,10 @@ function FactValue({ fact }: { fact: MailFact }) {
   return fact.href ? <NameLink href={fact.href}>{fact.value}</NameLink> : <>{fact.value}</>;
 }
 
+function FactLabel({ fact }: { fact: MailFact }) {
+  return fact.labelHref ? <NameLink href={fact.labelHref} tone="soft">{fact.label}</NameLink> : <>{fact.label}</>;
+}
+
 /** Key/value rows. */
 export function FactsTable({ facts }: { facts: MailFact[] }) {
   const rule = `1px solid ${light.border}`;
@@ -893,7 +899,7 @@ export function FactsTable({ facts }: { facts: MailFact[] }) {
             <td className="vd-rule" style={{ padding: "10px 0", borderTop: rule }}>
               {fact.label ? (
                 <p className="vd-muted" style={text(13, light.muted, { wordBreak: "break-word", overflowWrap: "anywhere" })}>
-                  {fact.label}
+                  <FactLabel fact={fact} />
                 </p>
               ) : null}
               <p className="vd-fg" style={valueStyle(fact, "0")}>
@@ -915,7 +921,7 @@ export function FactsTable({ facts }: { facts: MailFact[] }) {
             width="110"
             style={text(14, light.muted, { padding: "10px 14px 10px 0", borderTop: rule, width: "110px", verticalAlign: "top" })}
           >
-            {fact.label}
+            <FactLabel fact={fact} />
           </td>
           <td className="vd-fg vd-rule" valign="top" style={{ ...valueStyle(fact, "10px 0"), borderTop: rule, verticalAlign: "top" }}>
             <FactValue fact={fact} />
@@ -1653,7 +1659,8 @@ export function visualText(visual: MailVisual): string {
 function factsText(facts: MailFact[]): string {
   return facts
     .map((f) => {
-      const link = f.href && f.href !== f.value && f.href !== `https://${f.value}` ? ` <${f.href}>` : "";
+      const href = f.href ?? f.labelHref;
+      const link = href && href !== f.value && href !== `https://${f.value}` ? ` <${href}>` : "";
       return `${f.label ? `${f.label}: ` : "  "}${f.value}${link}`;
     })
     .join("\n");

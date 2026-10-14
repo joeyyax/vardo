@@ -11,7 +11,7 @@ vi.mock("@/lib/time-zone-settings", async (importOriginal) => ({
   getInstanceTimeZone: async () => "UTC",
   getOrgTimeZone: async () => "UTC",
 }));
-vi.mock("@/lib/recaps/collect", () => ({ collectRecap: mocks.collect }));
+vi.mock("@/lib/recaps/collect", () => ({ collectRecap: mocks.collect, volumeSizes: async () => new Map() }));
 
 import { dbMock } from "@/tests/helpers/db";
 import { RECAP_FIXTURES } from "@/lib/email/fixtures";

@@ -154,7 +154,6 @@ describe("series helpers", () => {
         { status: "success", startedAt: new Date("2026-10-10T00:00:00Z") },
       ],
       window,
-      86_400_000,
     );
     expect(days).toHaveLength(7);
     expect(days[0].start).toBe("2026-10-03T00:00:00.000Z");

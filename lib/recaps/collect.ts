@@ -147,6 +147,17 @@ async function imageUpdateCount(orgId: string, appId: string): Promise<number> {
   }
 }
 
+/** The host's Docker volume sizes, read once per pass. Empty when Docker doesn't answer in time. */
+export async function volumeSizes(): Promise<Map<string, number>> {
+  try {
+    const { getVolumeSizes } = await import("@/lib/docker/client");
+    const { within, VOLUME_SIZES_TIMEOUT_MS } = await import("@/lib/docker/app-data");
+    return await within(getVolumeSizes({ timeoutMs: VOLUME_SIZES_TIMEOUT_MS }), VOLUME_SIZES_TIMEOUT_MS, new Map<string, number>());
+  } catch {
+    return new Map();
+  }
+}
+
 export type RecapTarget = {
   appId: string;
   organizationId: string;

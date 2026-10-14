@@ -13,6 +13,7 @@ import {
 import { notificationChannelTypeEnum } from "./enums";
 import { organizations } from "./organizations";
 import { user } from "./auth";
+import { projects } from "./projects";
 
 export const notificationChannels = pgTable(
   "notification_channel",
@@ -30,7 +31,7 @@ export const notificationChannels = pgTable(
   (t) => [index("notification_channel_org_idx").on(t.organizationId)]
 );
 
-// Health digest settings per org. No row means the defaults.
+// When an org's digests go out. No row means the defaults.
 
 export const digestSettings = pgTable("digest_setting", {
   id: text("id").primaryKey(),
@@ -39,15 +40,11 @@ export const digestSettings = pgTable("digest_setting", {
     .unique()
     .references(() => organizations.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").default(true).notNull(),
-  // "daily" or "weekly".
-  cadence: text("cadence").default("weekly").notNull(),
-  // 0 = Sunday ... 6 = Saturday. Weekly only.
+  // 0 = Sunday ... 6 = Saturday. Weekly digests; monthly ones go out on the 1st.
   dayOfWeek: integer("day_of_week").default(1).notNull(),
-  // 0-23 UTC
+  // Hour in the org's time zone.
   hourOfDay: integer("hour_of_day").default(8).notNull(),
   lastSentAt: timestamp("last_sent_at"),
-  // The window last sent, so each sends once.
-  lastWindowKey: text("last_window_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -87,7 +84,7 @@ export const userNotificationPreferences = pgTable(
   ]
 );
 
-// Weekly digest opt-in per user and org.
+// Digest frequency per user and org. No row means weekly.
 
 export const userDigestPreferences = pgTable(
   "user_digest_preference",
@@ -99,7 +96,9 @@ export const userDigestPreferences = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    enabled: boolean("enabled").default(false).notNull(),
+    frequency: text("frequency", { enum: ["weekly", "monthly", "off"] }).default("weekly").notNull(),
+    // The window last sent to this user, so each sends once.
+    lastWindowKey: text("last_window_key"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -108,6 +107,22 @@ export const userDigestPreferences = pgTable(
     index("user_digest_pref_user_idx").on(t.userId),
     index("user_digest_pref_org_idx").on(t.organizationId),
   ]
+);
+
+// Projects a user watches. Each adds its detail to that user's digest.
+
+export const projectWatches = pgTable(
+  "project_watch",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("project_watch_project_idx").on(t.projectId)]
 );
 
 // Every delivery attempt and its result.

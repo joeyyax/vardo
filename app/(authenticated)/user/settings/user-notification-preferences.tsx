@@ -10,6 +10,15 @@ import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/b
 import { CATEGORY_LABELS, EVENT_LABELS } from "@/lib/notifications/labels";
 import type { ChannelType } from "@/lib/notifications/channel-types";
 import { CRITICAL_EVENT_TYPES, CHANNEL_TYPE_DEFAULTS } from "@/lib/notifications/channel-defaults";
+import { DEFAULT_FREQUENCY, DIGEST_FREQUENCIES, type DigestFrequency } from "@/lib/digest/window";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Channel = {
   id: string;
@@ -41,7 +50,18 @@ function getEffectiveEnabled(
 type PreferencesResponse = {
   channels?: Channel[];
   preferences?: Preference[];
-  digestEnabled?: boolean;
+  digestFrequency?: DigestFrequency;
+  projects?: { id: string; name: string }[];
+  watching?: string[];
+};
+
+// The digest emails each person directly, so it has no per-channel switch.
+const EMAIL_ONLY = new Set<BusEventType>(["digest.health"]);
+
+const FREQUENCY_LABELS: Record<DigestFrequency, string> = {
+  weekly: "Weekly",
+  monthly: "Monthly",
+  off: "Off",
 };
 
 async function requestPreferences(orgId: string): Promise<PreferencesResponse | null> {
@@ -57,7 +77,9 @@ async function requestPreferences(orgId: string): Promise<PreferencesResponse | 
 export function UserNotificationPreferences({ orgId }: { orgId: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [prefs, setPrefs] = useState<Preference[]>([]);
-  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [frequency, setFrequency] = useState<DigestFrequency>(DEFAULT_FREQUENCY);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [watching, setWatching] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -72,7 +94,9 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
     if (data) {
       setChannels(data.channels ?? []);
       setPrefs(data.preferences ?? []);
-      setDigestEnabled(data.digestEnabled ?? false);
+      setFrequency(data.digestFrequency ?? DEFAULT_FREQUENCY);
+      setProjects(data.projects ?? []);
+      setWatching(data.watching ?? []);
     } else {
       setLoadError(true);
     }
@@ -141,24 +165,35 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
     }
   }
 
-  async function toggleDigest(enabled: boolean) {
-    setSaving("digest");
+  async function putPreference(key: string, body: Record<string, unknown>, failure: string): Promise<boolean> {
+    setSaving(key);
     try {
       const res = await fetch("/api/v1/user/notification-preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "digest", orgId, digestEnabled: enabled }),
+        body: JSON.stringify({ orgId, ...body }),
       });
       if (!res.ok) {
-        const d = await res.json();
-        toast.error(d.error ?? "Couldn't save digest preference");
-        return;
+        const d = await res.json().catch(() => ({}));
+        toast.error(d.error ?? failure);
+        return false;
       }
-      setDigestEnabled(enabled);
+      return true;
     } catch {
-      toast.error("Couldn't save digest preference");
+      toast.error(failure);
+      return false;
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function changeFrequency(next: DigestFrequency) {
+    if (await putPreference("digest", { type: "digest", frequency: next }, "Couldn't save digest frequency")) setFrequency(next);
+  }
+
+  async function toggleWatch(projectId: string, next: boolean) {
+    if (await putPreference(`watch:${projectId}`, { type: "watch", projectId, watching: next }, "Couldn't save watched project")) {
+      setWatching((prev) => (next ? [...prev, projectId] : prev.filter((id) => id !== projectId)));
     }
   }
 
@@ -195,18 +230,74 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
     );
   }
 
-  if (channels.length === 0) {
-    return (
-      <EmptyState
-        icon={Bell}
-        title="No notification channels"
-        body="Your organization has no notification channels configured. Ask an admin to add one in organization settings."
-      />
-    );
-  }
-
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="digest-frequency" className="type-h3">
+                <Term id="delivery-digest">Digest</Term>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Deploys, backups, alerts and resources across the organization, by email.
+              </p>
+            </div>
+            <Select
+              value={frequency}
+              disabled={saving === "digest"}
+              onValueChange={(v) => changeFrequency(v as DigestFrequency)}
+            >
+              <SelectTrigger id="digest-frequency" className="w-32 shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DIGEST_FREQUENCIES.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {FREQUENCY_LABELS[f]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {frequency !== "off" && projects.length > 0 && (
+            <div className="space-y-2">
+              <div>
+                <span className="type-label text-muted-foreground">Watch projects</span>
+                <p className="text-xs text-muted-foreground">
+                  Adds each site&apos;s uptime, deploys, resources and backups to your digest.
+                </p>
+              </div>
+              <div className="space-y-1">
+                {projects.map((project) => (
+                  <label key={project.id} className="flex items-center justify-between gap-3 py-1 cursor-pointer">
+                    <span className="text-sm">{project.name}</span>
+                    {saving === `watch:${project.id}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Switch
+                        checked={watching.includes(project.id)}
+                        onCheckedChange={(checked) => toggleWatch(project.id, checked)}
+                        aria-label={`Watch ${project.name}`}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {channels.length === 0 && (
+        <EmptyState
+          icon={Bell}
+          title="No notification channels"
+          body="Your organization has no notification channels configured. Ask an admin to add one in organization settings."
+        />
+      )}
+
       {channels.map((channel) => (
         <Card key={channel.id}>
           <CardContent className="space-y-4">
@@ -241,7 +332,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
                     {CATEGORY_LABELS[category]}
                   </span>
                   <div className="space-y-1">
-                    {events.map((eventType) => {
+                    {events.filter((e) => !EMAIL_ONLY.has(e)).map((eventType) => {
                       const isCritical = CRITICAL_EVENT_TYPES.has(eventType);
                       const enabled = isCritical
                         ? true
@@ -288,29 +379,6 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         </Card>
       ))}
 
-      <Card>
-        <CardContent className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="type-h3">
-                <Term id="delivery-digest">Weekly digest</Term>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Receive a weekly summary of org activity alongside real-time
-                notifications.
-              </p>
-            </div>
-            {saving === "digest" ? (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            ) : (
-              <Switch
-                checked={digestEnabled}
-                onCheckedChange={toggleDigest}
-              />
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
