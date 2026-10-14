@@ -4,10 +4,7 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { updatePolicySchema } from "@/lib/self-update/policy";
 import { getUpdateStatus } from "@/lib/self-update/status";
-import { setUpdatePolicy } from "@/lib/self-update/store";
-import { getUpdatePolicy } from "@/lib/self-update/store";
-import { recordActivity } from "@/lib/activity";
-import { adminOrgIds } from "@/lib/notifications/admin-orgs";
+import { saveUpdatePolicy } from "@/lib/self-update/save-policy";
 
 // GET /api/v1/admin/updates — version, available update, policy, last run and rollout state. `?fresh=1` asks GitHub again.
 async function handleGet(request: NextRequest) {
@@ -26,16 +23,7 @@ async function handlePut(request: NextRequest) {
     const session = await requireAppAdmin();
     const parsed = updatePolicySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return apiError.validation(parsed.error, { details: true });
-    const previous = await getUpdatePolicy();
-    await setUpdatePolicy(parsed.data);
-    if (JSON.stringify(previous) !== JSON.stringify(parsed.data)) {
-      for (const organizationId of await adminOrgIds()) {
-        await recordActivity({
-          organizationId, userId: session.user.id, action: "system.update_policy_changed",
-          metadata: { mode: parsed.data.mode, priority: parsed.data.priority, channel: parsed.data.channel },
-        });
-      }
-    }
+    await saveUpdatePolicy(parsed.data, session.user.id);
     return NextResponse.json(await getUpdateStatus());
   } catch (error) {
     return handleRouteError(error);

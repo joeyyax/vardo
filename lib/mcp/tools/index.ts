@@ -30,6 +30,7 @@ import { registerEmailSettingsTools } from "./email-settings";
 import { registerDomainTools } from "./domains";
 import { registerInstanceStatusTools } from "./instance-status";
 import { registerUpdateNow } from "./update-now";
+import { registerUpdatePolicyTools } from "./update-policy";
 import { registerListAttention } from "./list-attention";
 import { registerBackupStatusTools } from "./backup-status";
 import { registerRunBackup } from "./run-backup";
@@ -75,6 +76,7 @@ export function registerAllTools(
   registerDomainTools(server, context);
   registerInstanceStatusTools(server, context);
   registerUpdateNow(server, context);
+  registerUpdatePolicyTools(server, context);
   registerListAttention(server, context);
   registerBackupStatusTools(server, context);
   registerRunBackup(server, context);
