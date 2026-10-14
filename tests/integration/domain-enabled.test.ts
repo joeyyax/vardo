@@ -72,7 +72,7 @@ describe.skipIf(!conn)("domain enabled flag on Postgres", { timeout: MIGRATE_TIM
     });
     const { routable } = await splitRoutable(app!.domains, { id: "o1", trusted: true });
     const compose = applyDeployTransforms(
-      { services: { web: { image: "nginx" } } },
+      { services: { web: { name: "web", image: "nginx" } } },
       { appName: "shop-web", containerPort: 80, domains: routable, networkName: "vardo-network", orgTrusted: true },
     );
     const labels = Object.entries(compose.services.web.labels ?? {});
