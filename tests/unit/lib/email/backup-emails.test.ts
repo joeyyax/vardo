@@ -132,6 +132,18 @@ describe("backup run summary", () => {
     expect(notificationMailBody(event, FIXTURE_CONTEXT)!.tone).toBe("success");
   });
 
+  it("says which volumes aren't backed up and why, without a warning", async () => {
+    const event = fixture<"backup.summary">("backup-summary-not-backed-up");
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(email.subject).toMatch(/^node-a · ✓ Nightly backups/);
+    expect(notificationMailBody(event, FIXTURE_CONTEXT)!.tone).toBe("success");
+    expect(email.text).toContain("4 volumes aren't backed up.");
+    expect(email.text).toContain("Rebuildable — reconstructed rather than restored: Shop / cache.");
+    expect(email.text).toContain("Backups are off for the app: Mailpit / mailpit-data and Mailpit / mailpit-uploads.");
+    expect(email.text).toContain("Bind mount, not opted in: Observability / etc-dashboards.");
+    expect(email.text).not.toContain("Skipped as usual: Observability / etc-dashboards");
+  });
+
   it("never says slot", async () => {
     for (const f of EMAIL_FIXTURES.filter((f) => f.name.startsWith("backup-"))) {
       const email = (await renderNotificationEmail(f.event, FIXTURE_CONTEXT))!;

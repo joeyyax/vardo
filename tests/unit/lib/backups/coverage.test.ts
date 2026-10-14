@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "@/lib/backups/coverage";
+import { isUncapturedSource, pausedDumpReason, uncapturedReason, volumeCoverage } from "@/lib/backups/coverage";
 import {
   buildBindPreflightScript,
   buildFileBackupScript,
@@ -119,5 +119,55 @@ describe("single-file bind sources", () => {
     expect(script).toContain(DIRECTORY_SOURCE_MARKER);
     // `ls -A` on a file errors, so emptiness is asked differently for each.
     expect(script).toContain("-s ");
+  });
+});
+
+describe("volumeCoverage", () => {
+  const vol = (over: Record<string, unknown> = {}) => ({
+    type: "named" as const,
+    backupStrategy: "tar",
+    source: null,
+    persistent: true,
+    durability: null,
+    backupSelection: null,
+    ...over,
+  });
+  const scheduled = { direct: false, appReason: null, configReason: async () => null };
+
+  it("covers a selected volume of a scheduled app", async () => {
+    expect(await volumeCoverage(vol(), scheduled)).toEqual({ covered: true });
+  });
+
+  it("gives the durability reason even when a job links the volume itself", async () => {
+    expect(await volumeCoverage(vol({ durability: "rebuildable" }), { ...scheduled, direct: true })).toEqual({
+      covered: false,
+      reason: "Rebuildable — reconstructed rather than restored",
+    });
+  });
+
+  it("covers a volume its own job takes whatever the app says", async () => {
+    expect(await volumeCoverage(vol(), { ...scheduled, direct: true, appReason: "Backups are off for the app" })).toEqual({ covered: true });
+  });
+
+  it("says a volume was switched off, and lists nothing for one that never persists", async () => {
+    expect(await volumeCoverage(vol({ backupSelection: "exclude" }), scheduled)).toEqual({ covered: false, reason: "Switched off for this volume" });
+    expect(await volumeCoverage(vol({ persistent: false }), scheduled)).toEqual({ covered: false, reason: null });
+  });
+
+  it("names the app's reason, and lists nothing for an app that's gone", async () => {
+    expect(await volumeCoverage(vol(), { ...scheduled, appReason: "No backup job covers the app" })).toEqual({
+      covered: false,
+      reason: "No backup job covers the app",
+    });
+    expect(await volumeCoverage(vol(), { ...scheduled, appReason: undefined })).toEqual({ covered: false, reason: null });
+  });
+
+  it("says why a bind mount is left out", async () => {
+    expect(await volumeCoverage(vol({ type: "bind", source: "/srv/x" }), scheduled)).toEqual({ covered: false, reason: "Bind mount, not opted in" });
+    const config = { ...scheduled, configReason: async () => "Single config file" };
+    expect(await volumeCoverage(vol({ type: "bind", source: "/srv/x", backupSelection: "include" }), config)).toEqual({
+      covered: false,
+      reason: "Single config file",
+    });
   });
 });

@@ -772,6 +772,23 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     ),
   },
   {
+    name: "backup-summary-not-backed-up",
+    event: backupSummary(
+      [
+        ...NIGHTLY,
+        { kind: "backup", appId: "app_0bs", appName: "Observability", volumeName: "etc-dashboards", jobName: "auto-app_0bs", outcome: "skipped", error: "Bind mount, not opted in", expected: true, at: "2026-10-09T02:22:00.000Z" },
+      ],
+      {
+        notBackedUp: [
+          { appId: "app_shop", appName: "Shop", volumeName: "cache", reason: "Rebuildable — reconstructed rather than restored" },
+          { appId: "app_mail", appName: "Mailpit", volumeName: "mailpit-data", reason: "Backups are off for the app" },
+          { appId: "app_mail", appName: "Mailpit", volumeName: "mailpit-uploads", reason: "Backups are off for the app" },
+          { appId: "app_0bs", appName: "Observability", volumeName: "etc-dashboards", reason: "Bind mount, not opted in" },
+        ],
+      },
+    ),
+  },
+  {
     name: "backup-summary-timed-out",
     event: backupSummary(
       [...NIGHTLY, ...OBSERVABILITY],
