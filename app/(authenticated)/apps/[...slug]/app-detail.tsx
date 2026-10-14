@@ -83,6 +83,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
+import { deployWaitOf, waitLabel } from "@/lib/ui/deploy-wait";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import { RECOMMENDED_HEADERS } from "@/lib/security/response-headers";
@@ -181,6 +182,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     onDeployStarted: () => setActiveTab("deployments"),
     initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
+  const heldDeploy = deploy.deploying
+    ? deployWaitOf({ wait: deploy.deployWait, stages: deploy.deployStages }, serverRunningDeploy?.status)
+    : null;
+  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const handleDeploy = deploy.handleDeploy;
 
@@ -683,6 +688,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
+        deployWait={deployWaitLabel}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />

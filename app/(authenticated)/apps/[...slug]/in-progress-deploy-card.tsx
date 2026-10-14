@@ -5,7 +5,8 @@ import { Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
-import { formatDuration } from "@/lib/metrics/format";
+import { formatDuration, formatUptime } from "@/lib/metrics/format";
+import { useNow } from "@/components/deploy-progress";
 import { Timer } from "./timer";
 import {
   DEPLOY_STAGE_KEYS,
@@ -13,6 +14,7 @@ import {
   STAGE_LABELS,
   stageProgress,
 } from "@/lib/ui/deploy-stage";
+import { deployClockOf, NO_WAIT, waitLabel, waitWord, type WaitState } from "@/lib/ui/deploy-wait";
 import type { StageTiming } from "./hooks/use-deploy";
 import { Card } from "@/components/ui/card";
 
@@ -38,6 +40,7 @@ export function InProgressDeployCard({
   trigger,
   typicalElapsedMs,
   queued,
+  wait = NO_WAIT,
 }: {
   stages: Record<string, "running" | "success" | "failed" | "skipped">;
   stageTimes?: Record<string, StageTiming>;
@@ -50,11 +53,16 @@ export function InProgressDeployCard({
   /** A cancel was signaled; the engine is finishing its current phase. */
   cancelling?: boolean;
   trigger?: string;
-  /** End-to-end time of this app's last successful deploy, for comparison. */
+  /** Run time of this app's last successful deploy, for comparison. */
   typicalElapsedMs?: number | null;
   /** Waiting for an executor to claim it; `startTime` is when it queued. */
   queued?: boolean;
+  /** Waits from the deploy stream. */
+  wait?: WaitState;
 }) {
+  const now = useNow(1000);
+  const clock = startTime && now !== null ? deployClockOf({ wait, stages }, { startedAt: startTime, status: queued ? "queued" : undefined, now }) : null;
+  const held = clock?.wait ?? null;
   const hasStages = Object.keys(stages).length > 0;
   // The phases in the stream name the run: only a rollback reports rollback phases.
   const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
@@ -69,12 +77,14 @@ export function InProgressDeployCard({
     ? `${noun} failed at ${STAGE_LABELS[failedStage]} stage`
     : allDone
       ? `${noun} completed successfully`
-      : runningStage
+      : held
+        ? waitLabel(held.reason, held.ahead)
+        : runningStage
         ? `${isRollback ? "Rolling back" : "Deploying"}: ${STAGE_LABELS[runningStage]} in progress`
         : "";
 
   return (
-    <Card variant="surface" className={`${queued ? "bg-status-neutral-muted" : "bg-status-info-muted"} overflow-hidden`}>
+    <Card variant="surface" className={`${held ? "bg-status-neutral-muted" : "bg-status-info-muted"} overflow-hidden`}>
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
       {/* The row is a mouse target; the chevron button is the control, so Abort isn't nested in one. */}
       <div
@@ -82,8 +92,8 @@ export function InProgressDeployCard({
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          {queued ? (
-            <Badge variant="neutral" className="shrink-0">Queued</Badge>
+          {held && !cancelling ? (
+            <Badge variant="neutral" className="shrink-0">{waitWord(held.reason)}</Badge>
           ) : (
             <Badge variant="info" className="animate-pulse shrink-0">
               <Loader2 className="mr-1 size-3 animate-spin" />
@@ -95,7 +105,8 @@ export function InProgressDeployCard({
             {stageKeys.map((s, i) => {
               const status = stages[s];
               const timing = stageTimes?.[s];
-              const running = status === "running";
+              const running = status === "running" && !held;
+              const waiting = status === "running" && !!held;
               const failed = status === "failed";
               return (
                 <div key={s} className="flex items-center gap-1">
@@ -105,13 +116,14 @@ export function InProgressDeployCard({
                   <span className={`text-xs transition-colors duration-300 ${
                     failed ? "text-status-error font-medium" :
                     running ? "text-status-info font-medium" :
+                    waiting ? "text-foreground/70" :
                     status === "skipped" ? "text-muted-foreground/50 line-through" :
                     status ? "text-muted-foreground" :
                     "text-muted-foreground/40"
                   }`}>
                     {STAGE_LABELS[s]}
                   </span>
-                  <span className="sr-only">{STAGE_STATUS_WORDS[status ?? "pending"]}</span>
+                  <span className="sr-only">{waiting ? "waiting" : STAGE_STATUS_WORDS[status ?? "pending"]}</span>
                   {running && timing && (
                     <Timer since={timing.startedAt} className="text-xs text-status-info/70" />
                   )}
@@ -119,21 +131,26 @@ export function InProgressDeployCard({
               );
             })}
           </div>
-          {!hasStages && trigger && !queued && (
+          {!hasStages && trigger && !held && (
             <span className="text-xs text-foreground/60 capitalize">{trigger} deploy in progress...</span>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {startTime && queued && (
-            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-              <Timer since={startTime} /> waiting
-            </span>
-          )}
-          {startTime && !queued && (
+          {clock && (
             <span className="text-xs text-foreground/50 tabular-nums">
-              {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
-              <Timer since={startTime} />
-              {typicalElapsedMs ? ` / usually ${formatDuration(typicalElapsedMs)}` : ""}
+              {held ? (
+                <>
+                  <span className="text-foreground/70">{waitLabel(held.reason, held.ahead)}</span>
+                  {` · ${formatUptime(Math.min(now! - held.since, clock.waitedMs) / 1000)}`}
+                </>
+              ) : (
+                <>
+                  {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
+                  {formatUptime(clock.workingMs / 1000)}
+                  {typicalElapsedMs ? ` / usually ${formatDuration(typicalElapsedMs)}` : ""}
+                  {clock.waitedMs >= 1000 && ` · waited ${formatUptime(clock.waitedMs / 1000)}`}
+                </>
+              )}
             </span>
           )}
           {canAbort && onAbort && (

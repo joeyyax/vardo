@@ -199,6 +199,7 @@ export function AppDeployPanel({
     deployQueued,
     deployStages,
     deployStageTimes,
+    deployWait,
     deployLog,
     deployStartTime,
     expandedDeployLog,
@@ -587,6 +588,7 @@ export function AppDeployPanel({
                 cancelling={cancelRequested}
                 typicalElapsedMs={typicalMs}
                 queued={deployQueued}
+                wait={deployWait}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (

@@ -87,6 +87,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
+import { deployWaitOf, waitLabel } from "@/lib/ui/deploy-wait";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -830,6 +831,10 @@ export function ComposeDetail({
     onDeployStarted: () => setActiveTabAndUrl("deployments"),
     initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
+  const heldDeploy = deploy.deploying
+    ? deployWaitOf({ wait: deploy.deployWait, stages: deploy.deployStages }, serverRunningDeploy?.status)
+    : null;
+  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const [showComposeReview, setShowComposeReview] = useState(false);
 
@@ -1090,6 +1095,7 @@ export function ComposeDetail({
         stack={rollupHealth(services)}
         stackUptimeSince={rollupUptimeSince(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
+        deployWait={deployWaitLabel}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />

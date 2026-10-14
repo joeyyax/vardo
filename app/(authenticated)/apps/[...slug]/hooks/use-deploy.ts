@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { formatDuration } from "@/lib/metrics/format";
+import { applyWait, NO_WAIT, parseWaitEvent, streamIdMs, type WaitState } from "@/lib/ui/deploy-wait";
 
 import type { Deployment, RollbackPreview } from "../types";
 
@@ -74,8 +75,14 @@ export function useDeploy({
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<Record<string, StageStatus>>({});
   const [deployStageTimes, setDeployStageTimes] = useState<Record<string, StageTiming>>({});
-  const recordStage = useCallback((stage: string, status: StageStatus) => {
-    const at = Date.now();
+  const [deployWait, setDeployWait] = useState<WaitState>(NO_WAIT);
+  const recordWait = useCallback((data: unknown) => {
+    const event = parseWaitEvent(data);
+    if (event) setDeployWait((prev) => applyWait(prev, event));
+  }, []);
+  // A replayed stage carries its stream id, so its time survives a reload.
+  const recordStage = useCallback((stage: string, status: StageStatus, streamId?: string) => {
+    const at = streamIdMs(streamId) ?? Date.now();
     setDeployStages((prev) => ({ ...prev, [stage]: status }));
     setDeployStageTimes((prev) => {
       const entry = prev[stage] ?? { startedAt: at };
@@ -109,6 +116,9 @@ export function useDeploy({
     if (attach) {
       setDeploying(true);
       setDeployQueued(serverRunningDeploy.status === "queued");
+      setDeployStages({});
+      setDeployStageTimes({});
+      setDeployWait(NO_WAIT);
       setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
       setExpandedDeployLog(true);
     }
@@ -119,7 +129,7 @@ export function useDeploy({
     onDeployStartedRef.current?.();
 
     // Streams deploy logs over SSE.
-    const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream`;
+    const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream?deploymentId=${encodeURIComponent(attachedDeployId)}`;
     const es = new EventSource(streamUrl);
     let finished = false;
 
@@ -143,8 +153,14 @@ export function useDeploy({
       try {
         const data = JSON.parse(event.data);
         if (data.stage && data.status) {
-          recordStage(data.stage, data.status);
+          recordStage(data.stage, data.status, data.streamId);
         }
+      } catch { /* skip malformed */ }
+    });
+
+    es.addEventListener("wait", (event) => {
+      try {
+        recordWait(JSON.parse(event.data));
       } catch { /* skip malformed */ }
     });
 
@@ -245,6 +261,7 @@ export function useDeploy({
     setDeployLog([]);
     setDeployStages({});
     setDeployStageTimes({});
+    setDeployWait(NO_WAIT);
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
 
@@ -291,8 +308,10 @@ export function useDeploy({
             } else if (eventType === "status") {
               setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
-              const { stage, status } = data as { stage: string; status: StageStatus };
-              recordStage(stage, status);
+              const { stage, status, streamId } = data as { stage: string; status: StageStatus; streamId?: string };
+              recordStage(stage, status, streamId);
+            } else if (eventType === "wait") {
+              recordWait(data);
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string; postDeployError?: string };
               if (result.success) {
@@ -325,7 +344,7 @@ export function useDeploy({
       setDeploying(false);
       setDeployAbort(null);
     }
-  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage]);
+  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage, recordWait]);
 
   const handleDeploy = useCallback(() => runDeploy(), [runDeploy]);
   const handleRebuild = useCallback(() => runDeploy("no-cache"), [runDeploy]);
@@ -368,6 +387,7 @@ export function useDeploy({
     setDeployLog([]);
     setDeployStages({});
     setDeployStageTimes({});
+    setDeployWait(NO_WAIT);
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
 
@@ -418,8 +438,10 @@ export function useDeploy({
             } else if (eventType === "status") {
               setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
-              const { stage, status } = data as { stage: string; status: StageStatus };
-              recordStage(stage, status);
+              const { stage, status, streamId } = data as { stage: string; status: StageStatus; streamId?: string };
+              recordStage(stage, status, streamId);
+            } else if (eventType === "wait") {
+              recordWait(data);
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string };
               if (result.success) {
@@ -457,6 +479,7 @@ export function useDeploy({
     deployStartTime,
     deployStages,
     deployStageTimes,
+    deployWait,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,

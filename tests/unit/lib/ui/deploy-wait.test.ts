@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   applyWait,
   deployClock,
+  deployWaitOf,
   NO_WAIT,
   parseWaitEvent,
   streamIdMs,
@@ -109,6 +110,19 @@ describe("deployClock", () => {
   it("ignores an end without a start", () => {
     const state = fold([{ reason: null, streamId: at(5_000) }]);
     expect(deployClock(state, { startedAt: T0, now: T0 + 9_000, queued: false }).workingMs).toBe(9_000);
+  });
+});
+
+describe("deployWaitOf", () => {
+  it("holds a queued row until the stream reports a stage", () => {
+    expect(deployWaitOf({ wait: NO_WAIT, stages: {} }, "queued")?.reason).toBeNull();
+    expect(deployWaitOf({ wait: NO_WAIT, stages: { clone: "running" } }, "queued")).toBeNull();
+    expect(deployWaitOf({ wait: NO_WAIT, stages: {} }, "running")).toBeNull();
+  });
+
+  it("reports the open wait whatever the row says", () => {
+    const wait = fold([{ reason: "build-slot", streamId: at(0) }]);
+    expect(deployWaitOf({ wait, stages: { build: "running" } }, "running")?.reason).toBe("build-slot");
   });
 });
 
