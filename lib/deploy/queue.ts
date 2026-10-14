@@ -120,7 +120,8 @@ async function applySupersede(tx: Tx, id: string, scopeKey: string, opts: Pick<E
   return { superseded, cancelRequested };
 }
 
-async function lockClaims(tx: Tx) {
+/** Writes to queued rows take it too: a claim's SKIP LOCKED would pass over a row mid-write. */
+export async function lockClaims(tx: Tx) {
   // Claims and the exclusive hold run one at a time, so a claim never lands after the hold.
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`);
 }

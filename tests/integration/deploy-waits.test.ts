@@ -218,6 +218,16 @@ describe.skipIf(!conn)("deploy waits on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(entries.find((e) => e.id === "q2")).toBeDefined();
     });
 
+    it("gives no estimate behind a running deploy whose app has no history, but keeps the place", async () => {
+      await history("a2", 4);
+      await seed("r1", "a1", "manual", "running");
+      await sql`update deployment set claimed_at = now() - interval '2 minutes' where id = 'r1'`;
+      await seed("q2", "a2", "manual", "queued");
+      await w.markQueueWaits({ capacity: 1, workerMissing: false });
+      expect((await waits()).q2).toMatchObject({ reason: "deploy-slot", ahead: 0, total: 1, eta: null });
+      expect(entries.find((e) => e.id === "q2")).toMatchObject({ wait: "deploy-slot", ahead: 0, total: 1 });
+    });
+
     it("leaves a past run's waits for the builder or checkout out of its typical time", async () => {
       // 9 minutes, 4 of them queued for the builder.
       await sql`
@@ -297,6 +307,63 @@ describe.skipIf(!conn)("deploy waits on Postgres", { timeout: MIGRATE_TIMEOUT },
 
       await sql`update deployment set status = 'success', finished_at = now() where id in ('r1', 'q2')`;
       expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["q1b"]);
+    });
+
+    it("does nothing to a deploy claimed before the bump lands", async () => {
+      await seed("r1", "a1", "manual", "running");
+      await seed("q2", "a2", "manual", "queued", 30);
+      await seed("q3", "a3", "manual", "queued", 20);
+      await seed("q4", "a4", "manual", "queued", 10);
+      await w.markQueueWaits({ capacity: 2, workerMissing: false });
+      expect((await q.claimDeploys("w", { capacity: 2 })).map((c) => c.id)).toEqual(["q2"]);
+      await w.markQueueWaits({ capacity: 2, workerMissing: false });
+      const before = await waits();
+
+      expect(await b.bumpDeploy("q2")).toBeNull();
+      const [row] = await sql`select status, bumped_at from deployment where id = 'q2'`;
+      expect(row).toMatchObject({ status: "running", bumped_at: null });
+      expect(await waits()).toEqual(before);
+      expect(bumpBuild).not.toHaveBeenCalled();
+
+      await sql`update deployment set status = 'success', finished_at = now() where id = 'r1'`;
+      expect((await q.claimDeploys("w", { capacity: 2 })).map((c) => c.id)).toEqual(["q3"]);
+    });
+
+    it("lands either before or after a claim it races, never on the wrong deploy", async () => {
+      for (let round = 0; round < 10; round++) {
+        await sql`delete from deployment`;
+        await seed("r1", "a1", "manual", "running");
+        await seed("q2", "a2", "manual", "queued", 30);
+        await seed("q3", "a3", "manual", "queued", 20);
+        await sql`update deployment set status = 'success', finished_at = now() where id = 'r1'`;
+
+        const [claimed, bumped] = await Promise.all([q.claimDeploys("w", { capacity: 1 }), b.bumpDeploy("q3")]);
+        expect(claimed).toHaveLength(1);
+        const rows = Object.fromEntries((await sql`select id, status, bumped_at from deployment`).map((r) => [r.id, r]));
+        if (claimed[0].id === "q3") {
+          // The bump went first and q3 took the slot.
+          expect(bumped).toBe("deploy");
+          expect(rows.q2.status).toBe("queued");
+        } else {
+          // The claim went first; the bump still applies to q3, which waits at the front.
+          expect(claimed[0].id).toBe("q2");
+          expect(bumped).toBe("deploy");
+          expect(rows.q3).toMatchObject({ status: "queued" });
+          expect(rows.q3.bumped_at).not.toBeNull();
+          expect(rows.q2.bumped_at).toBeNull();
+        }
+      }
+    });
+
+    it("never lets a claim pass over the head while a bump writes to it", async () => {
+      for (let round = 0; round < 10; round++) {
+        await sql`delete from deployment`;
+        await seed("q2", "a2", "manual", "queued", 30);
+        await seed("q3", "a3", "manual", "queued", 20);
+        const [claimed, bumped] = await Promise.all([q.claimDeploys("w", { capacity: 1 }), b.bumpDeploy("q2")]);
+        expect(claimed.map((c) => c.id)).toEqual(["q2"]);
+        expect([null, "deploy"]).toContain(bumped);
+      }
     });
 
     it("moves a deploy waiting for the builder, and refuses one not waiting", async () => {

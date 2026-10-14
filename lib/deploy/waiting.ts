@@ -13,7 +13,7 @@ import { waitEntry, type WaitPlace, type WaitReason } from "@/lib/docker/deploy-
 import { etaMoved, lineEtas, slotFreeAt } from "./eta";
 import { typicalDeploySql } from "./eta-history";
 import { executorFor } from "./claim-scope";
-import { EXCLUSIVE_MAX_AGE_MS } from "./queue";
+import { EXCLUSIVE_MAX_AGE_MS, lockClaims } from "./queue";
 
 const log = logger.child("deploy-waiting");
 
@@ -157,20 +157,23 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
     ),
     sql`, `,
   );
-  const written = await db.execute<QueueWait>(sql`
-    UPDATE deployment d SET
-      wait_reason = v.reason,
-      wait_ahead = v.ahead,
-      wait_total = v.total,
-      wait_eta = v.eta,
-      waiting_since = CASE
-        WHEN v.reason IS NULL THEN NULL
-        WHEN d.wait_reason IS NOT DISTINCT FROM v.reason THEN d.waiting_since
-        ELSE now()
-      END
-    FROM (VALUES ${values}) AS v(id, reason, ahead, total, eta)
-    WHERE d.id = v.id AND d.status = 'queued'
-    RETURNING d.id, d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta`);
+  const written = await db.transaction(async (tx) => {
+    await lockClaims(tx);
+    return tx.execute<QueueWait>(sql`
+      UPDATE deployment d SET
+        wait_reason = v.reason,
+        wait_ahead = v.ahead,
+        wait_total = v.total,
+        wait_eta = v.eta,
+        waiting_since = CASE
+          WHEN v.reason IS NULL THEN NULL
+          WHEN d.wait_reason IS NOT DISTINCT FROM v.reason THEN d.waiting_since
+          ELSE now()
+        END
+      FROM (VALUES ${values}) AS v(id, reason, ahead, total, eta)
+      WHERE d.id = v.id AND d.status = 'queued'
+      RETURNING d.id, d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta`);
+  });
 
   for (const row of written) {
     const entry = waitEntry(
