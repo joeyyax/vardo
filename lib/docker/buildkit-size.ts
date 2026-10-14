@@ -72,17 +72,16 @@ async function currentLimits(container: string): Promise<Limits | null> {
   }
 }
 
-const limitCache = new Map<string, { bytes: number; at: number }>();
+const limitCache = new Map<string, { bytes: number | null; at: number }>();
 const LIMIT_CACHE_MS = 10_000;
 
-/** BuildKit's memory limit as it stands, which another process may have resized. Cached briefly; null when unreadable. */
+/** BuildKit's memory limit as it stands, which another process may have resized. Cached briefly, a failed read too; null when unreadable. */
 export async function builderLimitBytes(container: string): Promise<number | null> {
   const hit = limitCache.get(container);
   if (hit && Date.now() - hit.at < LIMIT_CACHE_MS) return hit.bytes;
-  const limits = await currentLimits(container);
-  if (!limits) return null;
-  limitCache.set(container, { bytes: limits.memory, at: Date.now() });
-  return limits.memory;
+  const bytes = (await currentLimits(container))?.memory ?? null;
+  limitCache.set(container, { bytes, at: Date.now() });
+  return bytes;
 }
 
 const gib = (bytes: number) => `${(bytes / GiB).toFixed(1)} GiB`;

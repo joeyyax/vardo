@@ -49,6 +49,10 @@ const SAMPLE_MS = 2_000;
 export const WAIT_TIMEOUT_MS = 6 * 60 * 60_000;
 /** Peaks older than this no longer size builds. */
 const PEAK_WINDOW_MS = 30 * 24 * 60 * 60_000;
+/** A smaller rise, as from a cached build, isn't recorded and doesn't size builds. */
+export const MIN_PEAK_BYTES = 64 * 1024 ** 2;
+/** Nor is a build shorter than this, which the sampler barely sees. */
+const MIN_PEAK_BUILD_MS = 2 * SAMPLE_MS;
 const CACHE_MS = 30_000;
 
 // Admits the head when nothing runs, or when a slot is free and no hold is set. The first build into an empty builder holds it for the sweep.
@@ -296,7 +300,9 @@ async function largestRecentPeak(): Promise<number | null> {
       .select({ peak: max(buildPeaks.peakBytes) })
       .from(buildPeaks)
       .where(gt(buildPeaks.recordedAt, new Date(Date.now() - PEAK_WINDOW_MS)));
-    peakCache = { at: Date.now(), bytes: row?.peak ? Number(row.peak) : null };
+    // The largest is below the floor only when every row is.
+    const peak = row?.peak == null ? null : Number(row.peak);
+    peakCache = { at: Date.now(), bytes: peak !== null && peak >= MIN_PEAK_BYTES ? peak : null };
   } catch (err) {
     log.warn("Couldn't read recorded build peaks; sizing builds by the default budget:", err);
     peakCache = { at: Date.now(), bytes: null };
@@ -430,6 +436,11 @@ async function sweep(container: string | undefined, logLine: (line: string) => v
   );
 }
 
+/** Whether a build's rise is worth recording: big enough and from a build long enough to sample. */
+export function recordablePeak(riseBytes: number | null, buildMs: number): riseBytes is number {
+  return riseBytes !== null && riseBytes >= MIN_PEAK_BYTES && buildMs >= MIN_PEAK_BUILD_MS;
+}
+
 async function recordPeak(deploymentId: string, bytes: number): Promise<void> {
   await db
     .insert(buildPeaks)
@@ -535,6 +546,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     renew.unref?.();
     let ok = false;
     let sampler: ReturnType<typeof sampleBuilder> | null = null;
+    let buildStart = Date.now();
     try {
       if (held.alone) {
         try {
@@ -550,15 +562,17 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
         }
         if (bounded.container) sampler = sampleBuilder(bounded.container);
       }
+      buildStart = Date.now();
       const result = await build();
       ok = true;
       return result;
     } finally {
       clearInterval(renew);
+      const buildMs = Date.now() - buildStart;
       const rise = sampler ? await sampler.stop() : null;
       const admits = await store.release(id, !ok).catch(() => null);
       // Alone at admission and nobody admitted since: the builder's rise is this build's.
-      if (ok && gate.deploymentId && held.alone && admits === held.gen && rise !== null && rise > 0) {
+      if (ok && gate.deploymentId && held.alone && admits === held.gen && recordablePeak(rise, buildMs)) {
         await recordPeak(gate.deploymentId, rise).catch((err) => log.warn("Couldn't record the build's memory peak:", err));
       }
       // A build that ended badly may have left steps running; clear them now if the builder is idle.
