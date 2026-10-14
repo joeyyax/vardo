@@ -107,6 +107,24 @@ describe("deployClock", () => {
     expect(clock.workingMs).toBe(0);
   });
 
+  it("doesn't count a replayed wait twice", () => {
+    const events: WaitEvent[] = [
+      { reason: "deploy-slot", streamId: at(0) },
+      { reason: null, streamId: at(10_000) },
+    ];
+    const state = fold([...events, ...events]);
+    expect(state.closedMs).toBe(10_000);
+    expect(state.current).toBeNull();
+  });
+
+  it("orders events in the same millisecond by sequence", () => {
+    const state = fold([
+      { reason: "checkout", streamId: at(0, 1) },
+      { reason: null, streamId: at(0, 0) },
+    ]);
+    expect(state.current?.reason).toBe("checkout");
+  });
+
   it("ignores an end without a start", () => {
     const state = fold([{ reason: null, streamId: at(5_000) }]);
     expect(deployClock(state, { startedAt: T0, now: T0 + 9_000, queued: false }).workingMs).toBe(9_000);

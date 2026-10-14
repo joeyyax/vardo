@@ -11,9 +11,11 @@ export type WaitState = {
   closedMs: number;
   /** A wait event has arrived, so the stream speaks for the deploy. */
   heard: boolean;
+  /** Stream id of the last event applied, so a replay doesn't count twice. */
+  lastId: string | null;
 };
 
-export const NO_WAIT: WaitState = { current: null, closedMs: 0, heard: false };
+export const NO_WAIT: WaitState = { current: null, closedMs: 0, heard: false, lastId: null };
 
 /** Milliseconds from a Redis stream id like `1760000000000-0`, or null when it isn't one. */
 export function streamIdMs(id: string | undefined): number | null {
@@ -21,7 +23,14 @@ export function streamIdMs(id: string | undefined): number | null {
   return match ? Number(match[1]) : null;
 }
 
-const REASONS = new Set<string>(["app", "deploy-slot", "build-slot", "checkout"]);
+/** Whether stream id `a` comes after `b`. */
+function streamIdAfter(a: string, b: string): boolean {
+  const [am, as] = a.split("-").map(Number);
+  const [bm, bs] = b.split("-").map(Number);
+  return am !== bm ? am > bm : as > bs;
+}
+
+const REASONS =new Set<string>(["app", "deploy-slot", "build-slot", "checkout"]);
 
 /** A `wait` event's payload, or null when it doesn't match the contract. */
 export function parseWaitEvent(data: unknown): WaitEvent | null {
@@ -35,17 +44,18 @@ export function parseWaitEvent(data: unknown): WaitEvent | null {
 /** Folds one wait event into the running state. */
 export function applyWait(state: WaitState, event: WaitEvent): WaitState {
   const at = streamIdMs(event.streamId);
-  if (at === null) return state;
+  if (at === null || (state.lastId && !streamIdAfter(event.streamId, state.lastId))) return state;
   const { current } = state;
+  const seen = { heard: true, lastId: event.streamId };
 
   if (event.reason) {
-    if (current?.reason === event.reason) return { ...state, heard: true, current: { ...current, ahead: event.ahead } };
+    if (current?.reason === event.reason) return { ...state, ...seen, current: { ...current, ahead: event.ahead } };
     const closedMs = current ? state.closedMs + Math.max(0, at - current.since) : state.closedMs;
-    return { closedMs, heard: true, current: { reason: event.reason, ahead: event.ahead, since: at } };
+    return { ...seen, closedMs, current: { reason: event.reason, ahead: event.ahead, since: at } };
   }
 
-  if (!current) return { ...state, heard: true };
-  return { current: null, closedMs: state.closedMs + Math.max(0, at - current.since), heard: true };
+  if (!current) return { ...state, ...seen };
+  return { ...seen, current: null, closedMs: state.closedMs + Math.max(0, at - current.since) };
 }
 
 export type ActiveWait = { reason: WaitReason | null; ahead?: number; since: number };

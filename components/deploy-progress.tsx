@@ -88,6 +88,7 @@ export function DeployProgress({
   const clock = now === null ? null : deployClockOf(stream, { startedAt, status, now });
   const wait = clock?.wait ?? null;
   const working = clock?.workingMs ?? 0;
+  const started = Object.keys(stages).length > 0;
   const keys = DEPLOY_STAGE_KEYS.filter((k) => k !== "cleanup" && stages[k] !== "skipped");
   const current = keys.findIndex((k) => stages[k] === "running" || stages[k] === "failed");
   const share = typicalMs ? Math.min(0.97, working / typicalMs) : null;
@@ -126,7 +127,7 @@ export function DeployProgress({
           );
         })}
       </ol>
-      {share !== null && !(wait && working === 0) && (
+      {share !== null && !(wait && !started) && (
         <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-accent">
           <i
             className={cn(
@@ -156,7 +157,7 @@ export function DeployProgress({
             {wait ? (
               <>
                 waiting {fmt(Math.min(now! - wait.since, clock.waitedMs))}
-                {working > 0 && ` · ran ${fmt(working)}`}
+                {started && ` · ran ${fmt(working)}`}
               </>
             ) : (
               <>
