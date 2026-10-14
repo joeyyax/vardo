@@ -23,6 +23,7 @@ import {
   X,
   Zap,
   type LucideIcon,
+  Hourglass,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -87,7 +88,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { deployWaitOf, waitLabel } from "@/lib/ui/deploy-wait";
+import { waitLabel, waitWord } from "@/lib/ui/deploy-wait";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -831,10 +832,6 @@ export function ComposeDetail({
     onDeployStarted: () => setActiveTabAndUrl("deployments"),
     initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
-  const heldDeploy = deploy.deploying
-    ? deployWaitOf({ wait: deploy.deployWait, stages: deploy.deployStages }, serverRunningDeploy?.status)
-    : null;
-  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const [showComposeReview, setShowComposeReview] = useState(false);
 
@@ -846,6 +843,9 @@ export function ComposeDetail({
       deploy.handleDeploy();
     }
   }, [app.composeContent, app.deployments.length, deploy]);
+
+  const heldDeploy = deploy.deployHeld;
+  const deployWaitLabel = heldDeploy ? waitLabel(heldDeploy.reason, heldDeploy.ahead) : null;
 
   const totalDeployments = app.deployments.length;
 
@@ -870,10 +870,10 @@ export function ComposeDetail({
   });
 
   const statusTrigger = (() => {
-    if (deploy.deploying && deploy.deployQueued && app.status !== "deploying") {
+    if (heldDeploy) {
       return {
         className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
-        content: <>Queued</>,
+        content: <><Hourglass className="mr-1.5 size-3.5" />{waitWord(heldDeploy.reason)}</>,
       };
     }
     if (deploy.deploying || app.status === "deploying") {
