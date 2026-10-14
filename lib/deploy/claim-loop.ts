@@ -26,10 +26,8 @@ export async function claimPass(scope: ClaimScope): Promise<string[]> {
   const me = executorId();
   const started: string[] = [];
 
-  if (scope !== "self") {
-    const { ownSlot } = await import("@/lib/docker/own-slot");
-    await clearFinishedExclusive(await ownSlot());
-  }
+  const { ownSlot } = await import("@/lib/docker/own-slot");
+  await clearFinishedExclusive(await ownSlot());
 
   for (const row of await claimDeploys(me, { self: SELF_FILTER[scope] })) {
     log.info(`Claimed deployment ${row.id} (${row.trigger}, ${row.scopeKey})`);

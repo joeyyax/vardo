@@ -497,7 +497,7 @@ export async function dropSupersede(id: string): Promise<void> {
 
 /**
  * Clears exclusive flags left on finished rows. A self-deploy's success keeps its flag until a claimer
- * in the new slot clears it, so the old slot's worker never claims in between.
+ * in the new slot clears it, so the old slot never claims in between. A claimer that can't read its slot leaves it.
  */
 export async function clearFinishedExclusive(mySlot: string | null): Promise<number> {
   const rows = await db
@@ -511,7 +511,7 @@ export async function clearFinishedExclusive(mySlot: string | null): Promise<num
         or(
           ne(deployments.status, "success"),
           isNull(deployments.slot),
-          mySlot === null ? sql`true` : eq(deployments.slot, mySlot),
+          mySlot === null ? sql`false` : eq(deployments.slot, mySlot),
         ),
       ),
     )

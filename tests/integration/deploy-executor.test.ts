@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 import type { DeployOpts, DeployResult } from "@/lib/docker/deploy";
+import { ownSlot } from "@/lib/docker/own-slot";
 
 const { store, engine, streamed } = vi.hoisted(() => ({
   store: new Map<string, string>(),
@@ -436,10 +437,30 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       await runs.get(self)!.succeed();
       await until(() => exec.runningHere(), (ids) => !ids.includes(self));
       expect((await row(self)).exclusive_requested_at).not.toBeNull();
-      await claimAll("self");
+      vi.mocked(ownSlot).mockResolvedValueOnce("blue");
+      expect(await claimAll("others")).toEqual([]);
       expect((await row(self)).exclusive_requested_at).not.toBeNull();
       expect(await claimAll("others")).toEqual([queued]);
       expect((await row(self)).exclusive_requested_at).toBeNull();
+    });
+
+    it("the new slot's console clears a committed self-deploy's hold and claims the next one; the old slot's can't", async () => {
+      await enqueue("self", "api");
+      const [first] = await claimAll("self");
+      await sql`update deployment set exclusive_requested_at = now() where id = ${first}`;
+      await runs.get(first)!.succeed();
+      await until(() => exec.runningHere(), (ids) => !ids.includes(first));
+      expect((await row(first)).exclusive_requested_at).not.toBeNull();
+
+      const fix = await enqueue("self", "api");
+      vi.mocked(ownSlot).mockResolvedValueOnce("blue");
+      expect(await claimAll("self")).toEqual([]);
+      vi.mocked(ownSlot).mockResolvedValueOnce(null);
+      expect(await claimAll("self")).toEqual([]);
+      expect((await row(first)).exclusive_requested_at).not.toBeNull();
+
+      expect(await claimAll("self")).toEqual([fix]);
+      expect((await row(first)).exclusive_requested_at).toBeNull();
     });
 
     it("goes ahead at the cap with deploys still running", async () => {

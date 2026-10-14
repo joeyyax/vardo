@@ -26,7 +26,7 @@ A deploy is a row in the `deployment` table. Whatever asks for one (the deploy b
 
 ### Vardo's own deploys
 
-A deploy of Vardo queues and builds like any other. Its swap restarts the worker and console and can recreate Postgres and Redis, so before the swap it sets a hold on its row: executors claim nothing new, and the deploy waits up to 15 minutes for running deploys, logging `Waiting for N deploys to finish before the swap` every 30 seconds. Deploys still running at 15 minutes get the old worker's drain, then the crash rule. A successful deploy keeps the hold until the new slot's worker claims; a failed one drops it. A hold older than 30 minutes stops counting.
+A deploy of Vardo queues and builds like any other. Its swap restarts the worker and console and can recreate Postgres and Redis, so before the swap it sets a hold on its row: executors claim nothing new, and the deploy waits up to 15 minutes for running deploys, logging `Waiting for N deploys to finish before the swap` every 30 seconds. Deploys still running at 15 minutes get the old worker's drain, then the crash rule. A successful deploy keeps the hold until the new slot's console or worker clears it; a failed one drops it. A hold older than 30 minutes stops counting.
 
 ### When the worker is down
 
