@@ -3,7 +3,7 @@ import { join, relative } from "path";
 import { describe, it, expect } from "vitest";
 
 const LIFECYCLE_TYPES =
-  /type:\s*"system\.(update-started|updated|update-failed|update-skipped|shutdown|started|recovered-unclean|restarting|restarted|restart-failed|containers-missing)"/;
+  /type:\s*"system\.(update-started|updated|update-failed|shutdown|started|recovered-unclean|restarting|restarted|restart-failed|containers-missing)"/;
 
 // The two senders, the type definitions and the email fixtures.
 const ALLOWED = new Set(["lib/self-update/lifecycle.ts", "lib/lifecycle/notices.ts", "lib/bus/events.ts", "lib/email/fixtures.ts"]);

@@ -288,16 +288,6 @@ export function updateFailed(report: FailedReport, opts: { now?: number } = {}):
   });
 }
 
-/** An automatic update that didn't start. */
-export async function updateSkipped(event: { fromVersion: string; target: string; reasons: string[] }): Promise<void> {
-  try {
-    for (const orgId of await adminOrgIds()) {
-      emit(orgId, { type: "system.update-skipped", title: "Vardo update skipped", message: event.reasons.join("; "), ...event });
-    }
-  } catch (err) {
-    log.error("Couldn't send system.update-skipped:", err);
-  }
-}
 
 export type ActiveUpdate = Pick<UpdateRecord, "id" | "fromVersion" | "toVersion" | "startedAt">;
 

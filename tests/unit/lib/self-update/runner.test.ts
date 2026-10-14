@@ -14,7 +14,6 @@ const m = vi.hoisted(() => ({
   unhealthy: { current: [] as string[] },
   emit: vi.fn(),
   updateFailed: vi.fn(async (_report: unknown) => true),
-  updateSkipped: vi.fn(async (_event: unknown) => {}),
   buildSha: { current: "4f1a9b2c0d" },
 }));
 
@@ -46,7 +45,7 @@ vi.mock("@/lib/config/health", () => ({
   })),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: m.emit }));
-vi.mock("@/lib/self-update/lifecycle", () => ({ updateFailed: m.updateFailed, updateSkipped: m.updateSkipped }));
+vi.mock("@/lib/self-update/lifecycle", () => ({ updateFailed: m.updateFailed }));
 vi.mock("@/lib/notifications/admin-orgs", () => ({ adminOrgIds: vi.fn(async () => ["org1"]) }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: vi.fn(async () => true), releaseLock: vi.fn(async () => {}) }));
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: vi.fn() }));
