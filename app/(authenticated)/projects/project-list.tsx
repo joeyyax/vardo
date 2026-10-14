@@ -440,7 +440,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
                     No apps yet. Add one
                   </Link>
                 ) : ctx.dense ? (
-                  <div className="@container grid content-start">
+                  <div className="@container grid grid-cols-1 content-start">
                     <DenseRows section={section} nodes={shown} depth={0} ctx={ctx} />
                   </div>
                 ) : (
