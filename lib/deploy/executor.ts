@@ -78,10 +78,36 @@ async function applyCancel(job: Job, reason: DeployCancelReason, atBoundary: boo
   if (atBoundary || safe(job)) abort(job, { killed: true, reason });
 }
 
+/** The watchdog holds off restarts while any `deploy:active:*` key exists (scripts/watchdog.sh). */
+const WATCHDOG_KEY = (id: string) => `deploy:active:${id}`;
+const WATCHDOG_TTL_MS = 30_000;
+
+async function markActive(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    const { redis } = await import("@/lib/redis");
+    const pipeline = redis.pipeline();
+    for (const id of ids) pipeline.set(WATCHDOG_KEY(id), "1", "PX", WATCHDOG_TTL_MS);
+    await pipeline.exec();
+  } catch {
+    // Expires on its own; the watchdog reads a missing Redis as unknown.
+  }
+}
+
+async function clearActive(id: string): Promise<void> {
+  try {
+    const { redis } = await import("@/lib/redis");
+    await redis.del(WATCHDOG_KEY(id));
+  } catch {
+    // Expires on its own.
+  }
+}
+
 async function renewPass(): Promise<void> {
   if (state.renewing || state.jobs.size === 0) return;
   state.renewing = true;
   try {
+    void markActive(runningHere());
     const { cancel, lost } = await renewLeases(executorId(), runningHere());
     for (const { id, reason } of cancel) {
       const job = state.jobs.get(id);
@@ -198,6 +224,7 @@ export function startClaimed(row: ClaimedDeploy, opts: StartOpts = {}): Promise<
   const job: Job = { row, controller: new AbortController(), stage: null, done: Promise.resolve() };
   state.jobs.set(row.id, job);
   ensureRenewing();
+  void markActive([row.id]);
   job.done = (async () => {
     let result: DeployResult | null = null;
     try {
@@ -213,6 +240,7 @@ export function startClaimed(row: ClaimedDeploy, opts: StartOpts = {}): Promise<
       }
       state.jobs.delete(row.id);
       stopRenewingWhenIdle();
+      await clearActive(row.id);
     }
   })();
   return job.done;

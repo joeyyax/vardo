@@ -5,8 +5,7 @@ import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { readStream } from "@/lib/stream/consumer";
-import { isTerminalStageEvent } from "@/lib/docker/deploy-logger";
+import { tailDeployment } from "@/lib/stream/deploy-tail";
 import { deployStream } from "@/lib/stream/keys";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -62,7 +61,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Fall back to the DB log when the stream is gone.
+    // A finished deploy whose stream expired replays from the DB log.
     const streamKey = deployStream(deploymentId);
     const streamExists = await (async () => {
       try {
@@ -70,8 +69,13 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         return len > 0;
       } catch { return false; }
     })();
+    const current = await db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { status: true },
+    });
+    const inFlight = current?.status === "queued" || current?.status === "running";
 
-    if (!streamExists) {
+    if (!streamExists && !inFlight) {
       const deploy = await db.query.deployments.findFirst({
         where: eq(deployments.id, deploymentId),
         columns: { id: true, status: true, log: true },
@@ -108,6 +112,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const encoder = new TextEncoder();
     const abortController = new AbortController();
+    const id = deploymentId;
 
     const stream = new ReadableStream({
       start(controller) {
@@ -146,56 +151,35 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
-        // Read from the Redis Stream: history, then live.
-        (async () => {
-          try {
-            const entries = readStream(streamKey, {
-              fromId: lastId,
-              signal: abortController.signal,
-            });
-
-            for await (const entry of entries) {
-              const { fields } = entry;
-
-              // Stage transitions
-              if (fields.line?.startsWith("[stage]")) {
-                sendEvent("stage", {
-                  deploymentId,
-                  stage: fields.stage,
-                  status: fields.status,
-                  streamId: entry.id,
-                });
-
-                // Auto-close on terminal states
-                if (isTerminalStageEvent(fields.stage, fields.status)) {
-                  sendEvent("done", {
-                    deploymentId,
-                    success: fields.status === "success",
-                    status: fields.status,
-                    streamId: entry.id,
-                  });
-                  cleanup();
-                  return;
-                }
-              } else {
-                // Log lines
-                sendEvent("log", {
-                  deploymentId,
-                  message: fields.line,
-                  stage: fields.stage,
-                  streamId: entry.id,
-                });
-              }
-            }
-          } catch (err) {
-            if (!abortController.signal.aborted) {
-              sendEvent("error", {
-                message: err instanceof Error ? err.message : "Stream error",
+        // Why it waits while queued, then its Redis stream, then the finished row.
+        tailDeployment(
+          id,
+          {
+            onLog: (message, meta) => sendEvent("log", { deploymentId: id, message, stage: meta.stage, streamId: meta.streamId }),
+            onStage: (stage, status, meta) => sendEvent("stage", { deploymentId: id, stage, status, streamId: meta.streamId }),
+            onWaiting: (message) => sendEvent("log", { deploymentId: id, message: `[queue] ${message}`, stage: "queued" }),
+          },
+          { signal: abortController.signal, fromId: lastId },
+        )
+          .then((result) => {
+            if (result) {
+              sendEvent("done", {
+                deploymentId: id,
+                success: result.success,
+                status: result.status,
+                durationMs: result.durationMs,
+                error: result.error,
+                postDeployError: result.postDeployError,
               });
             }
             cleanup();
-          }
-        })();
+          })
+          .catch((err) => {
+            if (!abortController.signal.aborted) {
+              sendEvent("error", { message: err instanceof Error ? err.message : "Stream error" });
+            }
+            cleanup();
+          });
       },
     });
 
