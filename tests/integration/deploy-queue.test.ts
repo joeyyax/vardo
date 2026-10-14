@@ -342,19 +342,21 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       for (let i = 0; i < 20; i++) await seed(`b${i}`, `bulk${i}`, i % 3 ? "webhook" : "manual", "queued", { ageS: 100 - i });
 
       // Hold the claim lock so both calls are provably waiting at once, then let them race.
+      const waiters = async () => {
+        const [w] = await sql`select count(*)::int as n from pg_locks l join pg_database d on d.oid = l.database where l.locktype = 'advisory' and not l.granted and d.datname = current_database()`;
+        return w.n as number;
+      };
       const holder = await sql.reserve();
       await holder`begin`;
       await holder`select pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`;
       const both = Promise.all([q.claimDeploys("w1", { capacity: 12 }), q.claimDeploys("w2", { capacity: 12 })]);
-      for (let i = 0; i < 100; i++) {
-        const [w] = await sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`;
-        if (w.n === 2) break;
-        await sleep(20);
+      try {
+        for (let i = 0; i < 100 && (await waiters()) !== 2; i++) await sleep(20);
+        expect(await waiters()).toBe(2);
+      } finally {
+        await holder`commit`;
+        holder.release();
       }
-      const [waiting] = await sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`;
-      expect(waiting.n).toBe(2);
-      await holder`commit`;
-      holder.release();
 
       const [a, b] = await both;
       const ids = [...a, ...b].map((c) => c.id);
