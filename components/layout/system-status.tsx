@@ -55,8 +55,10 @@ function ProblemNote({ problem }: { problem: SystemProblem }) {
 }
 
 /** Vardo's own health by the branding: a quiet dot, or a chip naming the worst problem. */
-export function SystemStatus({ worker, version }: { worker: WorkerOutage | null; version: string }) {
-  const { rows } = useAttention();
+export function SystemStatus({ worker: initial, version }: { worker: WorkerOutage | null; version: string }) {
+  const { rows, loaded, worker: live } = useAttention();
+  // The layout's reading until the attention poll answers.
+  const worker = loaded ? live : initial;
   const updating = rows.find((r) => r.key === VARDO_UPDATING_ROW_KEY)?.items[0] ?? null;
   const problems = systemProblems(worker, updating && { name: updating.name, href: updating.href });
   const worst = problems[0];

@@ -1,5 +1,6 @@
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
+import type { WorkerOutage } from "@/lib/ui/system-status";
 import {
   conditionProblem,
   PROBLEM_GROUP_ORDER,
@@ -65,6 +66,8 @@ export type AttentionRow = {
   footer?: string;
   /** Link to a page that handles the whole row, or a POST it confirms first. */
   action?: AttentionAction;
+  /** The missing worker, for the status chip. Only on the worker-offline row. */
+  worker?: WorkerOutage;
 };
 
 export type AttentionAction =
