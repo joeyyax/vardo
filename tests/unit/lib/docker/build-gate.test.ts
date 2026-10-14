@@ -11,6 +11,7 @@ const { state } = vi.hoisted(() => ({
     killed: [] as string[],
     anon: [100, 400, 900, 300],
     clock: [] as string[],
+    typical: {} as Record<string, number>,
   },
 }));
 
@@ -35,6 +36,9 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/redis", () => ({ redis: {} }));
+vi.mock("@/lib/deploy/eta-history", () => ({
+  typicalBuildMs: async (ids: string[]) => new Map(ids.map((id) => [id, state.typical[id] ?? null])),
+}));
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) } }));
 vi.mock("@/lib/resources/host", () => ({
   detectedHost: () => ({ cpus: 8, memoryBytes: 16 * 1024 ** 3 }),
@@ -54,7 +58,7 @@ vi.mock("@/lib/utils/exec", () => ({
   }),
 }));
 
-const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests } = await import(
+const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta } = await import(
   "@/lib/docker/build-gate"
 );
 
@@ -104,6 +108,40 @@ describe("buildLimit", () => {
     expect(buildLimit({ ...jy0, largestPeakBytes: 3.2 * GB, env }).limit).toBe(3);
     expect(buildLimit({ ...jy0, largestPeakBytes: 3.2 * GB, env, memoryPressureAvg10: 50 }).limit).toBe(1);
     expect(buildLimit({ ...jy0, largestPeakBytes: 3.2 * GB, env: { VARDO_MAX_CONCURRENT_BUILDS: "0" } }).limit).toBe(1);
+  });
+});
+
+describe("buildEta", () => {
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const min = 60_000;
+  const snapshot = (queue: string[], running: { id: string; since: number | null }[]) => ({ snapshot: async () => ({ queue, running }) });
+
+  beforeEach(() => {
+    state.typical = { a: 10 * min, b: 4 * min, c: 6 * min };
+  });
+
+  it("starts when the running build should end, then after each build ahead", async () => {
+    const store = snapshot(["b:1", "c:1", "d:1"], [{ id: "a:1", since: now - 6 * min }]);
+    expect(await buildEta(store, "b:1", 1, now)).toBe(now + 4 * min);
+    expect(await buildEta(store, "c:1", 1, now)).toBe(now + 8 * min);
+    expect(await buildEta(store, "d:1", 1, now)).toBe(now + 14 * min);
+  });
+
+  it("takes the earliest of two slots", async () => {
+    const store = snapshot(["b:1", "c:1"], [{ id: "a:1", since: now - 6 * min }]);
+    expect(await buildEta(store, "b:1", 2, now)).toBe(now);
+    expect(await buildEta(store, "c:1", 2, now)).toBe(now + 4 * min);
+  });
+
+  it("counts an overdue build as ending now", async () => {
+    const store = snapshot(["b:1"], [{ id: "a:1", since: now - 30 * min }]);
+    expect(await buildEta(store, "b:1", 1, now)).toBe(now);
+  });
+
+  it("is null behind a build without history or without a deployment", async () => {
+    expect(await buildEta(snapshot(["x:1", "b:1"], []), "b:1", 1, now)).toBeNull();
+    expect(await buildEta(snapshot(["b:1"], [{ id: "build:zz", since: now }]), "b:1", 1, now)).toBeNull();
+    expect(await buildEta(snapshot(["b:1"], []), "gone:1", 1, now)).toBeNull();
   });
 });
 
@@ -177,6 +215,12 @@ function fakeRedisStore() {
     },
     async runningCount() {
       return running.size;
+    },
+    async snapshot() {
+      return { queue: [...queue], running: [...running].map((id) => ({ id, since: null })) };
+    },
+    async bump() {
+      return false;
     },
     queue,
   };
@@ -270,7 +314,11 @@ describe("withBuildSlot", () => {
 
     const waits: unknown[] = [];
     const b = gateFor("dep-b");
-    const queued = withBuildSlot({ ...b.gate, wait: async (reason, ahead, total) => void waits.push([reason, ahead, total]) }, bounded, async () => {});
+    const queued = withBuildSlot(
+      { ...b.gate, wait: async (reason, place) => void waits.push([reason, place?.ahead, place?.total]) },
+      bounded,
+      async () => {},
+    );
     await new Promise((r) => setTimeout(r, 30));
     expect(waits[0]).toEqual(["build-slot", undefined, undefined]);
     expect(waits).toContainEqual(["build-slot", 0, 1]);

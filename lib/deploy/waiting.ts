@@ -9,7 +9,9 @@ import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { WORKER_FRESH_MS } from "@/lib/worker/mode";
 import { readWorkers } from "@/lib/worker/presence";
 import { addDeployLog } from "@/lib/stream/producer";
-import { waitEntry, type WaitReason } from "@/lib/docker/deploy-logger";
+import { waitEntry, type WaitPlace, type WaitReason } from "@/lib/docker/deploy-logger";
+import { etaMoved, lineEtas, slotFreeAt } from "./eta";
+import { typicalDeploySql } from "./eta-history";
 import { executorFor } from "./claim-scope";
 import { EXCLUSIVE_MAX_AGE_MS } from "./queue";
 
@@ -38,19 +40,15 @@ export async function deploysWaitingForWorker(): Promise<number> {
 }
 
 /** Records a running deploy's own wait on its row. `restart` stamps a new start time. */
-export async function recordWait(
-  id: string,
-  reason: WaitReason | null,
-  ahead: number | undefined,
-  total: number | undefined,
-  opts: { restart: boolean },
-): Promise<void> {
+export async function recordWait(id: string, reason: WaitReason | null, place: WaitPlace, opts: { restart: boolean }): Promise<void> {
+  const eta = reason === null || place.eta == null ? null : new Date(place.eta);
   await db
     .update(deployments)
     .set({
       waitReason: reason,
-      waitAhead: reason === null ? null : (ahead ?? null),
-      waitTotal: reason === null ? null : (total ?? null),
+      waitAhead: reason === null ? null : (place.ahead ?? null),
+      waitTotal: reason === null ? null : (place.total ?? null),
+      waitEta: eta,
       ...(opts.restart || reason === null ? { waitingSince: reason === null ? null : sql`now()` } : {}),
     })
     .where(eq(deployments.id, id));
@@ -70,18 +68,36 @@ export async function recordQueueTotal(reason: WaitReason, total: number): Promi
     );
 }
 
-type Changed = { id: string; wait_reason: WaitReason | null; wait_ahead: number | null; wait_total: number | null };
+export type QueueWait = {
+  id: string;
+  wait_reason: WaitReason | null;
+  wait_ahead: number | null;
+  wait_total: number | null;
+  wait_eta: string | null;
+};
+
+type QueuedRow = {
+  id: string;
+  reason: WaitReason | null;
+  typical_ms: number | null;
+  wait_reason: WaitReason | null;
+  wait_ahead: number | null;
+  wait_total: number | null;
+  wait_eta: Date | string | null;
+};
 
 /**
- * One statement for every queued deploy: why it hasn't started (the worker, Vardo's own swap, the app's running deploy, a deploy slot) and, for a slot, its place and how many wait for one instance-wide.
- * Writes only rows whose reason, place or total changed, and a stream entry for each, so two claimers running it don't both write.
+ * Every queued deploy's wait: why it hasn't started (the worker, Vardo's own swap, the app's running deploy, a deploy slot) and,
+ * in the deploy-slot line, its place, the line's length instance-wide and when it should start.
+ * Reads the queue once, then writes only rows that changed (an estimate by more than ETA_STEP_MS) in one statement, with a stream entry for each.
  */
-export async function markQueueWaits(opts: { capacity?: number; workerMissing?: boolean } = {}): Promise<Changed[]> {
+export async function markQueueWaits(opts: { capacity?: number; workerMissing?: boolean; now?: number } = {}): Promise<QueueWait[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
   const noWorker = opts.workerMissing ?? (await workerMissing());
   const automatic = sql`d.trigger IN ('webhook', 'relay', 'poll')`;
 
-  const changed = await db.execute<Changed>(sql`
+  // Claim order, as claimDeploys picks: bumped first (latest bump first), then explicit triggers, then oldest.
+  const queued = await db.execute<QueuedRow>(sql`
     WITH state AS (
       SELECT
         (SELECT count(*)::int FROM deployment WHERE status = 'running') AS running,
@@ -90,13 +106,14 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
           WHERE exclusive_requested_at > now() - ${EXCLUSIVE_MAX_AGE_MS}::int * interval '1 millisecond'
         ) AS exclusive
     ), queued AS (
-      SELECT d.id, d.started_at, NOT ${automatic} AS explicit, a.name AS app_name,
-        row_number() OVER (PARTITION BY d.scope_key ORDER BY ${automatic}, d.started_at, d.id) AS in_scope,
+      SELECT d.id, d.app_id, d.started_at, d.bumped_at, NOT ${automatic} AS explicit, a.name AS app_name,
+        d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta,
+        row_number() OVER (PARTITION BY d.scope_key ORDER BY d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id) AS in_scope,
         EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running') AS scope_busy
       FROM deployment d JOIN app a ON a.id = d.app_id
       WHERE d.status = 'queued' AND d.scope_key IS NOT NULL
     ), reasons AS (
-      SELECT q.id, q.explicit, q.started_at,
+      SELECT q.*,
         CASE
           WHEN ${noWorker} AND q.app_name <> ${VARDO_SELF_APP_NAME} THEN 'worker'
           WHEN s.exclusive THEN 'exclusive'
@@ -104,40 +121,72 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
           WHEN s.running >= ${capacity} THEN 'deploy-slot'
         END AS reason
       FROM queued q CROSS JOIN state s
-    ), placed AS (
-      SELECT id, reason,
-        CASE WHEN reason = 'deploy-slot'
-          THEN (row_number() OVER (PARTITION BY reason ORDER BY explicit DESC, started_at, id) - 1)::smallint
-        END AS ahead,
-        CASE WHEN reason = 'deploy-slot' THEN (count(*) OVER (PARTITION BY reason))::smallint END AS total
-      FROM reasons
     )
+    SELECT r.id, r.reason, r.wait_reason, r.wait_ahead, r.wait_total, r.wait_eta,
+      CASE WHEN r.reason = 'deploy-slot' THEN ${typicalDeploySql(sql`r.app_id`)} END AS typical_ms
+    FROM reasons r
+    ORDER BY r.bumped_at DESC NULLS LAST, r.explicit DESC, r.started_at, r.id`);
+
+  const line = [...queued].filter((r) => r.reason === "deploy-slot");
+  const now = opts.now ?? Date.now();
+  let etas: (number | null)[] = [];
+  if (line.length > 0) {
+    const running = await db.execute<{ since: Date | string; typical_ms: number | null }>(sql`
+      SELECT coalesce(d.claimed_at, d.started_at) AS since, ${typicalDeploySql(sql`d.app_id`)} AS typical_ms
+      FROM deployment d WHERE d.status = 'running'`);
+    const busy = [...running].map((r) => slotFreeAt(now, new Date(r.since).getTime(), r.typical_ms === null ? null : Number(r.typical_ms)));
+    const idle = Array.from({ length: Math.max(0, capacity - busy.length) }, () => now);
+    etas = lineEtas(now, [...busy, ...idle], line.map((r) => (r.typical_ms === null ? null : Number(r.typical_ms))));
+  }
+
+  const place = new Map(line.map((r, i) => [r.id, { ahead: i, total: line.length, eta: etas[i] ?? null }]));
+  const changed = [...queued].flatMap((r) => {
+    const p = place.get(r.id);
+    const ahead = p?.ahead ?? null;
+    const total = p?.total ?? null;
+    const moved = etaMoved(r.wait_eta, p?.eta ?? null);
+    if (r.wait_reason === r.reason && r.wait_ahead === ahead && r.wait_total === total && !moved) return [];
+    const eta = moved ? (p?.eta ?? null) : r.wait_eta === null ? null : new Date(r.wait_eta).getTime();
+    return [{ id: r.id, reason: r.reason, ahead, total, eta }];
+  });
+  if (changed.length === 0) return [];
+
+  const values = sql.join(
+    changed.map(
+      (c) => sql`(${c.id}, ${c.reason}::text, ${c.ahead}::smallint, ${c.total}::smallint, ${c.eta === null ? null : new Date(c.eta).toISOString()}::timestamptz)`,
+    ),
+    sql`, `,
+  );
+  const written = await db.execute<QueueWait>(sql`
     UPDATE deployment d SET
-      wait_reason = p.reason,
-      wait_ahead = p.ahead,
-      wait_total = p.total,
+      wait_reason = v.reason,
+      wait_ahead = v.ahead,
+      wait_total = v.total,
+      wait_eta = v.eta,
       waiting_since = CASE
-        WHEN p.reason IS NULL THEN NULL
-        WHEN d.wait_reason IS NOT DISTINCT FROM p.reason THEN d.waiting_since
+        WHEN v.reason IS NULL THEN NULL
+        WHEN d.wait_reason IS NOT DISTINCT FROM v.reason THEN d.waiting_since
         ELSE now()
       END
-    FROM placed p
-    WHERE d.id = p.id AND d.status = 'queued'
-      AND (d.wait_reason IS DISTINCT FROM p.reason OR d.wait_ahead IS DISTINCT FROM p.ahead OR d.wait_total IS DISTINCT FROM p.total)
-    RETURNING d.id, d.wait_reason, d.wait_ahead, d.wait_total`);
+    FROM (VALUES ${values}) AS v(id, reason, ahead, total, eta)
+    WHERE d.id = v.id AND d.status = 'queued'
+    RETURNING d.id, d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta`);
 
-  for (const row of changed) {
-    addDeployLog(row.id, waitEntry(row.wait_reason, row.wait_ahead ?? undefined, "queued", row.wait_total ?? undefined)).catch((err) =>
-      log.warn(`Couldn't write the wait for ${row.id}:`, err),
+  for (const row of written) {
+    const entry = waitEntry(
+      row.wait_reason,
+      { ahead: row.wait_ahead ?? undefined, total: row.wait_total ?? undefined, eta: row.wait_eta === null ? null : new Date(row.wait_eta).getTime() },
+      "queued",
     );
+    addDeployLog(row.id, entry).catch((err) => log.warn(`Couldn't write the wait for ${row.id}:`, err));
   }
-  return [...changed];
+  return [...written];
 }
 
 /** Ends the queue wait of deploys an executor just claimed. */
 export async function endQueueWaits(ids: string[]): Promise<void> {
   for (const id of ids) {
-    addDeployLog(id, waitEntry(null, undefined, "queued")).catch((err) => log.warn(`Couldn't end the wait for ${id}:`, err));
+    addDeployLog(id, waitEntry(null, {}, "queued")).catch((err) => log.warn(`Couldn't end the wait for ${id}:`, err));
   }
 }
 
@@ -145,7 +194,7 @@ export async function endQueueWaits(ids: string[]): Promise<void> {
 export async function clearFinishedWaits(): Promise<number> {
   const rows = await db
     .update(deployments)
-    .set({ waitReason: null, waitAhead: null, waitTotal: null, waitingSince: null })
+    .set({ waitReason: null, waitAhead: null, waitTotal: null, waitEta: null, waitingSince: null })
     .where(and(isNotNull(deployments.waitReason), notInArray(deployments.status, ["queued", "running"])))
     .returning({ id: deployments.id });
   return rows.length;

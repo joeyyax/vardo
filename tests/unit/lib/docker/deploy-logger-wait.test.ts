@@ -29,14 +29,16 @@ beforeEach(() => {
   clock.length = 0;
 });
 
+const T = Date.parse("2026-10-14T12:00:00Z");
+
 describe("deploy logger waits", () => {
   it("writes each change once, records it on the row and pauses the clock for the whole wait", async () => {
     const l = createDeployLogger("d1");
     l.stage("build", "running");
     await l.wait("build-slot");
-    await l.wait("build-slot", 2, 3);
-    await l.wait("build-slot", 2, 3);
-    await l.wait("build-slot", 1, 3);
+    await l.wait("build-slot", { ahead: 2, total: 3 });
+    await l.wait("build-slot", { ahead: 2, total: 3 });
+    await l.wait("build-slot", { ahead: 1, total: 3 });
     await l.wait(null);
     await l.wait(null);
 
@@ -47,11 +49,11 @@ describe("deploy logger waits", () => {
       ["build-slot", 1, 3, "build"],
       ["", undefined, undefined, "build"],
     ]);
-    expect(recordMock.mock.calls).toEqual([
-      ["d1", "build-slot", undefined, undefined, { restart: true }],
-      ["d1", "build-slot", 2, 3, { restart: false }],
-      ["d1", "build-slot", 1, 3, { restart: false }],
-      ["d1", null, undefined, undefined, { restart: true }],
+    expect(recordMock.mock.calls.map(([id, r, p, o]) => [id, r, p.ahead, p.total, o.restart])).toEqual([
+      ["d1", "build-slot", undefined, undefined, true],
+      ["d1", "build-slot", 2, 3, false],
+      ["d1", "build-slot", 1, 3, false],
+      ["d1", null, undefined, undefined, true],
     ]);
     expect(clock).toEqual(["pause:d1", "resume:d1"]);
   });
@@ -60,7 +62,7 @@ describe("deploy logger waits", () => {
     const l = createDeployLogger("d2");
     await l.wait("checkout");
     await l.wait("build-slot");
-    expect(recordMock.mock.calls.map(([, r, , , o]) => [r, o.restart])).toEqual([
+    expect(recordMock.mock.calls.map(([, r, , o]) => [r, o.restart])).toEqual([
       ["checkout", true],
       ["build-slot", true],
     ]);
@@ -69,11 +71,23 @@ describe("deploy logger waits", () => {
 
   it("writes the line's length to every row in it when only that moved", async () => {
     const l = createDeployLogger("d4");
-    await l.wait("build-slot", 1, 2);
-    await l.wait("build-slot", 1, 3);
+    await l.wait("build-slot", { ahead: 1, total: 2 });
+    await l.wait("build-slot", { ahead: 1, total: 3 });
     expect(recordMock).toHaveBeenCalledTimes(1);
     expect(totalMock).toHaveBeenCalledWith("build-slot", 3);
     expect(addMock.mock.calls.at(-1)?.[1]).toMatchObject({ line: "[wait] build-slot (2 of 3)", ahead: 1, total: 3 });
+  });
+
+  it("writes an estimate only when it moves by more than 30 seconds", async () => {
+    const l = createDeployLogger("d5");
+    await l.wait("build-slot", { ahead: 0, total: 1, eta: T });
+    await l.wait("build-slot", { ahead: 0, total: 1, eta: T + 20_000 });
+    await l.wait("build-slot", { ahead: 0, total: 1, eta: T + 90_000 });
+    await l.wait("build-slot", { ahead: 0, total: 1, eta: null });
+
+    const etas = addMock.mock.calls.map(([, e]) => e.eta);
+    expect(etas).toEqual([new Date(T).toISOString(), new Date(T + 90_000).toISOString(), undefined]);
+    expect(recordMock.mock.calls.map(([, , p]) => p.eta)).toEqual([T, T + 90_000, null]);
   });
 
   it("keeps going when the row write fails", async () => {

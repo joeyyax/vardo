@@ -93,6 +93,12 @@ export const deployments = pgTable("deployment", {
   waitingSince: timestamp("waiting_since", { withTimezone: true }),
   waitAhead: smallint("wait_ahead"),
   waitTotal: smallint("wait_total"),
+  // When a deploy-slot or build-slot wait should end, from the line ahead and each app's last run. Null without history.
+  waitEta: timestamp("wait_eta", { withTimezone: true }),
+  // An admin moved it to the front of its queue; the latest bump goes first.
+  bumpedAt: timestamp("bumped_at", { withTimezone: true }),
+  // When an executor last claimed it.
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),

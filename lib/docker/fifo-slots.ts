@@ -15,6 +15,7 @@ export type FifoWaitOpts<T> = {
   /** Read on every attempt, so a changed limit applies to the next poll. */
   limit: () => number | Promise<number>;
   signal?: AbortSignal;
+  /** Called on every read of the place, so a listener can refresh what depends on time. */
   onPosition?: (place: SlotPlace) => void;
   timeoutMs: number;
   pollMs: number;
@@ -28,7 +29,6 @@ export type FifoWaitOpts<T> = {
 /** Poll until `id` heads the queue with a free slot, then take it. Throws on abort, timeout or removal, leaving the queue. */
 export async function waitForFifoSlot<T>(store: SlotStore<T>, id: string, opts: FifoWaitOpts<T>): Promise<T> {
   const deadline = Date.now() + opts.timeoutMs;
-  let lastPosition: SlotPlace | null = null;
   let positionReadAt = 0;
 
   while (true) {
@@ -37,8 +37,7 @@ export async function waitForFifoSlot<T>(store: SlotStore<T>, id: string, opts: 
       const place = await store.place(id);
       // Taken out of the list, as by the sweeper: it can never reach the head.
       if (place === "absent") throw new Error(opts.messages.removed);
-      if (typeof place === "object" && (place.ahead !== lastPosition?.ahead || place.total !== lastPosition?.total)) {
-        lastPosition = place;
+      if (typeof place === "object") {
         try {
           opts.onPosition?.(place);
         } catch { /* a listener never stalls the queue */ }

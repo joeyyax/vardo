@@ -263,7 +263,7 @@ export function isScopeConflict(err: unknown): boolean {
   return false;
 }
 
-/** Claims queued deploys up to free capacity: one per idle scope, explicit triggers first, then oldest. */
+/** Claims queued deploys up to free capacity: one per idle scope, bumped first (latest bump first), then explicit triggers, then oldest. */
 export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Promise<ClaimedDeploy[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
   const leaseMs = opts.leaseMs ?? LEASE_TTL_MS;
@@ -302,9 +302,10 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
         explicit: boolean;
         waited: boolean;
         started_at: Date;
+        bumped_at: Date | null;
       }>(sql`
         WITH heads AS (
-          SELECT DISTINCT ON (d.scope_key) d.id, NOT ${automatic} AS explicit, d.started_at
+          SELECT DISTINCT ON (d.scope_key) d.id, NOT ${automatic} AS explicit, d.started_at, d.bumped_at
           FROM deployment d JOIN app a ON a.id = d.app_id
           WHERE d.status = 'queued' AND d.scope_key IS NOT NULL ${selfFilter}
             AND NOT EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running')
@@ -313,30 +314,37 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
               SELECT 1 FROM deployment l
               WHERE l.app_id = d.app_id AND l.status = 'running' AND l.scope_key IS NULL AND l.claimed_by IS NULL
             )
-          ORDER BY d.scope_key, ${automatic}, d.started_at, d.id
+          ORDER BY d.scope_key, d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id
         ), picked AS (
           SELECT d.id, h.explicit, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
           WHERE d.status = 'queued'
-          ORDER BY h.explicit DESC, h.started_at, h.id
+          ORDER BY h.bumped_at DESC NULLS LAST, h.explicit DESC, h.started_at, h.id
           LIMIT ${free}
           FOR UPDATE OF d SKIP LOCKED
         )
         UPDATE deployment d SET
           status = 'running',
           claimed_by = ${executorId},
+          claimed_at = now(),
           lease_expires_at = now() + ${leaseMs}::int * interval '1 millisecond',
           stage = NULL,
           wait_reason = NULL,
           wait_ahead = NULL,
           wait_total = NULL,
+          wait_eta = NULL,
           waiting_since = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,
-          d.scope_key, d.request, d.attempts, picked.explicit, picked.waited, d.started_at`);
+          d.scope_key, d.request, d.attempts, picked.explicit, picked.waited, d.started_at, d.bumped_at`);
     });
 
     return [...claimed]
-      .sort((a, b) => Number(b.explicit) - Number(a.explicit) || +new Date(a.started_at) - +new Date(b.started_at))
+      .sort(
+        (a, b) =>
+          (b.bumped_at ? +new Date(b.bumped_at) : 0) - (a.bumped_at ? +new Date(a.bumped_at) : 0) ||
+          Number(b.explicit) - Number(a.explicit) ||
+          +new Date(a.started_at) - +new Date(b.started_at),
+      )
       .map((r) => ({
         id: r.id,
         appId: r.app_id,
