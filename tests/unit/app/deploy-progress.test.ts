@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DeployProgress, deploySteps } from "@/components/deploy-progress";
+import { DeployProgress, deploySteps, stagesUpTo } from "@/components/deploy-progress";
 import { deployView, NO_WAIT } from "@/lib/ui/deploy-wait";
 
 type Props = Parameters<typeof DeployProgress>[0];
@@ -77,6 +77,20 @@ describe("deploySteps", () => {
     expect(deploySteps(held, { clone: "success", compose: "success", build: "running" }).find((s) => s.key === "build")?.state).toBe("held");
     const rollback = deployView({ queued: false, wait: null, started: true });
     expect(deploySteps(rollback, { stop: "running" })[0].key).toBe("stop");
+  });
+});
+
+describe("stagesUpTo", () => {
+  it("fills in the phases a row's stage implies until the stream replays", () => {
+    expect(stagesUpTo("build")).toEqual({ clone: "success", compose: "success", build: "running" });
+    expect(stagesUpTo("restore")).toEqual({ stop: "success", restore: "running" });
+    expect(stagesUpTo(null)).toEqual({});
+  });
+
+  it("shows a running row's phase before its stream connects", () => {
+    const html = render({ row: { status: "running", stage: "deploy" } });
+    expect(html).toMatch(/Build<\/span><span class="sr-only">, done/);
+    expect(html).toMatch(/Deploy<\/span><span class="sr-only">, in progress/);
   });
 });
 

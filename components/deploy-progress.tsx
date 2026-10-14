@@ -98,6 +98,13 @@ export function deploySteps(view: DeployView, stages: Record<string, string>): S
   ];
 }
 
+/** The phases a row's stage implies, until the stream replays them: every one before it done, it running. */
+export function stagesUpTo(stage: string | null | undefined): Record<string, string> {
+  const keys = ROLLBACK_STAGE_KEYS.includes(stage ?? "") ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS;
+  const at = stage ? keys.indexOf(stage) : -1;
+  return at < 0 ? {} : Object.fromEntries(keys.slice(0, at + 1).map((k, i) => [k, i === at ? "running" : "success"]));
+}
+
 const SPOKEN: Record<StripStep["state"], string> = { done: ", done", now: ", in progress", held: ", queued", failed: ", failed", todo: "" };
 
 /** One phase: a check when done, a ring while in flight or held, a hollow dot ahead. */
@@ -136,7 +143,7 @@ function announcement(view: DeployView, steps: StripStep[], stages: Record<strin
  */
 export function DeployProgress({
   variant,
-  stages,
+  stages: streamed,
   wait,
   row,
   typicalMs,
@@ -163,6 +170,7 @@ export function DeployProgress({
   cancelling?: boolean;
 }) {
   const now = useNow(1000);
+  const stages = Object.keys(streamed).length > 0 || row.status !== "running" ? streamed : stagesUpTo(row.stage);
   const view = streamView({ wait, stages }, { status: row.status, stage: row.stage, request: { held: row.held } }, now);
   const clock = now !== null && row.startedAt !== null ? deployClockOf({ wait, stages }, { startedAt: row.startedAt, status: row.status, now }) : null;
   const text = clock ? deployCardText(view, clock, typicalMs) : null;
