@@ -1,7 +1,7 @@
 // The deploy executor, claim pass, crash rule and exclusive swaps against a scratch Postgres. The engine is a stand-in.
 // Skips without a Postgres it can create databases on: MIGRATE_TEST_ADMIN_URL, DATABASE_URL or a DATABASE_URL line in .env.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 import type { DeployOpts, DeployResult } from "@/lib/docker/deploy";
@@ -399,6 +399,10 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
   });
 
   describe("exclusive swaps", () => {
+    // Room to claim, so only the flag holds claims back.
+    beforeEach(() => void vi.stubEnv("VARDO_MAX_DEPLOY_CONCURRENCY", "4"));
+    afterEach(() => void vi.unstubAllEnvs());
+
     const ctxFor = (id: string, lines: string[]) =>
       ({
         deploymentId: id,
