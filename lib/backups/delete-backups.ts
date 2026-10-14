@@ -2,6 +2,7 @@ import { count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backupJobs, backups, backupTargets } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
+import { redactSecrets } from "@/lib/redact";
 import { createBackupStorage } from "./storage-factory";
 import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 
@@ -29,10 +30,15 @@ function holdsArchive(row: DeletableBackup) {
   return !!row.storagePath && row.status !== "pruned";
 }
 
+/** An archive storage wouldn't delete. */
+export type ArchiveFailure = { id: string; error: string };
+
+const reason = (err: unknown) => redactSecrets(err instanceof Error ? err.message : String(err));
+
 /** Delete each row's archive from the target. Returns the ids whose archive is gone. */
 export async function removeArchives(target: Target, rows: DeletableBackup[]) {
   const removed: string[] = [];
-  const failed: string[] = [];
+  const failed: ArchiveFailure[] = [];
   let storage: BackupStorage | null = null;
   let openError: unknown = null;
   try {
@@ -48,7 +54,7 @@ export async function removeArchives(target: Target, rows: DeletableBackup[]) {
     }
     if (!storage) {
       log.warn(`Can't open target ${target.name} to delete ${row.storagePath}: ${String(openError)}`);
-      failed.push(row.id);
+      failed.push({ id: row.id, error: `Can't open target ${target.name}: ${reason(openError)}` });
       continue;
     }
     try {
@@ -60,7 +66,7 @@ export async function removeArchives(target: Target, rows: DeletableBackup[]) {
         continue;
       }
       log.warn(`Failed to delete ${row.storagePath} from ${target.name}: ${String(err)}`);
-      failed.push(row.id);
+      failed.push({ id: row.id, error: reason(err) });
     }
   }
   return { removed, failed };
@@ -74,7 +80,7 @@ export async function deleteBackups(rows: DeletableBackup[]) {
     : [];
 
   const removed: string[] = [];
-  const failed: string[] = [];
+  const failed: ArchiveFailure[] = [];
   for (const target of targets) {
     const result = await removeArchives(
       target,
@@ -87,7 +93,7 @@ export async function deleteBackups(rows: DeletableBackup[]) {
   if (removed.length > 0) {
     await db.delete(backups).where(inArray(backups.id, removed));
   }
-  return { deleted: removed.length, kept: failed.length };
+  return { deleted: removed.length, kept: failed.length, failed };
 }
 
 /** What deleting a target takes with it, across every org. */

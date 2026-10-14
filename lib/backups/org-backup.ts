@@ -14,6 +14,15 @@ export function orgBackupScope(orgId: string) {
   )!;
 }
 
+/** The org's backups of apps that no longer exist. */
+export function deletedAppBackupScope(orgId: string) {
+  return and(
+    orgBackupScope(orgId),
+    isNotNull(backups.appId),
+    sql`${backups.appId} not in (select "id" from "app")`,
+  )!;
+}
+
 /** The org a loaded backup belongs to, by the same rule as orgBackupScope. */
 export function backupOwnerOrgId(backup: {
   organizationId: string | null;
