@@ -9,6 +9,7 @@ import { tailDeployment } from "@/lib/stream/deploy-tail";
 import { deployStream } from "@/lib/stream/keys";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { closeOnShutdown } from "@/lib/shutdown";
+import { sseQueuingStrategy, sseSender } from "@/lib/api/sse";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -114,8 +115,10 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const abortController = new AbortController();
     const id = deploymentId;
 
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       start(controller) {
+        const sendEvent = sseSender(controller);
+
         // Keepalive for proxy and browser timeouts.
         const keepalive = setInterval(() => {
           try {
@@ -130,15 +133,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           sendEvent("timeout", { message: "Stream timed out" });
           cleanup();
         }, 10 * 60 * 1000);
-
-        function sendEvent(event: string, data: unknown) {
-          try {
-            if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
-            controller.enqueue(
-              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-            );
-          } catch { /* client disconnected */ }
-        }
 
         function cleanup() {
           clearInterval(keepalive);
@@ -182,7 +176,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
             cleanup();
           });
       },
-    });
+    }, sseQueuingStrategy());
 
     return new Response(stream, {
       headers: {
