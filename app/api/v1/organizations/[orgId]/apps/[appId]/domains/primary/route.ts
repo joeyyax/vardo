@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -26,8 +27,10 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     });
     if (!app || app.organizationId !== orgId) return apiError.notFound("app");
 
-    const { domainId } = await request.json();
-    const result = await setPrimaryDomain(app, domainId);
+    const parsed = z.object({ domainId: z.string().min(1) }).strict().safeParse(await request.json());
+    if (!parsed.success) return apiError.validation(parsed.error);
+
+    const result = await setPrimaryDomain(app, parsed.data.domainId);
     if (!result.ok) return domainResponse(result);
 
     return NextResponse.json({ success: true });

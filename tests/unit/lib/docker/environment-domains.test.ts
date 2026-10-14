@@ -12,6 +12,7 @@ const row = (over: Partial<DeployDomain>): DeployDomain => ({
   middlewares: null,
   certResolver: "le-dns",
   isPrimary: true,
+  enabled: true,
   sslEnabled: true,
   redirectTo: null,
   redirectCode: 301,

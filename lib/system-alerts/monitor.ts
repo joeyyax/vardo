@@ -196,6 +196,7 @@ async function checkCertAlerts(): Promise<void> {
   try {
     const rows = await db.query.domains.findMany({
       columns: { id: true, domain: true, certResolver: true, sslEnabled: true },
+      where: (d, { eq }) => eq(d.enabled, true),
       with: {
         app: {
           columns: { id: true, name: true, displayName: true, organizationId: true, status: true },

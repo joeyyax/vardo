@@ -22,6 +22,7 @@ const HOST_CLAIMABLE =
   "Another organization added it but hasn't verified it. Verify it under Settings → Domains to claim it.";
 const COMPOSE_READ_ONLY =
   "The app's compose file sets this domain. Change its Traefik label there, or manage it in Vardo.";
+const DISABLED_PRIMARY = "A disabled domain can't be primary. Enable it first.";
 
 // "/docs"; empty or "/" routes the whole host.
 const pathPrefixSchema = z
@@ -64,6 +65,7 @@ export const updateDomainSchema = z
     pathPrefix: pathPrefixSchema.optional(),
     stripPathPrefix: z.boolean().optional(),
     middlewares: middlewaresSchema.optional(),
+    enabled: z.boolean().optional(),
   })
   .strict();
 
@@ -213,17 +215,27 @@ export async function editDomain(app: DomainSubject, input: DomainPatch): Promis
 
   const current = await db.query.domains.findFirst({
     where: and(eq(domains.id, id), eq(domains.appId, app.id)),
-    columns: { domain: true, source: true },
+    columns: { domain: true, source: true, composeRouter: true },
   });
   if (!current) return refused(404, "domain");
   if (current.source === "compose") return refused(409, COMPOSE_READ_ONLY);
+  // The compose label would keep routing the host.
+  if (fields.enabled === false && current.composeRouter) {
+    return refused(
+      409,
+      `Couldn't disable domain. The app's compose file also routes it with router "${current.composeRouter}". Remove that label first.`,
+    );
+  }
 
   const updates: typeof fields & {
     domain?: string;
     verificationToken?: string;
     verifiedAt?: Date | null;
     middlewares?: string | null;
+    isPrimary?: boolean;
   } = { ...fields };
+  // A disabled domain can't be primary.
+  if (fields.enabled === false) updates.isPrimary = false;
 
   if (requestedMiddlewares !== undefined) {
     const middlewares = await checkMiddlewares(requestedMiddlewares, orgId);
@@ -298,10 +310,11 @@ export async function setPrimaryDomain(app: DomainSubject, domainId: string): Pr
 
   const row = await db.query.domains.findFirst({
     where: and(eq(domains.id, domainId), eq(domains.appId, app.id)),
-    columns: { id: true, source: true },
+    columns: { id: true, source: true, enabled: true },
   });
   if (!row) return refused(404, "domain");
   if (row.source === "compose") return refused(409, COMPOSE_READ_ONLY);
+  if (!row.enabled) return refused(409, DISABLED_PRIMARY);
 
   await db.update(domains).set({ isPrimary: false }).where(eq(domains.appId, app.id));
   const [domain] = await db

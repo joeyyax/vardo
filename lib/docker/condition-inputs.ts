@@ -85,7 +85,8 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
           checkedAt: domainCertChecks.checkedAt,
         })
         .from(domainCertChecks)
-        .innerJoin(domains, eq(domainCertChecks.domainId, domains.id)),
+        .innerJoin(domains, eq(domainCertChecks.domainId, domains.id))
+        .where(eq(domains.enabled, true)),
     );
 
     for (const app of appRows) {

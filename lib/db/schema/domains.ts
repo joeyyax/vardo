@@ -29,6 +29,8 @@ export const domains = pgTable("domain", {
   middlewares: text("middlewares"),
   certResolver: text("cert_resolver").default("le-dns"),
   isPrimary: boolean("is_primary").default(false),
+  /** Off keeps the row and its certificate state but drops the route on the next deploy. */
+  enabled: boolean("enabled").default(true).notNull(),
   sslEnabled: boolean("ssl_enabled").default(true),
   redirectTo: text("redirect_to"),
   redirectCode: integer("redirect_code").default(301),
