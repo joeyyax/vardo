@@ -107,7 +107,7 @@ export type DeployOpts = {
   rebuild?: RebuildMode;
   /** Executor holding the row's claim. Every write that ends the row requires it. */
   executorId?: string;
-  /** Checked before the swap touches containers. False stops the deploy. */
+  /** Checked before the swap touches containers, and records the swap stage. False stops the deploy. */
   fence?: () => Promise<boolean>;
 };
 

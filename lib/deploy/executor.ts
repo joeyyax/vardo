@@ -10,7 +10,7 @@ import type { DeployAbortReason, DeployResult, DeployStage } from "@/lib/docker/
 import {
   LEASE_RENEW_MS,
   dropSupersede,
-  holdsClaim,
+  enterSwap,
   markStage,
   newestQueuedIn,
   releaseExclusive,
@@ -191,7 +191,7 @@ export async function runClaimedDeployment(row: ClaimedDeploy, job: Job, run?: R
       deploymentId: row.id,
       executorId: executor,
       signal: job.controller.signal,
-      fence: () => holdsClaim(executor, row.id),
+      fence: () => enterSwap(executor, row.id),
       onStage: (stage, status) => {
         feedback.stage(stage, status);
         if (status === "running") void onStage(job, stage);

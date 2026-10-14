@@ -316,6 +316,17 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect(requeued.log).toMatch(/Requeued: the executor that claimed it stopped before it started/);
     });
 
+    it("a fence that passed records the swap, so a lapse after it fails the deploy instead of rerunning it", async () => {
+      const id = await enqueue("a1", "manual");
+      await claimAll();
+      await enter(id, "build");
+      expect(await runs.get(id)!.opts.fence!()).toBe(true);
+      expect((await row(id)).stage).toBe("deploy");
+      await expire(id);
+      await sweeper.sweepExpiredLeases();
+      expect(await row(id)).toMatchObject({ status: "failed", attempts: 0 });
+    });
+
     it("fails a deploy whose executor died in the swap without a rerun", async () => {
       const id = await enqueue("a1", "manual");
       await claimAll();

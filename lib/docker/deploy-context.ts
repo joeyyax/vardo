@@ -95,7 +95,7 @@ export type DeployContext = {
   signal?: AbortSignal;
   /** Executor holding the row's claim. */
   claimedBy?: string;
-  /** Checked before the swap touches containers. False stops the deploy. */
+  /** Checked before the swap touches containers, and records the swap stage. False stops the deploy. */
   fence?: () => Promise<boolean>;
 
   /** Set for a rollback; `app` is already overlaid with the target's snapshot. */

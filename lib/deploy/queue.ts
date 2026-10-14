@@ -534,12 +534,12 @@ export async function markStage(
   return { cancel: row.cancelRequestedAt ? (row.cancelReason ?? "user") : null };
 }
 
-/** Whether this executor still holds the row under an unexpired lease. False when the check can't be made. */
-export async function holdsClaim(executorId: string, id: string): Promise<boolean> {
+/** Records the swap stage and renews the lease while this executor holds the row under a live one. False once it doesn't, or when the write can't be made. */
+export async function enterSwap(executorId: string, id: string, leaseMs = LEASE_TTL_MS): Promise<boolean> {
   try {
-    const [row] = await db
-      .select({ id: deployments.id })
-      .from(deployments)
+    const rows = await db
+      .update(deployments)
+      .set({ stage: "deploy", leaseExpiresAt: sql`now() + ${leaseMs}::int * interval '1 millisecond'` })
       .where(
         and(
           eq(deployments.id, id),
@@ -547,8 +547,9 @@ export async function holdsClaim(executorId: string, id: string): Promise<boolea
           eq(deployments.status, "running"),
           sql`${deployments.leaseExpiresAt} > now()`,
         ),
-      );
-    return !!row;
+      )
+      .returning({ id: deployments.id });
+    return rows.length > 0;
   } catch {
     return false;
   }

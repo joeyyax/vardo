@@ -252,7 +252,8 @@ export async function sweepExpiredLeases(): Promise<void> {
             exclusiveRequestedAt: null,
             log: appendLog(text),
           })
-          .where(stillExpired)
+          // A fence that recorded the swap since the read keeps it from rerunning.
+          .where(and(stillExpired, deploy.stage ? eq(deployments.stage, deploy.stage) : isNull(deployments.stage)))
           .returning({ id: deployments.id });
         if (requeued.length > 0) {
           streamLine(deploy.id, text, deploy.stage);
