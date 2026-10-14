@@ -52,6 +52,7 @@ const DEPLOYMENT_COLUMNS = {
   waitingSince: true,
   waitAhead: true,
   waitTotal: true,
+  waitEta: true,
   request: true,
   stage: true,
 } as const;
