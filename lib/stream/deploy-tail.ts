@@ -20,7 +20,7 @@ export type TailHandlers = {
   onStage: (stage: string, status: string, meta: { streamId: string }) => void;
   /** A wait opened, moved or ended (reason null), queued or mid-deploy. */
   onWait?: (wait: TailWait) => void;
-  /** Why the deploy waits, as a line, each time a wait opens or moves. */
+  /** Why the deploy waits, as a line, each time that line changes. */
   onWaiting?: (message: string) => void;
   /** The row went queued or running, including a requeue after its executor stopped. */
   onStatus?: (status: "queued" | "running") => void;
@@ -89,6 +89,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 export async function tailDeployment(id: string, handlers: TailHandlers, opts: TailOpts = {}): Promise<TailedDeployment | null> {
   const pollMs = opts.pollMs ?? 1_000;
   let lastStatus: string | null = null;
+  let lastWaiting: string | null = null;
   const noteStatus = (status: string) => {
     if (status === lastStatus || (status !== "queued" && status !== "running")) return;
     lastStatus = status;
@@ -137,7 +138,9 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
           ...(eta === undefined ? {} : { eta }),
           streamId: entry.id,
         });
-        if (reason) handlers.onWaiting?.(waitText(reason, { ahead, total }));
+        const waiting = reason ? waitText(reason, { ahead, total }) : null;
+        if (waiting && waiting !== lastWaiting) handlers.onWaiting?.(waiting);
+        lastWaiting = waiting;
       } else if (fields.line?.startsWith("[stage]")) {
         handlers.onStage(fields.stage, fields.status, { streamId: entry.id });
         if (isTerminalStageEvent(fields.stage, fields.status)) {
