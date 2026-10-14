@@ -49,13 +49,17 @@ const eventsInput = z
   .array(z.string())
   .describe(`Event types the channel receives; empty means all. Known types: ${ALL_EVENT_TYPES.join(", ")}`);
 
+const projectsInput = z
+  .array(z.string())
+  .describe("Project IDs whose events reach the channel; empty means all. Org-level events (host alerts, updates, anything with no project) always reach every channel.");
+
 const findChannel = (channelId: string) =>
   db.query.notificationChannels.findFirst({ where: eq(notificationChannels.id, channelId) });
 
 export function registerNotificationChannelTools(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_list_notification_channels",
-    "List notification channels (email, webhook, Slack, ntfy, Discord, Telegram, Pushover) with their type, enabled flag, subscribed events and config. URLs, tokens and secrets are masked.",
+    "List notification channels (email, webhook, Slack, ntfy, Discord, Telegram, Pushover) with their type, enabled flag, subscribed events, project filter (projectIds) and config. URLs, tokens and secrets are masked.",
     {
       channelId: z.string().optional().describe("Only this channel"),
     },
@@ -81,26 +85,34 @@ export function registerNotificationChannelTools(server: McpServer, context: Mcp
       config: configInput,
       enabled: z.boolean().optional().describe("Default true"),
       subscribedEvents: eventsInput.optional(),
+      projectIds: projectsInput.optional(),
     },
     async ({ organizationId, ...input }) => {
       const orgId = await resolveTargetOrg(context, organizationId, "org.notifications.manage");
       if (!orgId) return accessDenied("Organization");
       const parsed = channelCreateSchema.safeParse(input);
       if (!parsed.success) return failure(parsed.error.issues[0]?.message ?? "Invalid input");
-      const channel = await createChannelRow(orgId, parsed.data);
+      let channel;
+      try {
+        channel = await createChannelRow(orgId, parsed.data);
+      } catch (err) {
+        if (err instanceof ChannelConfigError) return failure(err.message);
+        throw err;
+      }
       return text({ channel: presentChannel(channel) });
     },
   );
 
   server.tool(
     "vardo_update_notification_channel",
-    "Update a notification channel's name, config, enabled flag or subscribed events. The config replaces the stored one, except masked values, which keep what's stored.",
+    "Update a notification channel's name, config, enabled flag, subscribed events or project filter. The config replaces the stored one, except masked values, which keep what's stored.",
     {
       channelId: z.string().describe("The channel ID"),
       name: z.string().optional(),
       config: configInput.optional(),
       enabled: z.boolean().optional(),
       subscribedEvents: eventsInput.optional(),
+      projectIds: projectsInput.optional(),
     },
     async ({ channelId, ...input }) => {
       const channel = await findChannel(channelId);
