@@ -980,7 +980,6 @@ export function ComposeDetail({
                 appId={app.id}
                 cancel={cancel}
                 view={deploy.deployView}
-                deploymentId={serverRunningDeploy?.id}
                 instanceAdmin={instanceAdmin}
               />
             ) : actions.length === 1 && actions[0].action === "deploy" ? (

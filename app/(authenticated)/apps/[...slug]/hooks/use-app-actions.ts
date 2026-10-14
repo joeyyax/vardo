@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "@/lib/messenger";
+import { activeDeploy } from "@/lib/ui/deploy-wait";
 import type { SlotStatus } from "../types";
 
-/** The app's running or queued deploy, read fresh. */
+/** The app's running deploy, else its first queued one, read fresh. */
 async function activeDeployId(orgId: string, appId: string): Promise<string | undefined> {
   const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`);
   if (!res.ok) return undefined;
   const { app } = await res.json();
-  return app.deployments?.find((d: { status: string }) => d.status === "running" || d.status === "queued")?.id;
+  return activeDeploy<{ id: string; status: string }>(app.deployments ?? [])?.id;
 }
 
 /** Cancels the running or queued deploy. A running deploy reports "cancelling" until its phase ends. */
@@ -62,10 +63,10 @@ export function useBumpDeploy(orgId: string, appId: string) {
   const [bumping, setBumping] = useState(false);
 
   const bumpDeploy = useCallback(
-    async (deploymentId?: string) => {
+    async () => {
       setBumping(true);
       try {
-        const targetId = deploymentId ?? (await activeDeployId(orgId, appId));
+        const targetId = await activeDeployId(orgId, appId);
         if (!targetId) {
           toast.error("No queued deploy to move");
           return false;

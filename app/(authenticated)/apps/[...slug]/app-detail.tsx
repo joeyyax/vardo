@@ -502,7 +502,6 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
                 appId={app.id}
                 cancel={cancel}
                 view={deploy.deployView}
-                deploymentId={serverRunningDeploy?.id}
                 instanceAdmin={instanceAdmin}
               />
             ) : actions.length === 1 && actions[0].action === "deploy" ? (

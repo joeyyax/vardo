@@ -24,15 +24,12 @@ export function DeployCancel({
   appId,
   cancel,
   view,
-  deploymentId,
   instanceAdmin,
 }: {
   orgId: string;
   appId: string;
   cancel: ReturnType<typeof useCancelDeploy>;
   view: DeployView | null;
-  /** The deploy in flight, when the page knows it. */
-  deploymentId?: string;
   instanceAdmin: boolean;
 }) {
   const { bumping, bumpDeploy } = useBumpDeploy(orgId, appId);
@@ -78,7 +75,7 @@ export function DeployCancel({
         variant="default"
         loading={bumping}
         onConfirm={async () => {
-          if (await bumpDeploy(deploymentId)) setConfirm(false);
+          if (await bumpDeploy()) setConfirm(false);
         }}
       />
     </div>
