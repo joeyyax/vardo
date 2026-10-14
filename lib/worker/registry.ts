@@ -24,7 +24,7 @@ export type LoopEntry = {
 };
 
 const BOTH: LoopRole[] = ["web", "worker"];
-// Loops that serve this process's own memory or files, or start deploys, which run in web until stage 3.
+// Loops that serve this process's own memory or files, plus the deploy triggers that still run in web.
 const WEB: LoopRole[] = ["web"];
 
 export const LOOP_REGISTRY: LoopEntry[] = [
