@@ -3,8 +3,6 @@
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { Check, Loader2, X } from "lucide-react";
 import { StatusMark } from "@/components/ui/status-dot";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { useNow } from "@/components/deploy-progress";
 import { Timer } from "./timer";
@@ -34,8 +32,6 @@ export function InProgressDeployCard({
   startTime,
   expanded,
   onToggleExpand,
-  onAbort,
-  canAbort,
   cancelling,
   trigger,
   typicalElapsedMs,
@@ -49,8 +45,6 @@ export function InProgressDeployCard({
   startTime: number | null;
   expanded: boolean;
   onToggleExpand: () => void;
-  onAbort?: () => void;
-  canAbort?: boolean;
   /** A cancel was signaled; the engine is finishing its current phase. */
   cancelling?: boolean;
   trigger?: string;
@@ -66,12 +60,12 @@ export function InProgressDeployCard({
   const now = useNow(1000);
   const hasStages = Object.keys(stages).length > 0;
   const clock = startTime && now !== null ? deployClockOf({ wait, stages }, { startedAt: startTime, status: queued ? "queued" : undefined, now }) : null;
-  const view = deployView({ queued: !!queued && !hasStages, preparing, wait: clock?.wait ?? null, started: hasStages });
-  const text = clock && now !== null ? deployCardText(view, clock, { now, typicalMs: typicalElapsedMs ?? null, started: hasStages }) : null;
+  const view = deployView({ queued: !!queued && !hasStages, preparing, wait: clock?.wait ?? null, started: hasStages, now });
+  const text = clock ? deployCardText(view, clock, typicalElapsedMs ?? null) : null;
   // The phases in the stream name the run: only a rollback reports rollback phases.
   const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
   const stageKeys = isRollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS;
-  const first = queuedStep(view, hasStages);
+  const first = queuedStep(view);
   const noun = isRollback ? "Rollback" : "Deployment";
   const runningStage = stageKeys.find((s) => stages[s] === "running");
   const failedStage = stageKeys.find((s) => stages[s] === "failed");
@@ -94,22 +88,12 @@ export function InProgressDeployCard({
   return (
     <Card variant="surface" className={`${view.tone === "info" ? "bg-status-info-muted" : "bg-status-neutral-muted"} overflow-hidden`}>
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
-      {/* The row is a mouse target; the chevron button is the control, so Abort isn't nested in one. */}
+      {/* The row is a mouse target; the chevron button is the control. */}
       <div
         onClick={onToggleExpand}
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          {view.tone !== "info" && !cancelling ? (
-            <Badge variant={view.tone === "warn" ? "warning" : "neutral"} className="shrink-0" title={view.why}>
-              {view.word}
-            </Badge>
-          ) : (
-            <Badge variant="info" className="animate-pulse shrink-0">
-              <Loader2 className="mr-1 size-3 animate-spin" />
-              {cancelling ? "Cancelling" : isRollback ? "Rolling back" : view.word}
-            </Badge>
-          )}
           {/* Only the phase in flight carries color. */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {steps.map(({ key, label, status }, i) => {
@@ -155,17 +139,6 @@ export function InProgressDeployCard({
               <span className="text-foreground/70">{text.line}</span>
               {text.meta && <span className="text-foreground/50"> · {text.meta}</span>}
             </span>
-          )}
-          {canAbort && onAbort && (
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={cancelling}
-              onClick={(e) => { e.stopPropagation(); onAbort(); }}
-            >
-              <X className="mr-1 size-3" />
-              {queued ? "Cancel" : cancelling ? "Cancelling..." : "Abort"}
-            </Button>
           )}
           {log.length > 0 && (
             <button

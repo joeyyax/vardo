@@ -280,9 +280,6 @@ export function stabilityVerdict(input: VerdictInput): StabilityVerdict {
   const unstable = conditions.find((c) => UNSTABLE_KINDS.has(c.kind));
   const lastFault = input.incidents.find((i) => isFault(i.kind));
 
-  if (input.status === "deploying") {
-    return { level: "unknown", headline: "Deploying", detail: "Ask again when the deploy settles" };
-  }
   if (unstable) {
     return { level: "unstable", headline: "Unstable", detail: unstable.detail };
   }

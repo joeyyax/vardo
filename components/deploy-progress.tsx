@@ -72,8 +72,7 @@ export type StripStep = { key: string; label: string; state: "done" | "held" | "
 
 /** Queued, then the deploy phases, with the held one marked. */
 export function deploySteps(view: DeployView, stages: Record<string, string>, keys: string[]): StripStep[] {
-  const started = Object.keys(stages).length > 0;
-  const first = queuedStep(view, started);
+  const first = queuedStep(view);
   const current = keys.findIndex((k) => stages[k] === "running" || stages[k] === "failed");
   return [
     { key: "queued", label: first.label, state: first.state },
@@ -102,6 +101,7 @@ export function DeployProgress({
   startedAt,
   status,
   preparing = false,
+  stage,
   typicalMs,
 }: {
   stream: DeployStream;
@@ -113,15 +113,17 @@ export function DeployProgress({
   status?: string;
   /** Created but not released to the queue yet. */
   preparing?: boolean;
+  /** The row's stage in flight, until the stream reports one. */
+  stage?: string | null;
   /** Run time of the last successful deploy. Null when there is none. */
   typicalMs: number | null;
 }) {
   const { stages } = stream;
   const now = useNow(1000);
   const clock = now === null ? null : deployClockOf(stream, { startedAt, status, now });
-  const started = Object.keys(stages).length > 0;
-  const view = deployView({ queued: status === "queued" && !started, preparing, wait: clock?.wait ?? null, started });
-  const text = clock && now !== null ? deployCardText(view, clock, { now, typicalMs, started }) : null;
+  const started = Object.keys(stages).length > 0 || (status === "running" && !!stage);
+  const view = deployView({ queued: status === "queued" && !started, preparing, wait: clock?.wait ?? null, started, now });
+  const text = clock ? deployCardText(view, clock, typicalMs) : null;
   const steps = deploySteps(view, stages, DEPLOY_STAGE_KEYS.filter((k) => k !== "cleanup" && stages[k] !== "skipped"));
   const share = typicalMs && clock ? Math.min(0.97, clock.workingMs / typicalMs) : null;
 

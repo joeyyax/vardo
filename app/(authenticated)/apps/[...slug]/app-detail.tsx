@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DeleteAppDialog } from "./delete-app-dialog";
+import { DeployCancel } from "./deploy-cancel";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
@@ -101,7 +102,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density, starred = false }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density, starred = false }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -234,7 +235,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, router]);
 
-  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+  const cancel = useCancelDeploy(orgId, app.id);
+  const { cancelling, cancelDeploy } = cancel;
 
   // Child services are stack-level operations managed from the parent
   const isChildService = !!app.parentAppId;
@@ -344,6 +346,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         app={{ ...app, childApps: app.childApps }}
         orgId={orgId}
         userRole={userRole}
+        instanceAdmin={instanceAdmin}
         initialTab={initialTab}
         initialSubView={initialSubView}
         featureFlags={featureFlags}
@@ -494,10 +497,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         actions={
           <div className="flex items-center gap-2">
             {!isChildService && (deploy.deploying || app.status === "deploying") ? (
-              <Button size="sm" variant="outline" disabled={cancelling} onClick={() => void cancelDeploy()}>
-                <X className="mr-1.5 size-3.5" />
-                {cancelling ? "Cancelling..." : "Cancel"}
-              </Button>
+              <DeployCancel
+                orgId={orgId}
+                appId={app.id}
+                cancel={cancel}
+                view={deploy.deployView}
+                deploymentId={serverRunningDeploy?.id}
+                instanceAdmin={instanceAdmin}
+              />
             ) : actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" onClick={handleDeploy}>
                 <Rocket className="mr-1.5 size-4" />
@@ -783,6 +790,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            cancel={cancel}
             onDeploy={handleDeploy}
             deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
             lifecycleEvents={lifecycleEvents}

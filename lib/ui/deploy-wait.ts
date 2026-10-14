@@ -5,8 +5,8 @@ import type { StatusMarkState } from "@/lib/ui/status-colors";
 
 export type { WaitReason };
 
-/** `ahead` and `total` place a deploy in a queue: 0 ahead of 3 is first of 3. */
-export type QueuePlace = { ahead?: number; total?: number };
+/** `ahead` and `total` place a deploy in a queue: 0 ahead of 3 is first of 3. `eta` is when it should start, in ms. */
+export type QueuePlace = { ahead?: number; total?: number; eta?: number };
 
 export type WaitEvent = QueuePlace & { reason: WaitReason | null; streamId: string };
 
@@ -46,13 +46,15 @@ export function isWaitReason(value: unknown): value is WaitReason {
 /** A `wait` event's payload, or null when it doesn't match the contract. */
 export function parseWaitEvent(data: unknown): WaitEvent | null {
   if (!data || typeof data !== "object") return null;
-  const { reason, ahead, total, streamId } = data as Record<string, unknown>;
+  const { reason, ahead, total, eta, streamId } = data as Record<string, unknown>;
   if (typeof streamId !== "string") return null;
   if (reason !== null && !isWaitReason(reason)) return null;
+  const etaMs = typeof eta === "string" ? Date.parse(eta) : NaN;
   return {
     reason: reason as WaitReason | null,
     ahead: typeof ahead === "number" ? ahead : undefined,
     total: typeof total === "number" ? total : undefined,
+    eta: Number.isNaN(etaMs) ? undefined : etaMs,
     streamId,
   };
 }
@@ -65,9 +67,10 @@ export function applyWait(state: WaitState, event: WaitEvent): WaitState {
   const seen = { heard: true, lastId: event.streamId };
 
   if (event.reason) {
-    if (current?.reason === event.reason) return { ...state, ...seen, current: { ...current, ahead: event.ahead, total: event.total } };
+    const place = { ahead: event.ahead, total: event.total, eta: event.eta };
+    if (current?.reason === event.reason) return { ...state, ...seen, current: { ...current, ...place } };
     const closedMs = current ? state.closedMs + Math.max(0, at - current.since) : state.closedMs;
-    return { ...seen, closedMs, current: { reason: event.reason, ahead: event.ahead, total: event.total, since: at } };
+    return { ...seen, closedMs, current: { reason: event.reason, ...place, since: at } };
   }
 
   if (!current) return { ...state, ...seen };
@@ -107,6 +110,7 @@ export function rowHold(d: {
   waitingSince?: Date | string | null;
   waitAhead?: number | null;
   waitTotal?: number | null;
+  waitEta?: Date | string | null;
 }): HeldDeploy | null {
   if (d.status !== "queued" && d.status !== "running") return null;
   const reason = isWaitReason(d.waitReason) ? d.waitReason : null;
@@ -115,6 +119,7 @@ export function rowHold(d: {
     reason,
     ...(reason && d.waitAhead != null ? { ahead: d.waitAhead } : {}),
     ...(reason && d.waitTotal != null ? { total: d.waitTotal } : {}),
+    ...(reason && d.waitEta ? { eta: new Date(d.waitEta).getTime() } : {}),
     since: d.waitingSince ? new Date(d.waitingSince).getTime() : null,
     queued: d.status === "queued",
   };
@@ -123,7 +128,7 @@ export function rowHold(d: {
 /** The stream's waits, or the row's open wait until the stream reports one. */
 export function seedWait(state: WaitState, hold: HeldDeploy | null): WaitState {
   if (state.heard || !hold?.reason || hold.since === null) return state;
-  return { ...state, current: { reason: hold.reason, ahead: hold.ahead, total: hold.total, since: hold.since } };
+  return { ...state, current: { reason: hold.reason, ahead: hold.ahead, total: hold.total, eta: hold.eta, since: hold.since } };
 }
 
 /** The deploy to show from a newest-first list: the running one, else the first in line. */
@@ -145,11 +150,26 @@ export function deployWaitOf(stream: { wait: WaitState; stages: Record<string, s
   return deployClockOf(stream, { startedAt: 0, status, now: 0 }).wait;
 }
 
-/** " (2 of 3)", " (2)" without a total, or nothing without a place. */
-export function queuePlace({ ahead, total }: QueuePlace): string {
-  if (ahead == null || ahead < 0) return "";
-  const place = ahead + 1;
-  return total != null && total >= place ? ` (${place} of ${total})` : ` (${place})`;
+/** "1st", "2nd", "3rd", "11th", "21st". */
+export function ordinal(n: number): string {
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  return `${n}${teen ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+}
+
+/** "about 6 min", or "less than a minute". */
+export function aboutMinutes(ms: number): string {
+  return ms < 60_000 ? "less than a minute" : `about ${Math.round(ms / 60_000)} min`;
+}
+
+/** A deploy's place in the deploy or build line, with the estimate when there is one. */
+export function lineLabel(line: "deploy" | "build", { ahead, eta }: QueuePlace, now: number | null): string {
+  const place = ahead != null && ahead >= 0 ? ahead + 1 : null;
+  const left = eta != null && now != null ? eta - now : null;
+  const build = line === "build";
+  if (place === 1) return left !== null ? (build ? "Building next" : "Starts next") : build ? "Next to build" : "Next in line";
+  const starts = left !== null ? `${build ? "Build starts" : "Starts"} in ${aboutMinutes(left)}` : null;
+  if (place === null) return starts ?? (build ? "Queued to build" : "Queued");
+  return starts ? `${starts} · ${ordinal(place)} in line` : `${ordinal(place)} in line${build ? " to build" : ""}`;
 }
 
 /** Queued before work starts, Deploying once it has. */
@@ -174,24 +194,31 @@ const WHY: Partial<Record<WaitReason, string>> = {
   checkout: "Another deploy of this app is using its checkout",
 };
 
-/** How an in-flight deploy reads, from its status, the request's hold, what it waits on and whether a phase has started. */
+/** A queued row in an app's deploy list: its slot line when it has one, else its place among the app's queued deploys. */
+export function queuedRowLabel(hold: HeldDeploy | null, place: number, now: number | null): string {
+  return hold?.reason === "deploy-slot" ? lineLabel("deploy", hold, now) : lineLabel("deploy", { ahead: place - 1 }, null);
+}
+
+/** How an in-flight deploy reads, from its status, the request's hold, what it waits on and whether a phase has started. `now` counts the estimate down. */
 export function deployView({
   queued,
   preparing = false,
   wait,
   started,
+  now = null,
 }: {
   queued: boolean;
   preparing?: boolean;
   wait: (QueuePlace & { reason: WaitReason | null }) | null;
   started: boolean;
+  now?: number | null;
 }): DeployView {
   const reason = wait?.reason ?? null;
-  if (reason === "build-slot") return { word: "Deploying", label: `Queued to build${queuePlace(wait!)}`, tone: "neutral", held: "build" };
-  if (reason === "checkout") return { word: "Deploying", label: "Queued to clone", tone: "neutral", why: WHY.checkout, held: "clone" };
+  if (reason === "build-slot") return { word: "Deploying", label: lineLabel("build", wait!, now), tone: "neutral", held: "build" };
+  if (reason === "checkout") return { word: "Deploying", label: "Queued", tone: "neutral", why: WHY.checkout, held: "clone" };
   if (queued || reason) {
     if (preparing) return { word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" };
-    const label = reason === "deploy-slot" ? `Queued${queuePlace(wait!)}` : "Queued";
+    const label = reason === "deploy-slot" ? lineLabel("deploy", wait!, now) : "Queued";
     return { word: "Queued", label, tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
   }
   if (!started) return { word: "Starting", label: "Starting", tone: "info" };
@@ -201,14 +228,16 @@ export function deployView({
 /** How a deploy reads from its open stream, with the row filling in until the stream reports. */
 export function streamView(
   stream: { wait: WaitState; stages: Record<string, string> },
-  row: { status: string; request?: { held?: boolean } | null },
+  row: { status: string; stage?: string | null; request?: { held?: boolean } | null },
+  now: number | null = null,
 ): DeployView {
-  const started = Object.keys(stream.stages).length > 0;
+  const started = Object.keys(stream.stages).length > 0 || (row.status === "running" && !!row.stage);
   return deployView({
     queued: row.status === "queued" && !started,
     preparing: !!row.request?.held,
     wait: deployWaitOf(stream, row.status),
     started,
+    now,
   });
 }
 
@@ -233,27 +262,26 @@ export function formatSpan(ms: number): string {
 export function deployCardText(
   view: DeployView,
   clock: DeployClock,
-  { now, typicalMs, started }: { now: number; typicalMs: number | null; started: boolean },
+  typicalMs: number | null,
 ): { line: string; meta: string | null } {
-  const soFar = started ? `${formatSpan(clock.workingMs)} so far` : null;
-  if (clock.wait) {
-    const held = Math.min(now - clock.wait.since, clock.waitedMs);
-    return { line: `${view.label} · ${formatSpan(held)}`, meta: soFar };
-  }
-  if (view.word === "Starting") return { line: "Starting", meta: null };
+  if (clock.wait) return { line: view.label, meta: null };
   const line =
     typicalMs === null
       ? "No earlier deploy to judge by"
       : clock.workingMs < typicalMs
-        ? `About ${formatSpan(typicalMs - clock.workingMs)} left · last deploy took ${formatSpan(typicalMs)}`
+        ? `About ${formatSpan(typicalMs - clock.workingMs)} left`
         : "Taking longer than last time";
-  const queued = clock.waitedMs >= 1000 ? ` · queued ${formatSpan(clock.waitedMs)} first` : "";
-  return { line, meta: `${formatSpan(clock.workingMs)} so far${queued}` };
+  const meta = [
+    `${formatSpan(clock.workingMs)} so far`,
+    clock.waitedMs >= 1000 ? `queued ${formatSpan(clock.waitedMs)} first` : null,
+    typicalMs !== null ? `last deploy took ${formatSpan(typicalMs)}` : null,
+  ];
+  return { line, meta: meta.filter(Boolean).join(" · ") };
 }
 
 /** The strip's first step: its label until cloning starts, then done. */
-export function queuedStep(view: DeployView, started: boolean): { label: string; state: "done" | "held" | "now" } {
-  if (started) return { label: "Queued", state: "done" };
+export function queuedStep(view: DeployView): { label: string; state: "done" | "held" | "now" } {
+  if (view.word === "Deploying") return { label: "Queued", state: "done" };
   if (view.word === "Starting") return { label: "Starting", state: "now" };
-  return { label: view.label, state: "held" };
+  return { label: view.word, state: "held" };
 }

@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
-import { DeployProgress, useDeployStream } from "@/components/deploy-progress";
+import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
@@ -115,7 +115,8 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const running = activeDeploy(app.deployments);
   const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id });
   const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
-  const view = running ? streamView(stream, running) : null;
+  const now = useNow(30_000);
+  const view = running ? streamView(stream, running, now) : null;
   return (
     <div
       onClick={() => ctx.jump(app.name)}
@@ -146,6 +147,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           startedAt={running?.startedAt ?? new Date()}
           status={running?.status}
           preparing={!!running?.request?.held}
+          stage={running?.stage}
           typicalMs={typicalElapsedMs(app.deployments)}
         />
       </div>
@@ -330,7 +332,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const running = activeDeploy(app.deployments);
   const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id, enabled: !!running });
   const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
-  const view = running ? streamView(stream, running) : null;
+  const now = useNow(30_000);
+  const view = running ? streamView(stream, running, now) : null;
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
   const primaryLabel = stopped ? "Start" : node.relation === "service" ? "Restart" : "Deploy";
 
@@ -405,6 +408,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           deploymentId={running.id}
           startedAt={running.startedAt}
           status={running.status}
+          preparing={!!running.request?.held}
+          stage={running.stage}
           typicalMs={typicalElapsedMs(app.deployments)}
         />
       )}

@@ -256,9 +256,13 @@ describe("stabilityVerdict", () => {
     expect(verdict({ status: "missing" })).toMatchObject({ level: "down", headline: "No container" });
   });
 
-  it("claims nothing about an app that is off or mid-deploy", () => {
+  it("claims nothing about an app that is off", () => {
     expect(verdict({ status: "stopped" }).level).toBe("unknown");
-    expect(verdict({ status: "deploying" }).level).toBe("unknown");
+  });
+
+  it("judges the running version while a deploy is in flight", () => {
+    expect(verdict({ status: "deploying" }).headline).toBe("Stable");
+    expect(verdict({ status: "deploying", conditions: [condition("crash-looping", "critical")] }).headline).toBe("Unstable");
   });
 
   it("lets a warning condition qualify a running app", () => {

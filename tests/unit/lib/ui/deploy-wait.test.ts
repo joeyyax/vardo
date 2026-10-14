@@ -1,16 +1,22 @@
 import { describe, it, expect } from "vitest";
 import {
+  aboutMinutes,
   activeDeploy,
   applyWait,
   deployClock,
   deployWaitOf,
   deployCardText,
   deployView,
+  lineLabel,
   NO_WAIT,
+  ordinal,
+  queuedRowLabel,
+  queuedStep,
   parseWaitEvent,
   rowHold,
   seedWait,
   streamIdMs,
+  streamView,
   type WaitEvent,
   type WaitState,
 } from "@/lib/ui/deploy-wait";
@@ -167,11 +173,25 @@ describe("parseWaitEvent", () => {
       reason: "deploy-slot",
       ahead: 2,
       total: undefined,
+      eta: undefined,
       streamId: "1-0",
     });
-    expect(parseWaitEvent({ reason: null, streamId: "1-0" })).toEqual({ reason: null, ahead: undefined, total: undefined, streamId: "1-0" });
+    expect(parseWaitEvent({ reason: null, streamId: "1-0" })).toEqual({ reason: null, ahead: undefined, total: undefined, eta: undefined, streamId: "1-0" });
     expect(parseWaitEvent({ reason: "deploy-slot", ahead: 1, total: 3, streamId: "1-0" })).toMatchObject({ ahead: 1, total: 3 });
     expect(parseWaitEvent({ reason: "worker", streamId: "1-0" })?.reason).toBe("worker");
+  });
+
+  it("reads the estimate as a time, and drops one that isn't", () => {
+    expect(parseWaitEvent({ reason: "deploy-slot", eta: "2026-10-14T20:00:00.000Z", streamId: "1-0" })?.eta).toBe(Date.parse("2026-10-14T20:00:00.000Z"));
+    expect(parseWaitEvent({ reason: "deploy-slot", eta: "soon", streamId: "1-0" })?.eta).toBeUndefined();
+  });
+
+  it("keeps the latest estimate as the place in line moves", () => {
+    const state = fold([
+      { reason: "deploy-slot", ahead: 2, eta: T0 + 360_000, streamId: at(0) },
+      { reason: "deploy-slot", ahead: 1, eta: T0 + 200_000, streamId: at(60_000) },
+    ]);
+    expect(state.current).toEqual({ reason: "deploy-slot", ahead: 1, total: undefined, eta: T0 + 200_000, since: T0 });
   });
 
   it("rejects an unknown reason or a missing stream id", () => {
@@ -207,6 +227,14 @@ describe("row waits", () => {
     expect(rowHold({ status: "queued", waitReason: null, waitAhead: 3 })?.ahead).toBeUndefined();
   });
 
+  it("carries the row's estimate while it names a reason", () => {
+    const eta = "2026-10-14T20:00:00.000Z";
+    expect(rowHold({ status: "queued", waitReason: "deploy-slot", waitEta: eta })?.eta).toBe(Date.parse(eta));
+    expect(rowHold({ status: "queued", waitReason: null, waitEta: eta })?.eta).toBeUndefined();
+    const hold = { reason: "deploy-slot" as const, eta: Date.parse(eta), since: T0, queued: true };
+    expect(seedWait(NO_WAIT, hold).current?.eta).toBe(Date.parse(eta));
+  });
+
   it("uses the row's wait until the stream reports one", () => {
     const hold = { reason: "build-slot" as const, since: T0, queued: false };
     expect(seedWait(NO_WAIT, hold).current).toEqual({ reason: "build-slot", since: T0 });
@@ -216,9 +244,65 @@ describe("row waits", () => {
   });
 });
 
+describe("ordinal", () => {
+  it("reads places the way people say them", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111, 112].map(ordinal)).toEqual([
+      "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th", "112th",
+    ]);
+  });
+});
+
+describe("aboutMinutes", () => {
+  it("rounds to whole minutes, and says less than a minute under one", () => {
+    expect(aboutMinutes(59_999)).toBe("less than a minute");
+    expect(aboutMinutes(-5_000)).toBe("less than a minute");
+    expect(aboutMinutes(60_000)).toBe("about 1 min");
+    expect(aboutMinutes(5.5 * 60_000)).toBe("about 6 min");
+  });
+});
+
+describe("lineLabel", () => {
+  const now = T0;
+  const in6 = now + 6 * 60_000;
+
+  it("gives the deploy line's estimate and place", () => {
+    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now)).toBe("Starts in about 6 min · 3rd in line");
+    expect(lineLabel("deploy", { ahead: 0, eta: in6 }, now)).toBe("Starts next");
+    expect(lineLabel("deploy", { ahead: 2 }, now)).toBe("3rd in line");
+    expect(lineLabel("deploy", { ahead: 0 }, now)).toBe("Next in line");
+    expect(lineLabel("deploy", { eta: in6 }, now)).toBe("Starts in about 6 min");
+    expect(lineLabel("deploy", {}, now)).toBe("Queued");
+  });
+
+  it("gives the build line's estimate and place", () => {
+    expect(lineLabel("build", { ahead: 1, eta: now + 4 * 60_000 }, now)).toBe("Build starts in about 4 min · 2nd in line");
+    expect(lineLabel("build", { ahead: 0, eta: in6 }, now)).toBe("Building next");
+    expect(lineLabel("build", { ahead: 1 }, now)).toBe("2nd in line to build");
+    expect(lineLabel("build", { ahead: 0 }, now)).toBe("Next to build");
+    expect(lineLabel("build", {}, now)).toBe("Queued to build");
+  });
+
+  it("counts the estimate down, and drops it before the clock is known", () => {
+    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now + 5 * 60_000)).toBe("Starts in about 1 min · 3rd in line");
+    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, now + 7 * 60_000)).toBe("Starts in less than a minute · 3rd in line");
+    expect(lineLabel("deploy", { ahead: 2, eta: in6 }, null)).toBe("3rd in line");
+  });
+});
+
+describe("queuedRowLabel", () => {
+  it("places a deploy behind this app's own by its order in the list", () => {
+    expect(queuedRowLabel({ reason: "app", since: T0, queued: true }, 1, T0)).toBe("Next in line");
+    expect(queuedRowLabel(null, 3, T0)).toBe("3rd in line");
+  });
+
+  it("uses the deploy line's place when the row has one", () => {
+    expect(queuedRowLabel({ reason: "deploy-slot", ahead: 4, since: T0, queued: true }, 1, T0)).toBe("5th in line");
+  });
+});
+
 describe("deployView", () => {
   type Wait = Parameters<typeof deployView>[0]["wait"];
-  const view = (queued: boolean, wait: Wait, started = false, preparing = false) => deployView({ queued, wait, started, preparing });
+  const view = (queued: boolean, wait: Wait, started = false, preparing = false) => deployView({ queued, wait, started, preparing, now: T0 });
 
   it("reads a held request as preparing", () => {
     expect(view(true, null, false, true)).toMatchObject({ word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" });
@@ -231,22 +315,31 @@ describe("deployView", () => {
     expect(view(true, null)).toMatchObject({ word: "Queued", label: "Queued", tone: "neutral" });
   });
 
-  it("places a deploy in the slot queue as X of Y", () => {
-    expect(view(true, { reason: "deploy-slot", ahead: 2, total: 5 }).label).toBe("Queued (3 of 5)");
-    expect(view(true, { reason: "deploy-slot", ahead: 2 }).label).toBe("Queued (3)");
-    expect(view(true, { reason: "deploy-slot" }).label).toBe("Queued");
-    // A total smaller than the place is stale; the place alone still holds.
-    expect(view(true, { reason: "deploy-slot", ahead: 4, total: 2 }).label).toBe("Queued (5)");
+  it("names a deploy's place in the deploy line", () => {
+    expect(view(true, { reason: "deploy-slot", ahead: 2, total: 5, eta: T0 + 6 * 60_000 })).toMatchObject({
+      word: "Queued",
+      label: "Starts in about 6 min · 3rd in line",
+      tone: "neutral",
+    });
+    expect(view(true, { reason: "deploy-slot", ahead: 0 }).label).toBe("Next in line");
   });
 
-  it("keeps a deploy queued to build counted as deploying", () => {
+  it("keeps a deploy in the build line counted as deploying", () => {
     expect(view(false, { reason: "build-slot", ahead: 1, total: 3 }, true)).toMatchObject({
       word: "Deploying",
-      label: "Queued to build (2 of 3)",
+      label: "2nd in line to build",
       tone: "neutral",
       held: "build",
     });
-    expect(view(false, { reason: "checkout" }, true)).toMatchObject({ word: "Deploying", label: "Queued to clone", held: "clone" });
+  });
+
+  it("calls a checkout wait plain queued, with the reason on hover", () => {
+    expect(view(false, { reason: "checkout" }, true)).toMatchObject({
+      word: "Deploying",
+      label: "Queued",
+      why: "Another deploy of this app is using its checkout",
+      held: "clone",
+    });
   });
 
   it("starts, then deploys", () => {
@@ -254,37 +347,58 @@ describe("deployView", () => {
     expect(view(false, null, true)).toMatchObject({ word: "Deploying", label: "Deploying", tone: "info" });
   });
 
-  it("never says waiting", () => {
+  it("never says waiting or shows a total", () => {
     const reasons = ["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive", null] as const;
     for (const reason of reasons) {
-      for (const queued of [true, false]) expect(view(queued, { reason, ahead: 0, total: 2 }, !queued).label).not.toMatch(/wait/i);
+      for (const queued of [true, false]) {
+        const label = view(queued, { reason, ahead: 1, total: 9 }, !queued).label;
+        expect(label).not.toMatch(/wait/i);
+        expect(label).not.toMatch(/9/);
+      }
     }
+  });
+});
+
+describe("streamView", () => {
+  it("reads a claimed row with no phase as starting, and one with a phase as deploying", () => {
+    expect(streamView({ wait: NO_WAIT, stages: {} }, { status: "running", stage: null }).word).toBe("Starting");
+    expect(streamView({ wait: NO_WAIT, stages: {} }, { status: "running", stage: "clone" }).word).toBe("Deploying");
+    expect(streamView({ wait: NO_WAIT, stages: {} }, { status: "queued", stage: null }).word).toBe("Queued");
+  });
+});
+
+describe("queuedStep", () => {
+  it("names the step by the word until work starts, then ticks it off", () => {
+    const at = (queued: boolean, wait: Parameters<typeof deployView>[0]["wait"], started: boolean) => queuedStep(deployView({ queued, wait, started }));
+    expect(at(true, { reason: "deploy-slot", ahead: 2 }, false)).toEqual({ label: "Queued", state: "held" });
+    expect(at(false, null, false)).toEqual({ label: "Starting", state: "now" });
+    expect(at(false, { reason: "build-slot", ahead: 1 }, true)).toEqual({ label: "Queued", state: "done" });
   });
 });
 
 describe("deployCardText", () => {
   const working = { wait: null, waitedMs: 119_000, workingMs: 145_000 };
 
-  it("gives the estimate with what's done so far and what was spent queued", () => {
-    const text = deployCardText(view0(), working, { now: T0, typicalMs: 277_000, started: true });
-    expect(text).toEqual({ line: "About 2m 12s left · last deploy took 4m 37s", meta: "2m 25s so far · queued 1m 59s first" });
+  it("gives the estimate, then what's done, what was spent queued and the last deploy", () => {
+    expect(deployCardText(view0(), working, 277_000)).toEqual({
+      line: "About 2m 12s left",
+      meta: "2m 25s so far · queued 1m 59s first · last deploy took 4m 37s",
+    });
   });
 
-  it("owns the held step's line and time", () => {
+  it("shows only the line while it waits, with no elapsed time", () => {
     const held = { wait: { reason: "build-slot" as const, ahead: 1, total: 3, since: T0 - 168_000 }, waitedMs: 168_000, workingMs: 50_000 };
     const v = deployView({ queued: false, wait: held.wait, started: true });
-    expect(deployCardText(v, held, { now: T0, typicalMs: 277_000, started: true })).toEqual({
-      line: "Queued to build (2 of 3) · 2m 48s",
-      meta: "50s so far",
-    });
+    expect(deployCardText(v, held, 277_000)).toEqual({ line: "2nd in line to build", meta: null });
   });
 
-  it("says when it's running long", () => {
+  it("says when it's running long, or that there's nothing to judge by", () => {
     const late = { wait: null, waitedMs: 0, workingMs: 300_000 };
-    expect(deployCardText(view0(), late, { now: T0, typicalMs: 277_000, started: true })).toEqual({
+    expect(deployCardText(view0(), late, 277_000)).toEqual({
       line: "Taking longer than last time",
-      meta: "5m 0s so far",
+      meta: "5m 0s so far · last deploy took 4m 37s",
     });
+    expect(deployCardText(view0(), late, null)).toEqual({ line: "No earlier deploy to judge by", meta: "5m 0s so far" });
   });
 
   function view0() {

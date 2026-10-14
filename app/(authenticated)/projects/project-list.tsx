@@ -26,6 +26,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import { deployViewOf, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
 import { deployMarkOf } from "@/lib/ui/deploy-wait";
+import { useNow } from "@/components/deploy-progress";
 import type { StarKind } from "@/lib/db/schema/enums";
 import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
@@ -206,6 +207,7 @@ function RowTerm({ text, id }: { text: string; id?: GlossaryId }) {
 
 function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nodes: TreeNode[]; depth: number; ctx: ListContext }) {
   const shown = nodes.filter((n) => ctx.matches(n, section));
+  const now = useNow(30_000);
   return (
     <>
       {shown.map((node, i) => {
@@ -216,7 +218,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
         const quietParent = node.relation === "service" && node.parent?.status === app.status && app.status !== "active";
         const inner = !p && expanded === false ? walk(node.children).map((c) => [c, problemOf(c)] as const).find(([, cp]) => cp) : null;
         const stopped = app.parked || app.status === "stopped";
-        const view = deployViewOf(app);
+        const view = deployViewOf(app, now);
         const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
         const health = statusMarkTone(markSubject(node));
         // A deploy in flight takes the mark unless something needs attention.
@@ -294,13 +296,14 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
 
 function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: TreeNode[]; depth: number; ctx: ListContext }) {
   const shown = nodes.filter((n) => ctx.matches(n, section));
+  const now = useNow(30_000);
   return (
     <>
       {shown.map((node, i) => {
         const kids = node.children.filter((c) => ctx.matches(c, section));
         const expanded = kids.length ? ctx.isAppOpen(node, section) : false;
         const app = node.app;
-        const view = deployViewOf(app);
+        const view = deployViewOf(app, now);
         return (
           <div key={app.id} role="none" className={cn("group/row rounded-md", depth > 1 && "pl-5", ctx.flash === app.name && "animate-row-flash")}>
             <AppRow

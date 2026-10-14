@@ -189,6 +189,7 @@ describe("deploys in flight", () => {
     waitReason,
     waitingSince: waitReason ? "2026-10-01T00:01:00.000Z" : null,
     request: held ? { held: true } : null,
+    stage: status === "running" ? "build" : null,
   });
   const project = { id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null };
 
@@ -210,9 +211,16 @@ describe("deploys in flight", () => {
     const label = (name: string) => deployViewOf(sections[0].nodes.find((n) => n.app.name === name)!.app)?.label;
     expect(label("b-queued")).toBe("Queued");
     expect(label("d-builder")).toBe("Queued to build");
+    expect(label("a-running")).toBe("Deploying");
     expect(label("e-preparing")).toBe("Preparing");
     expect(label("c-both")).toBe("Deploying");
     expect(label("f-idle")).toBeUndefined();
+  });
+
+  it("reads a claimed row with no phase yet as starting", () => {
+    const claimed = { ...deploy("running"), stage: null };
+    expect(deployViewOf({ status: "deploying", deployments: [claimed] })).toMatchObject({ word: "Starting", label: "Starting" });
+    expect(fleetCounts(buildSections([project], [app("a", { status: "deploying", deployments: [claimed] })]))).toMatchObject({ deploying: 1, queued: 0 });
   });
 
   it("reads a queued row with no reason yet as queued", () => {

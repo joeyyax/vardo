@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DeleteAppDialog } from "./delete-app-dialog";
+import { DeployCancel } from "./deploy-cancel";
 import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor-lazy";
 import { AppMetrics } from "./app-metrics-lazy";
@@ -664,6 +665,7 @@ export function ComposeDetail({
   app,
   orgId,
   userRole,
+  instanceAdmin = false,
   initialTab,
   initialSubView,
   featureFlags,
@@ -679,6 +681,7 @@ export function ComposeDetail({
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
   userRole: string;
+  instanceAdmin?: boolean;
   initialTab: string;
   initialSubView?: string;
   featureFlags: FeatureFlags;
@@ -740,7 +743,8 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
-  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+  const cancel = useCancelDeploy(orgId, app.id);
+  const { cancelling, cancelDeploy } = cancel;
   const slotStatus = useSlotStatus(orgId, app.id, { refreshKey: app.status });
 
   const handleInstantRollback = useCallback(async () => {
@@ -971,10 +975,14 @@ export function ComposeDetail({
         actions={
           <div className="flex items-center gap-2">
             {(deploy.deploying || app.status === "deploying") ? (
-              <Button size="sm" variant="outline" disabled={cancelling} onClick={() => void cancelDeploy()}>
-                <X className="mr-1.5 size-3.5" />
-                {cancelling ? "Cancelling..." : "Cancel"}
-              </Button>
+              <DeployCancel
+                orgId={orgId}
+                appId={app.id}
+                cancel={cancel}
+                view={deploy.deployView}
+                deploymentId={serverRunningDeploy?.id}
+                instanceAdmin={instanceAdmin}
+              />
             ) : actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" onClick={handleDeployClick}>
                 <Rocket className="mr-1.5 size-4" />
@@ -1198,6 +1206,7 @@ export function ComposeDetail({
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            cancel={cancel}
             onDeploy={handleDeployClick}
             deployActionLabel="Deploy stack"
             lifecycleEvents={lifecycleEvents}

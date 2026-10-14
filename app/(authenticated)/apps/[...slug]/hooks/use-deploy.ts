@@ -485,7 +485,7 @@ export function useDeploy({
     deployWait: seededWait,
     /** How the deploy in flight reads, or null when none is. */
     deployView: deploying
-      ? streamView({ wait: seededWait, stages: deployStages }, { status: deployQueued ? "queued" : "running", request: serverRunningDeploy?.request })
+      ? streamView({ wait: seededWait, stages: deployStages }, { status: deployQueued ? "queued" : "running", stage: serverRunningDeploy?.stage, request: serverRunningDeploy?.request })
       : null,
     expandedDeployLog,
     setExpandedDeployLog,

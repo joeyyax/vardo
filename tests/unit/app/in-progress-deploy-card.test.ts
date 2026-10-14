@@ -13,8 +13,6 @@ const render = (props: Partial<Parameters<typeof InProgressDeployCard>[0]>) =>
       startTime: Date.now() - 60_000,
       expanded: false,
       onToggleExpand: () => {},
-      onAbort: () => {},
-      canAbort: true,
       trigger: "manual",
       ...props,
     }),
@@ -24,7 +22,7 @@ describe("InProgressDeployCard", () => {
   it("shows a queued deploy as queued, never deploying", () => {
     const html = render({ queued: true });
     expect(html).toContain("Queued");
-    expect(html).toContain("Cancel");
+    expect(html).not.toContain("Cancel");
     expect(html).not.toContain("Deploying");
     expect(html).not.toContain("Waiting");
     expect(html).not.toContain("Abort");
@@ -40,8 +38,7 @@ describe("InProgressDeployCard", () => {
 
   it("shows a running deploy as deploying with the queued step ticked off", () => {
     const html = render({ queued: false, stages: { clone: "running" } });
-    expect(html).toContain("Deploying");
-    expect(html).toContain("Abort");
+    expect(html).not.toContain("Abort");
     expect(html).toContain("animate-spin");
     expect(html).toMatch(/Queued<\/span><span class="sr-only">done/);
   });

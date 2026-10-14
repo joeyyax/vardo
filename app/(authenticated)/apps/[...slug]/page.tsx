@@ -104,6 +104,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       app={app}
       orgId={actor.org.id}
       userRole={data.role}
+      instanceAdmin={actor.instanceAdmin}
       allTags={data.allTags}
       allParentApps={data.allParentApps}
       allAppNames={data.allAppNames}

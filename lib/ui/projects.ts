@@ -30,6 +30,10 @@ export type ProjectsDeployment = {
   /** Place in line while queued for a slot, and how many wait in that queue. */
   waitAhead?: number | null;
   waitTotal?: number | null;
+  /** When it should start, while it has an estimate. */
+  waitEta?: Date | string | null;
+  /** Phase in flight; null on a claimed deploy that hasn't started one. */
+  stage?: string | null;
   /** `held` while the requester prepares it. */
   request?: { held?: boolean } | null;
 };
@@ -223,11 +227,12 @@ export type ProjectStats = {
 };
 
 /** How the app's in-flight deploy reads from its row, or null when none is in flight. */
-export function deployViewOf(app: Pick<ProjectsApp, "status" | "deployments">): DeployView | null {
+export function deployViewOf(app: Pick<ProjectsApp, "status" | "deployments">, now: number | null = null): DeployView | null {
   const active = activeDeploy(app.deployments);
   // A running row on another environment leaves this app's status alone.
   if (active?.status === "queued" || (active && app.status === "deploying")) {
-    return deployView({ queued: active.status === "queued", preparing: !!active.request?.held, wait: rowHold(active), started: true });
+    const queued = active.status === "queued";
+    return deployView({ queued, preparing: !!active.request?.held, wait: rowHold(active), started: !queued && !!active.stage, now });
   }
   return app.status === "deploying" ? deployView({ queued: false, wait: null, started: true }) : null;
 }

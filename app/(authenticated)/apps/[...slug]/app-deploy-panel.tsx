@@ -47,7 +47,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { compactUptime } from "@/lib/ui/app-row";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 import { BuildPlanPanel } from "./build-plan-panel";
-import { useCancelDeploy } from "./hooks/use-app-actions";
+import type { useCancelDeploy } from "./hooks/use-app-actions";
 import {
   interleaveHistory,
   partitionLifecycle,
@@ -55,6 +55,8 @@ import {
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
 import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
+import { isQueuedView, queuedRowLabel, rowHold } from "@/lib/ui/deploy-wait";
+import { useNow } from "@/components/deploy-progress";
 import {
   DEPLOY_WINDOW_DAYS,
   deployCounts,
@@ -85,6 +87,8 @@ export interface AppDeployPanelProps {
   source: string;
   autoDeploy: boolean | null;
   deploy: ReturnType<typeof useDeploy>;
+  /** The page toolbar's cancel, so the card shows a cancel it started. */
+  cancel: ReturnType<typeof useCancelDeploy>;
   /** The toolbar button's action. */
   onDeploy: () => void;
   /** The toolbar button's label. */
@@ -188,6 +192,7 @@ export function AppDeployPanel({
   source,
   autoDeploy,
   deploy,
+  cancel,
   onDeploy,
   deployActionLabel,
   lifecycleEvents = [],
@@ -218,13 +223,9 @@ export function AppDeployPanel({
   } = deploy;
 
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
+  const clock = useNow(30_000);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
-  const {
-    cancelling: abortingDeploy,
-    cancelRequested,
-    setCancelRequested,
-    cancelDeploy,
-  } = useCancelDeploy(orgId, appId);
+  const { cancelRequested, setCancelRequested, cancelDeploy } = cancel;
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
@@ -304,12 +305,6 @@ export function AppDeployPanel({
       setInstantRollingBack(false);
     }
   }, [orgId, appId, router, setConfirmRollbackOpen]);
-
-  // The stream stays open: the engine reports the cancel when it stops.
-  const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
-    await cancelDeploy(deploymentId);
-    router.refresh();
-  }, [cancelDeploy, router]);
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
     setCancellingIds((prev) => new Set(prev).add(deploymentId));
@@ -430,7 +425,7 @@ export function AppDeployPanel({
         {problem.text}
       </span>
     ) : role === "queued" ? (
-      `${queuePosition} of ${queuedDeployments.length} in queue`
+      queuedRowLabel(rowHold(deployment), queuePosition, clock)
     ) : isLiveRunning && deployment.finishedAt ? (
       <LiveFor since={deployment.finishedAt} />
     ) : role === "standby" ? (
@@ -545,10 +540,10 @@ export function AppDeployPanel({
               }
               action={
                 <Button size="sm" disabled={deploying} onClick={onDeploy}>
-                  {deploying && deployQueued ? (
-                    "Queued"
+                  {deploying && deploy.deployView && isQueuedView(deploy.deployView) ? (
+                    deploy.deployView.word
                   ) : deploying ? (
-                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                    <><Loader2 className="mr-1.5 size-4 animate-spin" />{deploy.deployView?.word ?? "Deploying"}</>
                   ) : (
                     <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
                   )}
@@ -583,8 +578,6 @@ export function AppDeployPanel({
                 startTime={deployStartTime}
                 expanded={expandedDeployLog}
                 onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
-                onAbort={() => handleAbortDeploy()}
-                canAbort={!abortingDeploy}
                 cancelling={cancelRequested}
                 typicalElapsedMs={typicalMs}
                 queued={deployQueued}
@@ -599,8 +592,6 @@ export function AppDeployPanel({
                 startTime={new Date(serverRunningDeploy.startedAt).getTime()}
                 expanded={expandedServerDeploy}
                 onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
-                onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
-                canAbort={!abortingDeploy}
                 cancelling={cancelRequested}
                 trigger={serverRunningDeploy.trigger}
                 typicalElapsedMs={typicalMs}
