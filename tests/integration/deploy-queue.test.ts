@@ -324,6 +324,24 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect(res.waitedMs).toBeGreaterThanOrEqual(100);
     });
 
+    it("waits for a claim already in flight and counts what it claimed", async () => {
+      await seed("self", "self", "manual", "running");
+      await seed("q1", "a1", "manual", "queued");
+      // A claim that has checked for a hold and not yet committed.
+      const claimer = await sql.reserve();
+      await claimer`begin`;
+      await claimer`select pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`;
+      await claimer`update deployment set status = 'running', claimed_by = 'w' where id = 'q1'`;
+      const pending = q.requestExclusive("self", { timeoutMs: 0 });
+      try {
+        await sleep(300);
+      } finally {
+        await claimer`commit`;
+        claimer.release();
+      }
+      expect((await pending).running).toBe(1);
+    });
+
     it("clears the flag when the wait is aborted", async () => {
       await seed("self", "self", "manual", "running");
       await seed("b1", "a1", "manual", "running");

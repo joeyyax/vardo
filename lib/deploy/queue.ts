@@ -120,6 +120,11 @@ async function applySupersede(tx: Tx, id: string, scopeKey: string, opts: Pick<E
   return { superseded, cancelRequested };
 }
 
+async function lockClaims(tx: Tx) {
+  // Claims and the exclusive hold run one at a time, so a claim never lands after the hold.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`);
+}
+
 async function lockScope(tx: Tx, scopeKey: string) {
   // Enqueues in one scope run one at a time, so each sees the rows before it.
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-scope'), hashtext(${scopeKey}))`);
@@ -231,7 +236,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
 
   try {
     const claimed = await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('vardo:deploy-claim'))`);
+      await lockClaims(tx);
 
       const [state] = await tx.execute<{ running: number; exclusive: boolean }>(sql`
         SELECT
@@ -408,11 +413,14 @@ export type ExclusiveOpts = {
 
 /** Flags a running deploy's swap as exclusive and waits for every other deploy to finish, up to the timeout. Returns how many still run. */
 export async function requestExclusive(id: string, opts: ExclusiveOpts = {}): Promise<{ running: number; waitedMs: number }> {
-  const flagged = await db
-    .update(deployments)
-    .set({ exclusiveRequestedAt: sql`coalesce(${deployments.exclusiveRequestedAt}, now())` })
-    .where(and(eq(deployments.id, id), eq(deployments.status, "running")))
-    .returning({ id: deployments.id });
+  const flagged = await db.transaction(async (tx) => {
+    await lockClaims(tx);
+    return tx
+      .update(deployments)
+      .set({ exclusiveRequestedAt: sql`coalesce(${deployments.exclusiveRequestedAt}, now())` })
+      .where(and(eq(deployments.id, id), eq(deployments.status, "running")))
+      .returning({ id: deployments.id });
+  });
   if (flagged.length === 0) throw new Error(`Deployment ${id} isn't running`);
 
   const timeoutMs = opts.timeoutMs ?? EXCLUSIVE_WAIT_MS;
