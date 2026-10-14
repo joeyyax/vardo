@@ -1,6 +1,7 @@
 // The Projects screen's model: sections, nesting, ordering and the panel's lists. No React.
 
 import type { AppCondition } from "@/lib/docker/conditions";
+import { activeDeploy, rowHold, type HeldDeploy } from "@/lib/ui/deploy-wait";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import {
   PROBLEM_GROUP_ORDER,
@@ -23,6 +24,9 @@ export type ProjectsDeployment = {
   startedAt: Date | string;
   finishedAt: Date | string | null;
   durationMs: number | null;
+  /** What an in-flight deploy waits on, null while it works. */
+  waitReason?: string | null;
+  waitingSince?: Date | string | null;
 };
 
 /** One app or compose service as the page loads it. */
@@ -200,9 +204,10 @@ export type ProjectStats = {
   up: number;
   down: number;
   stopped: number;
+  /** Apps whose deploy is doing work. */
   deploying: number;
-  /** Apps with a deploy waiting for a slot and none running. */
-  queued: number;
+  /** Apps whose deploy is queued or held on a lock. */
+  waiting: number;
   issues: number;
   critical: number;
   latestDeploy: (ProjectsDeployment & { appName: string }) | null;
@@ -212,9 +217,15 @@ export type ProjectStats = {
   lastBackupAt: Date | string | null;
 };
 
-/** A deploy waits for a slot while nothing of this app's is running yet. */
-export function isDeployQueued(app: Pick<ProjectsApp, "status" | "deployments">): boolean {
-  return app.status !== "deploying" && app.deployments.some((d) => d.status === "queued");
+/** What holds the app's in-flight deploy still, or null while it works or none is in flight. */
+export function heldDeployOf(app: Pick<ProjectsApp, "deployments">): HeldDeploy | null {
+  const active = activeDeploy(app.deployments);
+  return active ? rowHold(active) : null;
+}
+
+/** The app has a deploy doing work rather than waiting. */
+export function isDeployWorking(app: Pick<ProjectsApp, "status" | "deployments">): boolean {
+  return app.status === "deploying" && !heldDeployOf(app);
 }
 
 export function projectStats(nodes: TreeNode[]): ProjectStats {
@@ -234,8 +245,8 @@ export function projectStats(nodes: TreeNode[]): ProjectStats {
     up: tops.filter((a) => a.status === "active" && !a.parked).length,
     down: tops.filter((a) => !a.parked && (a.status === "error" || a.status === "missing")).length,
     stopped: tops.filter((a) => a.parked || a.status === "stopped").length,
-    deploying: tops.filter((a) => a.status === "deploying").length,
-    queued: tops.filter(isDeployQueued).length,
+    deploying: tops.filter(isDeployWorking).length,
+    waiting: tops.filter((a) => !!heldDeployOf(a)).length,
     issues: problems.length,
     critical: problems.filter((p) => p.tone === "error").length,
     latestDeploy,
@@ -338,10 +349,10 @@ export function appsIn(sections: Section[], key: "running" | "stopped" | "deploy
       ? a.status === "active" && !a.parked
       : key === "stopped"
         ? a.parked || a.status === "stopped"
-        : a.status === "deploying" || isDeployQueued(a);
+        : isDeployWorking(a) || !!heldDeployOf(a);
   const found = sections.flatMap((s) => s.nodes.filter((n) => test(n.app)).map((node) => ({ node, project: s.project })));
-  // Deploys doing work before those waiting for a slot.
-  return key === "deploying" ? found.sort((a, b) => Number(isDeployQueued(a.node.app)) - Number(isDeployQueued(b.node.app))) : found;
+  // Deploys doing work before those waiting.
+  return key === "deploying" ? found.sort((a, b) => Number(!!heldDeployOf(a.node.app)) - Number(!!heldDeployOf(b.node.app))) : found;
 }
 
 export type FleetCounts = {
@@ -350,7 +361,7 @@ export type FleetCounts = {
   attention: number;
   critical: number;
   deploying: number;
-  queued: number;
+  waiting: number;
   stopped: number;
   backupsOverdue: number;
 };
@@ -364,7 +375,7 @@ export function fleetCounts(sections: Section[]): FleetCounts {
     attention: items.length,
     critical: items.filter((i) => i.problem.tone === "error").length,
     deploying: sections.reduce((n, s) => n + s.stats.deploying, 0),
-    queued: sections.reduce((n, s) => n + s.stats.queued, 0),
+    waiting: sections.reduce((n, s) => n + s.stats.waiting, 0),
     stopped: sections.reduce((n, s) => n + s.stats.stopped, 0),
     backupsOverdue: items.filter((i) => i.problem.group === "backups").length,
   };

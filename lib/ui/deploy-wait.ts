@@ -1,6 +1,6 @@
 // Time a deploy spends waiting on locks and queues, from the deploy stream's wait events.
 
-export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout";
+export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout" | "worker" | "exclusive";
 
 export type WaitEvent = { reason: WaitReason | null; ahead?: number; streamId: string };
 
@@ -30,14 +30,19 @@ function streamIdAfter(a: string, b: string): boolean {
   return am !== bm ? am > bm : as > bs;
 }
 
-const REASONS =new Set<string>(["app", "deploy-slot", "build-slot", "checkout"]);
+const REASONS = new Set<string>(["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive"]);
+
+/** Whether a value is a wait reason the UI knows. */
+export function isWaitReason(value: unknown): value is WaitReason {
+  return typeof value === "string" && REASONS.has(value);
+}
 
 /** A `wait` event's payload, or null when it doesn't match the contract. */
 export function parseWaitEvent(data: unknown): WaitEvent | null {
   if (!data || typeof data !== "object") return null;
   const { reason, ahead, streamId } = data as Record<string, unknown>;
   if (typeof streamId !== "string") return null;
-  if (reason !== null && !(typeof reason === "string" && REASONS.has(reason))) return null;
+  if (reason !== null && !isWaitReason(reason)) return null;
   return { reason: reason as WaitReason | null, ahead: typeof ahead === "number" ? ahead : undefined, streamId };
 }
 
@@ -82,6 +87,27 @@ export function deployClock(
   return { wait: state.current, waitedMs, workingMs: total - waitedMs };
 }
 
+export type HeldDeploy = { reason: WaitReason | null; since: number | null; queued: boolean };
+
+/** What holds an in-flight deploy row still, from its wait columns. Null while it works or once it's done. */
+export function rowHold(d: { status: string; waitReason?: string | null; waitingSince?: Date | string | null }): HeldDeploy | null {
+  if (d.status !== "queued" && d.status !== "running") return null;
+  const reason = isWaitReason(d.waitReason) ? d.waitReason : null;
+  if (!reason && d.status === "running") return null;
+  return { reason, since: d.waitingSince ? new Date(d.waitingSince).getTime() : null, queued: d.status === "queued" };
+}
+
+/** The stream's waits, or the row's open wait until the stream reports one. */
+export function seedWait(state: WaitState, hold: HeldDeploy | null): WaitState {
+  if (state.heard || !hold?.reason || hold.since === null) return state;
+  return { ...state, current: { reason: hold.reason, since: hold.since } };
+}
+
+/** A held deploy in a few words, for a list row. */
+export function holdLabel(hold: HeldDeploy): string {
+  return hold.reason ? waitLabel(hold.reason) : "Deploy queued";
+}
+
 /** The deploy to show from a newest-first list: the running one, else the first in line. */
 export function activeDeploy<D extends { status: string }>(deployments: D[]): D | null {
   return deployments.find((d) => d.status === "running") ?? deployments.findLast((d) => d.status === "queued") ?? null;
@@ -117,6 +143,10 @@ export function waitLabel(reason: WaitReason | null, ahead?: number): string {
       return queue ? `Waiting for the builder, ${plural(queue, "build")} ahead` : "Waiting for the builder";
     case "checkout":
       return "Waiting for another deploy's checkout";
+    case "worker":
+      return "Waiting for the worker to come back";
+    case "exclusive":
+      return "Waiting for Vardo's own update to finish";
     default:
       return "Queued";
   }

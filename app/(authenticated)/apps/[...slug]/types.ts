@@ -26,6 +26,9 @@ export type Deployment = {
   slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;
+  /** What an in-flight deploy waits on, null while it works. */
+  waitReason?: string | null;
+  waitingSince?: Date | string | null;
   triggeredByUser: {
     id: string;
     name: string | null;

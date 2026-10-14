@@ -4,10 +4,14 @@ import {
   applyWait,
   deployClock,
   deployWaitOf,
+  holdLabel,
   NO_WAIT,
   parseWaitEvent,
+  rowHold,
+  seedWait,
   streamIdMs,
   waitLabel,
+  waitWord,
   type WaitEvent,
   type WaitState,
 } from "@/lib/ui/deploy-wait";
@@ -175,7 +179,48 @@ describe("parseWaitEvent", () => {
   });
 });
 
+describe("row waits", () => {
+  const row = (status: string, waitReason: string | null, waitingSince: string | null = null) => ({ status, waitReason, waitingSince });
+
+  it("holds a queued row, and a running one only while it names a reason", () => {
+    expect(rowHold(row("queued", null))).toEqual({ reason: null, since: null, queued: true });
+    expect(rowHold(row("running", "build-slot", "2026-10-01T00:00:00.000Z"))).toEqual({
+      reason: "build-slot",
+      since: Date.parse("2026-10-01T00:00:00.000Z"),
+      queued: false,
+    });
+    expect(rowHold(row("running", null))).toBeNull();
+    expect(rowHold(row("success", "build-slot"))).toBeNull();
+  });
+
+  it("ignores a reason the UI doesn't know", () => {
+    expect(rowHold(row("running", "disk"))).toBeNull();
+    expect(rowHold(row("queued", "disk"))?.reason).toBeNull();
+  });
+
+  it("labels a held row", () => {
+    expect(holdLabel({ reason: null, since: null, queued: true })).toBe("Deploy queued");
+    expect(holdLabel({ reason: "worker", since: null, queued: true })).toBe("Waiting for the worker to come back");
+  });
+
+  it("uses the row's wait until the stream reports one", () => {
+    const hold = { reason: "build-slot" as const, since: T0, queued: false };
+    expect(seedWait(NO_WAIT, hold).current).toEqual({ reason: "build-slot", since: T0 });
+    const heard = fold([{ reason: null, streamId: at(5_000) }]);
+    expect(seedWait(heard, hold)).toBe(heard);
+    expect(seedWait(NO_WAIT, { reason: null, since: null, queued: true })).toBe(NO_WAIT);
+  });
+});
+
 describe("waitLabel", () => {
+  it("names the queue's new reasons", () => {
+    expect(waitLabel("worker")).toBe("Waiting for the worker to come back");
+    expect(waitLabel("exclusive")).toBe("Waiting for Vardo's own update to finish");
+    expect(waitWord("worker")).toBe("Queued");
+    expect(waitWord("exclusive")).toBe("Queued");
+    expect(parseWaitEvent({ reason: "worker", streamId: "1-0" })?.reason).toBe("worker");
+  });
+
   it("counts the deploys ahead in the queue", () => {
     expect(waitLabel("deploy-slot", 2)).toBe("Queued behind 2 other deploys");
     expect(waitLabel("deploy-slot", 1)).toBe("Queued behind 1 other deploy");

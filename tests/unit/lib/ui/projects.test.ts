@@ -7,7 +7,7 @@ import {
   buildSections,
   buildTree,
   fleetCounts,
-  isDeployQueued,
+  heldDeployOf,
   issueGroups,
   markSubject,
   sortNodes,
@@ -177,23 +177,43 @@ describe("issueGroups", () => {
   });
 });
 
-describe("queued deploys", () => {
-  const deploy = (status: string) => ({ id: status, status, trigger: "manual", gitSha: null, startedAt: "2026-10-01T00:00:00.000Z", finishedAt: null, durationMs: null });
+describe("waiting deploys", () => {
+  const deploy = (status: string, waitReason: string | null = null) => ({
+    id: status,
+    status,
+    trigger: "manual",
+    gitSha: null,
+    startedAt: "2026-10-01T00:00:00.000Z",
+    finishedAt: null,
+    durationMs: null,
+    waitReason,
+    waitingSince: waitReason ? "2026-10-01T00:01:00.000Z" : null,
+  });
   const project = { id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null };
 
-  it("counts an app whose deploy waits for a slot apart from those deploying", () => {
+  it("counts deploys held on a queue or lock apart from those at work", () => {
     const sections = buildSections(
       [project],
       [
         app("a-running", { status: "deploying", deployments: [deploy("running")] }),
-        app("b-queued", { deployments: [deploy("queued"), deploy("success")] }),
-        // Queued behind its own running deploy: still deploying.
-        app("c-both", { status: "deploying", deployments: [deploy("queued"), deploy("running")] }),
-        app("d-idle", { deployments: [deploy("success")] }),
+        app("b-queued", { deployments: [deploy("queued", "deploy-slot"), deploy("success")] }),
+        // Queued behind its own running deploy: the running one is at work.
+        app("c-both", { status: "deploying", deployments: [deploy("queued", "app"), deploy("running")] }),
+        // Running, but held for the builder.
+        app("d-builder", { status: "deploying", deployments: [deploy("running", "build-slot")] }),
+        app("e-idle", { deployments: [deploy("success")] }),
       ],
     );
-    expect(fleetCounts(sections)).toMatchObject({ deploying: 2, queued: 1 });
-    expect(isDeployQueued(sections[0].nodes.find((n) => n.app.name === "b-queued")!.app)).toBe(true);
+    expect(fleetCounts(sections)).toMatchObject({ deploying: 2, waiting: 2 });
+    const held = (name: string) => heldDeployOf(sections[0].nodes.find((n) => n.app.name === name)!.app);
+    expect(held("b-queued")).toMatchObject({ reason: "deploy-slot", queued: true });
+    expect(held("d-builder")).toMatchObject({ reason: "build-slot", queued: false });
+    expect(held("c-both")).toBeNull();
+    expect(held("a-running")).toBeNull();
+  });
+
+  it("holds a queued row with no reason yet", () => {
+    expect(heldDeployOf({ deployments: [deploy("queued")] })).toMatchObject({ reason: null, queued: true });
   });
 
   it("lists deploys at work before queued ones", () => {

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { formatDuration } from "@/lib/metrics/format";
-import { applyWait, deployWaitOf, NO_WAIT, parseWaitEvent, streamIdMs, type WaitState } from "@/lib/ui/deploy-wait";
+import { applyWait, deployWaitOf, NO_WAIT, parseWaitEvent, rowHold, seedWait, streamIdMs, type WaitState } from "@/lib/ui/deploy-wait";
 
 import type { Deployment, RollbackPreview } from "../types";
 
@@ -481,7 +481,9 @@ export function useDeploy({
     deployStageTimes,
     deployWait,
     /** The lock or queue holding the running deploy, or null while it works. */
-    deployHeld: deploying ? deployWaitOf({ wait: deployWait, stages: deployStages }, deployQueued ? "queued" : "running") : null,
+    deployHeld: deploying
+      ? deployWaitOf({ wait: seedWait(deployWait, serverRunningDeploy ? rowHold(serverRunningDeploy) : null), stages: deployStages }, deployQueued ? "queued" : "running")
+      : null,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,

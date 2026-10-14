@@ -98,6 +98,7 @@ export function AppRow({
   connector,
   related = false,
   trailing,
+  held,
   ref,
   ...rest
 }: {
@@ -115,6 +116,8 @@ export function AppRow({
   related?: boolean;
   /** Controls that must stay clickable, stacked above the row link. */
   trailing?: React.ReactNode;
+  /** What a queued or waiting deploy is held on, said in place of the status word. */
+  held?: string | null;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   // An operator-stopped row keeps its rail off.
@@ -152,12 +155,16 @@ export function AppRow({
         )}
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
-        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(app.status)}`} />
+        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${held && app.status === "deploying" ? "bg-status-neutral" : statusDotColor(app.status)}`} />
         <span className={ROW_NAME_CELL}>{app.displayName}</span>
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
-        {word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>}
+        {held ? (
+          <span className="shrink-0 font-normal text-muted-foreground">{held}</span>
+        ) : (
+          word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>
+        )}
         {shownNote && (
           <span className={`${ROW_NOTE_CELL} font-normal ${shownNote.tone}`} title={shownNote.detail}>
             {shownNote.label}
