@@ -9,6 +9,7 @@ import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import type { DeployView } from "@/lib/ui/deploy-wait";
 import { RowDeployLabel } from "@/components/row-deploy-label";
+import { MiddleTruncate } from "@/components/middle-truncate";
 import {
   compactUptime,
   primaryDomain,
@@ -160,7 +161,7 @@ export function AppRow({
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${deploy ? DEPLOY_DOT[deploy.tone] : statusDotColor(app.status)}`} />
-        <span className={ROW_NAME_CELL}>{app.displayName}</span>
+        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} />
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 

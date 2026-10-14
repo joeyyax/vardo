@@ -5,11 +5,15 @@ import { ChevronRight } from "lucide-react";
 import { StatusMark } from "@/components/ui/status-dot";
 import { TreeConnector } from "@/components/tree-connector";
 import { EntityLink } from "@/components/entity-link";
+import { MiddleTruncate } from "@/components/middle-truncate";
 import type { StatusMarkState } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 
 /** Indent per nesting level, in px. */
 const INDENT = 22;
+
+/** On a phone the name gives way first, so the status shows in full. */
+const NAME_CELL = "min-w-[6em] shrink overflow-hidden max-sm:min-w-[4.5em] max-sm:shrink-[9999]";
 
 /**
  * One row of a comfortable list: mark, name, one signal, then the problem or a quiet value, an
@@ -139,16 +143,16 @@ export function ListRow({
                 }
               : undefined
           }
-          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
         >
-          {name}
+          <MiddleTruncate text={name} />
         </EntityLink>
       ) : (
         <span
           title={nameTitle}
-          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
         >
-          {name}
+          <MiddleTruncate text={name} />
         </span>
       )}
       {star}
@@ -158,7 +162,7 @@ export function ListRow({
         </span>
       )}
 
-      <span className="ml-auto flex min-w-0 shrink-[3] items-center justify-end gap-3.5 pl-2 text-[13px]">
+      <span className="ml-auto flex min-w-0 shrink-[3] items-center justify-end gap-3.5 pl-2 text-[13px] max-sm:shrink">
         {metrics && (
           <span className="hidden items-center gap-3 text-muted-foreground sm:group-hover/row:inline-flex sm:group-focus-visible/row:inline-flex sm:group-data-[selected=true]/row:inline-flex">
             {metrics}
