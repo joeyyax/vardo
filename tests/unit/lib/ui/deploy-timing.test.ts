@@ -12,21 +12,21 @@ function deploy(over: Partial<TimedDeployment> = {}): TimedDeployment {
 }
 
 describe("typicalElapsedMs", () => {
-  it("measures the span rather than the execution clock", () => {
+  it("measures run time rather than the span, which includes queue wait", () => {
     // The deploy waited two minutes for a slot, then ran for 20s.
     const waited = deploy({
       startedAt: new Date("2026-08-03T10:00:00Z"),
       finishedAt: new Date("2026-08-03T10:02:20Z"),
       durationMs: 20_000,
     });
-    expect(typicalElapsedMs([waited])).toBe(140_000);
+    expect(typicalElapsedMs([waited])).toBe(20_000);
   });
 
   it("takes the most recent success", () => {
     const rows = [
       deploy({ status: "failed", durationMs: 999 }),
-      deploy({ finishedAt: new Date("2026-08-03T10:00:30Z") }),
-      deploy({ finishedAt: new Date("2026-08-03T10:01:00Z") }),
+      deploy({ durationMs: 30_000 }),
+      deploy({ durationMs: 60_000 }),
     ];
     expect(typicalElapsedMs(rows)).toBe(30_000);
   });
@@ -40,22 +40,24 @@ describe("typicalElapsedMs", () => {
     expect(typicalElapsedMs(rows)).toBeNull();
   });
 
-  it("falls back to durationMs when the row has no finish time", () => {
-    expect(typicalElapsedMs([deploy({ finishedAt: null })])).toBe(20_000);
+  it("falls back to the span when the row has no run time", () => {
+    expect(typicalElapsedMs([deploy({ durationMs: null })])).toBe(20_000);
+    expect(typicalElapsedMs([deploy({ durationMs: 0 })])).toBe(20_000);
   });
 
-  it("falls back when a clock skew would make the span negative", () => {
+  it("skips a row whose clock skew makes the span negative", () => {
     const skewed = deploy({
+      durationMs: null,
       startedAt: new Date("2026-08-03T10:00:20Z"),
       finishedAt: new Date("2026-08-03T10:00:00Z"),
     });
-    expect(typicalElapsedMs([skewed])).toBe(20_000);
+    expect(typicalElapsedMs([skewed, deploy({ durationMs: 7_000 })])).toBe(7_000);
   });
 
   it("accepts serialized dates", () => {
     const serialized = {
       status: "success",
-      durationMs: 20_000,
+      durationMs: null,
       startedAt: "2026-08-03T10:00:00Z",
       finishedAt: "2026-08-03T10:00:45Z",
     };
