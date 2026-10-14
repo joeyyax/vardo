@@ -423,6 +423,24 @@ describe("stale volumes in a summary", () => {
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 
+  it("sends a clean nightly subject when the only stale volume is an excluded bind mount", async () => {
+    const { subjectLine } = await import("@/lib/email/subjects");
+    mocks.settings.mockResolvedValue({ categories: { backups: true, backupSummaries: true, host: true, apps: true }, nightlyBackupTime: "02:00" });
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "v1", appId: "a1", name: "data", type: "named", persistent: true, durability: null, backupStrategy: "tar", backupSelection: "include", source: null },
+      { id: "v9", appId: "a9", name: "pgdata", type: "bind", persistent: true, durability: null, backupStrategy: "tar", backupSelection: null, source: "/srv/pg" },
+    ]);
+    staleRows = [{ appId: "a9", appName: "Other", volumeName: "pgdata", lastSuccessAt: null }];
+    const skip = item({ appId: "a9", appName: "Other", volumeName: "pgdata", jobId: "j9", outcome: "skipped", expected: true, sizeBytes: 0 });
+    const claimed = runRow({ kind: "nightly", runKey: "nightly:2026-10-10", label: "Nightly backups", plan: plan(["j1"]), items: [item(), skip] });
+    dbMock.query.backupRuns.findMany.mockResolvedValue([claimed]);
+    dbMock.updateReturns([claimed]);
+    await finishBackupRuns(t0 + 10 * MIN);
+    const event = mocks.emit.mock.calls[0][1];
+    expect(event.staleVolumes).toBeUndefined();
+    expect(subjectLine(event)).toMatch(/^✓ Nightly backups/);
+  });
+
   it("keeps the org's stale list in a nightly summary", async () => {
     const claimed = runRow({ kind: "nightly", runKey: "nightly:2026-10-10", label: "Nightly backups", plan: plan(["j1"]), items: [item()] });
     dbMock.query.backupRuns.findMany.mockResolvedValue([claimed]);
