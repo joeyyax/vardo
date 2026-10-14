@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 /** Indent per nesting level, in px. */
 const INDENT = 22;
 
-/** On a phone the name gives way first, so the status shows in full. */
-const NAME_CELL = "min-w-[6em] shrink overflow-hidden max-sm:min-w-[4.5em] max-sm:shrink-[9999]";
+/** Short of room the signal gives way first, then the name; the status shows in full. */
+const NAME_CELL = "min-w-[4.5em] shrink-[999] overflow-hidden sm:min-w-[6em]";
 
 /**
  * One row of a comfortable list: mark, name, one signal, then the problem or a quiet value, an
@@ -157,12 +157,12 @@ export function ListRow({
       )}
       {star}
       {signal && (
-        <span className={cn("min-w-0 shrink-[3] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
+        <span className={cn("min-w-0 shrink-[99999] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
           {signal}
         </span>
       )}
 
-      <span className="ml-auto flex min-w-0 shrink-[3] items-center justify-end gap-3.5 pl-2 text-[13px] max-sm:shrink">
+      <span className="ml-auto flex min-w-0 shrink items-center justify-end gap-3.5 pl-2 text-[13px]">
         {metrics && (
           <span className="hidden items-center gap-3 text-muted-foreground sm:group-hover/row:inline-flex sm:group-focus-visible/row:inline-flex sm:group-data-[selected=true]/row:inline-flex">
             {metrics}
