@@ -78,6 +78,7 @@ function overlayOpen(): boolean {
 
 export function ProjectsView({
   orgId,
+  instanceAdmin = false,
   apps,
   projects,
   initialDensity,
@@ -86,6 +87,8 @@ export function ProjectsView({
   project,
 }: {
   orgId: string;
+  /** Instance admin, who can start a waiting deploy next. */
+  instanceAdmin?: boolean;
   apps: ProjectsApp[];
   projects: ProjectsProject[];
   initialDensity: UiDensity;
@@ -421,7 +424,7 @@ export function ProjectsView({
     toggleStar,
   };
 
-  const panelCtx: PanelContext = { orgId, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
+  const panelCtx: PanelContext = { orgId, instanceAdmin, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
 
   const usage = sections
     .flatMap((s) => s.nodes)

@@ -497,13 +497,7 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
         actions={
           <div className="flex items-center gap-2">
             {!isChildService && (deploy.deploying || app.status === "deploying") ? (
-              <DeployCancel
-                orgId={orgId}
-                appId={app.id}
-                cancel={cancel}
-                view={deploy.deployView}
-                instanceAdmin={instanceAdmin}
-              />
+              <DeployCancel cancel={cancel} />
             ) : actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" onClick={handleDeploy}>
                 <Rocket className="mr-1.5 size-4" />
@@ -790,6 +784,7 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
             autoDeploy={app.autoDeploy}
             deploy={deploy}
             cancel={cancel}
+            instanceAdmin={instanceAdmin}
             onDeploy={handleDeploy}
             deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
             lifecycleEvents={lifecycleEvents}

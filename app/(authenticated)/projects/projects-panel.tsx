@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
+import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
@@ -44,6 +45,7 @@ function PanelTerm({ text }: { text: string }) {
 
 export type PanelContext = {
   orgId: string;
+  instanceAdmin: boolean;
   sections: Section[];
   selected: string | null;
   busy: ReadonlySet<string>;
@@ -117,6 +119,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
   const now = useNow(30_000);
   const view = running ? streamView(stream, running, now) : null;
+  const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
   return (
     <div
       onClick={() => ctx.jump(app.name)}
@@ -147,6 +150,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           row={{ status: running?.status ?? "running", stage: running?.stage, held: !!running?.request?.held, startedAt: running?.startedAt ?? null }}
           typicalMs={typicalElapsedMs(app.deployments)}
           href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}
+          onStartNext={ctx.instanceAdmin && running ? () => bumpDeploy(running.id) : undefined}
         />
       </div>
     </div>
@@ -332,6 +336,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
   const now = useNow(30_000);
   const view = running ? streamView(stream, running, now) : null;
+  const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
   const primaryLabel = stopped ? "Start" : node.relation === "service" ? "Restart" : "Deploy";
 
@@ -407,6 +412,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           row={{ status: running.status, stage: running.stage, held: !!running.request?.held, startedAt: running.startedAt }}
           typicalMs={typicalElapsedMs(app.deployments)}
           href={deployHref(app.name, running.id)}
+          onStartNext={ctx.instanceAdmin ? () => bumpDeploy(running.id) : undefined}
         />
       )}
 

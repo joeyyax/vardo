@@ -185,6 +185,8 @@ export type DeployView = {
   why?: string;
   /** The strip step shown held. */
   held?: "queued" | "clone" | "build";
+  /** Waiting behind others in the deploy or build line, so an admin can start it next. */
+  startNext?: boolean;
 };
 
 const WHY: Partial<Record<WaitReason, string>> = {
@@ -214,12 +216,13 @@ export function deployView({
   now?: number | null;
 }): DeployView {
   const reason = wait?.reason ?? null;
-  if (reason === "build-slot") return { word: "Deploying", label: lineLabel("build", wait!, now), tone: "neutral", held: "build" };
+  const behind = (wait?.ahead ?? 0) > 0;
+  if (reason === "build-slot") return { word: "Deploying", label: lineLabel("build", wait!, now), tone: "neutral", held: "build", startNext: behind };
   if (reason === "checkout") return { word: "Deploying", label: "Queued", tone: "neutral", why: WHY.checkout, held: "clone" };
   if (queued || reason) {
     if (preparing) return { word: "Preparing", label: "Preparing", tone: "neutral", held: "queued" };
-    const label = reason === "deploy-slot" ? lineLabel("deploy", wait!, now) : "Queued";
-    return { word: "Queued", label, tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
+    if (reason === "deploy-slot") return { word: "Queued", label: lineLabel("deploy", wait!, now), tone: "neutral", held: "queued", startNext: behind };
+    return { word: "Queued", label: "Queued", tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
   }
   if (!started) return { word: "Starting", label: "Starting", tone: "info" };
   return { word: "Deploying", label: "Deploying", tone: "info" };

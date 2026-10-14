@@ -48,6 +48,7 @@ import { compactUptime } from "@/lib/ui/app-row";
 import { DeployProgress, useNow } from "@/components/deploy-progress";
 import { BuildPlanPanel } from "./build-plan-panel";
 import type { useCancelDeploy } from "./hooks/use-app-actions";
+import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import {
   interleaveHistory,
   partitionLifecycle,
@@ -88,6 +89,8 @@ export interface AppDeployPanelProps {
   deploy: ReturnType<typeof useDeploy>;
   /** The page toolbar's cancel, so the card shows a cancel it started. */
   cancel: ReturnType<typeof useCancelDeploy>;
+  /** Instance admin, who can start a waiting deploy next. */
+  instanceAdmin?: boolean;
   /** The toolbar button's action. */
   onDeploy: () => void;
   /** The toolbar button's label. */
@@ -192,6 +195,7 @@ export function AppDeployPanel({
   autoDeploy,
   deploy,
   cancel,
+  instanceAdmin = false,
   onDeploy,
   deployActionLabel,
   lifecycleEvents = [],
@@ -224,6 +228,7 @@ export function AppDeployPanel({
   const clock = useNow(30_000);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const { cancelRequested, setCancelRequested, cancelDeploy } = cancel;
+  const { bumpDeploy } = useBumpDeploy(orgId, appId);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
@@ -584,6 +589,7 @@ export function AppDeployPanel({
                 expanded={expandedDeployLog}
                 onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
                 cancelling={cancelRequested}
+                onStartNext={instanceAdmin ? () => bumpDeploy() : undefined}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (

@@ -1028,6 +1028,7 @@ export function ProjectDetail({
           ) : (
             <ProjectsView
               orgId={orgId}
+              instanceAdmin={isInstanceAdmin}
               apps={listApps.map((a) => (appStatusOverrides.has(a.id) ? { ...a, status: appStatusOverrides.get(a.id)! } : a))}
               projects={[listProject]}
               project={listProject}

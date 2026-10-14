@@ -333,6 +333,17 @@ describe("deployView", () => {
     });
   });
 
+  it("offers Start next only behind others in the deploy or build line", () => {
+    expect(view(true, { reason: "deploy-slot", ahead: 2 }).startNext).toBe(true);
+    expect(view(false, { reason: "build-slot", ahead: 1 }, true).startNext).toBe(true);
+    expect(view(true, { reason: "deploy-slot", ahead: 0 }).startNext).toBe(false);
+    expect(view(false, { reason: "build-slot", ahead: 0 }, true).startNext).toBe(false);
+    expect(view(true, { reason: "deploy-slot" }).startNext).toBe(false);
+    for (const reason of ["worker", "exclusive", "app"] as const) expect(view(true, { reason, ahead: 3 }).startNext).toBeFalsy();
+    expect(view(false, { reason: "checkout", ahead: 3 }, true).startNext).toBeFalsy();
+    expect(view(true, { reason: "deploy-slot", ahead: 2 }, false, true).startNext).toBeFalsy();
+  });
+
   it("calls a checkout wait plain queued, with the reason on hover", () => {
     expect(view(false, { reason: "checkout" }, true)).toMatchObject({
       word: "Deploying",

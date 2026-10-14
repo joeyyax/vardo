@@ -15,7 +15,9 @@ import {
   type DeployView,
   type WaitState,
 } from "@/lib/ui/deploy-wait";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { quietLinkClass } from "@/components/entity-link";
@@ -144,7 +146,7 @@ function announcement(view: DeployView, steps: StripStep[], stages: Record<strin
 export function DeployProgress({
   variant,
   stages: streamed,
-  wait,
+  wait: streamedWait,
   row,
   typicalMs,
   href,
@@ -152,6 +154,7 @@ export function DeployProgress({
   expanded = false,
   onToggleExpand,
   cancelling = false,
+  onStartNext,
 }: {
   variant: "full" | "compact";
   stages: Record<string, string>;
@@ -168,8 +171,15 @@ export function DeployProgress({
   onToggleExpand?: () => void;
   /** Full: a cancel was signaled and the engine is finishing its current phase. */
   cancelling?: boolean;
+  /** Instance admins: moves a deploy waiting in line to the front. Resolves true once it has. */
+  onStartNext?: () => Promise<boolean>;
 }) {
   const now = useNow(1000);
+  const [confirm, setConfirm] = useState(false);
+  const [moving, setMoving] = useState(false);
+  // The wait a successful Start next moved to the front, read as first until the stream says so.
+  const [movedSince, setMovedSince] = useState<number | null>(null);
+  const wait = movedSince !== null && streamedWait.current?.since === movedSince ? { ...streamedWait, current: { ...streamedWait.current, ahead: 0 } } : streamedWait;
   const stages = Object.keys(streamed).length > 0 || row.status !== "running" ? streamed : stagesUpTo(row.stage);
   const view = streamView({ wait, stages }, { status: row.status, stage: row.stage, request: { held: row.held } }, now);
   const clock = now !== null && row.startedAt !== null ? deployClockOf({ wait, stages }, { startedAt: row.startedAt, status: row.status, now }) : null;
@@ -177,6 +187,33 @@ export function DeployProgress({
   const steps = deploySteps(view, stages);
   const share = typicalMs && clock && view.word === "Deploying" ? Math.min(0.97, clock.workingMs / typicalMs) : null;
   const full = variant === "full";
+
+  const startNext = onStartNext && view.startNext && (
+    <Button size="xs" variant="outline" disabled={moving} onClick={() => setConfirm(true)}>
+      Start next
+    </Button>
+  );
+  const confirmStartNext = onStartNext && (
+    <ConfirmDeleteDialog
+      open={confirm}
+      onOpenChange={setConfirm}
+      title="Start next"
+      description="Move this deploy to the front of the line?"
+      confirmLabel="Start next"
+      loadingLabel="Moving..."
+      variant="default"
+      loading={moving}
+      onConfirm={async () => {
+        setMoving(true);
+        const since = wait.current?.since ?? null;
+        const moved = await onStartNext().finally(() => setMoving(false));
+        if (moved) {
+          setMovedSince(since);
+          setConfirm(false);
+        }
+      }}
+    />
+  );
 
   const strip = (
     <ol className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1" aria-label="Phases">
@@ -224,15 +261,19 @@ export function DeployProgress({
         {strip}
         {bar}
         {text && (
-          <span className="text-[13px] tabular-nums" title={view.why}>
-            {text.line}
-          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-[13px] tabular-nums" title={view.why}>
+              {text.line}
+            </span>
+            {startNext}
+          </div>
         )}
         {href && (
           <Link href={href} className={cn(quietLinkClass, "w-fit text-[13px]")}>
             Open →
           </Link>
         )}
+        {confirmStartNext}
       </div>
     );
   }
@@ -260,9 +301,12 @@ export function DeployProgress({
       {bar}
       {text && (
         <div className="grid gap-0.5">
-          <span className="text-sm tabular-nums" title={view.why}>
-            {text.line}
-          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-sm tabular-nums" title={view.why}>
+              {text.line}
+            </span>
+            {startNext}
+          </div>
           {text.meta && <span className="text-[13px] text-muted-foreground tabular-nums">{text.meta}</span>}
         </div>
       )}
@@ -274,6 +318,7 @@ export function DeployProgress({
           showFilters={false}
         />
       )}
+      {confirmStartNext}
     </Card>
   );
 }
