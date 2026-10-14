@@ -12,7 +12,7 @@ const log = logger.child("deploy-tail");
 
 const TERMINAL = new Set(["success", "failed", "cancelled", "rolled_back", "superseded"]);
 
-export type TailWait = { reason: WaitReason | null; ahead?: number; streamId: string };
+export type TailWait = { reason: WaitReason | null; ahead?: number; total?: number; streamId: string };
 
 export type TailHandlers = {
   onLog: (line: string, meta: { streamId: string; stage?: string }) => void;
@@ -127,8 +127,9 @@ export async function tailDeployment(id: string, handlers: TailHandlers, opts: T
       if (fields.wait !== undefined) {
         const reason = (fields.wait || null) as WaitReason | null;
         const ahead = fields.ahead !== undefined ? Number(fields.ahead) : undefined;
-        handlers.onWait?.({ reason, ...(ahead === undefined ? {} : { ahead }), streamId: entry.id });
-        if (reason) handlers.onWaiting?.(waitText(reason, ahead));
+        const total = fields.total !== undefined ? Number(fields.total) : undefined;
+        handlers.onWait?.({ reason, ...(ahead === undefined ? {} : { ahead }), ...(total === undefined ? {} : { total }), streamId: entry.id });
+        if (reason) handlers.onWaiting?.(waitText(reason, ahead, total));
       } else if (fields.line?.startsWith("[stage]")) {
         handlers.onStage(fields.stage, fields.status, { streamId: entry.id });
         if (isTerminalStageEvent(fields.stage, fields.status)) {

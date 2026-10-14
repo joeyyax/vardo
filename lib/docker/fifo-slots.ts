@@ -4,16 +4,18 @@
 export type SlotStore<T> = {
   /** The acquired slot, or null while it must wait. Throws when the store can't answer. */
   tryAcquire(id: string, limit: number): Promise<T | null>;
-  /** Entries ahead of this id, "absent" when it isn't queued, "unknown" when the store didn't answer. */
-  place(id: string): Promise<number | "absent" | "unknown">;
+  /** Entries ahead of this id and in the whole queue, "absent" when it isn't queued, "unknown" when the store didn't answer. */
+  place(id: string): Promise<SlotPlace | "absent" | "unknown">;
   remove(id: string): Promise<void>;
 };
+
+export type SlotPlace = { ahead: number; total: number };
 
 export type FifoWaitOpts<T> = {
   /** Read on every attempt, so a changed limit applies to the next poll. */
   limit: () => number | Promise<number>;
   signal?: AbortSignal;
-  onPosition?: (ahead: number) => void;
+  onPosition?: (place: SlotPlace) => void;
   timeoutMs: number;
   pollMs: number;
   /** How often the place in line is read. */
@@ -26,7 +28,7 @@ export type FifoWaitOpts<T> = {
 /** Poll until `id` heads the queue with a free slot, then take it. Throws on abort, timeout or removal, leaving the queue. */
 export async function waitForFifoSlot<T>(store: SlotStore<T>, id: string, opts: FifoWaitOpts<T>): Promise<T> {
   const deadline = Date.now() + opts.timeoutMs;
-  let lastPosition: number | null = null;
+  let lastPosition: SlotPlace | null = null;
   let positionReadAt = 0;
 
   while (true) {
@@ -35,7 +37,7 @@ export async function waitForFifoSlot<T>(store: SlotStore<T>, id: string, opts: 
       const place = await store.place(id);
       // Taken out of the list, as by the sweeper: it can never reach the head.
       if (place === "absent") throw new Error(opts.messages.removed);
-      if (typeof place === "number" && place !== lastPosition) {
+      if (typeof place === "object" && (place.ahead !== lastPosition?.ahead || place.total !== lastPosition?.total)) {
         lastPosition = place;
         try {
           opts.onPosition?.(place);

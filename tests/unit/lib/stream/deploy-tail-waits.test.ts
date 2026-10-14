@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/stream/consumer", () => ({
   readStream: async function* () {
-    yield { id: "100-0", fields: { line: "[wait] deploy-slot (1 ahead)", stage: "queued", status: "running", wait: "deploy-slot", ahead: "1" } };
+    yield { id: "100-0", fields: { line: "[wait] deploy-slot (1 ahead)", stage: "queued", status: "running", wait: "deploy-slot", ahead: "1", total: "4" } };
     yield { id: "101-0", fields: { line: "[wait] done", stage: "queued", status: "running", wait: "" } };
     yield { id: "102-0", fields: { line: "[stage] build: running", stage: "build", status: "running" } };
     yield { id: "103-0", fields: { line: "[wait] build-slot", stage: "build", status: "running", wait: "build-slot" } };
@@ -40,12 +40,12 @@ describe("tailDeployment waits", () => {
 
     expect(result?.status).toBe("success");
     expect(waits).toEqual([
-      { reason: "deploy-slot", ahead: 1, streamId: "100-0" },
+      { reason: "deploy-slot", ahead: 1, total: 4, streamId: "100-0" },
       { reason: null, streamId: "101-0" },
       { reason: "build-slot", streamId: "103-0" },
       { reason: null, streamId: "105-0" },
     ]);
     expect(lines).toEqual(["[queue] Waiting for the builder: 1 running, 1 at a time"]);
-    expect(notes).toEqual(["Waiting for a free deploy slot (1 ahead)", "Waiting for the builder"]);
+    expect(notes).toEqual(["Waiting for a free deploy slot (2 of 4)", "Waiting for the builder"]);
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "deployment" ADD COLUMN "wait_total" smallint;

@@ -155,7 +155,7 @@ function fakeRedisStore() {
     },
     async place(id: string) {
       const i = queue.indexOf(id);
-      return i === -1 ? ("unknown" as const) : i;
+      return i === -1 ? ("unknown" as const) : { ahead: i, total: queue.length };
     },
     async remove(id: string) {
       const i = queue.indexOf(id);
@@ -263,21 +263,21 @@ describe("withBuildSlot", () => {
     await running;
   });
 
-  it("opens a build-slot wait with the deploy's place and ends it, leaving the clock to the wait writer", async () => {
+  it("opens a build-slot wait with the deploy's place and the line's length and ends it, leaving the clock to the wait writer", async () => {
     const first = deferred();
     const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
     await new Promise((r) => setTimeout(r, 10));
 
     const waits: unknown[] = [];
     const b = gateFor("dep-b");
-    const queued = withBuildSlot({ ...b.gate, wait: async (reason, ahead) => void waits.push([reason, ahead]) }, bounded, async () => {});
+    const queued = withBuildSlot({ ...b.gate, wait: async (reason, ahead, total) => void waits.push([reason, ahead, total]) }, bounded, async () => {});
     await new Promise((r) => setTimeout(r, 30));
-    expect(waits[0]).toEqual(["build-slot", undefined]);
-    expect(waits).toContainEqual(["build-slot", 0]);
+    expect(waits[0]).toEqual(["build-slot", undefined, undefined]);
+    expect(waits).toContainEqual(["build-slot", 0, 1]);
 
     first.resolve();
     await Promise.all([running, queued]);
-    expect(waits.at(-1)).toEqual([null, undefined]);
+    expect(waits.at(-1)).toEqual([null, undefined, undefined]);
     expect(state.clock).toEqual([]);
   });
 

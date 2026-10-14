@@ -1,6 +1,6 @@
 // What a deploy waits on, kept on its row and its stream: the queue's reasons from the claim loop, the build gate's and the checkout lock's from the deploy.
 
-import { and, count, eq, isNotNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -38,22 +38,43 @@ export async function deploysWaitingForWorker(): Promise<number> {
 }
 
 /** Records a running deploy's own wait on its row. `restart` stamps a new start time. */
-export async function recordWait(id: string, reason: WaitReason | null, ahead: number | undefined, opts: { restart: boolean }): Promise<void> {
+export async function recordWait(
+  id: string,
+  reason: WaitReason | null,
+  ahead: number | undefined,
+  total: number | undefined,
+  opts: { restart: boolean },
+): Promise<void> {
   await db
     .update(deployments)
     .set({
       waitReason: reason,
       waitAhead: reason === null ? null : (ahead ?? null),
+      waitTotal: reason === null ? null : (total ?? null),
       ...(opts.restart || reason === null ? { waitingSince: reason === null ? null : sql`now()` } : {}),
     })
     .where(eq(deployments.id, id));
 }
 
-type Changed = { id: string; wait_reason: WaitReason | null; wait_ahead: number | null };
+/** Sets the length of a line on every deploy waiting in it, in one statement. */
+export async function recordQueueTotal(reason: WaitReason, total: number): Promise<void> {
+  await db
+    .update(deployments)
+    .set({ waitTotal: total })
+    .where(
+      and(
+        eq(deployments.waitReason, reason),
+        inArray(deployments.status, ["queued", "running"]),
+        sql`${deployments.waitTotal} IS DISTINCT FROM ${total}`,
+      ),
+    );
+}
+
+type Changed = { id: string; wait_reason: WaitReason | null; wait_ahead: number | null; wait_total: number | null };
 
 /**
- * One statement for every queued deploy: why it hasn't started (the worker, Vardo's own swap, the app's running deploy, a deploy slot) and its place for a slot.
- * Writes only rows whose reason or place changed, and a stream entry for each, so two claimers running it don't both write.
+ * One statement for every queued deploy: why it hasn't started (the worker, Vardo's own swap, the app's running deploy, a deploy slot) and, for a slot, its place and how many wait for one instance-wide.
+ * Writes only rows whose reason, place or total changed, and a stream entry for each, so two claimers running it don't both write.
  */
 export async function markQueueWaits(opts: { capacity?: number; workerMissing?: boolean } = {}): Promise<Changed[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
@@ -87,12 +108,14 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
       SELECT id, reason,
         CASE WHEN reason = 'deploy-slot'
           THEN (row_number() OVER (PARTITION BY reason ORDER BY explicit DESC, started_at, id) - 1)::smallint
-        END AS ahead
+        END AS ahead,
+        CASE WHEN reason = 'deploy-slot' THEN (count(*) OVER (PARTITION BY reason))::smallint END AS total
       FROM reasons
     )
     UPDATE deployment d SET
       wait_reason = p.reason,
       wait_ahead = p.ahead,
+      wait_total = p.total,
       waiting_since = CASE
         WHEN p.reason IS NULL THEN NULL
         WHEN d.wait_reason IS NOT DISTINCT FROM p.reason THEN d.waiting_since
@@ -100,11 +123,11 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
       END
     FROM placed p
     WHERE d.id = p.id AND d.status = 'queued'
-      AND (d.wait_reason IS DISTINCT FROM p.reason OR d.wait_ahead IS DISTINCT FROM p.ahead)
-    RETURNING d.id, d.wait_reason, d.wait_ahead`);
+      AND (d.wait_reason IS DISTINCT FROM p.reason OR d.wait_ahead IS DISTINCT FROM p.ahead OR d.wait_total IS DISTINCT FROM p.total)
+    RETURNING d.id, d.wait_reason, d.wait_ahead, d.wait_total`);
 
   for (const row of changed) {
-    addDeployLog(row.id, waitEntry(row.wait_reason, row.wait_ahead ?? undefined, "queued")).catch((err) =>
+    addDeployLog(row.id, waitEntry(row.wait_reason, row.wait_ahead ?? undefined, "queued", row.wait_total ?? undefined)).catch((err) =>
       log.warn(`Couldn't write the wait for ${row.id}:`, err),
     );
   }
@@ -122,7 +145,7 @@ export async function endQueueWaits(ids: string[]): Promise<void> {
 export async function clearFinishedWaits(): Promise<number> {
   const rows = await db
     .update(deployments)
-    .set({ waitReason: null, waitAhead: null, waitingSince: null })
+    .set({ waitReason: null, waitAhead: null, waitTotal: null, waitingSince: null })
     .where(and(isNotNull(deployments.waitReason), notInArray(deployments.status, ["queued", "running"])))
     .returning({ id: deployments.id });
   return rows.length;

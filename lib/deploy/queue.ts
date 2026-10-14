@@ -328,6 +328,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           stage = NULL,
           wait_reason = NULL,
           wait_ahead = NULL,
+          wait_total = NULL,
           waiting_since = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,

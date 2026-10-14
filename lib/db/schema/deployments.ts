@@ -88,10 +88,11 @@ export const deployments = pgTable("deployment", {
   cancelReason: text("cancel_reason").$type<DeployCancelReason>(),
   // Set while this deploy's swap needs every other deploy stopped. Blocks new claims.
   exclusiveRequestedAt: timestamp("exclusive_requested_at", { withTimezone: true }),
-  // What the deploy waits on right now, since when, and how many are ahead of it when that's known.
+  // What the deploy waits on right now, since when, and for a line (deploy-slot, build-slot) how many are ahead and in it.
   waitReason: text("wait_reason").$type<WaitReason>(),
   waitingSince: timestamp("waiting_since", { withTimezone: true }),
   waitAhead: smallint("wait_ahead"),
+  waitTotal: smallint("wait_total"),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),

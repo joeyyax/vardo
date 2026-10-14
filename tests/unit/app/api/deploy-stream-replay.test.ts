@@ -65,7 +65,7 @@ describe("GET deploy/stream — replay", () => {
 
   it("sends waits as wait events with their stream ids, not log lines", async () => {
     mockTail.mockImplementation(async (_id: string, handlers: TailHandlers) => {
-      handlers.onWait?.({ reason: "deploy-slot", ahead: 2, streamId: "1-0" });
+      handlers.onWait?.({ reason: "deploy-slot", ahead: 2, total: 5, streamId: "1-0" });
       handlers.onWait?.({ reason: null, streamId: "1-1" });
       return { deploymentId: "d1", status: "success", success: true, durationMs: 1, log: "" };
     });
@@ -76,7 +76,7 @@ describe("GET deploy/stream — replay", () => {
 
     expect(got.filter((e) => e.startsWith("event: log"))).toEqual([]);
     expect(got.filter((e) => e.startsWith("event: wait")).map(data)).toEqual([
-      { deploymentId: "d1", reason: "deploy-slot", ahead: 2, streamId: "1-0" },
+      { deploymentId: "d1", reason: "deploy-slot", ahead: 2, total: 5, streamId: "1-0" },
       { deploymentId: "d1", reason: null, streamId: "1-1" },
     ]);
   });

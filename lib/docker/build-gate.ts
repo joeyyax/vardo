@@ -15,7 +15,7 @@ import { pauseRunningClock } from "@/lib/deploy/running-clock";
 import { dockerRequest } from "./client";
 import { dockerEnv } from "./docker-env";
 import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
-import { waitForFifoSlot, type SlotStore } from "./fifo-slots";
+import { waitForFifoSlot, type SlotPlace, type SlotStore } from "./fifo-slots";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
 import { builderLimitBytes, sizeBuildKit } from "./buildkit-size";
@@ -133,8 +133,8 @@ export function redisBuildStore(keys: Keys = BUILD_GATE_KEYS, client = redis): S
     },
     async place(id) {
       try {
-        const index = await client.lpos(keys.queue, id);
-        return typeof index === "number" ? index : "unknown";
+        const [[, index], [, total]] = (await client.multi().lpos(keys.queue, id).llen(keys.queue).exec()) ?? [[], []];
+        return typeof index === "number" && typeof total === "number" ? { ahead: index, total } : "unknown";
       } catch {
         return "unknown";
       }
@@ -175,7 +175,7 @@ export function localBuildStore(): SlotStore<Admission> & { release(id: string):
     },
     async place(id) {
       const index = queue.indexOf(id);
-      return index === -1 ? "unknown" : index;
+      return index === -1 ? "unknown" : { ahead: index, total: queue.length };
     },
     async remove(id) {
       const index = queue.indexOf(id);
@@ -393,7 +393,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   const waitOpts = {
     limit,
     signal: gate.signal,
-    onPosition: (ahead: number) => void gate.wait?.("build-slot", ahead),
+    onPosition: ({ ahead, total }: SlotPlace) => void gate.wait?.("build-slot", ahead, total),
     timeoutMs: WAIT_TIMEOUT_MS,
     pollMs: POLL_MS,
     positionPollMs: POSITION_POLL_MS,

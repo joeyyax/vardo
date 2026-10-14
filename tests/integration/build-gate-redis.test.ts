@@ -72,7 +72,7 @@ describe.skipIf(!client)("build gate on Redis", () => {
     await store.release("a", false);
     expect(await store.tryAcquire("d", 1)).toBeNull();
     expect(await store.tryAcquire("c", 1)).not.toBeNull();
-    expect(await store.place("d")).toBe(0);
+    expect(await store.place("d")).toEqual({ ahead: 0, total: 1 });
   });
 
   it("frees a lapsed lease and holds the builder for a sweep", async () => {

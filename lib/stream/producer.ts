@@ -24,12 +24,13 @@ export async function addEvent(orgId: string, event: BusEvent): Promise<string> 
 /** Adds a log line to a deploy's stream. Returns the entry ID. A `wait` field marks a wait entry: its reason, or "" when it ends. */
 export async function addDeployLog(
   deployId: string,
-  entry: { line: string; stage: string; status: string; wait?: string; ahead?: number },
+  entry: { line: string; stage: string; status: string; wait?: string; ahead?: number; total?: number },
 ): Promise<string> {
   const maxLen = await getStreamMaxLen();
   const extra: string[] = [];
   if (entry.wait !== undefined) extra.push("wait", entry.wait);
   if (entry.ahead !== undefined) extra.push("ahead", String(entry.ahead));
+  if (entry.total !== undefined) extra.push("total", String(entry.total));
   return xadd(deployStream(deployId), maxLen,
     "line", entry.line,
     "stage", entry.stage,
