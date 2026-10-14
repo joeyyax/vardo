@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ComponentProps, type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -26,6 +26,8 @@ type ConfirmDeleteDialogProps = {
   children?: ReactNode;
   /** When true the confirm button is disabled regardless of loading state. */
   confirmDisabled?: boolean;
+  /** Overrides where focus lands on close. */
+  onCloseAutoFocus?: ComponentProps<typeof AlertDialogContent>["onCloseAutoFocus"];
 };
 
 function ConfirmDeleteDialog({
@@ -40,10 +42,11 @@ function ConfirmDeleteDialog({
   variant = "destructive",
   children,
   confirmDisabled = false,
+  onCloseAutoFocus,
 }: ConfirmDeleteDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

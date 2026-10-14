@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
-import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
+import { DeployProgress, useDeployStream, useNow, WaitWhy } from "@/components/deploy-progress";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
@@ -365,9 +365,9 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
               <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
             </span>
           ) : view && view.label !== "Deploying" ? (
-            <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"} title={view.why}>
+            <WaitWhy why={view.why} className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>
               {view.label}
-            </span>
+            </WaitWhy>
           ) : app.status === "deploying" || view ? (
             <span className="text-status-info">
               <Term id="deploying">Deploying</Term>

@@ -32,6 +32,7 @@ import { TabLink } from "@/components/tab-link";
 import { quietLinkClass } from "@/components/entity-link";
 import { StatusMark } from "@/components/ui/status-dot";
 import type { DeployView } from "@/lib/ui/deploy-wait";
+import { WaitWhy } from "@/components/deploy-progress";
 import { appHref, deployHref, imageUrl } from "@/lib/ui/hrefs";
 import { AppUpdateStat } from "./app-updates";
 import { useNow } from "./app-stability";
@@ -342,9 +343,9 @@ export function AppHeader({
         <HeaderStat label="Status">
           {/* A deploy replaces the roll-up. */}
           {deployView && deployView.word !== "Deploying" ? (
-            <span className={`flex items-center gap-1.5 ${deployView.tone === "info" ? "text-status-info" : ""}`} title={deployView.why}>
+            <span className={`flex items-center gap-1.5 ${deployView.tone === "info" ? "text-status-info" : ""}`}>
               <StatusMark tone={deployView.tone} pending />
-              {deployView.word}
+              <WaitWhy why={deployView.why}>{deployView.word}</WaitWhy>
             </span>
           ) : isDeploying || deployView ? (
             <span className="flex items-center gap-1.5 text-status-info">

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Check, X } from "lucide-react";
 import { DEPLOY_STAGE_KEYS, ROLLBACK_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
 import {
   applyWait,
   deployCardText,
+  lineLabel,
   deployClockOf,
   NO_WAIT,
   parseWaitEvent,
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { quietLinkClass } from "@/components/entity-link";
 import { cn } from "@/lib/utils";
@@ -118,7 +120,7 @@ function StepMark({ state, warn }: { state: StripStep["state"]; warn: boolean })
       aria-hidden="true"
       className={cn(
         "size-2.5 shrink-0 rounded-full",
-        state === "todo" && "shadow-[inset_0_0_0_1.5px_currentColor] opacity-60",
+        state === "todo" && "shadow-[inset_0_0_0_1.5px_currentColor]",
         state === "now" && "shadow-[inset_0_0_0_2px_currentColor] motion-safe:animate-pulse",
         state === "held" && cn("shadow-[inset_0_0_0_2px_currentColor]", warn && "text-status-warning"),
       )}
@@ -126,17 +128,43 @@ function StepMark({ state, warn }: { state: StripStep["state"]; warn: boolean })
   );
 }
 
-/** What a screen reader hears as the run moves, empty until a phase lands so it stays quiet on mount. */
-function announcement(view: DeployView, steps: StripStep[], stages: Record<string, string>): string {
+/** What a screen reader hears as the run moves: state changes only, never the countdown. */
+function announcement(view: DeployView, wait: WaitState, steps: StripStep[], stages: Record<string, string>): string {
   const rollback = ROLLBACK_STAGE_KEYS.some((k) => stages[k]);
   const noun = rollback ? "Rollback" : "Deployment";
   const failed = steps.find((s) => s.state === "failed");
   if (failed) return `${noun} failed at ${failed.label} stage`;
   const phases = steps.filter((s) => s.key !== "queued");
   if (Object.keys(stages).length > 0 && phases.every((s) => s.state === "done")) return `${noun} completed successfully`;
-  if (view.tone !== "info") return view.label;
+  if (view.held && wait.current?.ahead != null) return lineLabel(view.held === "build" ? "build" : "deploy", { ahead: wait.current.ahead }, null);
+  if (view.tone !== "info") return view.word;
   const now = steps.find((s) => s.state === "now" && s.key !== "queued");
   return now ? `${rollback ? "Rolling back" : "Deploying"}: ${now.label} in progress` : "";
+}
+
+/** A wait's line, with why it waits on hover or keyboard focus. */
+export function WaitWhy({ why, className, children }: { why?: string; className?: string; children?: ReactNode }) {
+  const id = useId();
+  if (!why) return <span className={className}>{children}</span>;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-describedby={id}
+            className={cn("rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brass", className)}
+          >
+            {children}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">{why}</TooltipContent>
+      </Tooltip>
+      <span hidden id={id}>
+        {why}
+      </span>
+    </TooltipProvider>
+  );
 }
 
 /**
@@ -177,6 +205,8 @@ export function DeployProgress({
   const now = useNow(1000);
   const [confirm, setConfirm] = useState(false);
   const [moving, setMoving] = useState(false);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const startNextRef = useRef<HTMLButtonElement>(null);
   // The wait a successful Start next moved to the front, read as first until the stream says so.
   const [movedSince, setMovedSince] = useState<number | null>(null);
   const wait = movedSince !== null && streamedWait.current?.since === movedSince ? { ...streamedWait, current: { ...streamedWait.current, ahead: 0 } } : streamedWait;
@@ -189,7 +219,7 @@ export function DeployProgress({
   const full = variant === "full";
 
   const startNext = onStartNext && view.startNext && (
-    <Button size="xs" variant="outline" disabled={moving} onClick={() => setConfirm(true)}>
+    <Button ref={startNextRef} size="xs" variant="outline" className="pointer-coarse:h-10" disabled={moving} onClick={() => setConfirm(true)}>
       Start next
     </Button>
   );
@@ -203,6 +233,11 @@ export function DeployProgress({
       loadingLabel="Moving..."
       variant="default"
       loading={moving}
+      // Back to Start next, or to its line once the deploy is first and the button is gone.
+      onCloseAutoFocus={(e) => {
+        e.preventDefault();
+        (startNextRef.current?.isConnected ? startNextRef.current : lineRef.current)?.focus();
+      }}
       onConfirm={async () => {
         setMoving(true);
         const since = wait.current?.since ?? null;
@@ -215,32 +250,35 @@ export function DeployProgress({
     />
   );
 
+  // Every step leads with a connector; the clip hides the one that starts each line.
   const strip = (
-    <ol className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1" aria-label="Phases">
-      {steps.map(({ key, label, state }, i) => {
-        const named = full || state === "now" || state === "held" || state === "failed";
-        return (
-          <li
-            key={key}
-            aria-current={state === "now" ? "step" : undefined}
-            className={cn(
-              "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground/60",
-              i > 0 && "before:mr-0.5 before:w-3.5 before:border-t before:border-border",
-              state === "done" && "text-muted-foreground",
-              state === "now" && "font-semibold text-status-info",
-              state === "held" && (view.tone === "warn" ? "font-semibold text-status-warning" : "font-semibold text-foreground"),
-              state === "failed" && "font-semibold text-status-error",
-            )}
-          >
-            <StepMark state={state} warn={view.tone === "warn"} />
-            <span className={named ? undefined : "sr-only"} title={state === "held" ? view.why : undefined}>
-              {label}
-            </span>
-            <span className="sr-only">{SPOKEN[state]}</span>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="min-w-0 overflow-x-clip">
+      <ol className="-ml-5.5 flex flex-wrap items-center gap-x-1.5 gap-y-1" aria-label="Phases">
+        {steps.map(({ key, label, state }) => {
+          const named = full || state === "now" || state === "held" || state === "failed";
+          return (
+            <li
+              key={key}
+              aria-current={state === "now" ? "step" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground/70",
+                "before:mr-0.5 before:w-3.5 before:border-t before:border-border",
+                state === "done" && "text-muted-foreground",
+                state === "now" && "font-semibold text-status-info",
+                state === "held" && (view.tone === "warn" ? "font-semibold text-status-warning" : "font-semibold text-foreground"),
+                state === "failed" && "font-semibold text-status-error",
+              )}
+            >
+              <StepMark state={state} warn={view.tone === "warn"} />
+              <span className={named ? undefined : "sr-only"} title={state === "held" ? view.why : undefined}>
+                {label}
+              </span>
+              <span className="sr-only">{SPOKEN[state]}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 
   const bar = share !== null && (
@@ -248,7 +286,7 @@ export function DeployProgress({
       <i
         className={cn(
           "block h-full rounded-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none",
-          view.held ? "bg-muted-foreground/40" : "bg-status-info",
+          view.held ? "bg-muted-foreground/70" : "bg-status-info",
         )}
         style={{ width: `${(share * 100).toFixed(1)}%` }}
       />
@@ -261,10 +299,10 @@ export function DeployProgress({
         {strip}
         {bar}
         {text && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="text-[13px] tabular-nums" title={view.why}>
+          <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
+            <WaitWhy why={view.why} className="text-[13px] tabular-nums">
               {text.line}
-            </span>
+            </WaitWhy>
             {startNext}
           </div>
         )}
@@ -281,8 +319,8 @@ export function DeployProgress({
   const hasLog = !!log?.length;
   return (
     <Card variant="surface" className="grid gap-3 p-4">
-      <span className="sr-only" aria-live="assertive" aria-atomic="true">
-        {announcement(view, steps, stages)}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement(view, wait, steps, stages)}
       </span>
       <div className="flex items-start justify-between gap-4">
         {strip}
@@ -301,10 +339,10 @@ export function DeployProgress({
       {bar}
       {text && (
         <div className="grid gap-0.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="text-sm tabular-nums" title={view.why}>
+          <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
+            <WaitWhy why={view.why} className="text-sm tabular-nums">
               {text.line}
-            </span>
+            </WaitWhy>
             {startNext}
           </div>
           {text.meta && <span className="text-[13px] text-muted-foreground tabular-nums">{text.meta}</span>}
