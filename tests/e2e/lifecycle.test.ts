@@ -23,10 +23,12 @@ async function deploy(page: Page, slug: string) {
     { timeout: 45_000 },
   );
   const button = page.getByRole("button", { name: "Deploy", exact: true }).first();
+  const running = page.getByRole("button", { name: /^Running/ });
+  await expect(button.or(running).first()).toBeVisible();
   if (await button.count()) {
     await button.click();
   } else {
-    await page.getByRole("button", { name: /^Running/ }).click();
+    await running.click();
     await page.getByRole("menuitem", { name: "Deploy", exact: true }).click();
   }
   const response = await pending;
