@@ -5,15 +5,15 @@ import { jsonRequest, routeCtx } from "@/tests/helpers/request";
 import { tokenScopeCapabilities } from "@/lib/auth/permissions";
 import { scopeAllowsAdmin } from "@/lib/auth/api-token";
 
-const { mockVerifyOrgAccess, mockGetSession, requestDeploy } = vi.hoisted(() => ({
+const { mockVerifyOrgAccess, mockGetSession, enqueueDeploy } = vi.hoisted(() => ({
   mockVerifyOrgAccess: vi.fn(),
   mockGetSession: vi.fn(),
-  requestDeploy: vi.fn(),
+  enqueueDeploy: vi.fn(),
 }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy }));
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/auth/session", async (original) => ({
   ...(await original<typeof import("@/lib/auth/session")>()),
@@ -41,7 +41,7 @@ describe("rollback with env vars", () => {
       routeCtx({ orgId: "o1", appId: "a1" }),
     );
     expect(res.status).toBe(403);
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 });
 

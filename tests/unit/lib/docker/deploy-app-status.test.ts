@@ -93,7 +93,7 @@ function statusSequence(): string[] {
     .map((w) => String(w.values.status));
 }
 
-function abortedSignal(reason: { supersededBy?: string; killed?: boolean }): AbortSignal {
+function abortedSignal(reason: import("@/lib/docker/deploy").DeployAbortReason): AbortSignal {
   const controller = new AbortController();
   controller.abort(reason);
   return controller.signal;
@@ -156,7 +156,7 @@ describe("runDeployment app status ownership", () => {
   });
 
   it("releases the claim when the user cancels", async () => {
-    await runDeployment("dep-1", { ...OPTS, signal: abortedSignal({ killed: true }) });
+    await runDeployment("dep-1", { ...OPTS, signal: abortedSignal({ killed: true, reason: "user" }) });
 
     expect(statusSequence()).toEqual(["deploying", "stopped"]);
     expect(addEventMock.mock.calls.at(-1)?.[1]).toMatchObject({ status: "cancelled" });
@@ -165,7 +165,7 @@ describe("runDeployment app status ownership", () => {
   it("leaves the claim alone when superseded — the newer deploy owns it", async () => {
     await runDeployment("dep-1", {
       ...OPTS,
-      signal: abortedSignal({ supersededBy: "dep-2" }),
+      signal: abortedSignal({ superseded: true, supersededBy: "dep-2" }),
     });
 
     expect(statusSequence()).toEqual(["deploying"]);

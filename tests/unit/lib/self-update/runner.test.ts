@@ -7,8 +7,7 @@ const m = vi.hoisted(() => ({
   setUpdateRun: vi.fn(async (_run: unknown) => {}),
   getUpdateRun: vi.fn(async () => null as unknown),
   state: { current: null as unknown as UpdateState },
-  createDeployment: vi.fn(async () => "dep_rollback"),
-  requestDeploy: vi.fn(async () => ({})),
+  enqueueDeploy: vi.fn(async (_opts: unknown) => ({ id: "dep_rollback", scopeKey: "app_vardo", superseded: [], cancelRequested: [] })),
   triggerSelfDeploy: vi.fn(async (_opts: unknown) => ({ deploymentId: "dep_new" })),
   dump: vi.fn(async () => "/opt/vardo/lifecycle/backups/pre-update.sql.gz"),
   unhealthy: { current: [] as string[] },
@@ -35,8 +34,7 @@ vi.mock("@/lib/self-update/store", () => ({
     return m.state.current;
   }),
 }));
-vi.mock("@/lib/docker/deploy", () => ({ createDeployment: m.createDeployment }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: m.requestDeploy }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: m.enqueueDeploy }));
 vi.mock("@/lib/lifecycle/deploy-request", () => ({ triggerSelfDeploy: m.triggerSelfDeploy }));
 vi.mock("@/lib/self-update/dump", () => ({ dumpVardoDatabase: m.dump }));
 vi.mock("@/lib/config/health", () => ({
@@ -109,9 +107,11 @@ describe("advanceRun", () => {
     m.unhealthy.current = ["PostgreSQL"];
     await advanceRun(run({ state: "verifying", verifyStartedAt: new Date(NOW - 120_000).toISOString(), passes: 1, fails: 2 }), NOW);
 
-    expect(m.createDeployment).toHaveBeenCalledWith(
-      expect.objectContaining({ appId: "app_vardo", trigger: "rollback", rollback: { targetDeploymentId: "dep_old" } }),
-    );
+    expect(m.enqueueDeploy).toHaveBeenCalledWith({
+      appId: "app_vardo",
+      trigger: "rollback",
+      rollback: { targetDeploymentId: "dep_old" },
+    });
     expect(lastRun()).toMatchObject({ state: "rolling-back", rollbackDeploymentId: "dep_rollback" });
     expect(m.updateFailed).toHaveBeenCalledWith(
       expect.objectContaining({ id: "dep_new", rolledBack: true, step: "post-update health check" }),

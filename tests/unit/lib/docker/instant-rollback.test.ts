@@ -8,8 +8,6 @@ import { dbMock } from "@/tests/helpers/db";
 
 const h = vi.hoisted(() => ({
   exec: vi.fn(),
-  claim: vi.fn(),
-  release: vi.fn(),
   detectActiveSlot: vi.fn(),
   assertSlot: vi.fn(),
   clearPin: vi.fn(),
@@ -25,7 +23,11 @@ const h = vi.hoisted(() => ({
 vi.mock("@/lib/utils/exec", () => ({ execFileAsync: h.exec }));
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: h.assertSlot }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: h.claim }));
+vi.mock("@/lib/deploy/queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/deploy/queue")>()),
+  scopeKeyFor: vi.fn(async (appId: string) => appId),
+}));
+vi.mock("@/lib/worker/instance", () => ({ instanceId: () => "web-1" }));
 vi.mock("@/lib/docker/traefik-cutover", () => ({ clearCutoverPin: h.clearPin }));
 vi.mock("@/lib/docker/restart-policy", () => ({
   restoreSlotRestart: h.restoreRestart,
@@ -56,6 +58,11 @@ type Script = {
   runningPs?: string; // `ps` on the standby while waiting for it
   upFails?: boolean;
 };
+/** The scope's running row was deleted: the rollback gave its claim back. */
+const claimReleased = () => dbMock.deletes.length === 1;
+/** A success row was written. */
+const recordedSuccess = () => dbMock.updates.some((u) => (u.set as { status?: string }).status === "success");
+
 const RUNNING = JSON.stringify({ Service: "web", Name: "blog-production-green-web-1", State: "running" });
 
 /** Docker answers by subcommand; every call lands in `calls` as "<verb>:<project or target>". */
@@ -81,7 +88,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   dbMock.reset();
   calls = [];
-  h.claim.mockResolvedValue({ release: h.release });
   h.detectActiveSlot.mockResolvedValue("blue");
   h.assertSlot.mockResolvedValue(undefined);
   h.clearPin.mockResolvedValue(undefined);
@@ -139,35 +145,63 @@ describe("performInstantRollback — the flip", () => {
   it("records the running container and marks the app active", async () => {
     await performInstantRollback(OPTS);
 
-    expect(dbMock.updates).toHaveLength(1);
-    expect(dbMock.updates[0].set).toMatchObject({ containerName: "blog-production-green-web-1", status: "active" });
+    const appWrite = dbMock.updates.find((u) => "containerName" in (u.set as object));
+    expect(appWrite?.set).toMatchObject({ containerName: "blog-production-green-web-1", status: "active" });
   });
 
-  it("writes a rollback deployment that points at the release it restored", async () => {
-    const result = await performInstantRollback(OPTS);
+  it("claims the environment's scope with a running row before touching Docker", async () => {
+    h.exec.mockImplementation(async () => {
+      expect(dbMock.inserts).toHaveLength(1);
+      return { stdout: `${RUNNING}\n`, stderr: "" };
+    });
+    await performInstantRollback(OPTS);
 
-    expect(dbMock.inserts).toHaveLength(1);
     expect(dbMock.inserts[0].values).toMatchObject({
-      id: result.deploymentId,
       appId: "app-1",
-      status: "success",
+      status: "running",
       trigger: "rollback",
       triggeredBy: "u1",
+      scopeKey: "app-1",
+      claimedBy: "web-1",
+      environmentId: "env-1",
+    });
+  });
+
+  it("turns its claim into a rollback deployment that points at the release it restored", async () => {
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.deploymentId).toBe((dbMock.inserts[0].values as { id: string }).id);
+    const success = dbMock.updates.find((u) => (u.set as { status?: string }).status === "success");
+    expect(success?.set).toMatchObject({
+      status: "success",
       slot: "green",
       gitSha: "abc123",
       rollbackFromId: "dep-old",
       environmentId: "env-1",
     });
+    expect(dbMock.deletes).toHaveLength(0);
   });
 
-  it("emits the stream event and the activity record, then releases the claim", async () => {
+  it("refuses while a deploy holds the environment's scope, touching nothing", async () => {
+    dbMock.insert.mockImplementationOnce(() => {
+      throw Object.assign(new Error("duplicate key"), { constraint_name: "deployment_scope_running_uniq" });
+    });
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result).toMatchObject({ success: false });
+    expect(result.error).toMatch(/A deploy is running for this app/);
+    expect(h.exec).not.toHaveBeenCalled();
+    expect(h.detectActiveSlot).not.toHaveBeenCalled();
+  });
+
+  it("emits the stream event and the activity record", async () => {
     const result = await performInstantRollback(OPTS);
 
     expect(h.addEvent).toHaveBeenCalledWith("org-1", expect.objectContaining({ appId: "app-1", deploymentId: result.deploymentId, success: true }));
     expect(h.recordActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "deployment.instant_rollback", metadata: expect.objectContaining({ fromSlot: "blue", toSlot: "green" }) }),
     );
-    expect(h.release).toHaveBeenCalledTimes(1);
   });
 
   it("starts only the rotating services when the slot has a shared partition", async () => {
@@ -201,7 +235,7 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
 
     expect(result).toMatchObject({ success: false, error: "No active deployment" });
     expect(h.exec).not.toHaveBeenCalled();
-    expect(h.release).toHaveBeenCalledTimes(1);
+    expect(claimReleased()).toBe(true);
   });
 
   it("refuses when the standby has no containers, starting nothing", async () => {
@@ -213,8 +247,8 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
     expect(result.error).toMatch(/No standby containers/);
     expect(calls.some((c) => c.startsWith("up:"))).toBe(false);
     expect(h.clearPin).not.toHaveBeenCalled();
-    expect(dbMock.insert).not.toHaveBeenCalled();
-    expect(h.release).toHaveBeenCalledTimes(1);
+    expect(recordedSuccess()).toBe(false);
+    expect(claimReleased()).toBe(true);
   });
 
   it("refuses when compose cannot list the standby", async () => {
@@ -223,7 +257,7 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
     const result = await performInstantRollback(OPTS);
 
     expect(result.error).toMatch(/No standby containers/);
-    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(recordedSuccess()).toBe(false);
   });
 
   it("keeps the active slot when the standby fails to start", async () => {
@@ -234,8 +268,8 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
     expect(result).toMatchObject({ success: false, error: "Couldn't start the standby" });
     expect(stopsActive()).toBe(false);
     expect(h.restoreRestart).not.toHaveBeenCalled();
-    expect(dbMock.insert).not.toHaveBeenCalled();
-    expect(h.release).toHaveBeenCalledTimes(1);
+    expect(recordedSuccess()).toBe(false);
+    expect(claimReleased()).toBe(true);
   });
 
   it("stops the standby and keeps the active slot when it never reaches running", async () => {
@@ -248,7 +282,7 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
     expect(calls).toContain("stop:blog-production-green");
     expect(stopsActive()).toBe(false);
     expect(h.fs.symlink).not.toHaveBeenCalled();
-    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(recordedSuccess()).toBe(false);
   });
 
   it("does not treat one running container among several as healthy", async () => {
@@ -262,13 +296,24 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
     expect(stopsActive()).toBe(false);
   });
 
-  it("releases the claim when the flip throws", async () => {
-    dbMock.insert.mockImplementationOnce(() => {
-      throw new Error("db down");
+  it("releases the claim when recording the flip throws", async () => {
+    const update = dbMock.update.getMockImplementation()!;
+    dbMock.update.mockImplementation((table: unknown) => {
+      const chain = update(table);
+      return {
+        set: (set: { status?: string }) => {
+          if (set.status === "success") throw new Error("db down");
+          return chain.set(set);
+        },
+      } as unknown as ReturnType<typeof update>;
     });
 
-    await expect(performInstantRollback(OPTS)).rejects.toThrow("db down");
-    expect(h.release).toHaveBeenCalledTimes(1);
+    try {
+      await expect(performInstantRollback(OPTS)).rejects.toThrow("db down");
+    } finally {
+      dbMock.update.mockImplementation(update);
+    }
+    expect(claimReleased()).toBe(true);
   });
 });
 

@@ -7,7 +7,8 @@ vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.f
 
 const {
   dbMock,
-  requestDeployMock,
+  deployAndWaitMock,
+  enqueueDeployMock,
   deleteAppMock,
   loadTemplatesMock,
   ensureVardoOrgMock,
@@ -55,7 +56,8 @@ const {
   return {
     dbMock,
     appsInserted,
-    requestDeployMock: vi.fn(),
+    deployAndWaitMock: vi.fn(),
+    enqueueDeployMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
     loadTemplatesMock: vi.fn(async () => [
       template("loki", "Loki"),
@@ -74,7 +76,8 @@ vi.mock("@/lib/config/features", async (importOriginal) => ({
   isFeatureEnabledAsync: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/templates/load", () => ({ loadTemplates: loadTemplatesMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: requestDeployMock }));
+vi.mock("@/lib/deploy/request", () => ({ deployAndWait: deployAndWaitMock }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: enqueueDeployMock }));
 vi.mock("@/lib/docker/delete-app", () => ({ deleteApp: deleteAppMock }));
 vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: ensureVardoOrgMock }));
 vi.mock("@/lib/system-settings", () => ({
@@ -104,8 +107,10 @@ function lastRecordedStatus() {
 
 describe("core service provisioning", () => {
   beforeEach(() => {
-    requestDeployMock.mockReset();
-    requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: true, log: "", durationMs: 1 });
+    deployAndWaitMock.mockReset();
+    deployAndWaitMock.mockResolvedValue({ deploymentId: "d1", status: "success", success: true, log: "", durationMs: 1 });
+    enqueueDeployMock.mockReset();
+    enqueueDeployMock.mockResolvedValue({ id: "d1", scopeKey: "app-1", superseded: [], cancelRequested: [] });
     deleteAppMock.mockClear();
     dbMock.insert.mockClear();
     dbMock.query.apps.findFirst.mockResolvedValue(null);
@@ -135,7 +140,7 @@ describe("core service provisioning", () => {
     await provisionForFlag("logging", true);
 
     expect(appsInserted).toHaveLength(0);
-    expect(requestDeployMock).not.toHaveBeenCalled();
+    expect(deployAndWaitMock).not.toHaveBeenCalled();
     expect(lastRecordedStatus().loki).toMatchObject({ state: "provisioned", appId: "app-1" });
   });
 
@@ -173,7 +178,7 @@ describe("core service provisioning", () => {
     expect(lastRecordedStatus().loki).toMatchObject({ state: "conflict" });
   });
 
-  it("redeploys an adopted row whose container went missing, in its own org", async () => {
+  it("redeploys an adopted row whose container went missing and keeps it in its own org", async () => {
     dbMock.query.apps.findFirst.mockResolvedValue({
       id: "app-1",
       status: "missing",
@@ -184,9 +189,23 @@ describe("core service provisioning", () => {
 
     await provisionForFlag("logging", true);
 
-    expect(requestDeployMock).toHaveBeenCalledWith(
-      expect.objectContaining({ appId: "app-1", organizationId: "some-other-org" }),
-    );
+    expect(deployAndWaitMock).toHaveBeenCalledWith({ appId: "app-1", trigger: "api" });
+    expect(lastRecordedStatus().loki).toMatchObject({ state: "provisioned", organizationId: "some-other-org" });
+  });
+
+  it("startup queues a missing service's redeploy without waiting on it", async () => {
+    dbMock.query.apps.findFirst.mockResolvedValue({
+      id: "app-1",
+      status: "missing",
+      organizationId: "vardo-org",
+      isSystemManaged: true,
+      composeContent: "services: {}",
+    });
+
+    await ensureInfraServices();
+
+    expect(enqueueDeployMock).toHaveBeenCalledWith({ appId: "app-1", trigger: "api" });
+    expect(deployAndWaitMock).not.toHaveBeenCalled();
   });
 
   it("startup provisioning over existing rows writes no rows and records every service", async () => {

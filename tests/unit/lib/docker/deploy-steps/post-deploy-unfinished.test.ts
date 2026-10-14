@@ -14,9 +14,7 @@ const backupDrain = vi.hoisted(() => ({
   backupDrainTimeoutMs: () => 20 * 60_000,
 }));
 
-const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst, drainMock, endDrainMock } = vi.hoisted(() => {
-  const drainMock = vi.fn().mockResolvedValue([]);
-  const endDrainMock = vi.fn();
+const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst } = vi.hoisted(() => {
   type Write = { table: unknown; values: Record<string, unknown> };
   const writes: Write[] = [];
   const execCalls: string[] = [];
@@ -46,7 +44,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFail
     },
   };
 
-  return { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst, drainMock, endDrainMock };
+  return { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, closedFirst };
 });
 
 // Background work outlives a test; a real logger then writes after teardown.
@@ -71,6 +69,7 @@ vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
   sendDeployNotification: vi.fn().mockResolvedValue(undefined),
   recordSelfUpdate: vi.fn().mockResolvedValue(undefined),
+  ownedRow: vi.fn(() => undefined),
 }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
@@ -93,14 +92,9 @@ vi.mock("@/lib/docker/image-updates/major-gate-store", () => ({
   clearMajorGateBlock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/restart-policy", () => ({ demoteStandbyRestart: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/docker/deploy-concurrency", () => ({
-  isDeployQueueDrained: queueDrained,
-  releaseConcurrencySlot: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  drainForSelfStop: drainMock,
-  endSelfDrain: endDrainMock,
-  SELF_DRAIN_TIMEOUT_MS: 15 * 60_000,
+// Drained: no other deploy running.
+vi.mock("@/lib/deploy/queue", () => ({
+  runningExcept: vi.fn(async () => ((await queueDrained()) ? 0 : 1)),
 }));
 vi.mock("@/lib/backups/in-flight", () => backupDrain);
 vi.mock("child_process", () => ({
@@ -122,7 +116,7 @@ import { deployments, apps } from "@/lib/db/schema";
 import { syncComposeServices } from "@/lib/docker/compose-sync";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
-import { recordSelfUpdate, sendDeployNotification } from "@/lib/docker/deploy";
+import { ownedRow, recordSelfUpdate, sendDeployNotification } from "@/lib/docker/deploy";
 import { removeContainer, inspectContainer } from "@/lib/docker/client";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
@@ -355,28 +349,12 @@ describe("postDeploy tail work", () => {
 
   it("sets the app active and announces success when its own write commits", async () => {
     vi.mocked(sendDeployNotification).mockClear();
-    await postDeploy(makeContext());
+    vi.mocked(ownedRow).mockClear();
+    await postDeploy(makeContext({ claimedBy: "exec-1" }));
+    // The success write is guarded by this executor's claim.
+    expect(ownedRow).toHaveBeenCalledWith("dep-1", "exec-1");
     expect(writes.some((w) => w.table === apps && w.values.status === "active")).toBe(true);
     expect(sendDeployNotification).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
-  });
-
-  it("waits for this process's other deploys before a self-deploy stops its own slot", async () => {
-    const order: string[] = [];
-    drainMock.mockImplementationOnce(async () => {
-      order.push("drain");
-      return [];
-    });
-    const stopOldSlot = vi.fn(async () => {
-      order.push("stop");
-      return { ok: true as const };
-    });
-    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
-    ctx.app.name = "vardo";
-
-    await postDeploy(ctx);
-
-    expect(order).toEqual(["drain", "stop"]);
-    expect(unfinishedReasons()).toEqual([]);
   });
 
   it("writes the updated marker after the commit and before a self-deploy stops its own slot", async () => {
@@ -397,27 +375,13 @@ describe("postDeploy tail work", () => {
     expect(order).toEqual(["updated after commit", "stop"]);
   });
 
-  it("names the deploys a self-deploy's stop cut off after the drain timed out", async () => {
-    drainMock.mockResolvedValueOnce(["dep-stuck"]);
-    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
-    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
-    ctx.app.name = "vardo";
-
-    await postDeploy(ctx);
-
-    expect(stopOldSlot).toHaveBeenCalled();
-    expect(unfinishedReasons()[0]).toContain("dep-stuck");
-  });
-
-  it("takes deploys again when a self-deploy's stop fails and the old slot keeps serving", async () => {
-    endDrainMock.mockClear();
+  it("resumes backup work when a self-deploy's stop fails and the old slot keeps serving", async () => {
     const stopOldSlot = vi.fn().mockResolvedValue({ ok: false, message: "docker daemon unreachable" });
     const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
     ctx.app.name = "vardo";
 
     await postDeploy(ctx);
 
-    expect(endDrainMock).toHaveBeenCalledOnce();
     expect(backupDrain.endBackupDrain).toHaveBeenCalled();
   });
 
@@ -453,11 +417,9 @@ describe("postDeploy tail work", () => {
   });
 
   it("does not drain for any other app", async () => {
-    drainMock.mockClear();
     backupDrain.drainBackupsForStop.mockClear();
     await postDeploy(makeContext({ activeSlot: "green", stopOldSlot: vi.fn().mockResolvedValue({ ok: true }) }));
 
-    expect(drainMock).not.toHaveBeenCalled();
     expect(backupDrain.drainBackupsForStop).not.toHaveBeenCalled();
   });
 });

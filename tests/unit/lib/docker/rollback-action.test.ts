@@ -69,6 +69,11 @@ vi.mock("nanoid", () => ({ nanoid: () => "rollback-1" }));
 vi.mock("@/lib/docker/restart-policy", () => restartPolicyMock);
 vi.mock("@/lib/notifications/dispatch", () => notifyMock);
 vi.mock("@/lib/docker/client", () => ({ listContainers: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/deploy/queue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/deploy/queue")>()),
+  scopeKeyFor: vi.fn(async (appId: string) => appId),
+}));
+vi.mock("@/lib/worker/instance", () => ({ instanceId: () => "web-1" }));
 vi.mock("@/lib/docker/compose", () => ({ slotComposeFiles: vi.fn().mockResolvedValue(["-f", "docker-compose.yml"]) }));
 vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/stream/producer", () => ({
@@ -204,8 +209,35 @@ describe("performRollback", () => {
         environmentId: "env-1",
         // The commit the restored slot is running.
         gitSha: "abc1234",
+        scopeKey: "app-1",
+        claimedBy: "web-1",
       }),
     ]);
+  });
+
+  it("stands down while a deploy holds the environment's scope, touching nothing", async () => {
+    dbMock.insert.mockImplementationOnce(() => ({
+      values: () => Promise.reject(Object.assign(new Error("duplicate key"), { constraint_name: "deployment_scope_running_uniq" })),
+    }));
+
+    await expect(performRollback(OPTS)).resolves.toBe(false);
+
+    expect(updates).toHaveLength(0);
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+    expect(notifyMock.emit).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed rollback when its claim fails for another reason", async () => {
+    dbMock.insert.mockImplementationOnce(() => ({
+      values: () => Promise.reject(new Error("db down")),
+    }));
+
+    await expect(performRollback(OPTS)).resolves.toBe(false);
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+    expect(notifyMock.emit).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ rollbackSuccess: false }),
+    );
   });
 
   it("leaves the rescued deploy's duration and finish time alone", async () => {

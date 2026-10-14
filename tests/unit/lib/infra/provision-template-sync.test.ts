@@ -4,7 +4,7 @@ vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.f
 // A core service's compose is copied onto the app row at creation, so a
 // template fix reaches new installs only unless provisioning re-syncs it.
 
-const { dbMock, requestDeployMock, loadTemplatesMock, ensureVardoOrgMock, setSystemSettingMock, updateSets } =
+const { dbMock, enqueueDeployMock, loadTemplatesMock, ensureVardoOrgMock, setSystemSettingMock, updateSets } =
   vi.hoisted(() => {
     const updateSets: Record<string, unknown>[] = [];
 
@@ -22,7 +22,7 @@ const { dbMock, requestDeployMock, loadTemplatesMock, ensureVardoOrgMock, setSys
     return {
       dbMock,
       updateSets,
-      requestDeployMock: vi.fn(),
+      enqueueDeployMock: vi.fn(),
       loadTemplatesMock: vi.fn(async () => [
         {
           name: "loki",
@@ -47,7 +47,8 @@ vi.mock("@/lib/config/features", () => ({
   isFeatureEnabledAsync: vi.fn(async (flag: string) => flag === "logging"),
 }));
 vi.mock("@/lib/templates/load", () => ({ loadTemplates: loadTemplatesMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: requestDeployMock }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: enqueueDeployMock }));
+vi.mock("@/lib/deploy/request", () => ({ deployAndWait: vi.fn() }));
 vi.mock("@/lib/docker/delete-app", () => ({ deleteApp: vi.fn() }));
 vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: ensureVardoOrgMock }));
 vi.mock("@/lib/system-settings", () => ({
@@ -75,8 +76,8 @@ function existingApp(composeContent: string | null) {
 describe("ensureInfraServices — template re-sync", () => {
   beforeEach(() => {
     updateSets.length = 0;
-    requestDeployMock.mockReset();
-    requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: true, log: "", durationMs: 1 });
+    enqueueDeployMock.mockReset();
+    enqueueDeployMock.mockResolvedValue({ id: "d1", scopeKey: "app-1", superseded: [], cancelRequested: [] });
   });
 
   it("rewrites a stale compose and redeploys", async () => {
@@ -87,9 +88,7 @@ describe("ensureInfraServices — template re-sync", () => {
     expect(updateSets).toContainEqual(
       expect.objectContaining({ composeContent: CURRENT, needsRedeploy: true }),
     );
-    expect(requestDeployMock).toHaveBeenCalledWith(
-      expect.objectContaining({ appId: "app-1", organizationId: "org-1" }),
-    );
+    expect(enqueueDeployMock).toHaveBeenCalledWith({ appId: "app-1", trigger: "api" });
   });
 
   it("leaves a current compose alone and does not redeploy", async () => {
@@ -98,6 +97,6 @@ describe("ensureInfraServices — template re-sync", () => {
     await ensureInfraServices();
 
     expect(updateSets).toHaveLength(0);
-    expect(requestDeployMock).not.toHaveBeenCalled();
+    expect(enqueueDeployMock).not.toHaveBeenCalled();
   });
 });

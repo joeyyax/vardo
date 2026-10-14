@@ -8,8 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const findFirst = vi.fn();
 const membershipFindFirst = vi.fn();
 const startOrRestartApp = vi.fn();
-const createDeployment = vi.fn();
-const requestDeploy = vi.fn();
+const enqueueDeploy = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -19,11 +18,8 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
-vi.mock("@/lib/docker/deploy", () => ({
-  createDeployment: (...a: unknown[]) => createDeployment(...a),
-}));
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  requestDeploy: (...a: unknown[]) => requestDeploy(...a),
+vi.mock("@/lib/deploy/queue", () => ({
+  enqueueDeploy: (...a: unknown[]) => enqueueDeploy(...a),
 }));
 vi.mock("@/lib/docker/start-app", () => ({
   startOrRestartApp: (...a: unknown[]) => startOrRestartApp(...a),
@@ -70,8 +66,7 @@ function app(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   membershipFindFirst.mockResolvedValue({ id: "m1", role: "member" });
-  createDeployment.mockResolvedValue("dep-1");
-  requestDeploy.mockResolvedValue(undefined);
+  enqueueDeploy.mockResolvedValue({ id: "dep-1", scopeKey: "a1", superseded: [], cancelRequested: [] });
   startOrRestartApp.mockResolvedValue({
     success: true,
     action: "restarted",
@@ -90,7 +85,7 @@ describe("vardo_restart_app", () => {
       expect.objectContaining({ organizationId: "org1", userId: "u1", trigger: "mcp" }),
     );
     expect(out).toMatchObject({ action: "restarted", status: "active" });
-    expect(createDeployment).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("names a start a start", async () => {
@@ -103,7 +98,7 @@ describe("vardo_restart_app", () => {
     });
 
     expect(await call()).toMatchObject({ action: "started" });
-    expect(createDeployment).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
   });
 
   it("deploys only when there is nothing on disk to bring up", async () => {
@@ -112,8 +107,8 @@ describe("vardo_restart_app", () => {
 
     const out = await call();
 
-    expect(createDeployment).toHaveBeenCalledWith(expect.objectContaining({ appId: "a1" }));
-    expect(out).toMatchObject({ action: "deployed", deploymentId: "dep-1", deployedParent: false });
+    expect(enqueueDeploy).toHaveBeenCalledWith({ appId: "a1", trigger: "api", triggeredBy: "u1" });
+    expect(out).toMatchObject({ action: "deployed", deploymentId: "dep-1", status: "queued", deployedParent: false });
   });
 
   it("deploys the parent when the child has nothing on disk", async () => {
@@ -124,7 +119,7 @@ describe("vardo_restart_app", () => {
 
     const out = await call("c1");
 
-    expect(createDeployment).toHaveBeenCalledWith(expect.objectContaining({ appId: "a1" }));
+    expect(enqueueDeploy).toHaveBeenCalledWith(expect.objectContaining({ appId: "a1" }));
     expect(out).toMatchObject({ deployTargetId: "a1", deployedParent: true });
   });
 
@@ -139,7 +134,7 @@ describe("vardo_restart_app", () => {
 
     const out = await call();
 
-    expect(createDeployment).not.toHaveBeenCalled();
+    expect(enqueueDeploy).not.toHaveBeenCalled();
     expect(out).toMatchObject({ error: "ERROR: boom" });
   });
 });

@@ -6,7 +6,7 @@ vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.f
 // the admin toggle route — so a fresh install or a stale-compose redeploy
 // both come up with the setting already applied.
 
-const { dbMock, requestDeployMock, loadTemplatesMock, ensureVardoOrgMock, getSystemSettingRawMock, insertedRows, updateSets } =
+const { dbMock, enqueueDeployMock, loadTemplatesMock, ensureVardoOrgMock, getSystemSettingRawMock, insertedRows, updateSets } =
   vi.hoisted(() => {
     const insertedRows: Record<string, unknown>[] = [];
     const updateSets: Record<string, unknown>[] = [];
@@ -41,7 +41,7 @@ const { dbMock, requestDeployMock, loadTemplatesMock, ensureVardoOrgMock, getSys
       dbMock,
       insertedRows,
       updateSets,
-      requestDeployMock: vi.fn(),
+      enqueueDeployMock: vi.fn(),
       loadTemplatesMock: vi.fn(),
       ensureVardoOrgMock: vi.fn(async () => ({ id: "org-1" })),
       getSystemSettingRawMock: vi.fn(),
@@ -53,7 +53,8 @@ vi.mock("@/lib/config/features", () => ({
   isFeatureEnabledAsync: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/templates/load", () => ({ loadTemplates: loadTemplatesMock }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: requestDeployMock }));
+vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: enqueueDeployMock }));
+vi.mock("@/lib/deploy/request", () => ({ deployAndWait: vi.fn() }));
 vi.mock("@/lib/docker/delete-app", () => ({ deleteApp: vi.fn() }));
 vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: ensureVardoOrgMock }));
 vi.mock("@/lib/system-settings", () => ({
@@ -83,8 +84,8 @@ beforeAll(async () => {
 beforeEach(() => {
   insertedRows.length = 0;
   updateSets.length = 0;
-  requestDeployMock.mockReset();
-  requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: true, log: "", durationMs: 1 });
+  enqueueDeployMock.mockReset();
+  enqueueDeployMock.mockResolvedValue({ id: "d1", scopeKey: "app-1", superseded: [], cancelRequested: [] });
   loadTemplatesMock.mockReset();
   loadTemplatesMock.mockImplementation(async () => [
     {
@@ -140,8 +141,6 @@ describe("ensureInfraServices — cAdvisor disk metrics setting", () => {
     expect(updateSets).toContainEqual(expect.objectContaining({ needsRedeploy: true }));
     const staleUpdate = updateSets.find((u) => "composeContent" in u);
     expect(staleUpdate?.composeContent).toBe(TEMPLATE_COMPOSE);
-    expect(requestDeployMock).toHaveBeenCalledWith(
-      expect.objectContaining({ appId: "app-1", organizationId: "org-1" }),
-    );
+    expect(enqueueDeployMock).toHaveBeenCalledWith({ appId: "app-1", trigger: "api" });
   });
 });

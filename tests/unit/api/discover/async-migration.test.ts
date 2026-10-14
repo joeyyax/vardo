@@ -14,8 +14,12 @@ vi.mock("@/lib/docker/client", () => ({
   removeContainer: vi.fn(),
 }));
 
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  requestDeploy: vi.fn(),
+vi.mock("@/lib/deploy/queue", () => ({
+  releaseHeldDeploy: vi.fn(),
+}));
+
+vi.mock("@/lib/deploy/request", () => ({
+  waitForDeployment: vi.fn(),
 }));
 
 vi.mock("@/lib/events", () => ({
@@ -39,7 +43,8 @@ import {
   startContainer,
   inspectContainer,
 } from "@/lib/docker/client";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { releaseHeldDeploy } from "@/lib/deploy/queue";
+import { waitForDeployment } from "@/lib/deploy/request";
 import { addEvent } from "@/lib/stream/producer";
 
 // Flush all pending promises and microtasks. Needed because
@@ -109,8 +114,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
       expect.objectContaining({ type: "deploy.status", appId: BASE_PARAMS.appId, status: "error" }),
     );
 
-    // requestDeploy must NOT be called — abort happened before deploy.
-    expect(requestDeploy).not.toHaveBeenCalled();
+    // The held deploy is never released — abort happened before deploy.
+    expect(releaseHeldDeploy).not.toHaveBeenCalled();
   });
 
   it("restarts already-stopped containers when a later stop fails", async () => {
@@ -138,7 +143,7 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     expect(db.update).toHaveBeenCalledTimes(2);
 
     // Deploy must not have been attempted.
-    expect(requestDeploy).not.toHaveBeenCalled();
+    expect(releaseHeldDeploy).not.toHaveBeenCalled();
 
     // deploy.status error event published.
     expect(addEvent).toHaveBeenCalledWith(
@@ -149,7 +154,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
 
   it("proceeds to deploy when all containers stop successfully", async () => {
     vi.mocked(stopContainer).mockResolvedValue(undefined);
-    vi.mocked(requestDeploy).mockResolvedValue({
+    vi.mocked(releaseHeldDeploy).mockResolvedValue(true);
+    vi.mocked(waitForDeployment).mockResolvedValue({
       success: true,
       deploymentId: BASE_PARAMS.deploymentId,
       log: "",
@@ -167,7 +173,8 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     });
     await flushPromises();
 
-    expect(requestDeploy).toHaveBeenCalledOnce();
+    expect(releaseHeldDeploy).toHaveBeenCalledWith(BASE_PARAMS.deploymentId);
+    expect(waitForDeployment).toHaveBeenCalledWith(BASE_PARAMS.deploymentId);
     expect(addEvent).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: "deploy.status", status: "error" }),

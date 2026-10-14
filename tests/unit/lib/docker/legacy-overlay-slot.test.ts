@@ -18,7 +18,7 @@ vi.mock("@/lib/paths", async (importOriginal) => ({
   appEnvDir: (app: string, env: string) => join(h.root.dir, app, env),
 }));
 vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: vi.fn(async () => {}) }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: vi.fn(async () => ({ release: vi.fn() })) }));
+vi.mock("@/lib/worker/instance", () => ({ instanceId: () => "web-1" }));
 vi.mock("@/lib/docker/traefik-cutover", () => ({ clearCutoverPin: vi.fn(async () => {}) }));
 vi.mock("@/lib/docker/restart-policy", () => ({ restoreSlotRestart: vi.fn(async () => {}), demoteStandbyRestart: vi.fn(async () => {}) }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn(async () => "blue") }));

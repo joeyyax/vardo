@@ -9,9 +9,7 @@ const backupDrain = vi.hoisted(() => ({
   backupDrainTimeoutMs: () => 20 * 60_000,
 }));
 
-const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
-  const drainMock = vi.fn().mockResolvedValue([]);
-  const endDrainMock = vi.fn();
+const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
   type Write = { table: unknown; values: Record<string, unknown> };
   const writes: Write[] = [];
   const execCalls: string[] = [];
@@ -39,7 +37,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock,
   };
 
   return {
-    dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock, endDrainMock,
+    dbMock, writes, emitMock, execCalls, execFails, queueDrained,
     enrollNewApp: vi.fn().mockResolvedValue({ status: "covered", jobId: "job-1" }),
     enrollNewVolumes: vi.fn().mockResolvedValue(undefined),
   };
@@ -68,6 +66,7 @@ vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
   sendDeployNotification: vi.fn().mockResolvedValue(undefined),
   recordSelfUpdate: vi.fn().mockResolvedValue(undefined),
+  ownedRow: vi.fn(() => undefined),
 }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
@@ -91,14 +90,9 @@ vi.mock("@/lib/docker/image-updates/major-gate-store", () => ({
   clearMajorGateBlock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/restart-policy", () => ({ demoteStandbyRestart: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/docker/deploy-concurrency", () => ({
-  isDeployQueueDrained: queueDrained,
-  releaseConcurrencySlot: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  drainForSelfStop: drainMock,
-  endSelfDrain: endDrainMock,
-  SELF_DRAIN_TIMEOUT_MS: 15 * 60_000,
+// Drained: no other deploy running.
+vi.mock("@/lib/deploy/queue", () => ({
+  runningExcept: vi.fn(async () => ((await queueDrained()) ? 0 : 1)),
 }));
 vi.mock("@/lib/backups/in-flight", () => backupDrain);
 vi.mock("child_process", () => ({

@@ -10,7 +10,8 @@ const { dbMock, redisMock, lockMock, standbyMock } = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
   const selectMock = vi.fn().mockImplementation(() => {
     const result = selectQueue.shift() ?? [];
-    const where = vi.fn().mockResolvedValue(result);
+    // Awaitable as is, or narrowed with .limit().
+    const where = vi.fn(() => Object.assign(Promise.resolve(result), { limit: vi.fn().mockResolvedValue(result) }));
     const innerJoin = vi.fn().mockResolvedValue(result);
     return { from: vi.fn().mockReturnValue({ innerJoin, where }) };
   });
@@ -65,16 +66,13 @@ vi.mock("@/lib/docker/rollback-monitor", () => ({
   slotIsDown: vi.fn(),
   slotContainerIds: vi.fn(),
 }));
-vi.mock("@/lib/docker/deploy-concurrency", () => ({
-  removeFromQueue: vi.fn(),
-  reconcileActiveCounter: vi.fn(),
-  reconcileQueue: vi.fn(),
-}));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: vi.fn() }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({
-  publishKillSignal: vi.fn(),
-  deployScope: vi.fn(async (appId: string) => appId),
+vi.mock("@/lib/deploy/queue", () => ({
+  releaseHeldDeploy: vi.fn(),
+  requestCancel: vi.fn(),
+  scopeKeyFor: vi.fn(async (appId: string) => appId),
 }));
+vi.mock("@/lib/deploy/group-job", () => ({ addGroupEvent: vi.fn() }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("id") }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
@@ -102,6 +100,8 @@ function settledApp() {
       envName: "production",
     },
   ]);
+  // No deploy running in the environment's scope.
+  dbMock._selectQueue.push([]);
   dbMock.query.deployments.findFirst.mockResolvedValue({
     status: "success",
     finishedAt: new Date(Date.now() - 12 * 60 * 60_000),
@@ -161,9 +161,9 @@ describe("sweepStandbySlots", () => {
     expect(stopStandbySlot).not.toHaveBeenCalled();
   });
 
-  it("leaves both slots up while a deploy owns the app", async () => {
+  it("leaves both slots up while a deploy runs in the environment's scope", async () => {
     settledApp();
-    redisMock._store.set("deploy:active:app-1", JSON.stringify({ deploymentId: "d-1" }));
+    dbMock._selectQueue[1] = [{ id: "d-1" }];
 
     await sweepStandbySlots();
     expect(stopStandbySlot).not.toHaveBeenCalled();
