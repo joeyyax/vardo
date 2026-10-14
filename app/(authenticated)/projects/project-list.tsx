@@ -419,7 +419,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
         const all = ctx.flat || ctx.query || ctx.showsAll(project.id) || roots.length <= ROW_LIMIT + 2;
         const shown = all ? roots : roots.slice(0, ROW_LIMIT);
         return (
-          <div key={project.id} role="none" className={cn("grid", open && !ctx.flat && "mt-1.5 mb-3.5")}>
+          <div key={project.id} role="none" className={cn("grid grid-cols-1", open && !ctx.flat && "mt-1.5 mb-3.5")}>
             {!ctx.flat && (
             <SectionHeader
               navKey={`project:${project.id}`}

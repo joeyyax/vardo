@@ -164,7 +164,7 @@ export function AppRow({
         {running && <span className="sr-only">, Running</span>}
 
         {deploy ? (
-          <span className={`shrink-0 font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`} title={deploy.why}>
+          <span className={`min-w-0 shrink-[3] truncate font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`} title={deploy.why}>
             {deploy.label}
           </span>
         ) : (

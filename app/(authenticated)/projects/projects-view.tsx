@@ -478,7 +478,7 @@ export function ProjectsView({
   return (
     <div
       data-density={density}
-      className={cn("grid gap-9", open && DETAIL_PANEL_GUTTER)}
+      className={cn("grid grid-cols-1 gap-9", open && DETAIL_PANEL_GUTTER)}
     >
       <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
         {stat("running", counts.running, "apps running", undefined, `of ${counts.apps}`)}
@@ -502,7 +502,7 @@ export function ProjectsView({
         )}
       </StatGroup>
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -533,7 +533,7 @@ export function ProjectsView({
           <Button variant="outline" size="sm" onClick={() => setOpenApps(new Set())}>
             Collapse all
           </Button>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
             <SortSelect value={sort} onChange={changeSort} label={project ? "Sort apps" : "Sort projects"} />
             <DensityToggle value={density} onChange={setDensity} />
             <Popover open={keysOpen} onOpenChange={setKeysOpen}>
