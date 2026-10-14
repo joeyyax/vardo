@@ -25,6 +25,7 @@ export function environmentDomains(
       middlewares: template?.middlewares ?? null,
       certResolver: template?.certResolver ?? "le-dns",
       isPrimary: true,
+      enabled: true,
       sslEnabled: template?.sslEnabled ?? true,
       redirectTo: null,
       redirectCode: 301,
