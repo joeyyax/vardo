@@ -2,12 +2,15 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
+import { useCancelDeploy } from "@/app/(authenticated)/apps/[...slug]/hooks/use-app-actions";
+import { DeployCancel } from "@/app/(authenticated)/apps/[...slug]/deploy-cancel";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
@@ -338,6 +341,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const now = useNow(30_000);
   const view = running ? streamView(stream, running, now) : null;
   const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
+  const cancel = useCancelDeploy(ctx.orgId, app.id);
+  const router = useRouter();
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
   const primaryLabel = stopped ? "Start" : node.relation === "service" ? "Restart" : "Deploy";
 
@@ -382,6 +387,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
       <div className="flex flex-wrap items-center gap-1.5">
         {p ? (
           <FixActions loc={loc} problem={p} ctx={ctx} primary />
+        ) : running && node.relation !== "service" ? (
+          <DeployCancel cancel={cancel} deploymentId={running.id} onCancelled={() => router.refresh()} />
         ) : app.status === "deploying" ? (
           <Button asChild size="sm">
             <Link href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}>View deploy</Link>
