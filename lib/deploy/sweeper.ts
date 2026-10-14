@@ -4,7 +4,7 @@ import { deployments } from "@/lib/db/schema/apps";
 import { apps } from "@/lib/db/schema/apps";
 import { environments } from "@/lib/db/schema/environments";
 import { workerJobs } from "@/lib/db/schema";
-import { addEvent } from "@/lib/stream/producer";
+import { addDeployLog, addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
@@ -63,6 +63,11 @@ const LEGACY_GRACE_MS = 2 * 60_000;
 const line = (tag: string, message: string) => `[${new Date().toISOString()}] [${tag}] ${message}`;
 const appendLog = (text: string) => sql`coalesce(${deployments.log} || E'\n', '') || ${text}`;
 
+/** Writes a sweep line to the deploy's live stream too. */
+function streamLine(deployId: string, text: string, stage: string | null): void {
+  addDeployLog(deployId, { line: text, stage: stage ?? "queued", status: "running" }).catch((err) => log.warn(`Stream write for ${deployId} failed:`, err));
+}
+
 /**
  * How long this sweep has seen a deployment "running", or null when Redis can't answer.
  * `startedAt` is the enqueue time, so it can't serve as the running clock.
@@ -117,12 +122,14 @@ type DeadRow = { id: string; appId: string; environmentId: string | null; scopeK
 async function failDeadDeploy(deploy: DeadRow, reason: string, guard: ReturnType<typeof and>): Promise<boolean> {
   const now = new Date();
   const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+  const text = line("deploy", `ERROR: ${reason}`);
   const failed = await db
     .update(deployments)
-    .set({ status: "failed", finishedAt: now, durationMs, exclusiveRequestedAt: null, log: appendLog(line("deploy", `ERROR: ${reason}`)) })
+    .set({ status: "failed", finishedAt: now, durationMs, exclusiveRequestedAt: null, log: appendLog(text) })
     .where(guard)
     .returning({ id: deployments.id });
   if (failed.length === 0) return false;
+  streamLine(deploy.id, text, deploy.stage);
 
   Promise.resolve()
     .then(() => deployTimedOut(deploy.id, reason, durationMs))
@@ -229,6 +236,7 @@ export async function sweepExpiredLeases(): Promise<void> {
       const stillExpired = and(eq(deployments.id, deploy.id), eq(deployments.status, "running"), lt(deployments.leaseExpiresAt, sql`now()`));
       const stage = deploy.stage ?? "queued";
       if (deploy.stage && REQUEUE_STAGES.includes(deploy.stage) && deploy.attempts === 0 && !deploy.cancelRequestedAt) {
+        const text = line("deploy", `Requeued: the executor running it stopped during ${stage}. It runs once more from the start`);
         const requeued = await db
           .update(deployments)
           .set({
@@ -238,19 +246,22 @@ export async function sweepExpiredLeases(): Promise<void> {
             stage: null,
             attempts: sql`${deployments.attempts} + 1`,
             exclusiveRequestedAt: null,
-            log: appendLog(line("deploy", `Requeued: the executor running it stopped during ${stage}. It runs once more from the start`)),
+            log: appendLog(text),
           })
           .where(stillExpired)
           .returning({ id: deployments.id });
-        if (requeued.length > 0) log.info(`Requeued deployment ${deploy.id}: its executor stopped during ${stage}`);
+        if (requeued.length > 0) {
+          streamLine(deploy.id, text, deploy.stage);
+          log.info(`Requeued deployment ${deploy.id}: its executor stopped during ${stage}`);
+        }
         continue;
       }
 
       const reason = deploy.cancelRequestedAt
-        ? `Cancelled: the executor running it stopped during ${stage}`
+        ? `The executor stopped during ${stage} while cancelling`
         : deploy.attempts > 0 && REQUEUE_STAGES.includes(stage)
-          ? `Failed: the executor stopped during ${stage} again, after one rerun`
-          : `Failed: the executor running it stopped during ${stage}`;
+          ? `The executor stopped during ${stage} again, after one rerun`
+          : `The executor running it stopped during ${stage}`;
       await failDeadDeploy(deploy, reason, stillExpired);
     } catch (err) {
       log.error(`Failed to sweep deployment ${deploy.id}:`, err);

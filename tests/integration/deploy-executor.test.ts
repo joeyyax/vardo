@@ -6,8 +6,9 @@ import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 import type { DeployOpts, DeployResult } from "@/lib/docker/deploy";
 
-const { store, engine } = vi.hoisted(() => ({
+const { store, engine, streamed } = vi.hoisted(() => ({
   store: new Map<string, string>(),
+  streamed: [] as { id: string; line: string }[],
   engine: { run: null as null | ((id: string, opts: DeployOpts) => Promise<DeployResult>) },
 }));
 
@@ -49,7 +50,10 @@ vi.mock("@/lib/git-integration/github-feedback", () => ({
   deployTimedOut: vi.fn(async () => {}),
   queuedDeployCancelled: vi.fn(async () => {}),
 }));
-vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn(async () => "1-0") }));
+vi.mock("@/lib/stream/producer", () => ({
+  addEvent: vi.fn(async () => "1-0"),
+  addDeployLog: vi.fn(async (id: string, entry: { line: string }) => (streamed.push({ id, line: entry.line }), "1-0")),
+}));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/incidents/deploy", () => ({ deployIncident: vi.fn(async () => null) }));
 
@@ -133,7 +137,9 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
   }, MIGRATE_TIMEOUT);
 
   beforeEach(async () => {
-    for (const run of runs.values()) run.opts.signal?.aborted || (await run.succeed().catch(() => {}));
+    for (const run of runs.values()) {
+      if (!run.opts.signal?.aborted) await run.succeed().catch(() => {});
+    }
     await exec.resetExecutorForTests();
     runs.clear();
     store.clear();
@@ -283,6 +289,7 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       const requeued = await row(id);
       expect(requeued).toMatchObject({ status: "queued", attempts: 1, claimed_by: null, stage: null });
       expect(requeued.log).toMatch(/Requeued: the executor running it stopped during build/);
+      expect(streamed.filter((e) => e.id === id).map((e) => e.line)).toEqual([expect.stringMatching(/Requeued: the executor running it stopped during build/)]);
 
       // The executor that lost it stops, as a live one would on its next renewal.
       await exec.renewNowForTests();
@@ -295,7 +302,8 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       await sweeper.sweepExpiredLeases();
       const failed = await row(id);
       expect(failed.status).toBe("failed");
-      expect(failed.log).toMatch(/stopped during compose again, after one rerun/);
+      expect(failed.log).toMatch(/ERROR: The executor stopped during compose again, after one rerun/);
+      expect(streamed.filter((e) => e.id === id).at(-1)?.line).toMatch(/ERROR: The executor stopped during compose again/);
     });
 
     it("fails a deploy whose executor died in the swap without a rerun", async () => {
