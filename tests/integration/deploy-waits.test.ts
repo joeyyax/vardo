@@ -309,6 +309,19 @@ describe.skipIf(!conn)("deploy waits on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect((await q.claimDeploys("w", { capacity: 10 })).map((c) => c.id)).toEqual(["q1b"]);
     });
 
+    it("clears the bump on claim, so a requeued deploy takes its place by age again", async () => {
+      await seed("q2", "a2", "manual", "queued", 30);
+      await seed("q3", "a3", "manual", "queued", 20);
+      expect(await b.bumpDeploy("q3")).toBe("deploy");
+      expect((await q.claimDeploys("w", { capacity: 1 })).map((c) => c.id)).toEqual(["q3"]);
+      const [claimed] = await sql`select bumped_at from deployment where id = 'q3'`;
+      expect(claimed.bumped_at).toBeNull();
+
+      // The executor died; the sweeper requeues it.
+      await sql`update deployment set status = 'queued', claimed_by = null, lease_expires_at = null where id = 'q3'`;
+      expect((await q.claimDeploys("w", { capacity: 1 })).map((c) => c.id)).toEqual(["q2"]);
+    });
+
     it("does nothing to a deploy claimed before the bump lands", async () => {
       await seed("r1", "a1", "manual", "running");
       await seed("q2", "a2", "manual", "queued", 30);

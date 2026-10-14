@@ -45,7 +45,7 @@ The claim loop records the first four for queued deploys on every pass, in that 
 | `waiting_since` | When this reason started |
 | `wait_ahead`, `wait_total` | In a `deploy-slot` or `build-slot` line, how many are ahead and in the line |
 | `wait_eta` | When the wait should end, null without an estimate |
-| `bumped_at` | When an admin last moved it to the front |
+| `bumped_at` | When an admin moved it to the front. A claim clears it. |
 | `claimed_at` | When an executor last claimed it |
 
 A run's time spent waiting for the builder or the checkout goes in `stage_timings.waitMs` and the `[timing]` line, outside every phase.

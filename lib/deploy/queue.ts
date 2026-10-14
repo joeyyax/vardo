@@ -317,7 +317,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
             )
           ORDER BY d.scope_key, d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id
         ), picked AS (
-          SELECT d.id, h.explicit, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
+          SELECT d.id, h.explicit, h.bumped_at, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
           WHERE d.status = 'queued'
           ORDER BY h.bumped_at DESC NULLS LAST, h.explicit DESC, h.started_at, h.id
           LIMIT ${free}
@@ -333,10 +333,12 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           wait_ahead = NULL,
           wait_total = NULL,
           wait_eta = NULL,
-          waiting_since = NULL
+          waiting_since = NULL,
+          -- A requeued deploy doesn't jump the line again.
+          bumped_at = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,
-          d.scope_key, d.request, d.attempts, picked.explicit, picked.waited, d.started_at, d.bumped_at`);
+          d.scope_key, d.request, d.attempts, picked.explicit, picked.waited, d.started_at, picked.bumped_at`);
     });
 
     return [...claimed]
