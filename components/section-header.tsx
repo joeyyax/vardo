@@ -42,14 +42,18 @@ export function SectionHeader({
       tabIndex={-1}
       data-nav={navKey}
       onClick={onToggle}
-      className="group/row squircle flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-md py-1.5 pr-3 pl-1.5 outline-none hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_2px_0_0_var(--brass)]"
+      className="group/row flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 py-1.5 pr-3 outline-none"
     >
-      <span className="flex min-w-0 items-center gap-2">
+      {/* The chevron hangs in the gutter so the title lines up with the card below. */}
+      <span className="flex min-w-0 items-center gap-2 sm:-ml-7">
         <ChevronRight
           aria-hidden="true"
-          className={cn("size-5 shrink-0 p-0.5 text-muted-foreground/70 transition-transform", expanded && "rotate-90")}
+          className={cn(
+            "size-5 shrink-0 p-0.5 text-muted-foreground/70 transition-[rotate,color] group-hover/row:text-foreground group-focus-visible/row:text-foreground",
+            expanded && "rotate-90",
+          )}
         />
-        <h2 className="type-h3 truncate">
+        <h2 className="type-h3 truncate text-foreground/80 decoration-brass decoration-2 underline-offset-4 transition-colors group-hover/row:text-foreground group-focus-visible/row:text-foreground group-focus-visible/row:underline">
           {href ? (
             <EntityLink href={href} tabIndex={-1} data-row-link>
               {title}
