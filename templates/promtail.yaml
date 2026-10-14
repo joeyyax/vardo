@@ -111,5 +111,9 @@ composeContent: |
             # not survive — the docker target strips every __-prefixed label
             # before the push — so the tenant is set from the label here.
             pipeline_stages:
+              # Masks credential query values, as in Traefik's RequestPath, where JSON writes & as &.
+              - replace:
+                  expression: '(?i)(?:[?&]|\\u0026)(?:api_key|apikey|token|access_token|password)=([^&"\s\\#]*)'
+                  replace: REDACTED
               - tenant:
                   label: organization
