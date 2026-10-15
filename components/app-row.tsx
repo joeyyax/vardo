@@ -9,8 +9,7 @@ import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import type { DeployView } from "@/lib/ui/deploy-wait";
 import { RowDeployLabel } from "@/components/row-deploy-label";
-import { MiddleTruncate } from "@/components/middle-truncate";
-import { middleMinWidth } from "@/lib/ui/middle-truncate";
+import { MiddleTruncate, useMiddleMin } from "@/components/middle-truncate";
 import { Term } from "@/components/term";
 import {
   compactUptime,
@@ -134,6 +133,7 @@ export function AppRow({
   const rail = railClass(severity);
   const word = statusWord(app.status, sharedStatus, !!app.parked);
   const running = app.status === "active";
+  const { tailRef: nameTail, minWidth: nameMin } = useMiddleMin(app.displayName);
 
   // Restarts rank below live signals and above the caller's note.
   const shownNote = rowNote(
@@ -163,7 +163,7 @@ export function AppRow({
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${deploy ? DEPLOY_DOT[deploy.tone] : statusDotColor(app.status)}`} />
-        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} style={{ minWidth: middleMinWidth(app.displayName) }} />
+        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} style={{ minWidth: nameMin }} tailRef={nameTail} />
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 

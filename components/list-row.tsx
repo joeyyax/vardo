@@ -5,8 +5,7 @@ import { ChevronRight } from "lucide-react";
 import { StatusMark } from "@/components/ui/status-dot";
 import { TreeConnector } from "@/components/tree-connector";
 import { EntityLink } from "@/components/entity-link";
-import { MiddleTruncate } from "@/components/middle-truncate";
-import { middleMinWidth } from "@/lib/ui/middle-truncate";
+import { MiddleTruncate, useMiddleMin } from "@/components/middle-truncate";
 import type { StatusMarkState } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +77,7 @@ export function ListRow({
   flash?: boolean;
   onOpen: () => void;
 }) {
+  const { tailRef, minWidth } = useMiddleMin(name);
   return (
     <div
       role="treeitem"
@@ -145,17 +145,17 @@ export function ListRow({
               : undefined
           }
           className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
-          style={{ minWidth: middleMinWidth(name) }}
+          style={{ minWidth }}
         >
-          <MiddleTruncate text={name} />
+          <MiddleTruncate text={name} tailRef={tailRef} />
         </EntityLink>
       ) : (
         <span
           title={nameTitle}
           className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
-          style={{ minWidth: middleMinWidth(name) }}
+          style={{ minWidth }}
         >
-          <MiddleTruncate text={name} />
+          <MiddleTruncate text={name} tailRef={tailRef} />
         </span>
       )}
       {star}
