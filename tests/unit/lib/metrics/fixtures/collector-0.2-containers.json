@@ -1,0 +1,177 @@
+[
+  {
+    "id": "2f6b7dda317349d1d84c09f510fad4329ddb7e080d2d3c3ab103471b0e828537",
+    "name": "cadvisor-production-green-cadvisor-1",
+    "image": "gcr.io/cadvisor/cadvisor:v0.55.1",
+    "labels": {
+      "com.docker.compose.project": "cadvisor-production-green",
+      "com.docker.compose.service": "cadvisor",
+      "vardo.environment": "production",
+      "vardo.organization": "bHLg3AbBrUFsUexeKZw0M",
+      "vardo.project": "cadvisor",
+      "vardo.project.id": "PUi2_6S4t9W4I10Y61cdZ"
+    },
+    "pid": 2193,
+    "network_mode": "vardo-monitoring",
+    "started_at": "2026-10-14T15:23:51.746910835Z",
+    "created": "2026-10-14T04:44:34.865775848Z",
+    "cpu": {
+      "usage_seconds_total": 37.723792,
+      "usage_cores": 0.0,
+      "limit_cores": 8.99999,
+      "throttled_periods_total": 0,
+      "throttled_seconds_total": 0.0
+    },
+    "memory": {
+      "usage_bytes": 18104320,
+      "working_set_bytes": 17547264,
+      "peak_bytes": 38277120,
+      "limit_bytes": 268435456,
+      "rss_bytes": 10469376,
+      "cache_bytes": 7446528,
+      "swap_bytes": 3342336,
+      "oom_kills_total": 0
+    },
+    "io": [
+      {
+        "device": "/dev/zram0",
+        "read_bytes_total": 61980672,
+        "write_bytes_total": 75390976
+      },
+      {
+        "device": "/dev/vda",
+        "read_bytes_total": 1404928,
+        "write_bytes_total": 0
+      },
+      {
+        "device": "/dev/vdb",
+        "read_bytes_total": 4287971328,
+        "write_bytes_total": 0
+      }
+    ],
+    "network": [
+      {
+        "interface": "eth0",
+        "receive_bytes_total": 11556,
+        "transmit_bytes_total": 4009,
+        "receive_bytes_per_second": 0.0,
+        "transmit_bytes_per_second": 0.0
+      }
+    ],
+    "pids": {
+      "current": 15,
+      "limit": 4096
+    },
+    "gpus": [],
+    "collected_at": 1792033890.739,
+    "interval_seconds": 15.0
+  },
+  {
+    "id": "a4380583abbe106b377f3dd664a51e942c25d0e91b518ba449cd6f00d8fb5f4a",
+    "name": "collector-fixture-tmp",
+    "image": "ghcr.io/joeyyax/collector:0.2.0",
+    "labels": {},
+    "pid": 1366729,
+    "network_mode": "bridge",
+    "started_at": "2026-10-15T03:11:00.499837126Z",
+    "created": "2026-10-15T03:11:00.32816525Z",
+    "cpu": {
+      "usage_seconds_total": 0.476498,
+      "usage_cores": 0.010776213782538367,
+      "limit_cores": null,
+      "throttled_periods_total": 0,
+      "throttled_seconds_total": 0.0
+    },
+    "memory": {
+      "usage_bytes": 17858560,
+      "working_set_bytes": 17858560,
+      "peak_bytes": 18849792,
+      "limit_bytes": null,
+      "rss_bytes": 17199104,
+      "cache_bytes": 0,
+      "swap_bytes": 0,
+      "oom_kills_total": 0
+    },
+    "io": [
+      {
+        "device": "/dev/vdb",
+        "read_bytes_total": 49152,
+        "write_bytes_total": 0
+      }
+    ],
+    "network": [
+      {
+        "interface": "eth0",
+        "receive_bytes_total": 2078,
+        "transmit_bytes_total": 1120,
+        "receive_bytes_per_second": 0.0,
+        "transmit_bytes_per_second": 0.0
+      }
+    ],
+    "pids": {
+      "current": 14,
+      "limit": null
+    },
+    "gpus": [],
+    "collected_at": 1792033890.739,
+    "interval_seconds": 15.0
+  },
+  {
+    "id": "6a04ff5e6683dacbc726fed848e031e0aeb6d5039067066d528923b51dbdbb69",
+    "name": "vardo-postgres",
+    "image": "postgres:17",
+    "labels": {
+      "com.docker.compose.project": "vardo",
+      "com.docker.compose.service": "postgres"
+    },
+    "pid": 1933,
+    "network_mode": "vardo_internal",
+    "started_at": "2026-10-14T15:23:51.677900002Z",
+    "created": "2026-10-13T05:07:17.292149541Z",
+    "cpu": {
+      "usage_seconds_total": 836.126534,
+      "usage_cores": 0.010656255929671518,
+      "limit_cores": null,
+      "throttled_periods_total": 0,
+      "throttled_seconds_total": 0.0
+    },
+    "memory": {
+      "usage_bytes": 120696832,
+      "working_set_bytes": 98103296,
+      "peak_bytes": 362074112,
+      "limit_bytes": 1073741824,
+      "rss_bytes": 2637824,
+      "cache_bytes": 115961856,
+      "swap_bytes": 46100480,
+      "oom_kills_total": 0
+    },
+    "io": [
+      {
+        "device": "/dev/zram0",
+        "read_bytes_total": 901627904,
+        "write_bytes_total": 987435008
+      },
+      {
+        "device": "/dev/vdb",
+        "read_bytes_total": 9498279936,
+        "write_bytes_total": 8029130752
+      }
+    ],
+    "network": [
+      {
+        "interface": "eth0",
+        "receive_bytes_total": 243913314,
+        "transmit_bytes_total": 193033104,
+        "receive_bytes_per_second": 0.0,
+        "transmit_bytes_per_second": 0.0
+      }
+    ],
+    "pids": {
+      "current": 6,
+      "limit": null
+    },
+    "gpus": [],
+    "collected_at": 1792033890.739,
+    "interval_seconds": 15.0
+  }
+]

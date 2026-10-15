@@ -38,7 +38,14 @@ export type CollectorContainer = {
     transmit_bytes_per_second: number | null;
   }[];
   pids: { current: number; limit: number | null };
+  /** GPU memory this container's processes hold, per device. Absent before 0.2.0; empty without `pid: host`. */
+  gpus?: CollectorContainerGpu[];
+  /** Unix seconds of the collection. Absent before 0.2.0. */
+  collected_at?: number;
+  interval_seconds?: number;
 };
+
+export type CollectorContainerGpu = { uuid: string; memory_used_bytes: number };
 
 export type CollectorGpu = {
   index: number;
@@ -66,6 +73,9 @@ export type CollectorHealth = {
   version: string;
   host: string;
   last_collect_age_seconds: number | null;
+  /** Unix seconds of the last collection; null before the first. Absent before 0.2.0, as is `interval_seconds`. */
+  collected_at?: number | null;
+  interval_seconds?: number;
   docker?: boolean;
 };
 

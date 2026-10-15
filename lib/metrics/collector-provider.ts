@@ -1,7 +1,6 @@
 // Container metrics from the collector's JSON API, in cAdvisor's ContainerMetrics shape.
 
 import { CollectorHttpError, type CollectorClient, type CollectorContainer } from "@/lib/collector/client";
-import { COLLECTOR_INTERVAL_MS } from "@/lib/collector/config";
 import { identityLabels, organizationOf, projectOf } from "./cadvisor";
 import type { MetricsProvider } from "./provider";
 import type { ContainerMetrics } from "./types";
@@ -9,8 +8,21 @@ import type { ContainerMetrics } from "./types";
 /** Swap on zram is memory, not disk writes. */
 const NON_DISK_DEVICE = /^\/dev\/zram\d+$/;
 
+/** The collector's default `interval`, for a 0.1.0 that doesn't report it. */
+export const DEFAULT_INTERVAL_MS = 15_000;
+
 /** A collection older than this is stale, as the collector's own /health judges it. */
-export const STALE_AFTER_MS = COLLECTOR_INTERVAL_MS * 3 + 5000;
+export function staleAfterMs(intervalMs: number): number {
+  return intervalMs * 3 + 5000;
+}
+
+/** Labels the template's `containers.api_labels` adds. Docker inspect fills them for a collector without it. */
+const API_LABELS = ["vardo.organization", "vardo.project.id"];
+
+/** True when the collector already reports the labels the Docker join would add. */
+export function suppliesApiLabels(containers: CollectorContainer[]): boolean {
+  return containers.some((c) => API_LABELS.some((key) => key in c.labels));
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -68,6 +80,7 @@ export function mapCollectorContainers(
       gpuMemoryUsed: 0,
       gpuMemoryTotal: 0,
       gpuTemperature: 0,
+      ...(c.gpus ? { gpus: c.gpus.map((g) => ({ uuid: g.uuid, memoryUsedBytes: g.memory_used_bytes })) } : {}),
       timestamp: opts.timestamp,
     });
   }
@@ -77,7 +90,7 @@ export function mapCollectorContainers(
 type LabelSource = (ids: string[]) => Promise<Map<string, Record<string, string>>>;
 
 type Options = {
-  /** Docker labels by full container id. */
+  /** Docker labels by full container id, read only when the collector doesn't supply them. */
   dockerLabels?: LabelSource;
   /** Writable-layer sizes from Docker, when Disk metrics are on. */
   sizes?: WritableLayerSizes;
@@ -85,7 +98,7 @@ type Options = {
 
 export class CollectorMetricsProvider implements MetricsProvider {
   readonly name: string;
-  readonly pollIntervalMs = COLLECTOR_INTERVAL_MS;
+  private intervalMs = DEFAULT_INTERVAL_MS;
 
   constructor(
     private readonly client: CollectorClient,
@@ -94,13 +107,21 @@ export class CollectorMetricsProvider implements MetricsProvider {
     this.name = `collector at ${client.url}`;
   }
 
+  /** The collector's `interval_seconds`, as of the last read. */
+  get pollIntervalMs(): number {
+    return this.intervalMs;
+  }
+
   async fetchAll(): Promise<ContainerMetrics[]> {
-    const [containers, timestamp] = await Promise.all([this.client.containers(), this.collectedAt()]);
-    if (containers.length > 0 && containers.every((c) => c.cpu.usage_cores === null)) {
+    // One call on 0.2.0: each container carries collected_at and the api_labels.
+    const containers = await this.client.containers();
+    if (containers.length === 0) return [];
+    const timestamp = await this.collectedAt(containers);
+    if (containers.every((c) => c.cpu.usage_cores === null)) {
       throw new Error("collector has no rates yet (first collection)");
     }
     const ids = containers.map((c) => c.id);
-    const dockerLabels = this.opts.dockerLabels ? await this.opts.dockerLabels(ids) : undefined;
+    const dockerLabels = this.opts.dockerLabels && !suppliesApiLabels(containers) ? await this.opts.dockerLabels(ids) : undefined;
     const metrics = mapCollectorContainers(containers, { timestamp, dockerLabels });
     const sizes = this.opts.sizes ? await this.opts.sizes.read(ids) : null;
     for (const m of metrics) {
@@ -113,27 +134,39 @@ export class CollectorMetricsProvider implements MetricsProvider {
     return metrics;
   }
 
-  /** Time of the collector's last collection, ms. Throws when it's stale. The collector's `collected_at` replaces this. */
-  private async collectedAt(): Promise<number> {
+  /** Time of the collector's last collection, ms. Throws when it's stale. */
+  private async collectedAt(containers: CollectorContainer[]): Promise<number> {
     let at: number;
-    try {
-      at = Math.round((await this.client.host()).timestamp * 1000);
-    } catch (err) {
-      // 503 means host metrics are off or not collected yet; /health still has the age.
-      if (!(err instanceof CollectorHttpError && err.status === 503)) throw err;
-      const health = await this.client.health();
-      if (health.last_collect_age_seconds === null) throw new Error("collector has not collected yet");
-      at = Math.round((Date.now() - health.last_collect_age_seconds * 1000) / 1000) * 1000;
+    let intervalSeconds: number | undefined;
+    const [first] = containers;
+    if (typeof first.collected_at === "number") {
+      at = first.collected_at * 1000;
+      intervalSeconds = first.interval_seconds;
+    } else {
+      // 0.1.0: the host's timestamp, else /health.
+      try {
+        at = (await this.client.host()).timestamp * 1000;
+      } catch (err) {
+        // 503 means host metrics are off or not collected yet; /health still has the age.
+        if (!(err instanceof CollectorHttpError && err.status === 503)) throw err;
+        const health = await this.client.health();
+        intervalSeconds = health.interval_seconds;
+        if (typeof health.collected_at === "number") at = health.collected_at * 1000;
+        else if (typeof health.last_collect_age_seconds === "number") {
+          at = Math.round((Date.now() - health.last_collect_age_seconds * 1000) / 1000) * 1000;
+        } else throw new Error("collector has not collected yet");
+      }
     }
+    if (typeof intervalSeconds === "number" && intervalSeconds > 0) this.intervalMs = Math.round(intervalSeconds * 1000);
     const age = Date.now() - at;
-    if (age > STALE_AFTER_MS) throw new Error(`collector is stale (last collection ${Math.round(age / 1000)}s ago)`);
-    return at;
+    if (age > staleAfterMs(this.intervalMs)) throw new Error(`collector is stale (last collection ${Math.round(age / 1000)}s ago)`);
+    return Math.round(at);
   }
 }
 
 /**
  * Labels by container id, inspected once per container: they're fixed for its life, and a full list costs dockerd far more.
- * The collector's `containers.api_labels` replaces this join.
+ * Only for a collector without `containers.api_labels`, such as 0.1.0.
  */
 export function dockerLabelSource(inspect: (id: string) => Promise<Record<string, string>>): LabelSource {
   const cache = new Map<string, Record<string, string>>();

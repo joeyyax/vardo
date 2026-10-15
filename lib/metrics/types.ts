@@ -27,6 +27,8 @@ export type ContainerMetrics = {
   gpuMemoryUsed: number; // bytes
   gpuMemoryTotal: number; // bytes
   gpuTemperature: number; // Celsius (average across accelerators)
+  /** GPU memory the container's processes hold, by device UUID. Only from a collector that reports it. */
+  gpus?: { uuid: string; memoryUsedBytes: number }[];
   timestamp: number;
 };
 
