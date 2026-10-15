@@ -40,6 +40,13 @@ const RISE: Record<SignalKey, [verb: string, heading: string]> = {
   diskWrite: ["Writing", "is writing {r} its usual amount to disk"],
 };
 
+/** What fired first, then holding signals that are still above typical. */
+function reported(findings: Finding[]): Finding[] {
+  const firing = findings.filter((f) => f.verdict.fires);
+  const [lead, ...rest] = firing.length > 0 ? [...firing, ...findings.filter((f) => !f.verdict.fires)] : findings;
+  return [lead, ...rest.filter((f) => f.verdict.fires || f.verdict.value > f.verdict.line.typical)];
+}
+
 /** "40×", "2.5×". */
 function ratio(value: number, typical: number): string {
   const r = value / typical;
@@ -48,7 +55,7 @@ function ratio(value: number, typical: number): string {
 
 /** Heading, lead and process table: each reading once. */
 export function anomalyView(app: AppRef, findings: Finding[], top: TopProcess[] | null, newProcesses: string[] = []): AlertView {
-  const [lead, ...rest] = findings;
+  const [lead, ...rest] = reported(findings);
   const def = SIGNALS[lead.signal];
   const { value, line } = lead.verdict;
   const [verb, rise] = RISE[lead.signal];
@@ -83,16 +90,18 @@ export function anomalyView(app: AppRef, findings: Finding[], top: TopProcess[] 
 }
 
 /** One item for every signal holding on the app, the most telling first. */
-export function anomalyItem(app: AppRef, findings: Finding[], top: TopProcess[] | null, newProcesses: string[] = []): AlertItem {
+export function anomalyItem(app: AppRef, all: Finding[], top: TopProcess[] | null, newProcesses: string[] = []): AlertItem {
+  const findings = reported(all);
   const [lead] = findings;
   const def = SIGNALS[lead.signal];
+  const firing = findings.filter((f) => f.verdict.fires);
   const egress = findings.some((f) => f.signal === "egress");
   return {
     type: "app.anomaly",
     about: app.id,
     appId: app.id,
     appName: app.name,
-    severity: worst(findings.map((f) => f.verdict.severity)),
+    severity: worst((firing.length > 0 ? firing : findings).map((f) => f.verdict.severity)),
     title: `${app.name} ${TITLE[lead.signal]}`,
     detail: egress
       ? `Unexpected outbound traffic can mean a compromised app. ${CHECK}`
