@@ -185,9 +185,9 @@ describe("logs hrefs", () => {
 
   it("offers no link when the logs tab is switched off", async () => {
     process.env.VARDO_FEATURE_LOGGING = "false";
-    state.systemManagedApps = [{ name: "cadvisor" }];
+    state.systemManagedApps = [{ name: "collector" }];
 
-    expect((await checkServiceByName("cAdvisor", request))?.logsHref).toBeUndefined();
+    expect((await checkServiceByName("Collector", request))?.logsHref).toBeUndefined();
   });
 
   it("offers no link for a service this instance does not run as an app", async () => {

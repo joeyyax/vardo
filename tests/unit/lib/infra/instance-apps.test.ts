@@ -33,7 +33,7 @@ describe("appScope", () => {
   });
 
   it("covers every service a health probe watches", () => {
-    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "cAdvisor", "Loki", "Promtail"]) {
+    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "Loki", "Promtail"]) {
       expect(appScope(probeAppName(service))).toBe("instance");
     }
   });
@@ -51,7 +51,7 @@ describe("appScope", () => {
 
 describe("probeAppName", () => {
   it("maps every probe it knows onto an infrastructure app", () => {
-    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "cAdvisor", "Loki", "Promtail"]) {
+    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "Loki", "Promtail"]) {
       const name = probeAppName(service);
       expect(name).not.toBeNull();
       expect(isInstanceInfraApp(name)).toBe(true);

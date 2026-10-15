@@ -185,13 +185,6 @@ export const SERVICE_PROBES: Probe[] = [
       if (!ok) throw new Error("unreachable");
     },
   },
-  coreServiceProbe("cadvisor", {
-    name: "cAdvisor",
-    description: "Container metrics",
-    timeoutMs: 2000,
-    run: (timeoutMs) =>
-      httpProbe(`${process.env.CADVISOR_URL || "http://localhost:7300"}/healthz`, timeoutMs),
-  }),
   {
     name: "Collector",
     description: "Container and GPU metrics",

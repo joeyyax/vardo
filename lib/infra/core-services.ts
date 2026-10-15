@@ -18,8 +18,6 @@ export type CoreServiceDef = {
   kind: CoreServiceKind;
   /** Provisioned only when this returns true. Unset means always, with the flag. */
   enabled?: () => boolean;
-  /** A failed deploy is recorded but doesn't fail or roll back the flag's other services. */
-  optional?: boolean;
 };
 
 /** A feature flag and the core services it turns on, governing provisioning and every org's access. */
@@ -34,9 +32,8 @@ export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
   {
     flag: "metrics",
     services: [
-      { name: "cadvisor", displayName: "cAdvisor", kind: "host-agent" },
-      // cAdvisor stays as the fallback until the collector is proven across installs.
-      { name: "collector", displayName: "Collector", kind: "host-agent", enabled: () => shouldProvisionCollector(), optional: true },
+      // A collector given by VARDO_COLLECTOR_URL is the operator's to run.
+      { name: "collector", displayName: "Collector", kind: "host-agent", enabled: () => shouldProvisionCollector() },
     ],
     project: { name: "metrics", displayName: "Metrics" },
   },
@@ -55,9 +52,12 @@ export const CORE_SERVICE_NAMES: string[] = CORE_SERVICE_FEATURES.flatMap((f) =>
   f.services.map((s) => s.name),
 );
 
-/** True when this app name belongs to an instance-level core service. */
+/** Core services Vardo no longer runs. A leftover row stays instance infrastructure until it's removed. */
+export const RETIRED_CORE_SERVICE_NAMES: string[] = ["cadvisor"];
+
+/** True when this app name belongs to an instance-level core service, retired ones included. */
 export function isCoreServiceApp(name: string): boolean {
-  return CORE_SERVICE_NAMES.includes(name);
+  return CORE_SERVICE_NAMES.includes(name) || RETIRED_CORE_SERVICE_NAMES.includes(name);
 }
 
 /** Flags that provision a shared, instance-level service. */

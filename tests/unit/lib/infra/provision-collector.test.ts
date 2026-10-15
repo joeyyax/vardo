@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
-// The collector core service exists unless VARDO_COLLECTOR_IMAGE=off or VARDO_COLLECTOR_URL is set.
+// The collector core service exists unless VARDO_COLLECTOR_IMAGE=off or VARDO_COLLECTOR_URL is set. Nothing provisions cAdvisor.
 
 const {
   dbMock,
@@ -58,7 +58,7 @@ const {
     deployAndWaitMock: vi.fn(),
     enqueueDeployMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
-    loadTemplatesMock: vi.fn(async () => [template("cadvisor", "cAdvisor"), template("collector", "Collector")]),
+    loadTemplatesMock: vi.fn(async () => [template("collector", "Collector")]),
   };
 });
 
@@ -72,11 +72,6 @@ vi.mock("@/lib/deploy/request", () => ({ deployAndWait: deployAndWaitMock }));
 vi.mock("@/lib/deploy/queue", () => ({ enqueueDeploy: enqueueDeployMock }));
 vi.mock("@/lib/docker/delete-app", () => ({ deleteApp: deleteAppMock }));
 vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: vi.fn(async () => ({ id: "vardo-org" })) }));
-vi.mock("@/lib/infra/cadvisor-config", () => ({
-  getCadvisorConfig: vi.fn(async () => ({ diskMetricsEnabled: false })),
-  applyCadvisorDiskMetrics: (c: string) => c,
-  cadvisorWalksDisk: (on: boolean) => on,
-}));
 const { execFileAsync } = vi.hoisted(() => ({ execFileAsync: vi.fn(async () => ({ stdout: "{}" })) }));
 vi.mock("@/lib/utils/exec", () => ({ execFileAsync }));
 vi.mock("@/lib/crypto/encrypt", () => ({
@@ -126,12 +121,12 @@ describe("collector provisioning", () => {
   it("isn't provisioned with VARDO_COLLECTOR_IMAGE=off", async () => {
     process.env.VARDO_COLLECTOR_IMAGE = "off";
     await ensureInfraServices();
-    expect(insertedNames()).toEqual(["cadvisor"]);
+    expect(insertedNames()).toEqual([]);
   });
 
   it("provisions the published image when VARDO_COLLECTOR_IMAGE is unset", async () => {
     await ensureInfraServices();
-    expect(insertedNames()).toEqual(["cadvisor", "collector"]);
+    expect(insertedNames()).toEqual(["collector"]);
     const collector = appsInserted.find((r) => r.name === "collector")!;
     expect(collector.envContent).toContain(`VARDO_COLLECTOR_IMAGE=${DEFAULT_COLLECTOR_IMAGE}\n`);
   });
@@ -140,14 +135,14 @@ describe("collector provisioning", () => {
     process.env.VARDO_COLLECTOR_URL = "http://collector:9273";
     process.env.VARDO_COLLECTOR_IMAGE = "collector:3d51106";
     await ensureInfraServices();
-    expect(insertedNames()).toEqual(["cadvisor"]);
+    expect(insertedNames()).toEqual([]);
   });
 
-  it("creates it next to cAdvisor with the image and a generated token in its env", async () => {
+  it("creates it with the image and a generated token in its env", async () => {
     process.env.VARDO_COLLECTOR_IMAGE = "collector:3d51106";
     await ensureInfraServices();
 
-    expect(insertedNames()).toEqual(["cadvisor", "collector"]);
+    expect(insertedNames()).toEqual(["collector"]);
     const token = settings.get("collector_token");
     expect(token).toMatch(/^[0-9a-f]{64}$/);
     const collector = appsInserted.find((r) => r.name === "collector")!;
@@ -191,18 +186,14 @@ describe("collector provisioning", () => {
     expect(collector.composeContent).toContain("  collector:\n    # GPU host");
     expect(collector.composeContent).toContain("    pid: host\n");
     expect(collector.gpuEnabled).toBe(true);
-    expect(appsInserted.find((r) => r.name === "cadvisor")!.composeContent).not.toContain("pid:");
     execFileAsync.mockResolvedValue({ stdout: "{}" });
   });
 
-  it("doesn't fail or roll back cAdvisor when the collector's first deploy fails", async () => {
+  it("fails the metrics flag and rolls the collector back when its first deploy fails", async () => {
     process.env.VARDO_COLLECTOR_IMAGE = "collector:missing";
-    deployAndWaitMock.mockImplementation(async () => ({ success: appsInserted.length < 2 }));
+    deployAndWaitMock.mockResolvedValue({ success: false });
 
-    await expect(provisionForFlag("metrics", true)).resolves.toBeUndefined();
-
-    expect(insertedNames()).toEqual(["cadvisor", "collector"]);
-    // Only the collector's own row is rolled back.
+    await expect(provisionForFlag("metrics", true)).rejects.toThrow("Collector failed to deploy.");
     expect(deleteAppMock).toHaveBeenCalledTimes(1);
   });
 });

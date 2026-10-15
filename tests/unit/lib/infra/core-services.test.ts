@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
-// cAdvisor, Loki and Promtail are instance-level singletons. The lookup is by
+// The collector, Loki and Promtail are instance-level singletons. The lookup is by
 // app name across the whole instance, so an existing row is adopted wherever it
 // lives — never duplicated, never silently skipped.
 
@@ -62,7 +62,6 @@ const {
     loadTemplatesMock: vi.fn(async () => [
       template("loki", "Loki"),
       template("promtail", "Promtail"),
-      template("cadvisor", "cAdvisor"),
     ]),
     ensureVardoOrgMock: vi.fn(async () => ({ id: "vardo-org" })),
     setSystemSettingMock: vi.fn().mockResolvedValue(undefined),
@@ -239,9 +238,13 @@ describe("core service provisioning", () => {
 
 describe("core service metadata", () => {
   it("names every instance-level service", () => {
-    expect(CORE_SERVICE_NAMES).toEqual(["cadvisor", "collector", "loki", "promtail"]);
-    expect(isCoreServiceApp("cadvisor")).toBe(true);
+    expect(CORE_SERVICE_NAMES).toEqual(["collector", "loki", "promtail"]);
     expect(isCoreServiceApp("wordpress")).toBe(false);
+  });
+
+  it("keeps a leftover cAdvisor row classed as infrastructure", () => {
+    expect(CORE_SERVICE_NAMES).not.toContain("cadvisor");
+    expect(isCoreServiceApp("cadvisor")).toBe(true);
   });
 
   it("agrees with the flags marked as shared services", () => {
@@ -255,8 +258,9 @@ describe("core service metadata", () => {
     );
     const byName = Object.fromEntries(summary.map((s) => [s.name, s]));
 
-    expect(byName.cadvisor.state).toBe("off");
-    expect(byName.cadvisor.detail).toBeNull();
+    expect(byName.collector.state).toBe("off");
+    expect(byName.collector.detail).toBeNull();
+    expect(byName.cadvisor).toBeUndefined();
     expect(byName.loki.state).toBe("failed");
     expect(byName.loki.detail).toMatch(/never provisioned/i);
   });

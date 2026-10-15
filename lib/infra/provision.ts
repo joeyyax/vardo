@@ -1,4 +1,4 @@
-// Core service provisioning: cAdvisor, the collector, Loki and Promtail, adopted by name across the instance.
+// Core service provisioning: the collector, Loki and Promtail, adopted by name across the instance.
 // Called at startup and on feature flag toggle.
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -126,10 +126,6 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
       if (!isCoreServiceEnabled(service)) continue;
       const template = templates.find((t) => t.name === service.name);
       if (!template) {
-        if (service.optional) {
-          statuses.push({ ...service, flag, state: "missing-template", appId: null, organizationId: null, detail: `Built-in template "${service.name}" is missing from this build.` });
-          continue;
-        }
         failure = `Built-in template "${service.name}" is missing from this build.`;
         statuses.push({
           ...service,
@@ -140,16 +136,6 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
           detail: failure,
         });
         break;
-      }
-
-      if (service.optional) {
-        // Its first deploy rolls itself back on failure; the flag's other services stand.
-        const outcome = await ensureAppDeployed(org.id, feature, template, { waitForDeploy: true }).catch(
-          (err): Outcome => ({ state: "failed", appId: null, organizationId: null, detail: err instanceof Error ? err.message : String(err), created: false }),
-        );
-        statuses.push({ ...service, flag, ...toStatus(outcome) });
-        if (outcome.state !== "provisioned") log.warn(`Core service "${service.name}": ${outcome.detail}`);
-        continue;
       }
 
       const outcome = await ensureAppDeployed(org.id, feature, template, { waitForDeploy: true });
@@ -221,7 +207,7 @@ async function ensureAppDeployed(
   template: Template,
   opts?: { waitForDeploy?: boolean },
 ): Promise<Outcome> {
-  // cadvisor reads GPUs over NVML, the collector through nvidia-smi.
+  // The collector reads GPUs through nvidia-smi.
   const hasGpu = READS_GPU.has(template.name) ? await detectNvidiaGpu() : false;
   const composeContent = await resolveComposeContent(template, hasGpu);
   const existing = await db.query.apps.findFirst({
@@ -248,7 +234,7 @@ async function ensureAppDeployed(
   }
 
   if (existing) {
-    // cadvisor and collector: match gpuEnabled to host GPU availability
+    // Match gpuEnabled to host GPU availability.
     if (READS_GPU.has(template.name)) {
       await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
       if (hasGpu) log.info(`${template.displayName}: GPU detected, enabled GPU metrics`);
@@ -367,20 +353,15 @@ async function ensureAppDeployed(
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
-/** Compose content for a template, with cadvisor's disk metrics setting and the collector's GPU access applied. */
+/** Compose content for a template, with the collector's GPU access applied. */
 async function resolveComposeContent(template: Template, hasGpu: boolean): Promise<string | null> {
-  if (template.name === "collector" && template.composeContent) {
-    const { applyCollectorGpu } = await import("@/lib/infra/collector-compose");
-    return applyCollectorGpu(template.composeContent, hasGpu);
-  }
-  if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
-  const { applyCadvisorDiskMetrics, cadvisorWalksDisk } = await import("@/lib/infra/cadvisor-config");
-  const { getDiskMetricsEnabled } = await import("@/lib/metrics/disk-setting");
-  return applyCadvisorDiskMetrics(template.composeContent, cadvisorWalksDisk(await getDiskMetricsEnabled()));
+  if (template.name !== "collector" || !template.composeContent) return template.composeContent;
+  const { applyCollectorGpu } = await import("@/lib/infra/collector-compose");
+  return applyCollectorGpu(template.composeContent, hasGpu);
 }
 
 /** Core services that read GPUs, so they get the host's GPUs when it has any. */
-const READS_GPU = new Set(["cadvisor", "collector"]);
+const READS_GPU = new Set(["collector"]);
 
 /** Env a core service's compose interpolates, owned by Vardo. Null for services without one. */
 async function resolveManagedEnv(template: Template): Promise<string | null> {
