@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // cAdvisor, Loki and Promtail are instance-level singletons. The lookup is by
@@ -106,7 +106,9 @@ function lastRecordedStatus() {
 }
 
 describe("core service provisioning", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("VARDO_COLLECTOR_IMAGE", "off");
     deployAndWaitMock.mockReset();
     deployAndWaitMock.mockResolvedValue({ deploymentId: "d1", status: "success", success: true, log: "", durationMs: 1 });
     enqueueDeployMock.mockReset();
@@ -221,7 +223,7 @@ describe("core service provisioning", () => {
 
     expect(appsInserted).toHaveLength(0);
     const status = lastRecordedStatus();
-    // The collector is provisioned only with VARDO_COLLECTOR_IMAGE set.
+    // VARDO_COLLECTOR_IMAGE=off leaves the collector out.
     const provisioned = CORE_SERVICE_NAMES.filter((n) => n !== "collector");
     expect(Object.keys(status).sort()).toEqual([...provisioned].sort());
     for (const name of provisioned) expect(status[name].state).toBe("provisioned");

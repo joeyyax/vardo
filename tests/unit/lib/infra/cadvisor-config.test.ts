@@ -51,8 +51,9 @@ describe("applyCadvisorDiskMetrics", () => {
 
 describe("cadvisorWalksDisk", () => {
   it("follows the toggle in cAdvisor mode", () => {
-    expect(cadvisorWalksDisk(true, {})).toBe(true);
-    expect(cadvisorWalksDisk(false, {})).toBe(false);
+    const off = { VARDO_COLLECTOR_IMAGE: "off" };
+    expect(cadvisorWalksDisk(true, off)).toBe(true);
+    expect(cadvisorWalksDisk(false, off)).toBe(false);
   });
 
   it("stays off with a collector, which reads sizes from Docker", () => {

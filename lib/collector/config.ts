@@ -8,6 +8,9 @@ export const PROVISIONED_COLLECTOR_URL = "http://collector:9273";
 /** system_settings key holding a provisioned collector's bearer token. */
 export const COLLECTOR_TOKEN_KEY = "collector_token";
 
+/** Provisioned when `VARDO_COLLECTOR_IMAGE` is unset. */
+export const DEFAULT_COLLECTOR_IMAGE = "ghcr.io/joeyyax/collector:0.1.0";
+
 /** The collector's default `interval`; the provisioned one sets it explicitly. Its `interval_seconds` replaces this. */
 export const COLLECTOR_INTERVAL_MS = 15_000;
 
@@ -18,13 +21,13 @@ export type CollectorMode =
 
 type Env = Record<string, string | undefined>;
 
-/** `VARDO_COLLECTOR_URL` wins over `VARDO_COLLECTOR_IMAGE`; neither leaves cAdvisor alone. */
+/** `VARDO_COLLECTOR_URL` wins; `VARDO_COLLECTOR_IMAGE=off` leaves cAdvisor alone; otherwise Vardo provisions one. */
 export function collectorMode(env: Env = process.env): CollectorMode {
   const url = env.VARDO_COLLECTOR_URL?.trim();
   if (url) return { kind: "url", url: url.replace(/\/+$/, "") };
-  const image = env.VARDO_COLLECTOR_IMAGE?.trim();
-  if (image) return { kind: "provisioned", image, url: PROVISIONED_COLLECTOR_URL };
-  return { kind: "off" };
+  const image = env.VARDO_COLLECTOR_IMAGE?.trim() || DEFAULT_COLLECTOR_IMAGE;
+  if (image.toLowerCase() === "off") return { kind: "off" };
+  return { kind: "provisioned", image, url: PROVISIONED_COLLECTOR_URL };
 }
 
 /** True when Vardo should run its own collector core service. */

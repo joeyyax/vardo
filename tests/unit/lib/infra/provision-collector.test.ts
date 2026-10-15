@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
-// The collector core service exists only with VARDO_COLLECTOR_IMAGE set and no VARDO_COLLECTOR_URL.
+// The collector core service exists unless VARDO_COLLECTOR_IMAGE=off or VARDO_COLLECTOR_URL is set.
 
 const {
   dbMock,
@@ -91,6 +91,7 @@ vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: 
 vi.mock("nanoid", () => ({ nanoid: () => "test-id" }));
 
 import { ensureInfraServices, provisionForFlag } from "@/lib/infra/provision";
+import { DEFAULT_COLLECTOR_IMAGE } from "@/lib/collector/config";
 
 const ENV_KEYS = ["VARDO_COLLECTOR_IMAGE", "VARDO_COLLECTOR_URL"] as const;
 const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -121,9 +122,17 @@ describe("collector provisioning", () => {
     }
   });
 
-  it("isn't provisioned without VARDO_COLLECTOR_IMAGE", async () => {
+  it("isn't provisioned with VARDO_COLLECTOR_IMAGE=off", async () => {
+    process.env.VARDO_COLLECTOR_IMAGE = "off";
     await ensureInfraServices();
     expect(insertedNames()).toEqual(["cadvisor"]);
+  });
+
+  it("provisions the published image when VARDO_COLLECTOR_IMAGE is unset", async () => {
+    await ensureInfraServices();
+    expect(insertedNames()).toEqual(["cadvisor", "collector"]);
+    const collector = appsInserted.find((r) => r.name === "collector")!;
+    expect(collector.envContent).toContain(`VARDO_COLLECTOR_IMAGE=${DEFAULT_COLLECTOR_IMAGE}\n`);
   });
 
   it("isn't provisioned when VARDO_COLLECTOR_URL points at an existing collector", async () => {

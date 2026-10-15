@@ -7,15 +7,22 @@ const { getSystemSettingRawMock } = vi.hoisted(() => ({ getSystemSettingRawMock:
 vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: getSystemSettingRawMock }));
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
 
-import { collectorMode, collectorToken, shouldProvisionCollector, PROVISIONED_COLLECTOR_URL } from "@/lib/collector/config";
+import { collectorMode, collectorToken, shouldProvisionCollector, DEFAULT_COLLECTOR_IMAGE, PROVISIONED_COLLECTOR_URL } from "@/lib/collector/config";
 import { withCollector } from "@/lib/metrics/config";
 import { FallbackMetricsProvider } from "@/lib/metrics/fallback-provider";
 import type { MetricsProvider } from "@/lib/metrics/provider";
 
 describe("collectorMode — precedence", () => {
-  it("is off with neither variable, so cAdvisor behaves as before", () => {
-    expect(collectorMode({})).toEqual({ kind: "off" });
-    expect(shouldProvisionCollector({})).toBe(false);
+  it("provisions the published image with neither variable", () => {
+    expect(collectorMode({})).toEqual({ kind: "provisioned", image: DEFAULT_COLLECTOR_IMAGE, url: PROVISIONED_COLLECTOR_URL });
+    expect(shouldProvisionCollector({})).toBe(true);
+  });
+
+  it("is off when the image is set to off, in any case", () => {
+    for (const value of ["off", "OFF", " Off "]) {
+      expect(collectorMode({ VARDO_COLLECTOR_IMAGE: value })).toEqual({ kind: "off" });
+      expect(shouldProvisionCollector({ VARDO_COLLECTOR_IMAGE: value })).toBe(false);
+    }
   });
 
   it("provisions its own collector with only the image set", () => {
@@ -34,7 +41,11 @@ describe("collectorMode — precedence", () => {
   });
 
   it("treats blank values as unset", () => {
-    expect(collectorMode({ VARDO_COLLECTOR_URL: " ", VARDO_COLLECTOR_IMAGE: "" })).toEqual({ kind: "off" });
+    expect(collectorMode({ VARDO_COLLECTOR_URL: " ", VARDO_COLLECTOR_IMAGE: "" })).toEqual({
+      kind: "provisioned",
+      image: DEFAULT_COLLECTOR_IMAGE,
+      url: PROVISIONED_COLLECTOR_URL,
+    });
   });
 });
 
@@ -64,8 +75,8 @@ describe("collectorToken", () => {
 describe("withCollector", () => {
   const cadvisor: MetricsProvider = { name: "cAdvisor", fetchAll: async () => [] };
 
-  it("keeps cAdvisor alone when no collector is configured", () => {
-    expect(withCollector(cadvisor, {})).toBe(cadvisor);
+  it("keeps cAdvisor alone when the collector is off", () => {
+    expect(withCollector(cadvisor, { VARDO_COLLECTOR_IMAGE: "off" })).toBe(cadvisor);
   });
 
   it("puts the collector in front of cAdvisor in either mode", () => {

@@ -185,9 +185,9 @@ describe("initGpuCollector", () => {
     expect(nvidiaCtor).not.toHaveBeenCalled();
   });
 
-  it("keeps the probe without a collector", async () => {
+  it("keeps the probe with the collector off", async () => {
     detectDevices.mockResolvedValue([{ index: 0, uuid: "x", name: "RTX", memoryTotal: 1, vendor: "nvidia" }]);
-    const source = await initGpuCollector({});
+    const source = await initGpuCollector({ VARDO_COLLECTOR_IMAGE: "off" });
     expect(source).not.toBeInstanceOf(FallbackGpuCollector);
     expect(nvidiaCtor).toHaveBeenCalledTimes(1);
   });
