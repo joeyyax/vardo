@@ -21,7 +21,11 @@ composeContent: |
       environment:
         COLLECTOR_INTERVAL: 15s
         COLLECTOR_API__TOKEN_FILE: /run/secrets/collector-token
+        # Values parse as TOML, so lists are TOML arrays. Set here: the collector's own defaults are generic.
+        COLLECTOR_CONTAINERS__LABELS: '["com.docker.compose.project","com.docker.compose.service","vardo.project","vardo.environment","vardo.app"]'
         COLLECTOR_LOGS__ENABLED: "false"
+        COLLECTOR_LOGS__EXCLUDE_NAMES: '["^vardo-backup-"]'
+        COLLECTOR_LOGS__EXCLUDE_LABEL: vardo.logs=false
       configs:
         - source: collector-token
           target: /run/secrets/collector-token
