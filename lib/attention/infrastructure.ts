@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { CORE_SERVICE_FEATURES, CORE_SERVICE_NAMES, isCoreServiceApp } from "@/lib/infra/core-services";
+import { CORE_SERVICE_FEATURES, CORE_SERVICE_NAMES, isCoreServiceApp, isCoreServiceEnabled } from "@/lib/infra/core-services";
 import { isInstanceInfraApp } from "@/lib/infra/instance-apps";
 import { getServicesDown } from "./fleet";
 import type { InfrastructureSnapshot } from "./infrastructure-rows";
@@ -84,12 +84,12 @@ export async function getInfrastructureSnapshot(now = new Date()): Promise<Infra
   return { apps: infraApps, deployments: running, servicesDown, disabledCoreServices };
 }
 
-/** Services belonging to a feature that is turned off. Nothing expects them up. */
+/** Services belonging to a feature that is turned off, or switched off for this install. Nothing expects them up. */
 async function disabledCoreServiceNames(): Promise<string[]> {
   const enabled = await Promise.all(
     CORE_SERVICE_FEATURES.map((f) => isFeatureEnabledAsync(f.flag)),
   );
   return CORE_SERVICE_FEATURES.flatMap((f, i) =>
-    enabled[i] ? [] : f.services.map((s) => s.name),
+    f.services.filter((s) => !enabled[i] || !isCoreServiceEnabled(s)).map((s) => s.name),
   );
 }

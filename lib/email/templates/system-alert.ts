@@ -11,6 +11,7 @@ const SERVICE_IMPACT: Record<string, { impact: string; role: string; appsServing
   postgres: { impact: "The console, deploys and backups are down", role: "postgres is Vardo's database.", appsServing: true, restart: true },
   redis: { impact: "Deploys, metrics and live logs are paused", role: "redis holds Vardo's queues and cache.", appsServing: true, restart: true },
   cadvisor: { impact: "Container metrics are paused", role: "cAdvisor collects container metrics.", appsServing: true, restart: true },
+  collector: { impact: "Metrics fall back to cAdvisor", role: "The collector reads container and GPU metrics.", appsServing: true, restart: true },
   loki: { impact: "Logs and log search are paused", role: "Loki stores app logs.", appsServing: true, restart: true },
   promtail: { impact: "New log lines aren't collected", role: "Promtail ships container logs to Loki.", appsServing: true, restart: true },
   traefik: { impact: "Your apps' domains may not respond", role: "Traefik routes traffic and TLS for every app.", appsServing: false, restart: true },

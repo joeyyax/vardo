@@ -1,0 +1,45 @@
+version: "1"
+name: collector
+displayName: Collector
+description: Host, container and GPU metrics from one agent. Provisioned when VARDO_COLLECTOR_IMAGE is set; cAdvisor stays as the fallback.
+icon: https://cdn.simpleicons.org/prometheus/E6522C
+category: monitoring
+source: direct
+deployType: compose
+defaultPort: 9273
+
+composeContent: |
+  services:
+    collector:
+      # Vardo sets both from VARDO_COLLECTOR_IMAGE and a generated token.
+      image: ${VARDO_COLLECTOR_IMAGE:?set VARDO_COLLECTOR_IMAGE}
+      restart: unless-stopped
+      # Not read_only: compose refuses a content config on a read-only service. Every mount is read-only.
+      cap_drop: [ALL]
+      security_opt: [no-new-privileges:true]
+      stop_grace_period: 20s
+      environment:
+        COLLECTOR_INTERVAL: 15s
+        COLLECTOR_API__TOKEN_FILE: /run/secrets/collector-token
+        COLLECTOR_LOGS__ENABLED: "false"
+      configs:
+        - source: collector-token
+          target: /run/secrets/collector-token
+          mode: 0400
+      volumes:
+        - /proc:/host/proc:ro
+        - /sys:/host/sys:ro
+        - /:/rootfs:ro,rslave
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+      mem_limit: 64m
+      # No published port: Vardo reads http://collector:9273 on the console-only monitoring network.
+      networks:
+        - vardo-monitoring
+
+  networks:
+    vardo-monitoring:
+      external: true
+
+  configs:
+    collector-token:
+      content: ${VARDO_COLLECTOR_TOKEN:?set VARDO_COLLECTOR_TOKEN}

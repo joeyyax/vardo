@@ -1,4 +1,4 @@
-// Core service provisioning: cAdvisor, Loki and Promtail, adopted by name across the instance.
+// Core service provisioning: cAdvisor, the collector, Loki and Promtail, adopted by name across the instance.
 // Called at startup and on feature flag toggle.
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -16,10 +16,13 @@ import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { ensureMonitoringNetwork } from "@/lib/infra/monitoring-network";
 import {
   CORE_SERVICE_FEATURES,
+  isCoreServiceEnabled,
   recordCoreServiceStatus,
   type CoreServiceFeature,
   type CoreServiceState,
 } from "@/lib/infra/core-services";
+import { collectorMode, COLLECTOR_TOKEN_KEY } from "@/lib/collector/config";
+import { decryptOrFallback, encrypt } from "@/lib/crypto/encrypt";
 import { logger } from "@/lib/logger";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
@@ -65,6 +68,7 @@ export async function ensureInfraServices(): Promise<void> {
     if (!enabled) continue;
 
     for (const service of feature.services) {
+      if (!isCoreServiceEnabled(service)) continue;
       const template = templates.find((t) => t.name === service.name);
       let outcome: Outcome;
       if (!template) {
@@ -119,8 +123,13 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
 
   try {
     for (const service of feature.services) {
+      if (!isCoreServiceEnabled(service)) continue;
       const template = templates.find((t) => t.name === service.name);
       if (!template) {
+        if (service.optional) {
+          statuses.push({ ...service, flag, state: "missing-template", appId: null, organizationId: null, detail: `Built-in template "${service.name}" is missing from this build.` });
+          continue;
+        }
         failure = `Built-in template "${service.name}" is missing from this build.`;
         statuses.push({
           ...service,
@@ -131,6 +140,16 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
           detail: failure,
         });
         break;
+      }
+
+      if (service.optional) {
+        // Its first deploy rolls itself back on failure; the flag's other services stand.
+        const outcome = await ensureAppDeployed(org.id, feature, template, { waitForDeploy: true }).catch(
+          (err): Outcome => ({ state: "failed", appId: null, organizationId: null, detail: err instanceof Error ? err.message : String(err), created: false }),
+        );
+        statuses.push({ ...service, flag, ...toStatus(outcome) });
+        if (outcome.state !== "provisioned") log.warn(`Core service "${service.name}": ${outcome.detail}`);
+        continue;
       }
 
       const outcome = await ensureAppDeployed(org.id, feature, template, { waitForDeploy: true });
@@ -211,8 +230,10 @@ async function ensureAppDeployed(
       organizationId: true,
       isSystemManaged: true,
       composeContent: true,
+      envContent: true,
     },
   });
+  const managedEnv = await resolveManagedEnv(template);
 
   if (existing && !existing.isSystemManaged) {
     return {
@@ -225,25 +246,28 @@ async function ensureAppDeployed(
   }
 
   if (existing) {
-    // cadvisor: match gpuEnabled to host GPU availability
-    if (template.name === "cadvisor") {
+    // cadvisor and collector: match gpuEnabled to host GPU availability
+    if (READS_GPU.has(template.name)) {
       const hasGpu = await detectNvidiaGpu();
       await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
-      if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
+      if (hasGpu) log.info(`${template.displayName}: GPU detected, enabled GPU metrics`);
     }
 
     // The template is the source of truth; the app API refuses edits to system-managed rows.
-    const composeStale = !!composeContent && existing.composeContent !== composeContent;
+    const templateStale = !!composeContent && existing.composeContent !== composeContent;
+    const envStale = managedEnv !== null && !sameEnv(existing.envContent, managedEnv, existing.organizationId);
+    const composeStale = templateStale || envStale;
     if (composeStale) {
       await db
         .update(apps)
         .set({
-          composeContent,
+          ...(templateStale ? { composeContent } : {}),
+          ...(envStale ? { envContent: encrypt(managedEnv!, existing.organizationId) } : {}),
           needsRedeploy: true,
           updatedAt: new Date(),
         })
         .where(eq(apps.id, existing.id));
-      log.info(`Core service "${template.name}": compose refreshed from template`);
+      log.info(`Core service "${template.name}": ${templateStale ? "compose" : "env"} refreshed from template`);
     }
 
     // Redeploy a core service whose container went away. A disabled feature never gets here, so "stopped" counts.
@@ -281,8 +305,8 @@ async function ensureAppDeployed(
   const project = await ensureProject(orgId, feature.project.name, feature.project.displayName);
   const appId = nanoid();
 
-  // cadvisor: detect GPU for NVML metrics
-  const gpuEnabled = template.name === "cadvisor" ? await detectNvidiaGpu() : false;
+  // cadvisor reads GPUs over NVML, the collector through nvidia-smi.
+  const gpuEnabled = READS_GPU.has(template.name) ? await detectNvidiaGpu() : false;
 
   try {
     await db.insert(apps).values({
@@ -295,6 +319,7 @@ async function ensureAppDeployed(
       source: template.source as "git" | "direct",
       deployType: template.deployType as "compose",
       composeContent,
+      envContent: managedEnv === null ? undefined : encrypt(managedEnv, orgId),
       containerPort: template.defaultPort,
       isSystemManaged: true,
       cpuLimit: template.defaultCpuLimit,
@@ -350,6 +375,36 @@ async function resolveComposeContent(template: Template): Promise<string | null>
   const { getCadvisorConfig, applyCadvisorDiskMetrics } = await import("@/lib/infra/cadvisor-config");
   const { diskMetricsEnabled } = await getCadvisorConfig();
   return applyCadvisorDiskMetrics(template.composeContent, diskMetricsEnabled);
+}
+
+/** Core services that read GPUs, so they get the host's GPUs when it has any. */
+const READS_GPU = new Set(["cadvisor", "collector"]);
+
+/** Env a core service's compose interpolates, owned by Vardo. Null for services without one. */
+async function resolveManagedEnv(template: Template): Promise<string | null> {
+  if (template.name !== "collector") return null;
+  const mode = collectorMode();
+  if (mode.kind !== "provisioned") return null;
+  const token = await ensureCollectorToken();
+  return `VARDO_COLLECTOR_IMAGE=${mode.image}\nVARDO_COLLECTOR_TOKEN=${token}\n`;
+}
+
+/** The provisioned collector's bearer token, generated once and kept in system settings. */
+async function ensureCollectorToken(): Promise<string> {
+  const { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } = await import("@/lib/system-settings");
+  const existing = await getSystemSettingRaw(COLLECTOR_TOKEN_KEY);
+  if (existing) return existing;
+  const { randomBytes } = await import("node:crypto");
+  const token = randomBytes(32).toString("hex");
+  await setSystemSetting(COLLECTOR_TOKEN_KEY, token);
+  invalidateSettingsCache(COLLECTOR_TOKEN_KEY);
+  return token;
+}
+
+function sameEnv(stored: string | null, wanted: string, orgId: string): boolean {
+  if (!stored) return false;
+  const { content, decryptFailed } = decryptOrFallback(stored, orgId);
+  return !decryptFailed && content === wanted;
 }
 
 /** Check if an NVIDIA GPU runtime is available on the Docker host. */

@@ -221,8 +221,10 @@ describe("core service provisioning", () => {
 
     expect(appsInserted).toHaveLength(0);
     const status = lastRecordedStatus();
-    expect(Object.keys(status).sort()).toEqual([...CORE_SERVICE_NAMES].sort());
-    for (const name of CORE_SERVICE_NAMES) expect(status[name].state).toBe("provisioned");
+    // The collector is provisioned only with VARDO_COLLECTOR_IMAGE set.
+    const provisioned = CORE_SERVICE_NAMES.filter((n) => n !== "collector");
+    expect(Object.keys(status).sort()).toEqual([...provisioned].sort());
+    for (const name of provisioned) expect(status[name].state).toBe("provisioned");
   });
 
   it("records a missing template rather than skipping it quietly", async () => {
@@ -235,7 +237,7 @@ describe("core service provisioning", () => {
 
 describe("core service metadata", () => {
   it("names every instance-level service", () => {
-    expect(CORE_SERVICE_NAMES).toEqual(["cadvisor", "loki", "promtail"]);
+    expect(CORE_SERVICE_NAMES).toEqual(["cadvisor", "collector", "loki", "promtail"]);
     expect(isCoreServiceApp("cadvisor")).toBe(true);
     expect(isCoreServiceApp("wordpress")).toBe(false);
   });

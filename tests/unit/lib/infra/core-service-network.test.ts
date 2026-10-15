@@ -37,6 +37,7 @@ const ATTACHED: Record<string, string> = {
   cadvisor: "cadvisor",
   loki: "loki",
   promtail: "promtail",
+  collector: "collector",
 };
 
 describe("core service templates — monitoring network", () => {
