@@ -49,6 +49,15 @@ describe("probeContainer", () => {
     expect(probe.processes).toHaveLength(2);
   });
 
+  it("reports no ports for a container on another's network, whose table is the owner's", async () => {
+    // Long House: Port Sync runs with `network_mode: service:gluetun`.
+    mocks.inspect = { State: { Pid: 4100 }, HostConfig: { NetworkMode: "container:65bcc5b5350843e28ca24dc5816af2374b76c2348e3272c8b57f3df661950bde" } };
+    mocks.tables.set("/host-proc/4100/net/tcp", TCP);
+    const probe = await probeContainer("abc");
+    expect(probe).toMatchObject({ sharedNetwork: true, hostNetwork: false, ports: null });
+    expect(probe.processes).toHaveLength(2);
+  });
+
   it("reports no ports when the tables can't be read", async () => {
     expect((await probeContainer("abc")).ports).toBeNull();
   });
@@ -63,7 +72,8 @@ describe("probeContainer", () => {
 });
 
 describe("appPorts", () => {
-  const probe = (ports: string[] | null, hostNetwork = false) => ({ processes: [], ports, hostNetwork });
+  const probe = (ports: string[] | null, hostNetwork = false, sharedNetwork = false) => ({ processes: [], ports, hostNetwork, sharedNetwork });
+  const sidecar = () => probe(null, false, true);
 
   it("folds every container's ports", () => {
     expect(appPorts([probe(["tcp/80"]), probe(["tcp/80", "udp/53"])], 2)).toEqual({ action: "fold", ports: ["tcp/80", "udp/53"] });
@@ -79,5 +89,17 @@ describe("appPorts", () => {
 
   it("skips when a container couldn't be probed", () => {
     expect(appPorts([probe(["tcp/80"])], 2)).toEqual({ action: "skip" });
+  });
+
+  it("forgets the allow-set of an app on another container's network, which the owner's check covers", () => {
+    expect(appPorts([sidecar()], 1)).toEqual({ action: "forget" });
+  });
+
+  it("folds only the namespace owner's ports when its sidecar shares the app", () => {
+    expect(appPorts([probe(["tcp/8000"]), sidecar()], 2)).toEqual({ action: "fold", ports: ["tcp/8000"] });
+  });
+
+  it("skips a sidecar app when one of its containers couldn't be probed", () => {
+    expect(appPorts([sidecar()], 2)).toEqual({ action: "skip" });
   });
 });
