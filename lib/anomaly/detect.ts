@@ -1,7 +1,7 @@
 // Whether one signal has strayed from its baseline long enough to alert.
 
 import type { AlertSeverity } from "@/lib/notifications/registry";
-import { highMark, type BucketStats, type Sample } from "./baseline";
+import { SAMPLE_MS, highMark, type BucketStats, type Sample } from "./baseline";
 import { SENSITIVITY_FLOOR, SENSITIVITY_K, type Sensitivity, type SignalDef } from "./signals";
 
 export type Line = {
@@ -27,7 +27,7 @@ export type SignalVerdict = {
 
 /** A reading older than this says nothing about now. */
 export const STALE_MS = 3 * 60_000;
-/** An episode stays open until readings stay under the clear line this long. */
+/** An episode stays open until five-minute averages stay under the clear line this long. */
 export const RESOLVE_MS = 10 * 60_000;
 /** Allowed gap between the window's start and its first reading. */
 const COVERAGE_SLACK_MS = 90_000;
@@ -43,6 +43,14 @@ export function lineFor(signal: SignalDef, stats: BucketStats, sensitivity: Sens
   return { typical: stats.median, high, threshold, clearBelow: Math.max(high + floor / 2, threshold * 0.75) };
 }
 
+/** Each reading as the mean of the readings in the SAMPLE_MS up to it, like the baseline's samples. */
+function smooth(points: Sample[]): Sample[] {
+  return points.map((p) => {
+    const span = points.filter((q) => q.at > p.at - SAMPLE_MS && q.at <= p.at);
+    return { at: p.at, value: span.reduce((sum, q) => sum + q.value, 0) / span.length };
+  });
+}
+
 /** Null without a fresh reading, so the caller neither fires nor clears. */
 export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now: number): SignalVerdict | null {
   const latest = points.at(-1);
@@ -52,7 +60,7 @@ export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now
   const covered = points[0].at <= start + COVERAGE_SLACK_MS;
   const window = points.filter((p) => p.at > start);
   const fires = covered && window.length > 0 && window.every((p) => p.value > line.threshold);
-  const holds = fires || points.some((p) => p.at > now - RESOLVE_MS && p.value >= line.clearBelow);
+  const holds = fires || smooth(points).some((p) => p.at > now - RESOLVE_MS && p.value >= line.clearBelow);
 
   let since = latest.at;
   for (let i = points.length - 1; i >= 0 && points[i].value > line.threshold; i--) since = points[i].at;

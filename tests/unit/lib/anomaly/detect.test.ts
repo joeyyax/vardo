@@ -71,11 +71,27 @@ describe("judgeSignal", () => {
     expect(judgeSignal(minutes(repeat(90, 5)), SIGNALS.cpu, line, now)?.fires).toBe(false);
   });
 
-  it("holds until readings stay under the clear line for ten minutes", () => {
-    const dipped = judgeSignal(minutes([...repeat(90, 16), ...repeat(1, 5)]), SIGNALS.cpu, line, now);
+  it("holds until five-minute averages stay under the clear line for ten minutes", () => {
+    const dipped = judgeSignal(minutes([...repeat(90, 16), ...repeat(1, 11)]), SIGNALS.cpu, line, now);
     expect(dipped).toMatchObject({ fires: false, holds: true });
-    const settled = judgeSignal(minutes([...repeat(90, 16), ...repeat(1, 11)]), SIGNALS.cpu, line, now);
+    const settled = judgeSignal(minutes([...repeat(90, 16), ...repeat(1, 14)]), SIGNALS.cpu, line, now);
     expect(settled).toMatchObject({ fires: false, holds: false });
+  });
+
+  describe("WHA Staging egress, jy0 2026-10-15", () => {
+    // Usual 11.3 MiB/min; readings around 282 B/min between bursts.
+    const wha = { typical: (11.3 * MiB) / 60, high: 1_701_460 / 2.01, threshold: 1_701_460, clearBelow: 1_701_460 * 0.75 };
+    const idle = 282 / 60;
+
+    it("doesn't hold on a one-minute burst", () => {
+      const burst = judgeSignal(minutes([...repeat(idle, 12), 1_701_460, ...repeat(idle, 3)]), SIGNALS.egress, wha, now);
+      expect(burst).toMatchObject({ fires: false, holds: false });
+    });
+
+    it("holds on five minutes at the clear line", () => {
+      const sustained = judgeSignal(minutes([...repeat(idle, 10), ...repeat(wha.clearBelow, 5), idle]), SIGNALS.egress, wha, now);
+      expect(sustained).toMatchObject({ fires: false, holds: true });
+    });
   });
 
   it("is critical for any signal far over the line", () => {
