@@ -73,7 +73,7 @@ export function UpdatesCard() {
       if (!askedFromLink.current && query.get("action") && query.get("rollout")) {
         askedFromLink.current = true;
         const action = query.get("action");
-        if (data.rollout?.id === query.get("rollout") && (action === "immediate" || action === "skip" || action === "retry")) {
+        if (data.rollout?.id === query.get("rollout") && (action === "immediate" || action === "skip" || action === "retry" || action === "dismiss")) {
           setRolloutAction({ action, instanceId: query.get("instance") ?? undefined });
           setRolloutConfirmOpen(true);
         } else {
@@ -161,7 +161,8 @@ export function UpdatesCard() {
         return;
       }
       setRolloutConfirmOpen(false);
-      toast.success(rolloutAction.action === "immediate" ? "Priority queue skipped" : rolloutAction.action === "skip" ? "Instance skipped for this rollout" : "Rollout resumed");
+      const next = (body as { rollout?: { state?: string } }).rollout?.state;
+      toast.success(next === "superseded" ? "Rollout cleared" : rolloutAction.action === "immediate" ? "Priority queue skipped" : rolloutAction.action === "skip" ? "Instance skipped for this rollout" : "Rollout resumed");
       await load();
     } finally {
       setActing(false);
@@ -270,7 +271,7 @@ export function UpdatesCard() {
             </div>
 
             {status.rolloutCoordinator && status.rollout && (
-              <RolloutStatus rollout={status.rollout} onAction={(action) => { setRolloutAction(action); setRolloutConfirmOpen(true); }} />
+              <RolloutStatus rollout={status.rollout} unlinked={status.unlinkedMembers} onAction={(action) => { setRolloutAction(action); setRolloutConfirmOpen(true); }} />
             )}
             {status.rolloutCoordinator && !status.protocolReady && !status.rollout && (
               <p className="flex items-start gap-2 text-sm text-status-warning">
@@ -369,13 +370,15 @@ export function UpdatesCard() {
         <AlertDialog open={rolloutConfirmOpen} onOpenChange={setRolloutConfirmOpen}>
           <AlertDialogContent size="sm">
             <AlertDialogHeader>
-              <AlertDialogTitle>{rolloutAction?.action === "immediate" ? "Roll out to ready instances now?" : rolloutAction?.action === "skip" ? "Skip this instance?" : "Retry the rollout?"}</AlertDialogTitle>
+              <AlertDialogTitle>{rolloutAction?.action === "immediate" ? "Roll out to ready instances now?" : rolloutAction?.action === "skip" ? "Skip this instance?" : rolloutAction?.action === "dismiss" ? "Dismiss the rollout?" : "Retry the rollout?"}</AlertDialogTitle>
               <AlertDialogDescription>
                 {rolloutAction?.action === "immediate"
                   ? "This skips priority order. Busy instances still wait, and health checks and concurrency limits remain in place."
                   : rolloutAction?.action === "skip"
                     ? "This instance stays on its current version for this rollout. It'll be included in the next one if still behind."
-                    : "Vardo will check the affected instances again before starting another update."}
+                    : rolloutAction?.action === "dismiss"
+                      ? "The paused rollout is cleared. Instances still behind join the next rollout."
+                      : "Vardo will check the affected instances again before starting another update."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

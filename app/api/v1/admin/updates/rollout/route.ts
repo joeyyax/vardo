@@ -3,11 +3,11 @@ import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { actOnRollout, isRolloutCoordinator } from "@/lib/self-update/coordinator";
+import { actOnRollout, isRolloutCoordinator, RolloutActionError } from "@/lib/self-update/coordinator";
 import { getRollout } from "@/lib/self-update/store";
 
 const actionSchema = z.object({
-  action: z.enum(["immediate", "skip", "retry"]),
+  action: z.enum(["immediate", "skip", "retry", "dismiss"]),
   rolloutId: z.string().min(1),
   instanceId: z.string().min(1).optional(),
 }).strict();
@@ -32,7 +32,7 @@ async function handlePost(request: NextRequest) {
     const rollout = await actOnRollout(action, rolloutId, session.user.id, instanceId);
     return NextResponse.json({ rollout });
   } catch (error) {
-    if (error instanceof Error && /rollout|instance|busy/i.test(error.message)) {
+    if (error instanceof RolloutActionError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     return handleRouteError(error);

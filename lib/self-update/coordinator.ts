@@ -15,7 +15,7 @@ import { getRollout, setRollout } from "./store";
 import { hasRolloutFailure, nextReadyMembers, rolloutDone, type Rollout, type RolloutMember } from "./rollout-plan";
 import { sameCommit } from "./commit";
 import type { UpdateChannel } from "./policy";
-import { announceRollout, recordMemberChanges, recordRolloutAction } from "./rollout-events";
+import { announceRollout, closeRolloutIncident, recordMemberChanges, recordRolloutAction } from "./rollout-events";
 
 const log = logger.child("update-rollout");
 const LOCK_KEY = "self-update:rollout";
@@ -146,6 +146,60 @@ async function startReady(rollout: Rollout, now: Date): Promise<Rollout> {
   return rollout;
 }
 
+export class RolloutActionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RolloutActionError";
+  }
+}
+
+type Verdict = "past" | "behind" | "unknown";
+
+async function supersede(rollout: Rollout, now: Date, by?: { action: string; userId: string }): Promise<void> {
+  rollout.state = "superseded";
+  rollout.finishedAt = now.toISOString();
+  await setRollout(rollout);
+  await recordRolloutAction(rollout, by?.action ?? "system.rollout_superseded", undefined, by?.userId);
+  await closeRolloutIncident(rollout);
+}
+
+/** Where each failed or unreachable member stands against the target, from its live build. */
+async function judgeFailedMembers(rollout: Rollout): Promise<Map<string, Verdict>> {
+  const entries = await Promise.all(rollout.members
+    .filter((member) => member.state === "failed" || member.state === "unreachable")
+    .map(async (member): Promise<[string, Verdict]> => {
+      try {
+        const { sha } = await peerCall(member, rollout, "status");
+        if (sameCommit(sha, rollout.targetSha)) return [member.instanceId, "past"];
+        const compare = await fetchCompare(sha, rollout.targetSha);
+        if (!compare) return [member.instanceId, "unknown"];
+        return [member.instanceId, compare.status === "behind" || compare.status === "identical" ? "past" : "behind"];
+      } catch {
+        return [member.instanceId, "unknown"];
+      }
+    }));
+  return new Map(entries);
+}
+
+function allPast(verdicts: Map<string, Verdict>): boolean {
+  return verdicts.size > 0 && [...verdicts.values()].every((verdict) => verdict === "past");
+}
+
+/** Clears a paused rollout once the channel moved on or every failed member is at or past the target. */
+async function settlePaused(rollout: Rollout, update: { targetSha: string } | null, now: Date): Promise<void> {
+  if (update && !sameCommit(update.targetSha, rollout.targetSha)) return supersede(rollout, now);
+  if (allPast(await judgeFailedMembers(rollout))) await supersede(rollout, now);
+}
+
+/** Failed or unreachable members whose instance is no longer linked to this hub. */
+export async function unlinkedMemberIds(rollout: Rollout): Promise<string[]> {
+  const stuck = rollout.members.filter((member) => member.state === "failed" || member.state === "unreachable");
+  if (!stuck.length) return [];
+  const [selfId, peers] = await Promise.all([getInstanceId(), db.query.meshPeers.findMany({ columns: { instanceId: true } })]);
+  const linked = new Set([selfId, ...peers.map((peer) => peer.instanceId)]);
+  return stuck.filter((member) => !linked.has(member.instanceId)).map((member) => member.instanceId);
+}
+
 async function runTick(now: Date): Promise<void> {
   if (!(await isRolloutCoordinator())) return;
   const [local, peers, stored] = await Promise.all([
@@ -205,6 +259,7 @@ async function runTick(now: Date): Promise<void> {
       await announceRollout(rollout, "paused");
     }
   }
+  if (rollout.state === "paused") return settlePaused(rollout, update, now);
   if (rollout.state !== "running") return;
   if (update && !sameCommit(update.targetSha, rollout.targetSha)) rollout.pendingSha = update.targetSha;
   const beforeRefresh = rollout;
@@ -224,9 +279,8 @@ async function runTick(now: Date): Promise<void> {
   }
   if (rollout.pendingSha) {
     if (!rollout.members.some((member) => member.state === "updating")) {
-      rollout.state = "superseded";
-      rollout.finishedAt = now.toISOString();
-      await recordRolloutAction(rollout, "system.rollout_superseded");
+      await supersede(rollout, now);
+      return;
     }
     await setRollout(rollout);
     return;
@@ -255,34 +309,54 @@ export async function tickRollout(now = new Date()): Promise<void> {
   }
 }
 
-export async function actOnRollout(action: "immediate" | "skip" | "retry", rolloutId: string, userId: string, instanceId?: string): Promise<Rollout> {
+export async function actOnRollout(action: "immediate" | "skip" | "retry" | "dismiss", rolloutId: string, userId: string, instanceId?: string): Promise<Rollout> {
   const lock = await acquireLock(LOCK_KEY, LOCK_MS);
-  if (!lock) throw new Error("The rollout is busy; try again shortly");
+  if (!lock) throw new RolloutActionError("The rollout is busy; try again shortly");
   try {
     const rollout = await getRollout();
-    if (!rollout || rollout.id !== rolloutId) throw new Error("This rollout has changed");
+    if (!rollout || rollout.id !== rolloutId) throw new RolloutActionError("This rollout has changed");
     if (action === "immediate") {
-      if (rollout.state !== "running") throw new Error("The rollout isn't running");
+      if (rollout.state !== "running") throw new RolloutActionError("The rollout isn't running");
       if (rollout.immediate) return rollout;
       rollout.immediate = true;
+    } else if (action === "dismiss") {
+      if (rollout.state !== "paused") throw new RolloutActionError("Only a paused rollout can be dismissed");
+      await supersede(rollout, new Date(), { action: "system.rollout_dismissed", userId });
+      return rollout;
     } else if (action === "skip") {
-      if (!instanceId) throw new Error("Choose an instance to skip");
+      if (!instanceId) throw new RolloutActionError("Choose an instance to skip");
       const member = rollout.members.find((item) => item.instanceId === instanceId);
       if (member?.state === "skipped") return rollout;
-      if (!member || member.state !== "busy") throw new Error("Only a busy instance can be skipped");
+      if (!member) throw new RolloutActionError("That instance isn't in this rollout");
+      const stuck = member.state === "failed" || member.state === "unreachable";
+      if (member.state !== "busy" && !(stuck && (await unlinkedMemberIds(rollout)).includes(instanceId))) {
+        throw new RolloutActionError("Only a busy or unlinked instance can be skipped");
+      }
       member.state = "skipped";
       member.reason = "Skipped by an operator for this rollout";
       if (rollout.state === "paused" && !hasRolloutFailure(rollout)) rollout.state = "running";
     } else {
       if (rollout.state === "running") return rollout;
-      if (rollout.state !== "paused") throw new Error("The rollout isn't paused");
-      for (const member of rollout.members.filter((item) => item.state === "failed")) {
-        await peerCall(member, rollout, "retry");
+      if (rollout.state !== "paused") throw new RolloutActionError("The rollout isn't paused");
+      const verdicts = await judgeFailedMembers(rollout);
+      if (allPast(verdicts)) {
+        await supersede(rollout, new Date());
+        return rollout;
       }
+      rollout.members = await Promise.all(rollout.members.map(async (member): Promise<RolloutMember> => {
+        const verdict = verdicts.get(member.instanceId);
+        if (!verdict) return member;
+        if (verdict === "past") return { ...member, state: "skipped", reason: "Already past this target" };
+        if (verdict === "unknown") return { ...member, state: "unreachable", reason: "Couldn't check this instance's version" };
+        if (member.state === "unreachable") return { ...member, state: "waiting", reason: null };
+        try {
+          await peerCall(member, rollout, "retry");
+          return { ...member, state: "waiting", reason: null };
+        } catch (error) {
+          return { ...member, state: "unreachable", reason: error instanceof Error ? error.message : "Instance is unreachable" };
+        }
+      }));
       rollout.state = "running";
-      rollout.members = rollout.members.map((member) => member.state === "failed" || member.state === "unreachable"
-        ? { ...member, state: "waiting", reason: null }
-        : member);
     }
     await setRollout(rollout);
     await recordRolloutAction(rollout, action === "immediate" ? "system.rollout_immediate" : action === "skip" ? "system.rollout_member_skipped" : "system.rollout_retried", action === "skip" ? rollout.members.find((member) => member.instanceId === instanceId) : undefined, userId);
