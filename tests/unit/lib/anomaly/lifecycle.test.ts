@@ -89,3 +89,26 @@ describe("anomaly episode", () => {
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 });
+
+describe("pids signal going absent", () => {
+  it("clears an open pids anomaly once readings stop, while cpu still judges", async () => {
+    const warm = (value: number) => computeBaseline(history.map((h) => ({ ...h, value })), start);
+    const baselines = { pids: warm(10), cpu: warm(5) };
+    const engine = new AnomalyEngine();
+    let open = false;
+    for (let i = 0; i < 40; i++) {
+      const now = start + i * MIN;
+      const withPids = i < 25;
+      engine.record(app.id, withPids ? { pids: 80, cpu: 5 } : { cpu: 5 }, now, false);
+      const result = engine.evaluate(app.id, baselines, { now, sensitivity: "normal", offset: utcOffset, quiet: false });
+      const item = result.state === "judged" && result.findings.length > 0 ? anomalyItem(app, result.findings, null) : null;
+      const fires = result.state === "judged" && result.findings.some((f) => f.verdict.fires);
+      const observations = item ? [{ type: "app.anomaly" as const, about: app.id, severity: item.severity, fires, item }] : [];
+      await notifyObservations("org1", ["app.anomaly"], observations, new Date(now));
+      if (i === 24) open = mocks.rows.get(app.id)?.clearedAt === null;
+    }
+    expect(open).toBe(true);
+    expect(mocks.rows.get(app.id)?.clearedAt).toBeInstanceOf(Date);
+    expect(mocks.emit.mock.calls.map(([, e]) => e.type)).toEqual(["alert.fired", "alert.resolved"]);
+  });
+});

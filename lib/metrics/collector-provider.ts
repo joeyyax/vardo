@@ -75,7 +75,8 @@ export function mapCollectorContainers(
       diskUsage: null,
       diskLimit: null,
       diskWriteBytes,
-      processCount: c.pids.current,
+      // pids.current counts threads; the signal wants processes.
+      processCount: typeof c.pids.processes === "number" ? c.pids.processes : null,
       // Filled from the GPU source in the collector tick.
       gpuUtilization: 0,
       gpuMemoryUsed: 0,

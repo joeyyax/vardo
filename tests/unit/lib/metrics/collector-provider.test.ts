@@ -52,7 +52,7 @@ describe("mapCollectorContainers", () => {
       diskUsage: null,
       diskLimit: null,
       diskWriteBytes: 2_292_596_736, // vdb; zram0 (swap) excluded
-      processCount: 16,
+      processCount: null,
       gpuUtilization: 0,
       gpuMemoryUsed: 0,
       gpuMemoryTotal: 0,
@@ -66,6 +66,22 @@ describe("mapCollectorContainers", () => {
     expect(pg.diskWriteBytes).toBe(8_058_892_288);
     expect(pg.projectName).toBe("vardo"); // compose project, with no Vardo label
     expect(pg.memoryLimit).toBe(1_073_741_824);
+  });
+
+  it("reads processCount from pids.processes, not the thread count in pids.current", () => {
+    const rows = containers();
+    rows[1].pids = { current: 42, limit: null, processes: 5 };
+    const m = mapCollectorContainers(rows, { timestamp: ts }).find((r) => r.containerIdFull === rows[1].id)!;
+    expect(m.processCount).toBe(5);
+  });
+
+  it("leaves processCount null from a collector that doesn't report processes", () => {
+    const rows = containers();
+    rows[1].pids = { current: 42, limit: null };
+    rows[2].pids = { current: 42, limit: null, processes: null };
+    const byId = new Map(mapCollectorContainers(rows, { timestamp: ts }).map((r) => [r.containerIdFull, r]));
+    expect(byId.get(rows[1].id)!.processCount).toBeNull();
+    expect(byId.get(rows[2].id)!.processCount).toBeNull();
   });
 
   it("drops containers with no project label", () => {

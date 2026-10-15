@@ -39,6 +39,13 @@ describe("AppRateTracker", () => {
     expect(second.restarted).toBe(false);
   });
 
+  it("produces no pids value when a container has no process count", () => {
+    const t = new AppRateTracker();
+    const r = t.observe("a1", [container("c1", 0, { rx: 0, tx: 0, cpu: 2, pids: null }), container("c2", 0, { rx: 0, tx: 0, pids: 4 })]);
+    expect(r.values.pids).toBeUndefined();
+    expect(r.values.cpu).toBe(3);
+  });
+
   it("sums an app's containers", () => {
     const t = new AppRateTracker();
     t.observe("a1", [container("c1", 0, { rx: 0, tx: 0 }), container("c2", 0, { rx: 0, tx: 0 })]);
