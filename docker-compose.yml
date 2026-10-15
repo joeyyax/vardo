@@ -8,7 +8,7 @@ name: vardo
 #   Prod:   docker compose up -d
 #           install.sh sets COMPOSE_PROFILES=production — all services start.
 #
-# Optional infrastructure (cAdvisor, Loki, Promtail) is deployed as managed apps
+# Optional infrastructure (the collector, Loki, Promtail) is deployed as managed apps
 # by Vardo itself when the corresponding feature flags are enabled.
 
 services:
@@ -39,8 +39,7 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
-      # cAdvisor and Loki are on vardo-monitoring, which the console joins at startup.
-      CADVISOR_URL: ${CADVISOR_URL:-http://cadvisor:8080}
+      # The collector and Loki are on vardo-monitoring, which the console joins at startup.
       LOKI_URL: ${LOKI_URL:-http://loki:3100}
       TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
       WIREGUARD_GATEWAY: 10.88.0.2
@@ -74,8 +73,7 @@ services:
       - ${VARDO_PROJECTS:-/dev/null:/dev/null:ro}
       - ${VARDO_MOUNT_1:-/dev/null:/dev/null:ro}
       - ${VARDO_MOUNT_2:-/dev/null:/dev/null:ro}
-      # Host /proc — read-only mount for GPU metrics PID-to-container resolution.
-      # The GPU collector reads /host-proc/{pid}/cgroup to map GPU processes to containers.
+      # Host /proc, read-only: listening ports, host mounts and boot time.
       - /proc:/host-proc:ro
       # Host cgroup root — read-only mount for OOM kill counts.
       # The container's own /sys/fs/cgroup is namespaced to itself and always reads zero.
@@ -171,7 +169,6 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
-      CADVISOR_URL: ${CADVISOR_URL:-http://cadvisor:8080}
       LOKI_URL: ${LOKI_URL:-http://loki:3100}
       TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
       WIREGUARD_GATEWAY: 10.88.0.2

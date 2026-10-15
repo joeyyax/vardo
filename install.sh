@@ -976,11 +976,11 @@ check_ports() {
   fi
 
   # Service ports — detect conflicts and resolve
-  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
-  local defaults=(7100 7200 7300 7400)
-  local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "LOKI_PORT")
+  local defaults=(7100 7200 7400)
+  local labels=("PostgreSQL" "Redis" "Loki")
   # Names of the containers that publish each service port, managed or not.
-  local patterns=('^vardo-postgres$' '^vardo-redis$' '(^|[-_])cadvisor([-_]|$)' '(^|[-_])loki([-_]|$)')
+  local patterns=('^vardo-postgres$' '^vardo-redis$' '(^|[-_])loki([-_]|$)')
   local assigned=()
 
   for i in "${!env_vars[@]}"; do
@@ -1736,12 +1736,7 @@ generate_env() {
   local docker_gid
   docker_gid=$(getent group docker 2>/dev/null | cut -d: -f3 || echo "999")
 
-  # Detect NVIDIA GPU — enables the cadvisor-gpu compose profile for GPU metrics
   local compose_profiles="production"
-  if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
-    compose_profiles="production,gpu"
-    log "NVIDIA GPU detected — enabling gpu compose profile"
-  fi
 
   if [[ "$VARDO_ROLE" == "development" ]]; then
     # Dev .env — minimal, no TLS/domain config
@@ -1796,8 +1791,8 @@ EOF
   fi
 
   # Append port overrides if any were reassigned during preflight
-  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
-  local defaults=(7100 7200 7300 7400)
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "LOKI_PORT")
+  local defaults=(7100 7200 7400)
   local has_overrides=false
 
   for i in "${!env_vars[@]}"; do
@@ -2180,7 +2175,6 @@ run_env_migrations() {
   fi
 
   # Ensure COMPOSE_PROFILES includes production (skip for dev role)
-  # and gpu when NVIDIA devices are present
   load_env_display
   if ! is_dev; then
     local current_profiles
@@ -2189,9 +2183,6 @@ run_env_migrations() {
     # Adds what is missing and keeps what an operator opted into, like buildkit.
     local target_profiles="$current_profiles"
     local wanted=(production)
-    if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
-      wanted+=(gpu)
-    fi
     for p in "${wanted[@]}"; do
       [[ ",$target_profiles," == *",$p,"* ]] || target_profiles="${target_profiles:+$target_profiles,}$p"
     done

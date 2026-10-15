@@ -190,13 +190,13 @@ describe("rerun after a failed install", () => {
 
   describe("service ports", () => {
     const svc = (busy: string) =>
-      `check_port_in_use() { case " ${busy} " in *" $1 "*) return 0;; *) return 1;; esac; }\nVARDO_ROLE=development\ncheck_ports\necho "PG=${"$"}{POSTGRES_PORT:-unset} REDIS=${"$"}{REDIS_PORT:-unset} CAD=${"$"}{CADVISOR_PORT:-unset} LOKI=${"$"}{LOKI_PORT:-unset}"`;
+      `check_port_in_use() { case " ${busy} " in *" $1 "*) return 0;; *) return 1;; esac; }\nVARDO_ROLE=development\ncheck_ports\necho "PG=${"$"}{POSTGRES_PORT:-unset} REDIS=${"$"}{REDIS_PORT:-unset} LOKI=${"$"}{LOKI_PORT:-unset}"`;
 
     it("keeps a port its own container holds", () => {
-      const path = fakeDocker("own", { 7100: "vardo-postgres", 7200: "vardo-redis", 7300: "vardo-cadvisor-1", 7400: "myproj-loki" });
-      const r = sh(svc("7100 7200 7300 7400"), {}, path);
+      const path = fakeDocker("own", { 7100: "vardo-postgres", 7200: "vardo-redis", 7400: "myproj-loki" });
+      const r = sh(svc("7100 7200 7400"), {}, path);
       expect(r.status).toBe(0);
-      expect(r.out).toContain("PG=unset REDIS=unset CAD=unset LOKI=unset");
+      expect(r.out).toContain("PG=unset REDIS=unset LOKI=unset");
       expect(r.out).not.toContain("reassigning");
     });
 
