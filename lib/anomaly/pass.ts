@@ -37,6 +37,8 @@ const PROBES_PER_PASS = 4;
 const CONTAINERS_PER_PROBE = 5;
 /** A new process or port alert holds this long. */
 export const FINDING_HOLD_MS = 60 * 60_000;
+/** An open alert holds this long through a gap in judgment, past RESOLVE_MS and several stale snapshots. */
+export const GAP_HOLD_MS = 15 * 60_000;
 
 type State = {
   engine: AnomalyEngine;
@@ -45,6 +47,8 @@ type State = {
   probedAt: Map<string, number>;
   top: Map<string, { at: number; processes: TopProcess[] }>;
   seen: Map<string, Record<SeenKind, Map<string, SeenEntry>>>;
+  /** Per app: the last pass that judged it, was quiet, or first found it unjudgeable. */
+  coveredAt: Map<string, number>;
   lastSnapshotAt: number;
   pidsReset: boolean;
 };
@@ -57,6 +61,7 @@ const state: State = (globalForAnomaly.__vardo_anomaly ??= {
   probedAt: new Map(),
   top: new Map(),
   seen: new Map(),
+  coveredAt: new Map(),
   lastSnapshotAt: 0,
   pidsReset: false,
 });
@@ -193,6 +198,12 @@ function holdObservation(type: AlertType, about: string, detail: unknown): Obser
   return { type, about, severity: item.severity, fires: false, item };
 }
 
+/** Whether an unjudged app's open alert still holds; marks the gap's start on its first pass. */
+function holdsThroughGap(appId: string, now: number, covered: boolean): boolean {
+  if (covered || !state.coveredAt.has(appId)) state.coveredAt.set(appId, now);
+  return now - (state.coveredAt.get(appId) ?? now) < GAP_HOLD_MS;
+}
+
 /** Null when there's no fresh snapshot, so the caller neither fires nor clears anomaly alerts. */
 export async function anomalyObservations(now: number): Promise<Map<string, Observation[]> | null> {
   const snapshot = getLatestSnapshot();
@@ -254,10 +265,11 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
     });
     if (evaluation.state === "unknown") {
       const held = openByAbout.get(`app.anomaly:${app.id}`);
-      const o = held && holdObservation("app.anomaly", app.id, held.detail);
+      const o = held && holdsThroughGap(app.id, now, isQuiet(app)) && holdObservation("app.anomaly", app.id, held.detail);
       if (o) add(app.organizationId, o);
       continue;
     }
+    state.coveredAt.set(app.id, now);
     if (evaluation.findings.length === 0) continue;
     const fires = evaluation.findings.some((f) => f.verdict.fires);
     if (fires) firing.push(app);
@@ -293,7 +305,7 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
     if (!seen) {
       for (const type of ["app.new-port", "app.new-process"] as const) {
         const held = openByAbout.get(`${type}:${app.id}`);
-        const o = held && holdObservation(type, app.id, held.detail);
+        const o = held && holdsThroughGap(app.id, now, false) && holdObservation(type, app.id, held.detail);
         if (o) add(app.organizationId, o);
       }
       continue;
@@ -312,7 +324,7 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
 
   const live = new Set(enabled.map((a) => a.id));
   state.engine.retain(live);
-  for (const map of [state.probedAt, state.top, state.seen]) for (const id of map.keys()) if (!live.has(id)) map.delete(id);
+  for (const map of [state.probedAt, state.top, state.seen, state.coveredAt]) for (const id of map.keys()) if (!live.has(id)) map.delete(id);
   for (const k of state.baselines.keys()) if (!live.has(k.slice(0, k.lastIndexOf(":")))) state.baselines.delete(k);
   return byOrg;
 }
