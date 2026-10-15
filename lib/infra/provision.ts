@@ -221,7 +221,9 @@ async function ensureAppDeployed(
   template: Template,
   opts?: { waitForDeploy?: boolean },
 ): Promise<Outcome> {
-  const composeContent = await resolveComposeContent(template);
+  // cadvisor reads GPUs over NVML, the collector through nvidia-smi.
+  const hasGpu = READS_GPU.has(template.name) ? await detectNvidiaGpu() : false;
+  const composeContent = await resolveComposeContent(template, hasGpu);
   const existing = await db.query.apps.findFirst({
     where: and(eq(apps.name, template.name), isNull(apps.parentAppId)),
     columns: {
@@ -248,7 +250,6 @@ async function ensureAppDeployed(
   if (existing) {
     // cadvisor and collector: match gpuEnabled to host GPU availability
     if (READS_GPU.has(template.name)) {
-      const hasGpu = await detectNvidiaGpu();
       await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
       if (hasGpu) log.info(`${template.displayName}: GPU detected, enabled GPU metrics`);
     }
@@ -305,9 +306,6 @@ async function ensureAppDeployed(
   const project = await ensureProject(orgId, feature.project.name, feature.project.displayName);
   const appId = nanoid();
 
-  // cadvisor reads GPUs over NVML, the collector through nvidia-smi.
-  const gpuEnabled = READS_GPU.has(template.name) ? await detectNvidiaGpu() : false;
-
   try {
     await db.insert(apps).values({
       id: appId,
@@ -325,7 +323,7 @@ async function ensureAppDeployed(
       cpuLimit: template.defaultCpuLimit,
       memoryLimit: template.defaultMemoryLimit,
       diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
-      gpuEnabled,
+      gpuEnabled: hasGpu,
     });
   } catch (err) {
     // Unique constraint violation: a concurrent call created it.
@@ -369,8 +367,12 @@ async function ensureAppDeployed(
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
-/** Compose content for a template, with cadvisor's disk metrics setting applied. */
-async function resolveComposeContent(template: Template): Promise<string | null> {
+/** Compose content for a template, with cadvisor's disk metrics setting and the collector's GPU access applied. */
+async function resolveComposeContent(template: Template, hasGpu: boolean): Promise<string | null> {
+  if (template.name === "collector" && template.composeContent) {
+    const { applyCollectorGpu } = await import("@/lib/infra/collector-compose");
+    return applyCollectorGpu(template.composeContent, hasGpu);
+  }
   if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
   const { getCadvisorConfig, applyCadvisorDiskMetrics, cadvisorWalksDisk } = await import("@/lib/infra/cadvisor-config");
   const { diskMetricsEnabled } = await getCadvisorConfig();
