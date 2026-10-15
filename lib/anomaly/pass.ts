@@ -66,8 +66,8 @@ const state: State = (globalForAnomaly.__vardo_anomaly ??= {
   pidsReset: false,
 });
 
-/** When the collector became the metrics source and pids samples started to be thread counts. */
-export const COLLECTOR_PIDS_SINCE = Date.UTC(2026, 9, 15, 2, 30);
+/** Every pids sample before collector process counts: cAdvisor reported 0 and the collector reported threads. */
+export const PIDS_RELEARN_SINCE = 0;
 
 type WatchedApp = AppRef & {
   organizationId: string;
@@ -214,7 +214,7 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
 
   if (!state.pidsReset) {
     try {
-      await resetPidsSamples(COLLECTOR_PIDS_SINCE, now);
+      await resetPidsSamples(PIDS_RELEARN_SINCE, now);
       state.pidsReset = true;
     } catch (err) {
       log.warn("Pids sample reset failed:", (err as Error).message);
