@@ -12,7 +12,7 @@ import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
 import { backupLeaseHeld } from "./run-lease";
 import { backupFailureItem } from "./failure-alert";
-import { isUncapturedSource, volumeCoverage, type VolumeCoverage } from "./coverage";
+import { EMPTY_BIND_SKIP_LOG, isUncapturedSource, volumeCoverage, type VolumeCoverage } from "./coverage";
 import type { BackupSummaryEvent } from "@/lib/bus/events";
 import { UTC } from "@/lib/time-zone";
 import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
@@ -542,7 +542,14 @@ export async function loadStaleVolumes(organizationId: string, now: number) {
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
     })
     .from(backups)
-    .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
+    .where(
+      and(
+        eq(backups.organizationId, organizationId),
+        gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000)),
+        // Leaves out skips of an empty bind source that never held data, as the engine does.
+        sql`(${backups.status} <> 'skipped' or coalesce(${backups.log}, '') not like ${`%${EMPTY_BIND_SKIP_LOG}%`})`,
+      ),
+    )
     .groupBy(backups.appId, backups.volumeName);
   const stale = rows.filter((r) => r.volumeName && (!r.lastSuccess || now - r.lastSuccess.getTime() > STALE_MS));
   const appIds = [...new Set(stale.flatMap((r) => (r.appId ? [r.appId] : [])))];

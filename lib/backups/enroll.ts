@@ -11,7 +11,7 @@ import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { ensureAutoBackupJob, ensureAutoBackupJobOnTarget, resolveBackupTarget } from "./auto-backup";
 import { skipsAsConfig } from "./bind-config";
 import { isBackupSelected } from "./durability";
-import { resolveAppBackupSwitch } from "./switch";
+import { getSystemBackupsDefault, resolveAppBackupSwitch, resolveBackupSwitch } from "./switch";
 import {
   classifyVolume,
   parseMounts,
@@ -275,11 +275,18 @@ export async function listUncoveredApps(
   organizationId: string,
   { measure = true }: { measure?: boolean } = {},
 ): Promise<UncoveredApp[]> {
-  const orgApps = await db.query.apps.findMany({
-    where: and(eq(apps.organizationId, organizationId), isNull(apps.parentAppId)),
-    columns: { id: true, name: true, displayName: true, isSystemManaged: true },
-  });
-  const candidates = orgApps.filter((a) => !isVardoManagedApp(a));
+  const [orgApps, systemDefault] = await Promise.all([
+    db.query.apps.findMany({
+      where: and(eq(apps.organizationId, organizationId), isNull(apps.parentAppId)),
+      columns: { id: true, name: true, displayName: true, isSystemManaged: true, backupsEnabled: true },
+      with: { organization: { columns: { backupsEnabled: true } } },
+    }),
+    getSystemBackupsDefault().catch(() => true),
+  ]);
+  // An app with backups switched off is off, not uncovered.
+  const candidates = orgApps.filter(
+    (a) => !isVardoManagedApp(a) && resolveBackupSwitch(a.backupsEnabled, a.organization?.backupsEnabled, systemDefault).enabled,
+  );
   if (candidates.length === 0) return [];
 
   const links = await db.query.backupJobApps.findMany({
