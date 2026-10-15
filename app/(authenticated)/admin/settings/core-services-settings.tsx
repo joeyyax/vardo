@@ -46,6 +46,7 @@ export function CoreServicesSettings() {
   const [refreshing, setRefreshing] = useState(false);
   const [services, setServices] = useState<CoreService[]>([]);
   const [diskMetricsEnabled, setDiskMetricsEnabled] = useState(false);
+  const [diskMetricsApply, setDiskMetricsApply] = useState(false);
   const [savingDiskMetrics, setSavingDiskMetrics] = useState(false);
 
   const fetchServices = useCallback(async () => {
@@ -60,6 +61,7 @@ export function CoreServicesSettings() {
     if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
     setDiskMetricsEnabled(data.enabled ?? false);
+    setDiskMetricsApply(data.applies ?? false);
   }, []);
 
   useEffect(() => {
@@ -110,7 +112,6 @@ export function CoreServicesSettings() {
   }
 
   // The Disk metrics row follows the last metrics service.
-  const metricsOn = services.some((s) => s.flag === "metrics" && s.state !== "off");
   const lastMetricsService = services.findLast((s) => s.flag === "metrics" && s.state !== "retiring")?.name;
 
   if (loading) {
@@ -165,7 +166,7 @@ export function CoreServicesSettings() {
               )}
             </div>
           </div>
-          {service.name === lastMetricsService && metricsOn && (
+          {service.name === lastMetricsService && diskMetricsApply && (
             <div className="flex items-center justify-between gap-4 p-4">
               <div className="space-y-1">
                 <Label htmlFor="disk-metrics" className="text-sm font-medium">

@@ -5,6 +5,13 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getDiskMetricsEnabled, setDiskMetricsEnabled } from "@/lib/metrics/disk-setting";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { collectorMode } from "@/lib/collector/config";
+
+/** Sizes are read only alongside container metrics. */
+async function applies(): Promise<boolean> {
+  return collectorMode().kind !== "off" && (await isFeatureEnabledAsync("metrics"));
+}
 
 const bodySchema = z.object({ enabled: z.boolean() });
 
@@ -12,7 +19,7 @@ const bodySchema = z.object({ enabled: z.boolean() });
 async function handleGet() {
   try {
     await requireAppAdmin();
-    return NextResponse.json({ enabled: await getDiskMetricsEnabled() });
+    return NextResponse.json({ enabled: await getDiskMetricsEnabled(), applies: await applies() });
   } catch (error) {
     return handleRouteError(error, "metrics-disk-metrics");
   }
