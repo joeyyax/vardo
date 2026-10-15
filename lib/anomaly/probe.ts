@@ -48,6 +48,29 @@ export async function probeContainer(containerId: string): Promise<ContainerProb
   return { processes, ports: await readPorts(pid), hostNetwork };
 }
 
+/** Which of `ids` use another container's network namespace, each inspected once. */
+export function sharedNetworkSource(
+  networkMode: (id: string) => Promise<string | undefined> = async (id) =>
+    (await dockerRequest<{ HostConfig?: { NetworkMode?: string } }>("GET", `/containers/${encodeURIComponent(id)}/json`, undefined, { timeoutMs: 5000 }))?.HostConfig?.NetworkMode,
+): (ids: string[]) => Promise<Set<string>> {
+  const cache = new Map<string, boolean>();
+  return async (ids) => {
+    const live = new Set(ids);
+    for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
+    await Promise.all(
+      ids.filter((id) => !cache.has(id)).map(async (id) => {
+        try {
+          // Compose's `service:` arrives as `container:<id>`.
+          cache.set(id, (await networkMode(id))?.startsWith("container:") ?? false);
+        } catch {
+          // Tried again next pass.
+        }
+      }),
+    );
+    return new Set(ids.filter((id) => cache.get(id)));
+  };
+}
+
 export type AppPorts =
   /** Fold these into the allow-set. */
   | { action: "fold"; ports: string[] }

@@ -45,7 +45,11 @@ vi.mock("@/lib/anomaly/suppress", () => ({
   markActivity: () => {},
   quietApps: () => mocks.quiet,
 }));
-vi.mock("@/lib/anomaly/probe", () => ({ appPorts: () => ({ action: "keep" }), probeContainer: async () => ({ processes: [], ports: [] }) }));
+vi.mock("@/lib/anomaly/probe", () => ({
+  appPorts: () => ({ action: "keep" }),
+  probeContainer: async () => ({ processes: [], ports: [] }),
+  sharedNetworkSource: () => async () => new Set(),
+}));
 vi.mock("@/lib/notifications/observations", () => ({ settleAlerts: async () => {} }));
 
 const { anomalyObservations, GAP_HOLD_MS } = await import("@/lib/anomaly/pass");
