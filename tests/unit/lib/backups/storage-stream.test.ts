@@ -20,6 +20,7 @@ import {
 } from "@aws-sdk/client-s3";
 import {
   LARGE_PART_QUEUE,
+  LARGE_PART_SIZE,
   MAX_PART_SIZE,
   PART_QUEUE,
   PART_SIZE,
@@ -72,6 +73,32 @@ const sentParts = new Map<number, Buffer>();
 
 function sentBytes(): Buffer {
   return Buffer.concat([...sentParts.keys()].sort((a, b) => a - b).map((n) => sentParts.get(n)!));
+}
+
+/** Full-size buffers an upload of `parts` parts allocates when each part takes a few milliseconds to store. Buffers are reused, so this is its peak. */
+async function peakPartBuffers(partSize: number, parts: number): Promise<number> {
+  send.mockImplementation(async (command: unknown) => {
+    if (command instanceof CreateMultipartUploadCommand) return { UploadId: "up-1" };
+    if (command instanceof UploadPartCommand) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ETag: `"etag-${command.input.PartNumber}"` };
+    }
+    return {};
+  });
+  const chunk = Buffer.alloc(1024 * 1024);
+  const total = partSize * parts + 1;
+  const body = Readable.from(
+    (function* () {
+      for (let left = total; left > 0; left -= chunk.length) yield left < chunk.length ? chunk.subarray(0, left) : chunk;
+    })(),
+  );
+  const s3 = new S3BackupStorage({ bucket: "b", region: "auto", accessKeyId: "k", secretAccessKey: "s" }, { partSize });
+
+  expect((await s3.uploadStream("k", body)).sizeBytes).toBe(total);
+
+  const full = calls(UploadPartCommand).map((p) => p.input.Body as Buffer).filter((b) => b.length === partSize);
+  expect(full).toHaveLength(parts);
+  return new Set(full.map((b) => b.buffer)).size;
 }
 
 beforeEach(() => {
@@ -137,6 +164,14 @@ describe("S3 uploadStream", () => {
     const buffers = new Set(calls(UploadPartCommand).map((p) => (p.input.Body as Buffer).buffer));
     expect(buffers.size).toBeLessThanOrEqual(PART_QUEUE + 2);
     expect(sentBytes().equals(data)).toBe(true);
+  });
+
+  it("holds at most PART_QUEUE part buffers while every slot is busy", async () => {
+    expect(await peakPartBuffers(64 * 1024, 12)).toBe(PART_QUEUE);
+  });
+
+  it("holds at most LARGE_PART_QUEUE buffers for parts over LARGE_PART_SIZE", async () => {
+    expect(await peakPartBuffers(LARGE_PART_SIZE + 1024 * 1024, 4)).toBe(LARGE_PART_QUEUE);
   });
 
   it("retries a part that fails transiently", async () => {
