@@ -34,7 +34,6 @@ function deployedFiles(name: string) {
 
 /** Service each client resolves on the monitoring network. */
 const ATTACHED: Record<string, string> = {
-  cadvisor: "cadvisor",
   loki: "loki",
   promtail: "promtail",
   collector: "collector",

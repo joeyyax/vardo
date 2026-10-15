@@ -499,10 +499,10 @@ const entries = {
     term: "Watchdog",
     what: "Watches the console and restarts it if it stops responding.",
   },
-  "core-cadvisor": {
-    term: "cAdvisor",
+  "core-metrics": {
+    term: "Collector",
     label: "Metrics",
-    what: "Reads CPU, memory and network use for every container on the server. These pages are built from it.",
+    what: "Reads CPU, memory, network and GPU use for every container on the server. These pages are built from it.",
   },
   "core-logs": {
     term: "Loki/Promtail",

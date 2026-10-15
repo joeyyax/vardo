@@ -16,8 +16,9 @@ describe("nextInterval", () => {
     expect(nextInterval({ tickCount: 25, consecutiveFailures: 3 })).toBe(120000);
   });
 
-  it("caps the backoff at 15 minutes", () => {
-    expect(nextInterval({ tickCount: 25, consecutiveFailures: 19 })).toBe(15 * 60_000);
+  it("caps the backoff at 2 minutes", () => {
+    expect(nextInterval({ tickCount: 25, consecutiveFailures: 4 })).toBe(2 * 60_000);
+    expect(nextInterval({ tickCount: 25, consecutiveFailures: 500 })).toBe(2 * 60_000);
   });
 
   it("backs off during warmup too", () => {

@@ -26,7 +26,7 @@ describe("coreServiceKey", () => {
     ["vardo-traefik", null, "proxy"],
     ["vardo-buildkit", null, "builder"],
     ["vardo-watchdog", null, "watchdog"],
-    ["cadvisor", null, "metrics"],
+    ["collector", null, "metrics"],
     ["loki", null, "logs"],
     ["promtail", null, "logs"],
     ["vardo-wireguard", null, "mesh"],

@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
 import { backoffDelay } from "@/lib/net/backoff";
-import { isMetricsEnabled, initMetricsProvider } from "./config";
+import { isMetricsLoopEnabled, initMetricsProvider } from "./config";
 import { fetchAllMetrics, metricsPollIntervalMs } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
@@ -10,6 +10,7 @@ import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/col
 import { publishGpuSnapshot } from "@/lib/gpu/snapshot-store";
 import { setLatestSnapshot } from "./broadcast";
 import { IntervalLoop, type LoopRole } from "@/lib/worker/interval-loop";
+import { MetricsNotReadyError } from "./not-ready";
 
 const log = logger.child("collector");
 
@@ -17,7 +18,6 @@ type CollectorState = {
   started: boolean;
   tickCount: number;
   consecutiveFailures: number;
-  disabled: boolean;
   diskConsecutiveFailures: number;
   projectDiskConsecutiveFailures: number;
 };
@@ -32,7 +32,6 @@ const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= 
   started: false,
   tickCount: 0,
   consecutiveFailures: 0,
-  disabled: false,
   diskConsecutiveFailures: 0,
   projectDiskConsecutiveFailures: 0,
 });
@@ -46,10 +45,8 @@ const FAST_INTERVAL_MS = 5000;
 const NORMAL_INTERVAL_MS = 30000;
 const WARMUP_TICKS = 20;
 
-/** Cap on the exponential backoff between failed collections. */
-const MAX_BACKOFF_MS = 15 * 60_000;
-/** Consecutive failures before the collector stops polling. */
-const DISABLE_THRESHOLD = 20;
+/** Cap on the exponential backoff between failed collections. The loop never gives up. */
+const MAX_BACKOFF_MS = 2 * 60_000;
 
 /** Interval for the next tick. Failures back off exponentially; warmup never polls faster than the provider updates. */
 export function nextInterval(opts: { tickCount: number; consecutiveFailures: number; providerIntervalMs?: number }): number {
@@ -73,8 +70,8 @@ export function isCollectorRunning() {
 export async function startCollector(role: LoopRole = "web") {
   if (state.started) return;
   await initMetricsProvider();
-  if (!isMetricsEnabled()) {
-    log.info("Metrics collection disabled — no provider configured");
+  if (!isMetricsLoopEnabled()) {
+    log.info("Metrics collection disabled — the metrics feature is off");
     return;
   }
   state.started = true;
@@ -82,10 +79,9 @@ export async function startCollector(role: LoopRole = "web") {
   state.consecutiveFailures = 0;
   state.diskConsecutiveFailures = 0;
   state.projectDiskConsecutiveFailures = 0;
-  state.disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
-  // Returns null on non-GPU hosts.
+  // Null in off mode.
   initGpuCollector().catch((err) => {
     log.warn("GPU collector init failed:", (err as Error).message);
   });
@@ -107,7 +103,6 @@ export const collectorLoop = (globalForCollector.__vardo_metrics_collector_loop 
   run: async () => {
     await collect();
     state.tickCount++;
-    if (state.disabled) void collectorLoop.stop();
   },
 }));
 
@@ -134,14 +129,6 @@ async function collect() {
         if (m.diskWriteBytes !== null) {
           ops.push(storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service));
         }
-        if (m.gpuMemoryTotal > 0) {
-          ops.push(storeGpuMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
-            gpuUtilization: m.gpuUtilization,
-            gpuMemoryUsed: m.gpuMemoryUsed,
-            gpuMemoryTotal: m.gpuMemoryTotal,
-            gpuTemperature: m.gpuTemperature,
-          }, m.organizationId, service));
-        }
         return ops;
       })
     );
@@ -150,13 +137,10 @@ async function collect() {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
 
-    // Fill GPU data the provider didn't report.
+    // GPU readings from the collector, per container.
     const gpuCollector = getGpuCollector();
     if (gpuCollector) {
       try {
-        const containersWithGpu = new Set(
-          metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
-        );
         const gpuMetrics = await Promise.race([
           gpuCollector.collect(metrics),
           new Promise<never>((_, reject) =>
@@ -167,21 +151,19 @@ async function collect() {
         await publishGpuSnapshot(gpuMetrics).catch((err) => log.warn("GPU snapshot publish failed:", (err as Error).message));
         const ts = Date.now();
 
-        // The GPU resolver doesn't read labels; take the service from the metrics snapshot.
+        // GPU readings carry no labels; take the service from the metrics snapshot.
         const serviceByContainer = new Map(
           metrics.map((m) => [m.containerId, m.labels["com.docker.compose.service"] ?? null]),
         );
 
-        const gpuOps = gpuMetrics
-          .filter((gm) => !containersWithGpu.has(gm.containerId))
-          .map((gm) =>
-            storeGpuMetrics(gm.projectName, gm.containerId, gm.containerName, ts, {
-              gpuUtilization: gm.gpuUtilization,
-              gpuMemoryUsed: gm.gpuMemoryUsed,
-              gpuMemoryTotal: gm.gpuMemoryTotal,
-              gpuTemperature: gm.gpuTemperature,
-            }, gm.organizationId, serviceByContainer.get(gm.containerId) ?? null),
-          );
+        const gpuOps = gpuMetrics.map((gm) =>
+          storeGpuMetrics(gm.projectName, gm.containerId, gm.containerName, ts, {
+            gpuUtilization: gm.gpuUtilization,
+            gpuMemoryUsed: gm.gpuMemoryUsed,
+            gpuMemoryTotal: gm.gpuMemoryTotal,
+            gpuTemperature: gm.gpuTemperature,
+          }, gm.organizationId, serviceByContainer.get(gm.containerId) ?? null),
+        );
 
         if (gpuOps.length > 0) {
           const gpuResults = await Promise.allSettled(gpuOps);
@@ -201,22 +183,17 @@ async function collect() {
     }
     state.consecutiveFailures = 0;
   } catch (err) {
-    state.consecutiveFailures++;
-    // Log the first failure and the shutdown, not each retry.
-    if (state.consecutiveFailures === 1) {
-      log.error("Error:", (err as Error).message);
-    }
-    if (state.consecutiveFailures === DEGRADED_THRESHOLD) {
-      updateIntegrationHealth("degraded");
-    }
-    if (state.consecutiveFailures >= DISABLE_THRESHOLD) {
-      state.disabled = true;
-      log.error(
-        `Metrics collection disabled after ${state.consecutiveFailures} consecutive failures — ` +
-          `the provider is unreachable (${(err as Error).message}). ` +
-          `Check the metrics integration, then restart Vardo or re-toggle the metrics feature.`,
-      );
-      return;
+    // Up but not collected twice yet: a skipped tick, not a failure.
+    if (err instanceof MetricsNotReadyError) {
+      log.debug(`Skipped a tick: ${err.message}`);
+    } else {
+      state.consecutiveFailures++;
+      if (shouldLogPersistentFailure(state.consecutiveFailures)) {
+        log.error(`Error (${state.consecutiveFailures}x):`, (err as Error).message);
+      }
+      if (state.consecutiveFailures === DEGRADED_THRESHOLD) {
+        updateIntegrationHealth("degraded");
+      }
     }
   }
 
@@ -295,15 +272,9 @@ async function collect() {
 export function stopCollector(): Promise<void> {
   const stopped = collectorLoop.stop();
   state.started = false;
-  state.disabled = false;
   state.diskConsecutiveFailures = 0;
   state.projectDiskConsecutiveFailures = 0;
   return stopped;
-}
-
-/** True when the collector shut itself off after repeated provider failures. */
-export function isCollectorDisabled() {
-  return state.disabled;
 }
 
 /** Updates metrics integration status. Best-effort. */

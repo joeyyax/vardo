@@ -1,11 +1,8 @@
-// Per-container GPU readings from the collector, with the nvidia-smi probe as the fallback.
+// Per-container GPU readings from the collector.
 
 import type { CollectorClient, CollectorGpu } from "@/lib/collector/client";
-import { logger } from "@/lib/logger";
 import type { ContainerMetrics } from "@/lib/metrics/types";
 import type { ContainerGpuMetrics } from "./types";
-
-const log = logger.child("gpu-collector");
 
 /** Anything that turns a metrics snapshot into per-container GPU readings. */
 export interface ContainerGpuSource {
@@ -174,45 +171,5 @@ export class CollectorGpuCollector implements ContainerGpuSource {
       gpus,
       candidates.map((m) => ({ metrics: m, access: this.access.get(m.containerIdFull || m.containerId) ?? null })),
     );
-  }
-}
-
-/** How long a failing collector is skipped before it's tried again. */
-export const GPU_PRIMARY_RETRY_MS = 60_000;
-
-/** Reads the collector; while it fails, the probe (started on first need) serves. */
-export class FallbackGpuCollector implements ContainerGpuSource {
-  private failing = false;
-  private retryAt = 0;
-  private fallback: Promise<ContainerGpuSource | null> | null = null;
-
-  constructor(
-    private readonly primary: ContainerGpuSource,
-    private readonly initFallback: () => Promise<ContainerGpuSource | null>,
-    private readonly opts: { retryMs?: number; now?: () => number } = {},
-  ) {}
-
-  /** True while the probe is serving. */
-  isFallingBack(): boolean {
-    return this.failing;
-  }
-
-  async collect(containers: ContainerMetrics[]): Promise<ContainerGpuMetrics[]> {
-    const now = this.opts.now ?? Date.now;
-    if (!this.failing || now() >= this.retryAt) {
-      try {
-        const readings = await this.primary.collect(containers);
-        if (this.failing) log.info("Collector GPU readings recovered");
-        this.failing = false;
-        return readings;
-      } catch (err) {
-        if (!this.failing) log.warn(`Collector GPU readings failed (${(err as Error).message}); using the nvidia-smi probe`);
-        this.failing = true;
-        this.retryAt = now() + (this.opts.retryMs ?? GPU_PRIMARY_RETRY_MS);
-      }
-    }
-    this.fallback ??= this.initFallback().catch(() => null);
-    const probe = await this.fallback;
-    return probe ? probe.collect(containers) : [];
   }
 }

@@ -1,131 +1,8 @@
 import { logger } from "@/lib/logger";
-import type { ContainerGpuMetrics, ContainerResolver, GpuProvider } from "./types";
+import type { ContainerGpuMetrics } from "./types";
 import type { ContainerGpuSource, GpuInspect } from "./collector-source";
 
 const log = logger.child("gpu-collector");
-
-/** Produces per-container GPU metrics from a GpuProvider and ContainerResolver. Empty when no GPUs. */
-export class GpuMetricsCollector implements ContainerGpuSource {
-  private provider: GpuProvider;
-  private resolver: ContainerResolver;
-
-  constructor(provider: GpuProvider, resolver: ContainerResolver) {
-    this.provider = provider;
-    this.resolver = resolver;
-  }
-
-  /** Per-container GPU metrics: per-process memory with utilization split proportionally. */
-  async collect(): Promise<ContainerGpuMetrics[]> {
-    const [deviceMetrics, processes] = await Promise.all([
-      this.provider.getDeviceMetrics(),
-      this.provider.getProcesses(),
-    ]);
-
-    if (deviceMetrics.length === 0) return [];
-
-    const deviceByIndex = new Map(deviceMetrics.map((dm) => [dm.device.index, dm]));
-
-    type ResolvedProcess = {
-      containerId: string;
-      projectName: string;
-      containerName: string;
-      organizationId: string | null;
-      deviceIndex: number;
-      memoryUsed: number;
-    };
-
-    const resolveResults = await Promise.all(
-      processes.map(async (proc): Promise<ResolvedProcess | null> => {
-        const containerId = await this.resolver.pidToContainerId(proc.pid);
-        if (!containerId) return null;
-
-        const app = await this.resolver.containerIdToApp(containerId);
-        if (!app) return null;
-
-        return {
-          containerId,
-          projectName: app.projectName,
-          containerName: app.containerName,
-          organizationId: app.organizationId,
-          deviceIndex: proc.deviceIndex,
-          memoryUsed: proc.memoryUsed,
-        };
-      }),
-    );
-
-    const resolved = resolveResults.filter((r): r is ResolvedProcess => r !== null);
-
-    const byContainer = new Map<string, {
-      containerId: string;
-      containerName: string;
-      projectName: string;
-      organizationId: string | null;
-      totalMemoryUsed: number;
-      deviceIndices: Set<number>;
-    }>();
-
-    for (const rp of resolved) {
-      const key = rp.containerId;
-      const existing = byContainer.get(key);
-      if (existing) {
-        existing.totalMemoryUsed += rp.memoryUsed;
-        existing.deviceIndices.add(rp.deviceIndex);
-      } else {
-        byContainer.set(key, {
-          containerId: rp.containerId,
-          containerName: rp.containerName,
-          projectName: rp.projectName,
-          organizationId: rp.organizationId,
-          totalMemoryUsed: rp.memoryUsed,
-          deviceIndices: new Set([rp.deviceIndex]),
-        });
-      }
-    }
-
-    // Per-device total process memory.
-    const deviceProcessMemory = new Map<number, number>();
-    for (const rp of resolved) {
-      deviceProcessMemory.set(
-        rp.deviceIndex,
-        (deviceProcessMemory.get(rp.deviceIndex) || 0) + rp.memoryUsed,
-      );
-    }
-
-    const results: ContainerGpuMetrics[] = [];
-
-    for (const entry of byContainer.values()) {
-      // Utilization weighted by this container's share of process memory on each device.
-      let weightedUtil = 0;
-      let maxTemp = 0;
-      let totalDeviceMemory = 0;
-
-      for (const devIdx of entry.deviceIndices) {
-        const dm = deviceByIndex.get(devIdx);
-        if (!dm) continue;
-
-        const deviceTotal = deviceProcessMemory.get(devIdx) || 1;
-        const containerShare = entry.totalMemoryUsed / deviceTotal;
-
-        weightedUtil += dm.utilization * containerShare;
-        maxTemp = Math.max(maxTemp, dm.temperature);
-        totalDeviceMemory = Math.max(totalDeviceMemory, dm.memoryTotal);
-      }
-
-      results.push({
-        containerId: entry.containerId,
-        containerName: entry.containerName,
-        projectName: entry.projectName,
-        organizationId: entry.organizationId,
-        gpuUtilization: Math.round(weightedUtil * 100) / 100,
-        gpuMemoryUsed: entry.totalMemoryUsed,
-        gpuMemoryTotal: totalDeviceMemory,
-        gpuTemperature: maxTemp,
-      });
-    }
-
-    return results;
-  }
-}
 
 // Singleton on globalThis to survive Next.js module reloads.
 
@@ -134,51 +11,26 @@ const globalForGpu = globalThis as unknown as {
   __vardo_gpu_snapshot?: ContainerGpuMetrics[];
 };
 
-/** Initializes GPU collection: the collector when one is configured, else the nvidia-smi probe. */
+/** GPU readings come only from the collector; off mode has none. */
 export async function initGpuCollector(env: Record<string, string | undefined> = process.env): Promise<ContainerGpuSource | null> {
   if (globalForGpu.__vardo_gpu_collector) return globalForGpu.__vardo_gpu_collector;
 
   const { collectorMode, collectorTokenSource } = await import("@/lib/collector/config");
   const mode = collectorMode(env);
-  if (mode.kind !== "off") {
-    const { CollectorClient } = await import("@/lib/collector/client");
-    const { CollectorGpuCollector, FallbackGpuCollector } = await import("./collector-source");
-    const { dockerRequest } = await import("@/lib/docker/client");
-    const instance = new FallbackGpuCollector(
-      new CollectorGpuCollector(new CollectorClient(mode.url, collectorTokenSource(mode, env)), (id) =>
-        dockerRequest<GpuInspect>("GET", `/containers/${encodeURIComponent(id)}/json`),
-      ),
-      initProbeCollector,
-    );
-    globalForGpu.__vardo_gpu_collector = instance;
-    log.info(`GPU readings from the collector at ${mode.url}; the nvidia-smi probe is the fallback`);
-    return instance;
-  }
+  if (mode.kind === "off") return null;
 
-  const probe = await initProbeCollector();
-  if (probe) globalForGpu.__vardo_gpu_collector = probe;
-  return probe;
+  const { CollectorClient } = await import("@/lib/collector/client");
+  const { CollectorGpuCollector } = await import("./collector-source");
+  const { dockerRequest } = await import("@/lib/docker/client");
+  const instance = new CollectorGpuCollector(new CollectorClient(mode.url, collectorTokenSource(mode, env)), (id) =>
+    dockerRequest<GpuInspect>("GET", `/containers/${encodeURIComponent(id)}/json`),
+  );
+  globalForGpu.__vardo_gpu_collector = instance;
+  log.info(`GPU readings from the collector at ${mode.url}`);
+  return instance;
 }
 
-/** The nvidia-smi probe collector, or null without GPUs. */
-async function initProbeCollector(): Promise<GpuMetricsCollector | null> {
-  const { NvidiaProvider } = await import("./providers/nvidia");
-  const { DockerContainerResolver } = await import("./resolver");
-
-  const provider = new NvidiaProvider();
-  const devices = await provider.detectDevices();
-
-  if (devices.length === 0) {
-    log.info("No GPUs detected — GPU collector disabled");
-    return null;
-  }
-
-  const resolver = new DockerContainerResolver();
-  log.info(`GPU collector initialized — ${devices.length} ${provider.vendor} GPU(s): ${devices.map((d) => d.name).join(", ")}`);
-  return new GpuMetricsCollector(provider, resolver);
-}
-
-/** Current GPU source, or null without GPUs. */
+/** Current GPU source, or null in off mode. */
 export function getGpuCollector(): ContainerGpuSource | null {
   return globalForGpu.__vardo_gpu_collector ?? null;
 }

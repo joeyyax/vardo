@@ -243,7 +243,7 @@ export async function tickHealthMonitor(): Promise<void> {
     where: (t, { inArray }) => inArray(t.parentAppId, appIds),
   });
 
-  // One cAdvisor read for the fleet. cAdvisor uses 12-char short ids, so both sides are truncated.
+  // One metrics read for the fleet, keyed by 12-char short id on both sides.
   const usageByContainer = new Map<string, { usage: number; limit: number }>();
   try {
     for (const m of await fetchAllMetrics()) {

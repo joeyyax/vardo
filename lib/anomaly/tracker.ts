@@ -1,4 +1,4 @@
-// Per-app signal values from cAdvisor snapshots: summed gauges and per-container counter rates.
+// Per-app signal values from metrics snapshots: summed gauges and per-container counter rates.
 
 import type { ContainerMetrics } from "@/lib/metrics/types";
 import type { SignalKey } from "./signals";

@@ -463,7 +463,7 @@ export function OrgMetrics({ orgId, orgName, apps, projectCount, scope: scopeKin
           icon={Box}
           label="Containers"
           value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
-          detail={`reporting to cAdvisor now ${scopeIn}`}
+          detail={`reporting now ${scopeIn}`}
         />
       </div>
 
@@ -477,7 +477,7 @@ export function OrgMetrics({ orgId, orgName, apps, projectCount, scope: scopeKin
           <div className="space-y-0.5">
             <p className="type-body font-medium">Metrics stream unavailable</p>
             <p className="type-body-sm text-muted-foreground">
-              cAdvisor isn&apos;t reachable. Figures shown are the last values received.
+              Live metrics aren&apos;t arriving. Figures shown are the last values received.
             </p>
           </div>
         </Card>

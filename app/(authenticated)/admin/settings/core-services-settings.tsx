@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Card } from "@/components/ui/card";
 
-type CoreServiceState = "off" | "provisioned" | "conflict" | "missing-template" | "failed";
+type CoreServiceState = "off" | "provisioned" | "conflict" | "missing-template" | "failed" | "retiring";
 
 type CoreService = {
   name: string;
@@ -28,6 +28,7 @@ const STATE_LABEL: Record<CoreServiceState, string> = {
   conflict: "Name conflict",
   "missing-template": "Unavailable",
   failed: "Failed",
+  retiring: "Retiring",
 };
 
 const STATE_VARIANT: Record<CoreServiceState, "success" | "warning" | "error" | "neutral"> = {
@@ -37,6 +38,7 @@ const STATE_VARIANT: Record<CoreServiceState, "success" | "warning" | "error" | 
   conflict: "warning",
   "missing-template": "error",
   failed: "error",
+  retiring: "neutral",
 };
 
 export function CoreServicesSettings() {
@@ -44,6 +46,7 @@ export function CoreServicesSettings() {
   const [refreshing, setRefreshing] = useState(false);
   const [services, setServices] = useState<CoreService[]>([]);
   const [diskMetricsEnabled, setDiskMetricsEnabled] = useState(false);
+  const [diskMetricsApply, setDiskMetricsApply] = useState(false);
   const [savingDiskMetrics, setSavingDiskMetrics] = useState(false);
 
   const fetchServices = useCallback(async () => {
@@ -54,10 +57,11 @@ export function CoreServicesSettings() {
   }, []);
 
   const fetchDiskMetrics = useCallback(async () => {
-    const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics");
+    const res = await fetch("/api/v1/admin/metrics/disk-metrics");
     if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
-    setDiskMetricsEnabled(data.diskMetricsEnabled ?? false);
+    setDiskMetricsEnabled(data.enabled ?? false);
+    setDiskMetricsApply(data.applies ?? false);
   }, []);
 
   useEffect(() => {
@@ -87,10 +91,10 @@ export function CoreServicesSettings() {
     setSavingDiskMetrics(true);
     setDiskMetricsEnabled(next);
     try {
-      const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics", {
+      const res = await fetch("/api/v1/admin/metrics/disk-metrics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ diskMetricsEnabled: next }),
+        body: JSON.stringify({ enabled: next }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -98,20 +102,7 @@ export function CoreServicesSettings() {
         setDiskMetricsEnabled(!next);
         return;
       }
-      if (!data.installed) {
-        toast.success(`Disk metrics ${next ? "on" : "off"}`, {
-          description: "Applies once cAdvisor is installed.",
-        });
-      } else if (data.deploymentId) {
-        toast.success(`Disk metrics ${next ? "on" : "off"}`, {
-          description: "cAdvisor is redeploying.",
-        });
-        void fetchServices();
-      } else {
-        toast.error("Saved, but the redeploy failed", {
-          description: "Restart cAdvisor from Maintenance to apply it.",
-        });
-      }
+      toast.success(`Disk metrics ${next ? "on" : "off"}`);
     } catch {
       toast.error("Couldn't reach the server");
       setDiskMetricsEnabled(!next);
@@ -119,6 +110,9 @@ export function CoreServicesSettings() {
       setSavingDiskMetrics(false);
     }
   }
+
+  // The Disk metrics row follows the last metrics service.
+  const lastMetricsService = services.findLast((s) => s.flag === "metrics" && s.state !== "retiring")?.name;
 
   if (loading) {
     return (
@@ -146,7 +140,8 @@ export function CoreServicesSettings() {
 
       <Card variant="surface" className="divide-y">
         {services.map((service) => (
-          <div key={service.name} className="flex items-start justify-between gap-4 p-4">
+          <Fragment key={service.name}>
+          <div className="flex items-start justify-between gap-4 p-4">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">{service.displayName}</span>
@@ -154,35 +149,47 @@ export function CoreServicesSettings() {
                   {STATE_LABEL[service.state]}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Turned on by the <span className="font-medium">{service.flag}</span> flag.
-                {service.organization && (
-                  <> Installed in the {service.organization.name} organization.</>
-                )}
-              </div>
-              {service.detail && (
-                <div className="text-xs text-status-error">{service.detail}</div>
-              )}
-              {service.name === "cadvisor" && (
-                <div className="flex items-center gap-2 pt-1">
-                  {savingDiskMetrics && (
-                    <Loader2 className="size-3 animate-spin text-muted-foreground" aria-hidden />
+              {service.state === "retiring" ? (
+                service.detail && <div className="text-xs text-muted-foreground">{service.detail}</div>
+              ) : (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    Turned on by the <span className="font-medium">{service.flag}</span> flag.
+                    {service.organization && (
+                      <> Installed in the {service.organization.name} organization.</>
+                    )}
+                  </div>
+                  {service.detail && (
+                    <div className="text-xs text-status-error">{service.detail}</div>
                   )}
-                  <Switch
-                    id="cadvisor-disk-metrics"
-                    size="sm"
-                    checked={diskMetricsEnabled}
-                    disabled={savingDiskMetrics}
-                    onCheckedChange={handleToggleDiskMetrics}
-                    aria-label={`${diskMetricsEnabled ? "Disable" : "Enable"} disk metrics collection`}
-                  />
-                  <Label htmlFor="cadvisor-disk-metrics" className="text-xs font-normal text-muted-foreground">
-                    Per-container disk metrics — walks every container&apos;s filesystem; on raises cAdvisor to 512m
-                  </Label>
-                </div>
+                </>
               )}
             </div>
           </div>
+          {service.name === lastMetricsService && diskMetricsApply && (
+            <div className="flex items-center justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <Label htmlFor="disk-metrics" className="text-sm font-medium">
+                  Disk metrics
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Docker measures each container&apos;s writable layer about once an hour.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {savingDiskMetrics && (
+                  <Loader2 className="size-3 animate-spin text-muted-foreground" aria-hidden />
+                )}
+                <Switch
+                  id="disk-metrics"
+                  checked={diskMetricsEnabled}
+                  disabled={savingDiskMetrics}
+                  onCheckedChange={handleToggleDiskMetrics}
+                />
+              </div>
+            </div>
+          )}
+          </Fragment>
         ))}
       </Card>
 

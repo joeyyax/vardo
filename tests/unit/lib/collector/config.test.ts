@@ -8,9 +8,8 @@ vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: getSystemSettingR
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
 
 import { collectorMode, collectorToken, shouldProvisionCollector, DEFAULT_COLLECTOR_IMAGE, PROVISIONED_COLLECTOR_URL } from "@/lib/collector/config";
-import { withCollector } from "@/lib/metrics/config";
-import { FallbackMetricsProvider } from "@/lib/metrics/fallback-provider";
-import type { MetricsProvider } from "@/lib/metrics/provider";
+import { metricsProvider, NO_CONTAINER_METRICS } from "@/lib/metrics/config";
+import { CollectorMetricsProvider } from "@/lib/metrics/collector-provider";
 
 describe("collectorMode — precedence", () => {
   it("provisions the published image with neither variable", () => {
@@ -72,20 +71,16 @@ describe("collectorToken", () => {
   });
 });
 
-describe("withCollector", () => {
-  const cadvisor: MetricsProvider = { name: "cAdvisor", fetchAll: async () => [] };
-
-  it("keeps cAdvisor alone when the collector is off", () => {
-    expect(withCollector(cadvisor, { VARDO_COLLECTOR_IMAGE: "off" })).toBe(cadvisor);
+describe("metricsProvider", () => {
+  it("reads no container metrics when the collector is off", async () => {
+    const p = metricsProvider({ VARDO_COLLECTOR_IMAGE: "off" });
+    expect(p).toBe(NO_CONTAINER_METRICS);
+    await expect(p.fetchAll()).resolves.toEqual([]);
   });
 
-  it("puts the collector in front of cAdvisor in either mode", () => {
-    for (const env of [{ VARDO_COLLECTOR_URL: "http://collector:9273" }, { VARDO_COLLECTOR_IMAGE: "collector:3d51106" }]) {
-      const p = withCollector(cadvisor, env);
-      expect(p).toBeInstanceOf(FallbackMetricsProvider);
-      expect((p as FallbackMetricsProvider).fallback).toBe(cadvisor);
-    }
-    const p = withCollector(cadvisor, { VARDO_COLLECTOR_URL: "http://lab:9273", VARDO_COLLECTOR_IMAGE: "collector:x" }) as FallbackMetricsProvider;
-    expect(p.primary.name).toBe("collector at http://lab:9273");
+  it("reads the collector alone in either mode", () => {
+    expect(metricsProvider({ VARDO_COLLECTOR_IMAGE: "collector:3d51106" })).toBeInstanceOf(CollectorMetricsProvider);
+    const p = metricsProvider({ VARDO_COLLECTOR_URL: "http://lab:9273", VARDO_COLLECTOR_IMAGE: "collector:x" });
+    expect(p.name).toBe("collector at http://lab:9273");
   });
 });

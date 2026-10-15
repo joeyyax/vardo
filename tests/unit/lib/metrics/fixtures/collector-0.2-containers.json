@@ -1,101 +1,34 @@
 [
   {
-    "id": "2f6b7dda317349d1d84c09f510fad4329ddb7e080d2d3c3ab103471b0e828537",
-    "name": "cadvisor-production-green-cadvisor-1",
-    "image": "gcr.io/cadvisor/cadvisor:v0.55.1",
-    "labels": {
-      "com.docker.compose.project": "cadvisor-production-green",
-      "com.docker.compose.service": "cadvisor",
-      "vardo.environment": "production",
-      "vardo.organization": "bHLg3AbBrUFsUexeKZw0M",
-      "vardo.project": "cadvisor",
-      "vardo.project.id": "PUi2_6S4t9W4I10Y61cdZ"
-    },
-    "pid": 2193,
-    "network_mode": "vardo-monitoring",
-    "started_at": "2026-10-14T15:23:51.746910835Z",
-    "created": "2026-10-14T04:44:34.865775848Z",
-    "cpu": {
-      "usage_seconds_total": 37.723792,
-      "usage_cores": 0.0,
-      "limit_cores": 8.99999,
-      "throttled_periods_total": 0,
-      "throttled_seconds_total": 0.0
-    },
-    "memory": {
-      "usage_bytes": 18104320,
-      "working_set_bytes": 17547264,
-      "peak_bytes": 38277120,
-      "limit_bytes": 268435456,
-      "rss_bytes": 10469376,
-      "cache_bytes": 7446528,
-      "swap_bytes": 3342336,
-      "oom_kills_total": 0
-    },
-    "io": [
-      {
-        "device": "/dev/zram0",
-        "read_bytes_total": 61980672,
-        "write_bytes_total": 75390976
-      },
-      {
-        "device": "/dev/vda",
-        "read_bytes_total": 1404928,
-        "write_bytes_total": 0
-      },
-      {
-        "device": "/dev/vdb",
-        "read_bytes_total": 4287971328,
-        "write_bytes_total": 0
-      }
-    ],
-    "network": [
-      {
-        "interface": "eth0",
-        "receive_bytes_total": 11556,
-        "transmit_bytes_total": 4009,
-        "receive_bytes_per_second": 0.0,
-        "transmit_bytes_per_second": 0.0
-      }
-    ],
-    "pids": {
-      "current": 15,
-      "limit": 4096
-    },
-    "gpus": [],
-    "collected_at": 1792033890.739,
-    "interval_seconds": 15.0
-  },
-  {
-    "id": "a4380583abbe106b377f3dd664a51e942c25d0e91b518ba449cd6f00d8fb5f4a",
-    "name": "collector-fixture-tmp",
+    "id": "41e37c8e5fea7bb6200e65d6c5488b79dbc55d04f6c5b42dfd1a6d5e5a42afcf",
+    "name": "fixture-collector-b",
     "image": "ghcr.io/joeyyax/collector:0.2.0",
     "labels": {},
-    "pid": 1366729,
+    "pid": 1410031,
     "network_mode": "bridge",
-    "started_at": "2026-10-15T03:11:00.499837126Z",
-    "created": "2026-10-15T03:11:00.32816525Z",
+    "started_at": "2026-10-15T03:36:55.551916297Z",
+    "created": "2026-10-15T03:36:55.443803431Z",
     "cpu": {
-      "usage_seconds_total": 0.476498,
-      "usage_cores": 0.010776213782538367,
+      "usage_seconds_total": 0.630754,
+      "usage_cores": 0.017851139600315313,
       "limit_cores": null,
       "throttled_periods_total": 0,
       "throttled_seconds_total": 0.0
     },
     "memory": {
-      "usage_bytes": 17858560,
-      "working_set_bytes": 17858560,
-      "peak_bytes": 18849792,
+      "usage_bytes": 19660800,
+      "working_set_bytes": 19660800,
+      "peak_bytes": 20242432,
       "limit_bytes": null,
-      "rss_bytes": 17199104,
-      "cache_bytes": 0,
+      "rss_bytes": 16097280,
+      "cache_bytes": 3215360,
       "swap_bytes": 0,
       "oom_kills_total": 0
     },
     "io": [
       {
         "device": "/dev/vdb",
-        "read_bytes_total": 49152,
+        "read_bytes_total": 3284992,
         "write_bytes_total": 0
       }
     ],
@@ -109,11 +42,73 @@
       }
     ],
     "pids": {
-      "current": 14,
+      "current": 13,
       "limit": null
     },
     "gpus": [],
-    "collected_at": 1792033890.739,
+    "collected_at": 1792035445.782,
+    "interval_seconds": 15.0
+  },
+  {
+    "id": "27c699e6dc7e473cb5142e9008a59f0e374a9f06226a5dfaf414f5bb35b953d3",
+    "name": "promtail-production-green-promtail-1",
+    "image": "grafana/promtail:3.6",
+    "labels": {
+      "com.docker.compose.project": "promtail-production-green",
+      "com.docker.compose.service": "promtail",
+      "vardo.environment": "production",
+      "vardo.organization": "bHLg3AbBrUFsUexeKZw0M",
+      "vardo.project": "promtail",
+      "vardo.project.id": "FcZdxGloVT1bYD3rfZhOA"
+    },
+    "pid": 2194,
+    "network_mode": "vardo-monitoring",
+    "started_at": "2026-10-14T15:23:51.741135044Z",
+    "created": "2026-10-14T04:44:54.072663026Z",
+    "cpu": {
+      "usage_seconds_total": 479.050315,
+      "usage_cores": 0.011216648453405736,
+      "limit_cores": 8.99999,
+      "throttled_periods_total": 0,
+      "throttled_seconds_total": 0.0
+    },
+    "memory": {
+      "usage_bytes": 89460736,
+      "working_set_bytes": 63197184,
+      "peak_bytes": 177287168,
+      "limit_bytes": 268435456,
+      "rss_bytes": 58556416,
+      "cache_bytes": 29732864,
+      "swap_bytes": 3788800,
+      "oom_kills_total": 0
+    },
+    "io": [
+      {
+        "device": "/dev/zram0",
+        "read_bytes_total": 281780224,
+        "write_bytes_total": 324952064
+      },
+      {
+        "device": "/dev/vdb",
+        "read_bytes_total": 26328854528,
+        "write_bytes_total": 2295791616
+      }
+    ],
+    "network": [
+      {
+        "interface": "eth0",
+        "receive_bytes_total": 10794,
+        "transmit_bytes_total": 2380,
+        "receive_bytes_per_second": 0.0,
+        "transmit_bytes_per_second": 0.0
+      }
+    ],
+    "pids": {
+      "current": 16,
+      "limit": 4096
+    },
+    "gpus": [],
+    "collected_at": 1792035445.782,
     "interval_seconds": 15.0
   },
   {
@@ -129,39 +124,39 @@
     "started_at": "2026-10-14T15:23:51.677900002Z",
     "created": "2026-10-13T05:07:17.292149541Z",
     "cpu": {
-      "usage_seconds_total": 836.126534,
-      "usage_cores": 0.010656255929671518,
+      "usage_seconds_total": 853.930057,
+      "usage_cores": 0.013023551162553429,
       "limit_cores": null,
       "throttled_periods_total": 0,
       "throttled_seconds_total": 0.0
     },
     "memory": {
-      "usage_bytes": 120696832,
-      "working_set_bytes": 98103296,
+      "usage_bytes": 120143872,
+      "working_set_bytes": 95891456,
       "peak_bytes": 362074112,
       "limit_bytes": 1073741824,
       "rss_bytes": 2637824,
-      "cache_bytes": 115961856,
+      "cache_bytes": 114757632,
       "swap_bytes": 46100480,
       "oom_kills_total": 0
     },
     "io": [
       {
         "device": "/dev/zram0",
-        "read_bytes_total": 901627904,
+        "read_bytes_total": 901636096,
         "write_bytes_total": 987435008
       },
       {
         "device": "/dev/vdb",
-        "read_bytes_total": 9498279936,
-        "write_bytes_total": 8029130752
+        "read_bytes_total": 9761419264,
+        "write_bytes_total": 8058892288
       }
     ],
     "network": [
       {
         "interface": "eth0",
-        "receive_bytes_total": 243913314,
-        "transmit_bytes_total": 193033104,
+        "receive_bytes_total": 244857192,
+        "transmit_bytes_total": 193703823,
         "receive_bytes_per_second": 0.0,
         "transmit_bytes_per_second": 0.0
       }
@@ -171,7 +166,7 @@
       "limit": null
     },
     "gpus": [],
-    "collected_at": 1792033890.739,
+    "collected_at": 1792035445.782,
     "interval_seconds": 15.0
   }
 ]

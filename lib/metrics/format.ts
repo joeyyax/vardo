@@ -34,7 +34,7 @@ export function formatBytesRateShort(bytes: number): string {
   return `${formatBytesShort(bytes)}/s`;
 }
 
-// CPU. cAdvisor reports per-core percent: 100 is one saturated core.
+// CPU, in percent of one core: 100 is one saturated core.
 
 const PERCENT_PER_CORE = 100;
 

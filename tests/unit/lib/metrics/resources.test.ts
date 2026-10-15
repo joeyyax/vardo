@@ -273,16 +273,15 @@ describe("absent metrics", () => {
     expect(snap.cpu.absence).toBe("stale");
   });
 
-  it("reports disk writes as not collected when cAdvisor stores nothing", () => {
+  it("reports disk writes as not collected when nothing is stored", () => {
     const snap = snapshotFor(PARENT);
 
     expect(snap.extras.diskWrite.usage).toBeNull();
     expect(snap.extras.diskWrite.absence).toBe("not-collected");
   });
 
-  // cAdvisor runs with --disable_metrics=diskIO and the collector stored the
-  // resulting nothing as 0 for seven days. Those stale zeros must not read as
-  // "wrote nothing" once the collector stops writing them.
+  // A source that reported no disk writes was once stored as 0 for seven days.
+  // Those stale zeros must not read as "wrote nothing".
   it("reports a counter flat at zero all window as not collected", () => {
     const zeros: Spec[] = [
       ...STACK,

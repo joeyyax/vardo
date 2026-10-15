@@ -57,12 +57,12 @@ describe("selectActiveServiceAlerts", () => {
     const active = selectActiveServiceAlerts(
       {
         "service-degraded:Traefik": { lastFired: minutesAgo(1), count: 1 },
-        "service-degraded:cAdvisor": { lastFired: minutesAgo(1), count: 1 },
+        "service-degraded:dnsmasq": { lastFired: minutesAgo(1), count: 1 },
         "service-degraded:Loki": { lastFired: minutesAgo(1), count: 1 },
       },
       NOW,
     );
-    expect(active.map((a) => a.name)).toEqual(["cAdvisor", "Loki", "Traefik"]);
+    expect(active.map((a) => a.name)).toEqual(["dnsmasq", "Loki", "Traefik"]);
   });
 
   it("survives a malformed or empty ledger", () => {

@@ -63,7 +63,7 @@ describe("AppRateTracker", () => {
     expect(r.values.egress).toBeUndefined();
   });
 
-  it("leaves out the process count when cAdvisor doesn't report it", () => {
+  it("leaves out the process count when the source doesn't report it", () => {
     const r = new AppRateTracker().observe("a1", [container("c1", 0, { rx: 0, tx: 0, pids: null })]);
     expect(r.values.pids).toBeUndefined();
   });

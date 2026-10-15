@@ -161,13 +161,13 @@ describe("SERVICE_PROBES", () => {
   });
 
   it("keeps the HTTP probes on their 2s budget", () => {
-    for (const name of ["cAdvisor", "Loki", "Traefik"]) {
+    for (const name of ["Collector", "Loki", "Traefik"]) {
       expect(SERVICE_PROBES.find((p) => p.name === name)?.timeoutMs).toBe(2000);
     }
   });
 
-  it("points cAdvisor and Loki at their own app logs", () => {
-    expect(SERVICE_PROBES.find((p) => p.name === "cAdvisor")?.logsApp).toBe("cadvisor");
+  it("points the collector and Loki at their own app logs", () => {
+    expect(SERVICE_PROBES.find((p) => p.name === "Collector")?.logsApp).toBe("collector");
     expect(SERVICE_PROBES.find((p) => p.name === "Loki")?.logsApp).toBe("loki");
   });
 
@@ -192,7 +192,7 @@ describe("probes for disabled features", () => {
   const touched = [
     "VARDO_FEATURE_METRICS",
     "VARDO_FEATURE_LOGGING",
-    "CADVISOR_URL",
+    "VARDO_COLLECTOR_URL",
   ];
 
   afterEach(() => {
@@ -201,16 +201,16 @@ describe("probes for disabled features", () => {
 
   it("reports nothing for a core service whose flag is off", async () => {
     process.env.VARDO_FEATURE_METRICS = "false";
-    await expect(checkServiceByName("cAdvisor")).resolves.toBeNull();
+    await expect(checkServiceByName("Collector")).resolves.toBeNull();
   });
 
   it("still probes the same service once the flag is on", async () => {
     const server = await listen((res) => res.end("ok"));
     process.env.VARDO_FEATURE_METRICS = "true";
-    process.env.CADVISOR_URL = urlOf(server);
+    process.env.VARDO_COLLECTOR_URL = urlOf(server);
 
-    await expect(checkServiceByName("cAdvisor")).resolves.toMatchObject({
-      name: "cAdvisor",
+    await expect(checkServiceByName("Collector")).resolves.toMatchObject({
+      name: "Collector",
       status: "healthy",
     });
 

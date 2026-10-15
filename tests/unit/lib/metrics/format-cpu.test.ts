@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cpuDisplay, formatCores, formatCoresShort } from "@/lib/metrics/format";
 
-// cAdvisor percent: 100 is one core saturated.
+// Percent of one core: 100 is one core saturated.
 const HOST = { kind: "capacity", cores: 32 } as const;
 
 describe("formatCores", () => {

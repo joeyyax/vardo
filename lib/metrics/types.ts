@@ -14,19 +14,19 @@ export type ContainerMetrics = {
   memoryPercent: number;
   networkRxBytes: number;
   networkTxBytes: number;
-  /** Container filesystem bytes. Null when cAdvisor reports no filesystem stats. */
+  /** Writable-layer bytes. Null while Disk metrics are off or not yet measured. */
   diskUsage: number | null;
   diskLimit: number | null;
   /** When diskUsage was measured, ms. Unset means with this sample. */
   diskUsageAt?: number | null;
-  /** Cumulative block I/O writes. Null when cAdvisor reports no io_service_bytes. */
+  /** Cumulative block I/O writes. Null when the source reports none. */
   diskWriteBytes: number | null;
-  /** Processes in the container. Absent when cAdvisor doesn't report process stats. */
+  /** Processes in the container. Absent when the source doesn't report them. */
   processCount?: number | null;
-  gpuUtilization: number; // percent (summed duty_cycle across accelerators)
+  gpuUtilization: number; // percent
   gpuMemoryUsed: number; // bytes
   gpuMemoryTotal: number; // bytes
-  gpuTemperature: number; // Celsius (average across accelerators)
+  gpuTemperature: number; // Celsius
   /** GPU memory the container's processes hold, by device UUID. Only from a collector that reports it. */
   gpus?: { uuid: string; memoryUsedBytes: number }[];
   timestamp: number;

@@ -18,8 +18,6 @@ export type CoreServiceDef = {
   kind: CoreServiceKind;
   /** Provisioned only when this returns true. Unset means always, with the flag. */
   enabled?: () => boolean;
-  /** A failed deploy is recorded but doesn't fail or roll back the flag's other services. */
-  optional?: boolean;
 };
 
 /** A feature flag and the core services it turns on, governing provisioning and every org's access. */
@@ -34,9 +32,8 @@ export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
   {
     flag: "metrics",
     services: [
-      { name: "cadvisor", displayName: "cAdvisor", kind: "host-agent" },
-      // cAdvisor stays as the fallback until the collector is proven across installs.
-      { name: "collector", displayName: "Collector", kind: "host-agent", enabled: () => shouldProvisionCollector(), optional: true },
+      // A collector given by VARDO_COLLECTOR_URL is the operator's to run.
+      { name: "collector", displayName: "Collector", kind: "host-agent", enabled: () => shouldProvisionCollector() },
     ],
     project: { name: "metrics", displayName: "Metrics" },
   },
@@ -55,9 +52,12 @@ export const CORE_SERVICE_NAMES: string[] = CORE_SERVICE_FEATURES.flatMap((f) =>
   f.services.map((s) => s.name),
 );
 
-/** True when this app name belongs to an instance-level core service. */
+/** Core services Vardo no longer runs. A leftover row stays instance infrastructure until it's removed. */
+export const RETIRED_CORE_SERVICE_NAMES: string[] = ["cadvisor"];
+
+/** True when this app name belongs to an instance-level core service, retired ones included. */
 export function isCoreServiceApp(name: string): boolean {
-  return CORE_SERVICE_NAMES.includes(name);
+  return CORE_SERVICE_NAMES.includes(name) || RETIRED_CORE_SERVICE_NAMES.includes(name);
 }
 
 /** Flags that provision a shared, instance-level service. */
@@ -80,7 +80,9 @@ export type CoreServiceState =
   /** The built-in template is missing from the templates directory. */
   | "missing-template"
   /** The app exists but its deploy failed. */
-  | "failed";
+  | "failed"
+  /** A retired service still installed, kept until it's safe to remove. */
+  | "retiring";
 
 export type CoreServiceStatus = {
   name: string;
@@ -126,16 +128,38 @@ export async function recordCoreServiceStatus(
   }
 }
 
+/** Drop a service from the stored record. Best-effort — never throws. */
+export async function removeCoreServiceStatus(name: string): Promise<void> {
+  try {
+    const current = await readCoreServiceStatus();
+    if (!(name in current)) return;
+    delete current[name];
+    const { setSystemSetting } = await import("@/lib/system-settings");
+    await setSystemSetting(CORE_SERVICES_STATUS_KEY, JSON.stringify(current));
+  } catch (err) {
+    log.error("Failed to update core service status:", err);
+  }
+}
+
 /** Whether a service of an enabled flag is provisioned on this install. */
 export function isCoreServiceEnabled(service: CoreServiceDef): boolean {
   return service.enabled ? service.enabled() : true;
 }
 
-/** Every core service with its last recorded outcome. Never-provisioned services report "off". */
+/** Every core service with its last recorded outcome, then retired ones still recorded. Never-provisioned services report "off". */
 export function summarizeCoreServices(
   stored: StatusRecord,
   flagState: Record<string, boolean>,
 ): CoreServiceStatus[] {
+  const retired = RETIRED_CORE_SERVICE_NAMES.flatMap((name) => {
+    const status = stored[name];
+    if (!status) return [];
+    return [{ ...status, state: "retiring" as const, detail: status.state === "retiring" ? status.detail : null }];
+  });
+  return [...currentCoreServices(stored, flagState), ...retired];
+}
+
+function currentCoreServices(stored: StatusRecord, flagState: Record<string, boolean>): CoreServiceStatus[] {
   return CORE_SERVICE_FEATURES.flatMap((feature) =>
     feature.services.map((service) => {
       const enabled = (flagState[feature.flag] ?? false) && isCoreServiceEnabled(service);
