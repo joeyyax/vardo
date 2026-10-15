@@ -25,7 +25,6 @@ const FILES = ROOTS.flatMap((root) => sources(join(process.cwd(), root)));
 
 /** Every surface that turns `needsRedeploy` into a label. */
 const LABEL_SOURCES = [
-  "components/app-row-card.tsx",
   "app/(authenticated)/projects/[...slug]/project-detail.tsx",
   "app/(authenticated)/apps/[...slug]/app-detail.tsx",
   "app/(authenticated)/apps/[...slug]/compose-detail.tsx",

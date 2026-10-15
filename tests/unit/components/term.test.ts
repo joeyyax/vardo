@@ -41,3 +41,22 @@ describe("Term", () => {
     expect(html).toContain(`<span hidden="" id="${describedBy}">`);
   });
 });
+
+describe("Term with a note", () => {
+  const why = "Another deploy of this app is using its checkout";
+  const html = (passive: boolean) => renderToStaticMarkup(createElement(Term, { note: why, passive } as Parameters<typeof Term>[0], "Queued"));
+
+  it("is a button that opens the note on tap, described by it", () => {
+    const out = html(false);
+    const tag = out.match(/<button[^>]*data-term="note"[^>]*>/)?.[0] ?? "";
+    expect(attr(tag, "aria-haspopup")).toBe("dialog");
+    const describedBy = attr(tag, "aria-describedby");
+    expect(out).toContain(`<span hidden="" id="${describedBy}">${why}</span>`);
+    expect(out).toContain(">Queued</button>");
+  });
+
+  it("drops the tab stop when passive", () => {
+    expect(html(true)).not.toContain("<button");
+    expect(html(true)).toContain(`>${why}</span>`);
+  });
+});

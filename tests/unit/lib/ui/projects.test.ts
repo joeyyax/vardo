@@ -3,9 +3,11 @@ import type { AppCondition } from "@/lib/docker/conditions";
 import { problem } from "@/lib/ui/conditions";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import {
+  appsIn,
   buildSections,
   buildTree,
   fleetCounts,
+  deployViewOf,
   issueGroups,
   markSubject,
   sortNodes,
@@ -172,5 +174,67 @@ describe("issueGroups", () => {
       ["backups", 2],
     ]);
     expect(fleetCounts(sections)).toMatchObject({ attention: 3, critical: 1, backupsOverdue: 2, running: 2 });
+  });
+});
+
+describe("deploys in flight", () => {
+  const deploy = (status: string, waitReason: string | null = null, held = false) => ({
+    id: status,
+    status,
+    trigger: "manual",
+    gitSha: null,
+    startedAt: "2026-10-01T00:00:00.000Z",
+    finishedAt: null,
+    durationMs: null,
+    waitReason,
+    waitingSince: waitReason ? "2026-10-01T00:01:00.000Z" : null,
+    request: held ? { held: true } : null,
+    stage: status === "running" ? "build" : null,
+  });
+  const project = { id: "p1", name: "one", displayName: "One", isSystemManaged: false, createdAt: null };
+
+  it("counts deploys that haven't started apart from those that have", () => {
+    const sections = buildSections(
+      [project],
+      [
+        app("a-running", { status: "deploying", deployments: [deploy("running")] }),
+        app("b-queued", { deployments: [deploy("queued", "deploy-slot"), deploy("success")] }),
+        // Queued behind its own running deploy: the running one is at work.
+        app("c-both", { status: "deploying", deployments: [deploy("queued", "app"), deploy("running")] }),
+        // Started, then queued to build: still deploying.
+        app("d-builder", { status: "deploying", deployments: [deploy("running", "build-slot")] }),
+        app("e-preparing", { deployments: [deploy("queued", null, true)] }),
+        app("f-idle", { deployments: [deploy("success")] }),
+      ],
+    );
+    expect(fleetCounts(sections)).toMatchObject({ deploying: 3, queued: 2 });
+    const label = (name: string) => deployViewOf(sections[0].nodes.find((n) => n.app.name === name)!.app)?.label;
+    expect(label("b-queued")).toBe("Queued");
+    expect(label("d-builder")).toBe("Queued");
+    expect(label("a-running")).toBe("Deploying");
+    expect(label("e-preparing")).toBe("Preparing");
+    expect(label("c-both")).toBe("Deploying");
+    expect(label("f-idle")).toBeUndefined();
+  });
+
+  it("reads a claimed row with no phase yet as starting", () => {
+    const claimed = { ...deploy("running"), stage: null };
+    expect(deployViewOf({ status: "deploying", deployments: [claimed] })).toMatchObject({ word: "Starting", label: "Starting" });
+    expect(fleetCounts(buildSections([project], [app("a", { status: "deploying", deployments: [claimed] })]))).toMatchObject({ deploying: 1, queued: 0 });
+  });
+
+  it("reads a queued row with no reason yet as queued", () => {
+    expect(deployViewOf({ status: "active", deployments: [deploy("queued")] })).toMatchObject({ word: "Queued", label: "Queued" });
+  });
+
+  it("lists deploys at work before queued ones", () => {
+    const sections = buildSections(
+      [project],
+      [
+        app("a-queued", { deployments: [deploy("queued")] }),
+        app("b-running", { status: "deploying", deployments: [deploy("running")] }),
+      ],
+    );
+    expect(appsIn(sections, "deploying").map((l) => l.node.app.name)).toEqual(["b-running", "a-queued"]);
   });
 });

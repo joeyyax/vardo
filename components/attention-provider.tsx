@@ -19,6 +19,7 @@ import {
   type BarSummary,
   type GroupedItem,
 } from "@/lib/ui/attention";
+import { takeWorkerRow, type WorkerOutage } from "@/lib/ui/system-status";
 
 const POLL_MS = 60_000;
 /** While Vardo updates, so the banner clears soon after. */
@@ -29,6 +30,8 @@ type AttentionContextValue = {
   summary: BarSummary;
   /** False until the org's rows first arrive. */
   loaded: boolean;
+  /** The missing worker, which the status chip shows instead of the bar. */
+  worker: WorkerOutage | null;
   runner: AttentionRunner;
 };
 
@@ -85,7 +88,8 @@ export function AttentionProvider({ orgId, children }: { orgId: string; children
     if (infra.resolvedAt !== null) router.refresh();
   }, [infra.resolvedAt, router]);
 
-  const rows = useMemo(() => mergeAttentionRows(infra.rows, orgRows), [infra.rows, orgRows]);
+  const split = useMemo(() => takeWorkerRow(orgRows), [orgRows]);
+  const rows = useMemo(() => mergeAttentionRows(infra.rows, split.rows), [infra.rows, split.rows]);
   const summary = useMemo(() => summarize(rows), [rows]);
 
   const { busy, run } = fixes;
@@ -104,7 +108,7 @@ export function AttentionProvider({ orgId, children }: { orgId: string; children
     [busy, run, load, router],
   );
 
-  const value = useMemo(() => ({ rows, summary, loaded, runner }), [rows, summary, loaded, runner]);
+  const value = useMemo(() => ({ rows, summary, loaded, worker: split.worker, runner }), [rows, summary, loaded, split.worker, runner]);
   return <AttentionContext.Provider value={value}>{children}</AttentionContext.Provider>;
 }
 

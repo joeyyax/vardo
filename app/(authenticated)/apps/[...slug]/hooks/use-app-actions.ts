@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "@/lib/messenger";
+import { activeDeployId } from "@/hooks/use-bump-deploy";
 import type { SlotStatus } from "../types";
 
 /** Cancels the running or queued deploy. A running deploy reports "cancelling" until its phase ends. */
@@ -13,17 +14,7 @@ export function useCancelDeploy(orgId: string, appId: string) {
     async (deploymentId?: string) => {
       setCancelling(true);
       try {
-        let targetId = deploymentId;
-        if (!targetId) {
-          const appRes = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`);
-          if (appRes.ok) {
-            const { app: appData } = await appRes.json();
-            const active = appData.deployments?.find(
-              (d: { status: string }) => d.status === "running" || d.status === "queued",
-            );
-            targetId = active?.id;
-          }
-        }
+        const targetId = deploymentId ?? (await activeDeployId(orgId, appId));
         if (!targetId) {
           toast.error("No active deployment to cancel");
           return false;

@@ -25,6 +25,7 @@ export default async function ProjectsPage() {
       ) : (
         <ProjectsView
           orgId={orgId}
+          instanceAdmin={actor.instanceAdmin}
           apps={data.apps}
           projects={data.projects}
           initialDensity={data.density}

@@ -2,11 +2,16 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
-import { DeployProgress } from "@/components/deploy-progress";
+import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
+import { useBumpDeploy } from "@/hooks/use-bump-deploy";
+import { useCancelDeploy } from "@/app/(authenticated)/apps/[...slug]/hooks/use-app-actions";
+import { DeployCancel } from "@/app/(authenticated)/apps/[...slug]/deploy-cancel";
+import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
 import { FixButton, type FixTarget, type RunAction } from "@/components/fix-action";
@@ -43,6 +48,7 @@ function PanelTerm({ text }: { text: string }) {
 
 export type PanelContext = {
   orgId: string;
+  instanceAdmin: boolean;
   sections: Section[];
   selected: string | null;
   busy: ReadonlySet<string>;
@@ -111,15 +117,20 @@ function ShowInList({ name, label }: { name: string; label: string }) {
 
 function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const app = loc.node.app;
-  const running = app.deployments.find((d) => d.status === "running" || d.status === "queued");
+  const running = activeDeploy(app.deployments);
+  const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id });
+  const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
+  const now = useNow(30_000);
+  const view = running ? streamView(stream, running, now) : null;
+  const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
   return (
     <div
       onClick={() => ctx.jump(app.name)}
       className="squircle grid cursor-pointer gap-2.5 rounded-md bg-background-deep p-3.5 has-[[data-panel-item]:focus-visible]:outline-2 has-[[data-panel-item]:focus-visible]:outline-offset-1 has-[[data-panel-item]:focus-visible]:outline-brass"
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="motion-safe:animate-pulse">
-          <StatusMark tone="info" pending />
+        <span className={view?.tone === "info" ? "motion-safe:animate-pulse" : undefined}>
+          <StatusMark tone={view?.tone ?? "info"} pending />
         </span>
         <EntityLink href={appHref(app.name)} className="font-semibold">
           {app.displayName}
@@ -136,12 +147,14 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
       </div>
       <div onClick={(e) => e.stopPropagation()}>
         <DeployProgress
-          orgId={ctx.orgId}
-          appId={app.id}
-          appName={app.name}
-          deploymentId={running?.id}
-          startedAt={running?.startedAt ?? new Date()}
+          variant="compact"
+          stages={stream.stages}
+          wait={stream.wait}
+          row={{ status: running?.status ?? "running", stage: running?.stage, held: !!running?.request?.held, startedAt: running?.startedAt ?? null }}
           typicalMs={typicalElapsedMs(app.deployments)}
+          href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}
+          subject={app.displayName}
+          onStartNext={ctx.instanceAdmin && running ? () => bumpDeploy(running.id) : undefined}
         />
       </div>
     </div>
@@ -306,7 +319,11 @@ function relatedOf(loc: Located, sections: Section[]): { label: string; node: Tr
 }
 
 function deployMark(status: string) {
-  return status === "failed" ? <StatusMark tone="issue" /> : status === "running" || status === "queued" ? <StatusMark tone="info" pending /> : <StatusMark tone="good" />;
+  if (status === "failed") return <StatusMark tone="issue" />;
+  if (status === "running") return <StatusMark tone="info" pending />;
+  if (status === "queued") return <StatusMark tone="neutral" pending />;
+  if (status === "rolled_back") return <StatusMark tone="warn" />;
+  return <StatusMark tone={status === "success" ? "good" : "neutral"} />;
 }
 
 /** One app: a status sentence, one primary action, two numbers, then Related and Deploys. */
@@ -318,7 +335,14 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const stopped = app.parked || app.status === "stopped";
   const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
   const related = relatedOf(loc, ctx.sections);
-  const running = app.deployments.find((d) => d.status === "running" || d.status === "queued");
+  const running = activeDeploy(app.deployments);
+  const live = useDeployStream(ctx.orgId, app.id, { deploymentId: running?.id, enabled: !!running });
+  const stream = { ...live, wait: seedWait(live.wait, running ? rowHold(running) : null) };
+  const now = useNow(30_000);
+  const view = running ? streamView(stream, running, now) : null;
+  const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
+  const cancel = useCancelDeploy(ctx.orgId, app.id);
+  const router = useRouter();
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
   const primaryLabel = stopped ? "Start" : node.relation === "service" ? "Restart" : "Deploy";
 
@@ -326,7 +350,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
     <>
       <div className="flex items-baseline gap-2 text-sm">
         <span className="translate-y-px">
-          <StatusMark tone={mark.tone} pending={mark.pending} />
+          {!p && view ? <StatusMark tone={view.tone} pending /> : <StatusMark tone={mark.tone} pending={mark.pending} />}
         </span>
         <span className="grid gap-0.5">
           {p ? (
@@ -346,7 +370,9 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
             <span className="text-muted-foreground">
               <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
             </span>
-          ) : app.status === "deploying" ? (
+          ) : view && view.word !== "Deploying" ? (
+            <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>{view.word}</span>
+          ) : app.status === "deploying" || view ? (
             <span className="text-status-info">
               <Term id="deploying">Deploying</Term>
             </span>
@@ -361,6 +387,8 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
       <div className="flex flex-wrap items-center gap-1.5">
         {p ? (
           <FixActions loc={loc} problem={p} ctx={ctx} primary />
+        ) : running && node.relation !== "service" ? (
+          <DeployCancel cancel={cancel} deploymentId={running.id} onCancelled={() => router.refresh()} />
         ) : app.status === "deploying" ? (
           <Button asChild size="sm">
             <Link href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}>View deploy</Link>
@@ -384,11 +412,14 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
 
       {running && (
         <DeployProgress
-          orgId={ctx.orgId}
-          appId={app.id}
-          appName={app.name}
-          startedAt={running.startedAt}
+          variant="compact"
+          stages={stream.stages}
+          wait={stream.wait}
+          row={{ status: running.status, stage: running.stage, held: !!running.request?.held, startedAt: running.startedAt }}
           typicalMs={typicalElapsedMs(app.deployments)}
+          href={deployHref(app.name, running.id)}
+          subject={app.displayName}
+          onStartNext={ctx.instanceAdmin ? () => bumpDeploy(running.id) : undefined}
         />
       )}
 
@@ -538,12 +569,12 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
                   className={
                     d.status === "failed"
                       ? "ml-auto text-status-error"
-                      : d.status === "running" || d.status === "queued"
+                      : d.status === "running"
                         ? "ml-auto text-status-info"
                         : "ml-auto text-muted-foreground/70"
                   }
                 >
-                  {d.status === "success" ? (i === 0 ? "live" : "") : d.status.replace("_", " ")}
+                  {d.status === "success" ? (i === 0 ? "live" : "") : d.status === "superseded" ? "replaced" : d.status === "running" ? "deploying" : d.status.replace("_", " ")}
                 </span>
               </Link>
             ))}

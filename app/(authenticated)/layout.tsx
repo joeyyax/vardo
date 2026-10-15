@@ -10,11 +10,11 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
-import { WorkerOfflineStrip } from "@/components/layout/worker-offline-strip";
 import { AttentionProvider } from "@/components/attention-provider";
 import { CapabilitiesProvider } from "@/components/capabilities-provider";
 import { capabilitiesFor } from "@/lib/auth/permissions";
 import { isAppAdmin } from "@/lib/auth/admin";
+import { versionLabel, workerOutage } from "@/lib/app-services/system-status";
 
 
 export const metadata: Metadata = {
@@ -57,6 +57,7 @@ export default async function AppLayout({
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
   const instanceAdmin = await isAppAdmin();
+  const worker = await workerOutage(organization.id, instanceAdmin);
   const [teamsEnabled, activityEnabled, cronEnabled] = await Promise.all([
     isFeatureEnabledAsync("teams"),
     isFeatureEnabledAsync("activity"),
@@ -75,8 +76,9 @@ export default async function AppLayout({
                 teamsEnabled={teamsEnabled}
                 activityEnabled={activityEnabled}
                 cronEnabled={cronEnabled}
+                worker={worker}
+                version={versionLabel()}
               />
-              <WorkerOfflineStrip />
               <AttentionBar />
             </div>
 

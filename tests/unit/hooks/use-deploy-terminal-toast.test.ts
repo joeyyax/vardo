@@ -17,7 +17,7 @@ describe("terminalMessage", () => {
   });
 
   it("names a supersede rather than calling it a failure", () => {
-    expect(terminalMessage("superseded")).toBe("Superseded by a newer deploy");
+    expect(terminalMessage("superseded")).toBe("Replaced by a newer deploy");
   });
 
   it("names a cancel", () => {

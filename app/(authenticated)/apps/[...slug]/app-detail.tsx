@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Trash2,
-  Loader2,
   Plus,
   Hammer,
   Play,
@@ -29,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DeleteAppDialog } from "./delete-app-dialog";
+import { DeployCancel } from "./deploy-cancel";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
@@ -83,6 +83,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
+import { activeDeploy } from "@/lib/ui/deploy-wait";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import { RECOMMENDED_HEADERS } from "@/lib/security/response-headers";
@@ -100,7 +101,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density, starred = false }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density, starred = false }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -171,7 +172,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     : app.deployments;
 
   // Detect a deploy already in progress on load.
-  const serverRunningDeploy = app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
+  const serverRunningDeploy = activeDeploy(app.deployments);
 
   const deploy = useDeploy({
     orgId,
@@ -233,7 +234,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, router]);
 
-  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+  const cancel = useCancelDeploy(orgId, app.id);
+  const { cancelling, cancelDeploy } = cancel;
 
   // Child services are stack-level operations managed from the parent
   const isChildService = !!app.parentAppId;
@@ -343,6 +345,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         app={{ ...app, childApps: app.childApps }}
         orgId={orgId}
         userRole={userRole}
+        instanceAdmin={instanceAdmin}
         initialTab={initialTab}
         initialSubView={initialSubView}
         featureFlags={featureFlags}
@@ -378,20 +381,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     rebuildable: app.source === "git",
   });
 
+  // Deploying reads as running: the old container serves until the swap.
   const statusTrigger = (() => {
-    if (deploy.deploying && deploy.deployQueued && app.status !== "deploying") {
-      return {
-        className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
-        content: <>Queued</>,
-      };
-    }
-    if (deploy.deploying || app.status === "deploying") {
-      return {
-        className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
-        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
-      };
-    }
-    if (app.status === "active") {
+    if (app.status === "active" || app.status === "deploying") {
       const lastDeploy = app.deployments.find((d) => d.status === "success");
       return {
         // Quiet when healthy; the dot carries the reading.
@@ -498,20 +490,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {actions.length === 1 && actions[0].action === "deploy" ? (
-              <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
-                {deploy.deploying && deploy.deployQueued ? (
-                  "Queued"
-                ) : deploy.deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>
-                )}
+            {!isChildService && (deploy.deploying || app.status === "deploying") ? (
+              <DeployCancel cancel={cancel} />
+            ) : actions.length === 1 && actions[0].action === "deploy" ? (
+              <Button size="sm" onClick={handleDeploy}>
+                <Rocket className="mr-1.5 size-4" />
+                {app.status === "error" ? "Retry" : "Deploy"}
               </Button>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="status" className={statusTrigger.className}>
+                  <Button size="sm" variant="status" disabled={deploy.deploying || app.status === "deploying"} className={statusTrigger.className}>
                     {statusTrigger.content}
                     <ChevronDown className="ml-1.5 size-3.5" />
                   </Button>
@@ -683,6 +672,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
+        deployView={deploy.deployView}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />
@@ -787,6 +777,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            cancel={cancel}
+            instanceAdmin={instanceAdmin}
             onDeploy={handleDeploy}
             deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
             lifecycleEvents={lifecycleEvents}

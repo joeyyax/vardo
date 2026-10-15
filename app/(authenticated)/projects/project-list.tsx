@@ -24,7 +24,10 @@ import type { Problem } from "@/lib/ui/conditions";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
-import { markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
+import { deployViewOf, markSubject, problemOf, walk, type Section, type Starred, type TreeNode } from "@/lib/ui/projects";
+import { deployMarkOf } from "@/lib/ui/deploy-wait";
+import { useNow } from "@/components/deploy-progress";
+import { RowDeployLabel } from "@/components/row-deploy-label";
 import type { StarKind } from "@/lib/db/schema/enums";
 import { StarToggle } from "@/components/star-toggle";
 import { termForText, type GlossaryId } from "@/lib/ui/glossary";
@@ -58,7 +61,7 @@ export type ListContext = {
   toggleStar: (kind: StarKind, id: string, name: string) => void;
 };
 
-/** A row's star: always shown when starred, else on hover or focus. */
+/** A row's star: always shown when starred, else on hover or focus. An app row's moves into its menu on a phone. */
 function RowStar({ kind, id, name, ctx }: { kind: StarKind; id: string; name: string; ctx: Pick<ListContext, "starred" | "toggleStar"> }) {
   const on = (kind === "project" ? ctx.starred.projects : ctx.starred.apps).has(id);
   return (
@@ -69,6 +72,7 @@ function RowStar({ kind, id, name, ctx }: { kind: StarKind; id: string; name: st
       onToggle={() => ctx.toggleStar(kind, id, name)}
       className={cn(
         "size-5",
+        kind === "app" && "max-sm:hidden",
         !on &&
           "opacity-0 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-data-[selected=true]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
       )}
@@ -147,10 +151,17 @@ function toneClass(p: Problem) {
   return p.tone === "error" ? "text-status-error" : "text-status-warning";
 }
 
-/** The row's menu: open, deploy, restart, visit, logs. */
-export function RowMenu({ node, ctx }: { node: TreeNode; ctx: Pick<ListContext, "open" | "run" | "busy"> }) {
+/** The row's menu: open, deploy, restart, visit, logs, and the star on a phone. */
+export function RowMenu({
+  node,
+  ctx,
+}: {
+  node: TreeNode;
+  ctx: Pick<ListContext, "open" | "run" | "busy"> & Partial<Pick<ListContext, "starred" | "toggleStar">>;
+}) {
   const app = node.app;
   const domain = app.domains[0];
+  const { starred, toggleStar } = ctx;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -169,6 +180,11 @@ export function RowMenu({ node, ctx }: { node: TreeNode; ctx: Pick<ListContext, 
         <DropdownMenuItem asChild>
           <Link href={`/apps/${app.name}`}>Open app page</Link>
         </DropdownMenuItem>
+        {starred && toggleStar && (
+          <DropdownMenuItem className="sm:hidden" onSelect={() => toggleStar("app", app.id, app.displayName)}>
+            {starred.apps.has(app.id) ? "Unstar" : "Star"}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={ctx.busy.has(app.name)} onSelect={() => ctx.run(fixTarget(node, "deploy"), "deploy")}>
           {node.relation === "service" ? `Deploy ${node.parent?.displayName}` : "Deploy"}
@@ -205,6 +221,7 @@ function RowTerm({ text, id }: { text: string; id?: GlossaryId }) {
 
 function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nodes: TreeNode[]; depth: number; ctx: ListContext }) {
   const shown = nodes.filter((n) => ctx.matches(n, section));
+  const now = useNow(30_000);
   return (
     <>
       {shown.map((node, i) => {
@@ -215,7 +232,11 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
         const quietParent = node.relation === "service" && node.parent?.status === app.status && app.status !== "active";
         const inner = !p && expanded === false ? walk(node.children).map((c) => [c, problemOf(c)] as const).find(([, cp]) => cp) : null;
         const stopped = app.parked || app.status === "stopped";
+        const view = deployViewOf(app, now);
         const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
+        const health = statusMarkTone(markSubject(node));
+        // A deploy in flight takes the mark unless something needs attention.
+        const mark = view && (health.label === "Running" || health.label === "Deploying" || health.label === "Stopped") ? deployMarkOf(view) : health;
         const status = p ? (
           <span className={toneClass(p)}>
             <RowTerm text={p.title} />
@@ -224,9 +245,17 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           <span className={toneClass(inner[1]!)}>
             {inner[0].app.displayName}: {inner[1]!.title.toLowerCase()}
           </span>
-        ) : app.status === "deploying" && !quietParent ? (
-          <span className="text-status-info">
-            <RowTerm text="Deploying" />
+        ) : view && !quietParent ? (
+          <span className={view.tone === "info" ? "text-status-info" : "text-muted-foreground"}>
+            {view.label === "Deploying" ? (
+              <RowTerm text="Deploying" />
+            ) : view.why ? (
+              <Term note={view.why} passive>
+                <RowDeployLabel view={view} />
+              </Term>
+            ) : (
+              <RowDeployLabel view={view} />
+            )}
           </span>
         ) : stopped && !quietParent ? (
           <span className="text-muted-foreground/70">
@@ -242,7 +271,7 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
           <div key={app.id} role="none">
             <ListRow
               navKey={app.name}
-              mark={statusMarkTone(markSubject(node))}
+              mark={mark}
               name={app.displayName}
               nameTitle={app.name}
               href={appHref(app.name)}
@@ -289,12 +318,14 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
 
 function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: TreeNode[]; depth: number; ctx: ListContext }) {
   const shown = nodes.filter((n) => ctx.matches(n, section));
+  const now = useNow(30_000);
   return (
     <>
       {shown.map((node, i) => {
         const kids = node.children.filter((c) => ctx.matches(c, section));
         const expanded = kids.length ? ctx.isAppOpen(node, section) : false;
         const app = node.app;
+        const view = deployViewOf(app, now);
         return (
           <div key={app.id} role="none" className={cn("group/row rounded-md", depth > 1 && "pl-5", ctx.flash === app.name && "animate-row-flash")}>
             <AppRow
@@ -303,6 +334,7 @@ function DenseRows({ section, nodes, depth, ctx }: { section: Section; nodes: Tr
               series={ctx.history.get(app.id)?.cpu}
               updateCount={ctx.updatesByApp.get(app.id) ?? 0}
               sharedStatus={node.relation === "service" ? node.parent?.status : null}
+              deploy={view}
               indented={depth > 0}
               connector={{ last: i === shown.length - 1, dashed: node.relation === "dependency" }}
               related={ctx.selected === app.name}
@@ -366,6 +398,7 @@ function SectionNumbers({ section, ctx }: { section: Section; ctx: ListContext }
         </SectionNumber>
       )}
       {s.deploying > 0 && <SectionNumber tone="text-status-info">{s.deploying} deploying</SectionNumber>}
+      {s.queued > 0 && <SectionNumber>{s.queued} queued</SectionNumber>}
       {s.latestDeploy && s.latestDeploy.status !== "running" && s.latestDeploy.status !== "queued" && (
         <SectionNumber optional tone={s.latestDeploy.status === "failed" ? "text-status-error" : undefined}>
           <EntityLink href={deployHref(s.latestDeploy.appName, s.latestDeploy.id)} className="hover:text-foreground">
@@ -408,7 +441,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
         const all = ctx.flat || ctx.query || ctx.showsAll(project.id) || roots.length <= ROW_LIMIT + 2;
         const shown = all ? roots : roots.slice(0, ROW_LIMIT);
         return (
-          <div key={project.id} role="none" className={cn("grid", open && !ctx.flat && "mt-1.5 mb-3.5")}>
+          <div key={project.id} role="none" className={cn("grid grid-cols-1", open && !ctx.flat && "mt-1.5 mb-3.5")}>
             {!ctx.flat && (
             <SectionHeader
               navKey={`project:${project.id}`}
@@ -429,7 +462,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
                     No apps yet. Add one
                   </Link>
                 ) : ctx.dense ? (
-                  <div className="@container grid content-start">
+                  <div className="@container grid grid-cols-1 content-start">
                     <DenseRows section={section} nodes={shown} depth={0} ctx={ctx} />
                   </div>
                 ) : (

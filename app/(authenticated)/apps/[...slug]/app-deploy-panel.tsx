@@ -45,9 +45,10 @@ import { formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { compactUptime } from "@/lib/ui/app-row";
-import { InProgressDeployCard } from "./in-progress-deploy-card";
+import { DeployProgress, useNow } from "@/components/deploy-progress";
 import { BuildPlanPanel } from "./build-plan-panel";
-import { useCancelDeploy } from "./hooks/use-app-actions";
+import type { useCancelDeploy } from "./hooks/use-app-actions";
+import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import {
   interleaveHistory,
   partitionLifecycle,
@@ -55,6 +56,7 @@ import {
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
 import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
+import { NO_WAIT, queuedRowLabel, rowHold, seedWait } from "@/lib/ui/deploy-wait";
 import {
   DEPLOY_WINDOW_DAYS,
   deployCounts,
@@ -85,6 +87,10 @@ export interface AppDeployPanelProps {
   source: string;
   autoDeploy: boolean | null;
   deploy: ReturnType<typeof useDeploy>;
+  /** The page toolbar's cancel, so the card shows a cancel it started. */
+  cancel: ReturnType<typeof useCancelDeploy>;
+  /** Instance admin, who can start a waiting deploy next. */
+  instanceAdmin?: boolean;
   /** The toolbar button's action. */
   onDeploy: () => void;
   /** The toolbar button's label. */
@@ -188,6 +194,8 @@ export function AppDeployPanel({
   source,
   autoDeploy,
   deploy,
+  cancel,
+  instanceAdmin = false,
   onDeploy,
   deployActionLabel,
   lifecycleEvents = [],
@@ -198,7 +206,7 @@ export function AppDeployPanel({
     deploying,
     deployQueued,
     deployStages,
-    deployStageTimes,
+    deployWait,
     deployLog,
     deployStartTime,
     expandedDeployLog,
@@ -217,13 +225,10 @@ export function AppDeployPanel({
   } = deploy;
 
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
+  const clock = useNow(30_000);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
-  const {
-    cancelling: abortingDeploy,
-    cancelRequested,
-    setCancelRequested,
-    cancelDeploy,
-  } = useCancelDeploy(orgId, appId);
+  const { cancelRequested, setCancelRequested, cancelDeploy } = cancel;
+  const { bumpDeploy } = useBumpDeploy(orgId, appId);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
@@ -303,12 +308,6 @@ export function AppDeployPanel({
       setInstantRollingBack(false);
     }
   }, [orgId, appId, router, setConfirmRollbackOpen]);
-
-  // The stream stays open: the engine reports the cancel when it stops.
-  const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
-    await cancelDeploy(deploymentId);
-    router.refresh();
-  }, [cancelDeploy, router]);
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
     setCancellingIds((prev) => new Set(prev).add(deploymentId));
@@ -429,7 +428,7 @@ export function AppDeployPanel({
         {problem.text}
       </span>
     ) : role === "queued" ? (
-      `${queuePosition} of ${queuedDeployments.length} in queue`
+      queuedRowLabel(rowHold(deployment), queuePosition, clock)
     ) : isLiveRunning && deployment.finishedAt ? (
       <LiveFor since={deployment.finishedAt} />
     ) : role === "standby" ? (
@@ -544,13 +543,8 @@ export function AppDeployPanel({
               }
               action={
                 <Button size="sm" disabled={deploying} onClick={onDeploy}>
-                  {deploying && deployQueued ? (
-                    "Queued"
-                  ) : deploying ? (
-                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                  ) : (
-                    <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
-                  )}
+                  <Rocket className="mr-1.5 size-4" />
+                  {deployActionLabel}
                 </Button>
               }
             />
@@ -575,32 +569,35 @@ export function AppDeployPanel({
 
             {/* In-progress deploys */}
             {deploying && (
-              <InProgressDeployCard
+              <DeployProgress
+                variant="full"
                 stages={deployStages}
-                stageTimes={deployStageTimes}
+                wait={deployWait}
+                row={{
+                  status: deployQueued ? "queued" : "running",
+                  stage: serverRunningDeploy?.stage,
+                  held: !!serverRunningDeploy?.request?.held,
+                  startedAt: deployStartTime,
+                }}
+                typicalMs={typicalMs}
                 log={deployLog}
-                startTime={deployStartTime}
                 expanded={expandedDeployLog}
                 onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
-                onAbort={() => handleAbortDeploy()}
-                canAbort={!abortingDeploy}
                 cancelling={cancelRequested}
-                typicalElapsedMs={typicalMs}
-                queued={deployQueued}
+                onStartNext={instanceAdmin ? () => bumpDeploy() : undefined}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
-              <InProgressDeployCard
+              <DeployProgress
+                variant="full"
                 stages={{}}
+                wait={seedWait(NO_WAIT, rowHold(serverRunningDeploy))}
+                row={serverRunningDeploy}
+                typicalMs={typicalMs}
                 log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
-                startTime={new Date(serverRunningDeploy.startedAt).getTime()}
                 expanded={expandedServerDeploy}
                 onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
-                onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
-                canAbort={!abortingDeploy}
                 cancelling={cancelRequested}
-                trigger={serverRunningDeploy.trigger}
-                typicalElapsedMs={typicalMs}
               />
             )}
 

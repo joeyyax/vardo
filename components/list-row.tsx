@@ -5,11 +5,15 @@ import { ChevronRight } from "lucide-react";
 import { StatusMark } from "@/components/ui/status-dot";
 import { TreeConnector } from "@/components/tree-connector";
 import { EntityLink } from "@/components/entity-link";
+import { MiddleTruncate, useMiddleMin } from "@/components/middle-truncate";
 import type { StatusMarkState } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 
 /** Indent per nesting level, in px. */
 const INDENT = 22;
+
+/** Short of room the signal gives way first, then the name down to "…tail"; the status shows in full. */
+const NAME_CELL = "shrink-[999] overflow-hidden";
 
 /**
  * One row of a comfortable list: mark, name, one signal, then the problem or a quiet value, an
@@ -73,6 +77,7 @@ export function ListRow({
   flash?: boolean;
   onOpen: () => void;
 }) {
+  const { tailRef, minWidth } = useMiddleMin(name);
   return (
     <div
       role="treeitem"
@@ -85,7 +90,7 @@ export function ListRow({
       data-selected={selected}
       onClick={onOpen}
       className={cn(
-        "group/row relative flex cursor-pointer items-center gap-(--row-gap) rounded-[10px] pr-1.5 pl-1 outline-none",
+        "group/row relative flex cursor-pointer items-center gap-(--row-gap) overflow-x-clip rounded-[10px] pr-1.5 pl-1 outline-none",
         depth > 0 ? "min-h-(--row-h-child) text-sm" : "min-h-(--row-h)",
         "hover:bg-row-hover focus-visible:bg-row-hover focus-visible:shadow-[inset_2px_0_0_var(--brass)]",
         selected && "bg-brass-muted hover:bg-brass-muted",
@@ -139,32 +144,34 @@ export function ListRow({
                 }
               : undefined
           }
-          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          style={{ minWidth }}
         >
-          {name}
+          <MiddleTruncate text={name} tailRef={tailRef} />
         </EntityLink>
       ) : (
         <span
           title={nameTitle}
-          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          className={cn(NAME_CELL, depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+          style={{ minWidth }}
         >
-          {name}
+          <MiddleTruncate text={name} tailRef={tailRef} />
         </span>
       )}
       {star}
       {signal && (
-        <span className={cn("min-w-0 shrink-[3] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
+        <span className={cn("min-w-0 shrink-[99999] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
           {signal}
         </span>
       )}
 
-      <span className="ml-auto flex min-w-0 shrink-[3] items-center justify-end gap-3.5 pl-2 text-[13px]">
+      <span className="ml-auto flex min-w-0 shrink items-center justify-end gap-3.5 pl-2 text-[13px]">
         {metrics && (
           <span className="hidden items-center gap-3 text-muted-foreground sm:group-hover/row:inline-flex sm:group-focus-visible/row:inline-flex sm:group-data-[selected=true]/row:inline-flex">
             {metrics}
           </span>
         )}
-        {status && <span className="min-w-0 truncate">{status}</span>}
+        {status && <span className="shrink-0 max-sm:max-w-[60vw] max-sm:truncate">{status}</span>}
         {action && (
           <span className="max-sm:hidden" onClick={(e) => e.stopPropagation()}>
             {action}

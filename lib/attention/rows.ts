@@ -47,6 +47,8 @@ import { getEmailProviderConfig } from "@/lib/system-settings";
 import { ISSUE_TYPE, type StoredIssue } from "@/lib/integrations/sync";
 import { getElevatedApps } from "@/lib/logging/error-rate";
 import { majorNoticeRows } from "./major-notice-rows";
+import { workerOutage } from "@/lib/app-services/system-status";
+import { workerOfflineRow } from "@/lib/ui/system-status";
 import { activityRows, getFleetActivity } from "./activity";
 import {
   APP_DOWN_WINDOW_HOURS,
@@ -421,6 +423,7 @@ export async function buildAttentionRows(
     anomalies,
     integrationIssues,
     emailConfigured,
+    worker,
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
@@ -437,6 +440,7 @@ export async function buildAttentionRows(
     loadOpenAnomalies(orgId),
     loadIntegrationIssues(orgId).catch(() => []),
     isAppAdmin ? loadEmailConfigured() : true,
+    workerOutage(orgId, isAppAdmin),
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
@@ -603,6 +607,7 @@ export async function buildAttentionRows(
   rows.push(...emailProviderRows(emailConfigured));
 
   if (version) rows.push(version);
+  if (worker) rows.push(workerOfflineRow(worker));
 
   const quiet = new Set(subjects.filter(isQuiet).map((s) => s.id));
   return calmQuietSubjects(withWhere(rows, subjects), quiet);

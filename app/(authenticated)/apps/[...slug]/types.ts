@@ -26,6 +26,18 @@ export type Deployment = {
   slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;
+  /** What an in-flight deploy waits on, null while it works. */
+  waitReason?: string | null;
+  waitingSince?: Date | string | null;
+  /** Place in line while queued for a slot, and how many wait in that queue. */
+  waitAhead?: number | null;
+  waitTotal?: number | null;
+  /** When it should start, while it has an estimate. */
+  waitEta?: Date | string | null;
+  /** Phase in flight; null on a claimed deploy that hasn't started one. */
+  stage?: string | null;
+  /** `held` while the requester prepares it. */
+  request?: { held?: boolean } | null;
   triggeredByUser: {
     id: string;
     name: string | null;
@@ -202,6 +214,8 @@ export type AppDetailProps = {
   app: App;
   orgId: string;
   userRole: string;
+  /** Instance admin, who can move a deploy to the front of its line. */
+  instanceAdmin?: boolean;
   allTags?: Tag[];
   allParentApps?: { id: string; name: string; color: string }[];
   allAppNames?: string[];

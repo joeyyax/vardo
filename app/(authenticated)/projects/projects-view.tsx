@@ -78,6 +78,7 @@ function overlayOpen(): boolean {
 
 export function ProjectsView({
   orgId,
+  instanceAdmin = false,
   apps,
   projects,
   initialDensity,
@@ -86,6 +87,8 @@ export function ProjectsView({
   project,
 }: {
   orgId: string;
+  /** Instance admin, who can start a waiting deploy next. */
+  instanceAdmin?: boolean;
   apps: ProjectsApp[];
   projects: ProjectsProject[];
   initialDensity: UiDensity;
@@ -114,7 +117,7 @@ export function ProjectsView({
 
   // Healthy projects start as one calm line.
   const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set(sections.filter((s) => s.stats.issues === 0 && s.stats.deploying === 0 && s.nodes.length > 0).map((s) => s.project.id)),
+    () => new Set(sections.filter((s) => s.stats.issues === 0 && s.stats.deploying === 0 && s.stats.queued === 0 && s.nodes.length > 0).map((s) => s.project.id)),
   );
   const [openApps, setOpenApps] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
@@ -421,7 +424,7 @@ export function ProjectsView({
     toggleStar,
   };
 
-  const panelCtx: PanelContext = { orgId, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
+  const panelCtx: PanelContext = { orgId, instanceAdmin, sections, selected, busy, run, jump, open: openApp, metrics, history, cpuCount };
 
   const usage = sections
     .flatMap((s) => s.nodes)
@@ -475,7 +478,7 @@ export function ProjectsView({
   return (
     <div
       data-density={density}
-      className={cn("grid gap-9", open && DETAIL_PANEL_GUTTER)}
+      className={cn("grid grid-cols-1 gap-9", open && DETAIL_PANEL_GUTTER)}
     >
       <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
         {stat("running", counts.running, "apps running", undefined, `of ${counts.apps}`)}
@@ -483,7 +486,9 @@ export function ProjectsView({
           ? stat("attention", counts.attention, counts.attention === 1 ? "needs attention" : "need attention", counts.critical ? "text-status-error" : counts.attention ? "text-status-warning" : undefined)
           : attention.loaded &&
             attentionStat("all", routine.routineFaults, routine.routineFaults === 1 ? "needs attention" : "need attention", routine.routineFaults ? "text-status-warning" : undefined)}
-        {counts.deploying > 0 && stat("deploying", counts.deploying, "deploying now", "text-status-info")}
+        {counts.deploying > 0
+          ? stat("deploying", counts.deploying, counts.queued > 0 ? `deploying · ${counts.queued} queued` : "deploying", "text-status-info")
+          : counts.queued > 0 && stat("deploying", counts.queued, "queued")}
         {counts.stopped > 0 && stat("stopped", counts.stopped, "stopped")}
         {/* Org-wide lists; a project page counts its own above. */}
         {!project && backups > 0 && attentionStat({ group: "backups" }, backups, backups === 1 ? "backup needs a look" : "backups need a look", "text-status-warning")}
@@ -497,7 +502,7 @@ export function ProjectsView({
         )}
       </StatGroup>
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -528,7 +533,7 @@ export function ProjectsView({
           <Button variant="outline" size="sm" onClick={() => setOpenApps(new Set())}>
             Collapse all
           </Button>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
             <SortSelect value={sort} onChange={changeSort} label={project ? "Sort apps" : "Sort projects"} />
             <DensityToggle value={density} onChange={setDensity} />
             <Popover open={keysOpen} onOpenChange={setKeysOpen}>

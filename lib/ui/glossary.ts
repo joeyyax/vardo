@@ -255,8 +255,8 @@ const entries = {
     docs: "blue-green-slots",
   },
   superseded: {
-    term: "Superseded",
-    what: "This deploy worked, but a newer one has replaced it.",
+    term: "Replaced",
+    what: "This deploy worked, but a newer one replaced it.",
   },
   "blue-green": {
     term: "Blue/green slots",

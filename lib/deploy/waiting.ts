@@ -28,14 +28,20 @@ export async function workerMissing(): Promise<boolean> {
   }
 }
 
-/** Queued deploys waiting on a missing worker. Zero when a worker is present or none is expected. */
-export async function deploysWaitingForWorker(): Promise<number> {
+/** Queued deploys waiting on a missing worker, in one org when given. Zero when a worker is present or none is expected. */
+export async function deploysWaitingForWorker(organizationId?: string): Promise<number> {
   if (!(await workerMissing())) return 0;
   const [row] = await db
     .select({ n: count() })
     .from(deployments)
     .innerJoin(apps, eq(apps.id, deployments.appId))
-    .where(and(eq(deployments.status, "queued"), ne(apps.name, VARDO_SELF_APP_NAME)));
+    .where(
+      and(
+        eq(deployments.status, "queued"),
+        ne(apps.name, VARDO_SELF_APP_NAME),
+        organizationId ? eq(apps.organizationId, organizationId) : undefined,
+      ),
+    );
   return row?.n ?? 0;
 }
 

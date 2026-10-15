@@ -8,12 +8,13 @@ export type TimedDeployment = {
 };
 
 /**
- * End-to-end time of the most recent successful deploy, finish minus start.
- * Falls back to `durationMs`, which excludes queue wait, when a row has no finish time.
+ * Run time of the most recent successful deploy: `durationMs`, which excludes queue wait.
+ * Falls back to finish minus start for a row without one.
  */
 export function typicalElapsedMs(deployments: TimedDeployment[]): number | null {
   for (const d of deployments) {
     if (d.status !== "success") continue;
+    if (d.durationMs && d.durationMs > 0) return d.durationMs;
 
     const started = toDate(d.startedAt);
     const finished = toDate(d.finishedAt);
@@ -21,8 +22,6 @@ export function typicalElapsedMs(deployments: TimedDeployment[]): number | null 
       const elapsed = finished.getTime() - started.getTime();
       if (elapsed > 0) return elapsed;
     }
-
-    if (d.durationMs) return d.durationMs;
   }
 
   return null;

@@ -7,6 +7,10 @@ import { CircleDashed, Cpu, Package, ShieldCheck } from "lucide-react";
 import { type AppCondition } from "@/lib/docker/conditions";
 import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
+import type { DeployView } from "@/lib/ui/deploy-wait";
+import { RowDeployLabel } from "@/components/row-deploy-label";
+import { MiddleTruncate, useMiddleMin } from "@/components/middle-truncate";
+import { Term } from "@/components/term";
 import {
   compactUptime,
   primaryDomain,
@@ -50,6 +54,8 @@ export type AppRowApp = {
 };
 
 export type { RowNote };
+
+const DEPLOY_DOT: Record<DeployView["tone"], string> = { neutral: "bg-status-neutral", warn: "bg-status-warning", info: "bg-status-info" };
 
 // Client-only so server and client never disagree.
 function RowUptime({ since }: { since: Date | string }) {
@@ -98,6 +104,7 @@ export function AppRow({
   connector,
   related = false,
   trailing,
+  deploy,
   ref,
   ...rest
 }: {
@@ -115,6 +122,8 @@ export function AppRow({
   related?: boolean;
   /** Controls that must stay clickable, stacked above the row link. */
   trailing?: React.ReactNode;
+  /** A deploy in flight, said in place of the status word. */
+  deploy?: DeployView | null;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   // An operator-stopped row keeps its rail off.
@@ -124,6 +133,7 @@ export function AppRow({
   const rail = railClass(severity);
   const word = statusWord(app.status, sharedStatus, !!app.parked);
   const running = app.status === "active";
+  const { tailRef: nameTail, minWidth: nameMin } = useMiddleMin(app.displayName);
 
   // Restarts rank below live signals and above the caller's note.
   const shownNote = rowNote(
@@ -152,12 +162,24 @@ export function AppRow({
         )}
         {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
-        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(app.status)}`} />
-        <span className={ROW_NAME_CELL}>{app.displayName}</span>
+        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${deploy ? DEPLOY_DOT[deploy.tone] : statusDotColor(app.status)}`} />
+        <MiddleTruncate text={app.displayName} className={ROW_NAME_CELL} style={{ minWidth: nameMin }} tailRef={nameTail} />
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
-        {word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>}
+        {deploy ? (
+          <span className={`shrink-0 font-normal ${deploy.tone === "info" ? "text-status-info" : "text-muted-foreground"}`}>
+            {deploy.why && deploy.word !== "Deploying" ? (
+              <Term note={deploy.why} passive>
+                <RowDeployLabel view={deploy} />
+              </Term>
+            ) : (
+              <RowDeployLabel view={deploy} />
+            )}
+          </span>
+        ) : (
+          word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>
+        )}
         {shownNote && (
           <span className={`${ROW_NOTE_CELL} font-normal ${shownNote.tone}`} title={shownNote.detail}>
             {shownNote.label}

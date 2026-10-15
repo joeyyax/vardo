@@ -48,6 +48,13 @@ const DEPLOYMENT_COLUMNS = {
   startedAt: true,
   finishedAt: true,
   durationMs: true,
+  waitReason: true,
+  waitingSince: true,
+  waitAhead: true,
+  waitTotal: true,
+  waitEta: true,
+  request: true,
+  stage: true,
 } as const;
 
 const PROJECT_APP_SUMMARY = { id: true, name: true, displayName: true, status: true } as const;

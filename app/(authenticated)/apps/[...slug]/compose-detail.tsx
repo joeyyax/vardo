@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Rocket,
-  Loader2,
   RotateCcw,
   RefreshCw,
   ChevronDown,
@@ -42,6 +41,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DeleteAppDialog } from "./delete-app-dialog";
+import { DeployCancel } from "./deploy-cancel";
 import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor-lazy";
 import { AppMetrics } from "./app-metrics-lazy";
@@ -87,6 +87,7 @@ import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
+import { activeDeploy } from "@/lib/ui/deploy-wait";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -663,6 +664,7 @@ export function ComposeDetail({
   app,
   orgId,
   userRole,
+  instanceAdmin = false,
   initialTab,
   initialSubView,
   featureFlags,
@@ -678,6 +680,7 @@ export function ComposeDetail({
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
   userRole: string;
+  instanceAdmin?: boolean;
   initialTab: string;
   initialSubView?: string;
   featureFlags: FeatureFlags;
@@ -739,7 +742,8 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
-  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+  const cancel = useCancelDeploy(orgId, app.id);
+  const { cancelling, cancelDeploy } = cancel;
   const slotStatus = useSlotStatus(orgId, app.id, { refreshKey: app.status });
 
   const handleInstantRollback = useCallback(async () => {
@@ -820,7 +824,7 @@ export function ComposeDetail({
   });
 
   const serverRunningDeploy =
-    app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
+    activeDeploy(app.deployments);
 
   const deploy = useDeploy({
     orgId,
@@ -865,18 +869,6 @@ export function ComposeDetail({
   });
 
   const statusTrigger = (() => {
-    if (deploy.deploying && deploy.deployQueued && app.status !== "deploying") {
-      return {
-        className: "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
-        content: <>Queued</>,
-      };
-    }
-    if (deploy.deploying || app.status === "deploying") {
-      return {
-        className: "bg-status-info-muted text-status-info hover:ring-status-info/40",
-        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
-      };
-    }
     if (app.status === "active") {
       return {
         className: app.needsRedeploy
@@ -974,15 +966,12 @@ export function ComposeDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {actions.length === 1 && actions[0].action === "deploy" ? (
-              <Button size="sm" disabled={deploy.deploying} onClick={handleDeployClick}>
-                {deploy.deploying && deploy.deployQueued ? (
-                  "Queued"
-                ) : deploy.deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />Deploy stack</>
-                )}
+            {(deploy.deploying || app.status === "deploying") ? (
+              <DeployCancel cancel={cancel} />
+            ) : actions.length === 1 && actions[0].action === "deploy" ? (
+              <Button size="sm" onClick={handleDeployClick}>
+                <Rocket className="mr-1.5 size-4" />
+                Deploy stack
               </Button>
             ) : (
               <DropdownMenu>
@@ -1090,6 +1079,7 @@ export function ComposeDetail({
         stack={rollupHealth(services)}
         stackUptimeSince={rollupUptimeSince(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
+        deployView={deploy.deployView}
         stabilityIncidents={stabilityIncidents}
         restarts={restarts}
       />
@@ -1201,6 +1191,8 @@ export function ComposeDetail({
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            cancel={cancel}
+            instanceAdmin={instanceAdmin}
             onDeploy={handleDeployClick}
             deployActionLabel="Deploy stack"
             lifecycleEvents={lifecycleEvents}

@@ -4,18 +4,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { formatDuration } from "@/lib/metrics/format";
+import { applyWait, NO_WAIT, parseWaitEvent, rowHold, seedWait, streamView, type WaitState } from "@/lib/ui/deploy-wait";
 
 import type { Deployment, RollbackPreview } from "../types";
 
 type StageStatus = "running" | "success" | "failed" | "skipped";
 
-/** Wall-clock window per phase, filled in as stage events arrive. */
-export type StageTiming = { startedAt: number; endedAt?: number };
-
 /** Toast text for a deploy that ended without succeeding and without an error. */
 const TERMINAL_MESSAGES: Record<string, string> = {
   cancelled: "Deployment cancelled",
-  superseded: "Superseded by a newer deploy",
+  superseded: "Replaced by a newer deploy",
   rolled_back: "Deployment rolled back",
 };
 
@@ -73,17 +71,13 @@ export function useDeploy({
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<Record<string, StageStatus>>({});
-  const [deployStageTimes, setDeployStageTimes] = useState<Record<string, StageTiming>>({});
+  const [deployWait, setDeployWait] = useState<WaitState>(NO_WAIT);
+  const recordWait = useCallback((data: unknown) => {
+    const event = parseWaitEvent(data);
+    if (event) setDeployWait((prev) => applyWait(prev, event));
+  }, []);
   const recordStage = useCallback((stage: string, status: StageStatus) => {
-    const at = Date.now();
     setDeployStages((prev) => ({ ...prev, [stage]: status }));
-    setDeployStageTimes((prev) => {
-      const entry = prev[stage] ?? { startedAt: at };
-      return {
-        ...prev,
-        [stage]: status === "running" ? { startedAt: at } : { ...entry, endedAt: at },
-      };
-    });
   }, []);
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
   const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
@@ -109,6 +103,8 @@ export function useDeploy({
     if (attach) {
       setDeploying(true);
       setDeployQueued(serverRunningDeploy.status === "queued");
+      setDeployStages({});
+      setDeployWait(NO_WAIT);
       setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
       setExpandedDeployLog(true);
     }
@@ -119,7 +115,7 @@ export function useDeploy({
     onDeployStartedRef.current?.();
 
     // Streams deploy logs over SSE.
-    const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream`;
+    const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream?deploymentId=${encodeURIComponent(attachedDeployId)}`;
     const es = new EventSource(streamUrl);
     let finished = false;
 
@@ -145,6 +141,12 @@ export function useDeploy({
         if (data.stage && data.status) {
           recordStage(data.stage, data.status);
         }
+      } catch { /* skip malformed */ }
+    });
+
+    es.addEventListener("wait", (event) => {
+      try {
+        recordWait(JSON.parse(event.data));
       } catch { /* skip malformed */ }
     });
 
@@ -244,7 +246,7 @@ export function useDeploy({
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
-    setDeployStageTimes({});
+    setDeployWait(NO_WAIT);
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
 
@@ -293,6 +295,8 @@ export function useDeploy({
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
               recordStage(stage, status);
+            } else if (eventType === "wait") {
+              recordWait(data);
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string; postDeployError?: string };
               if (result.success) {
@@ -325,7 +329,7 @@ export function useDeploy({
       setDeploying(false);
       setDeployAbort(null);
     }
-  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage]);
+  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage, recordWait]);
 
   const handleDeploy = useCallback(() => runDeploy(), [runDeploy]);
   const handleRebuild = useCallback(() => runDeploy("no-cache"), [runDeploy]);
@@ -367,7 +371,7 @@ export function useDeploy({
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
-    setDeployStageTimes({});
+    setDeployWait(NO_WAIT);
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
 
@@ -420,6 +424,8 @@ export function useDeploy({
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
               recordStage(stage, status);
+            } else if (eventType === "wait") {
+              recordWait(data);
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string };
               if (result.success) {
@@ -450,13 +456,20 @@ export function useDeploy({
     }
   }
 
+  // The row's wait stands in until the stream reports one.
+  const seededWait = seedWait(deployWait, serverRunningDeploy ? rowHold(serverRunningDeploy) : null);
+
   return {
     deploying,
     deployQueued,
     deployLog,
     deployStartTime,
     deployStages,
-    deployStageTimes,
+    deployWait: seededWait,
+    /** How the deploy in flight reads, or null when none is. */
+    deployView: deploying
+      ? streamView({ wait: seededWait, stages: deployStages }, { status: deployQueued ? "queued" : "running", stage: serverRunningDeploy?.stage, request: serverRunningDeploy?.request })
+      : null,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,

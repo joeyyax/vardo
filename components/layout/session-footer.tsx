@@ -4,6 +4,7 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { currentActor } from "@/lib/app-services/session-actor";
 import { activeSessionCount } from "@/lib/app-services/viewer";
 import { RelativeTime } from "@/components/relative-time";
+import { versionLabel } from "@/lib/app-services/system-status";
 
 export async function SessionFooter() {
   const [session, actor, teamsEnabled] = await Promise.all([
@@ -65,10 +66,7 @@ export async function SessionFooter() {
           </span>
         )}
         <span>
-          Vardo {process.env.npm_package_version || "0.1.0"}
-          {process.env.NEXT_PUBLIC_GIT_SHA && (
-            <> ({process.env.NEXT_PUBLIC_GIT_SHA.slice(0, 7)})</>
-          )}
+          {versionLabel()}
         </span>
       </div>
     </footer>
