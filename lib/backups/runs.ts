@@ -251,7 +251,7 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
         });
         if (opened) continue;
       }
-      const plan = await planJobs(jobIds);
+      const plan: BackupRunPlan = { ...(await planJobs(jobIds)), jobLeases: true };
       const estimatedMs = await estimatePlan(organizationId, plan, now.getTime());
       const runId = await openRun({ organizationId, kind: "nightly", runKey: key, label: "Nightly backups", plan, estimatedMs, now: now.getTime() });
       if (runId) for (const jobId of jobIds) runOf.set(jobId, runId);
@@ -265,7 +265,7 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
 /** Opens a run for one job expected to take longer than LONG_RUN_MS. Null for a quick one. */
 export async function startJobRun(job: { id: string; name: string; organizationId: string | null }, now: Date): Promise<string | null> {
   if (!job.organizationId) return null;
-  const plan = await planJobs([job.id]);
+  const plan: BackupRunPlan = { ...(await planJobs([job.id])), jobLeases: true };
   const estimatedMs = await estimatePlan(job.organizationId, plan, now.getTime());
   if (estimatedMs === null || estimatedMs < LONG_RUN_MS) return null;
   return openRun({

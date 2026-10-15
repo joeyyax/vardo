@@ -10,9 +10,12 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates, limit } =
+const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates, limit, nightly, leases } =
   vi.hoisted(() => ({
     limit: { value: 1 },
+    nightly: { value: new Map<string, string>() },
+    /** Run job leases held now, and every take, report and release in order. */
+    leases: { held: new Set<string>(), events: [] as string[] },
     backupJobsFindMany: vi.fn(),
     backupsFindFirst: vi.fn(),
     runBackupMock: vi.fn(),
@@ -66,9 +69,22 @@ vi.mock("@/lib/backups/engine", async (importOriginal) => ({
 }));
 vi.mock("@/lib/backups/initial-backup", () => ({ startDueInitialBackups: async () => [] }));
 vi.mock("@/lib/backups/runs", () => ({
-  startNightlyRuns: async () => new Map(),
+  startNightlyRuns: async () => nightly.value,
   startJobRun: async () => null,
-  markJobDone: async () => {},
+  markJobDone: async (runId: string, jobId: string) => {
+    leases.events.push(`done ${runId}:${jobId}`);
+  },
+}));
+vi.mock("@/lib/backups/run-lease", () => ({
+  holdRunJobLease: async (runId: string, jobId: string) => {
+    const key = `${runId}:${jobId}`;
+    leases.held.add(key);
+    leases.events.push(`hold ${key}`);
+    return async () => {
+      leases.held.delete(key);
+      leases.events.push(`release ${key}`);
+    };
+  },
 }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
@@ -116,6 +132,9 @@ beforeEach(() => {
   shouldRunNowMock.mockReset().mockReturnValue(true);
   needsSetupMock.mockReset().mockResolvedValue(false);
   limit.value = 1;
+  nightly.value = new Map();
+  leases.held.clear();
+  leases.events.length = 0;
 });
 
 describe("tickBackupJobs — before first-run setup", () => {
@@ -266,6 +285,57 @@ describe("tickBackupJobs — jobs due together", () => {
   });
 });
 
+describe("tickBackupJobs — run job leases", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const nightlyJobs = (...ids: string[]) => ids.map((id) => ({ id, name: id, schedule: "", enabled: true, nightly: true }));
+
+  it("holds each nightly job's lease from the run's start until the job reports", async () => {
+    withExistingBackup(null);
+    nightly.value = new Map([["a", "run-1"], ["b", "run-1"]]);
+    backupJobsFindMany.mockResolvedValue(nightlyJobs("a", "b"));
+    const release = new Map<string, () => void>();
+    runBackupMock.mockImplementation((id: string) => new Promise((resolve) => release.set(id, () => resolve([]))));
+
+    const tick = tickBackupJobs();
+    await settle();
+    // b waits for the one slot, still leased.
+    expect([...leases.held].sort()).toEqual(["run-1:a", "run-1:b"]);
+
+    release.get("a")!();
+    await settle();
+    expect([...leases.held]).toEqual(["run-1:b"]);
+
+    await settle();
+    release.get("b")!();
+    await tick;
+    expect(leases.held.size).toBe(0);
+    expect(leases.events.indexOf("done run-1:b")).toBeLessThan(leases.events.indexOf("release run-1:b"));
+  });
+
+  it("frees the lease of a nightly job this tick didn't take", async () => {
+    withExistingBackup(null);
+    nightly.value = new Map([["a", "run-1"]]);
+    backupJobsFindMany.mockResolvedValue(nightlyJobs("a"));
+    acquireLockMock.mockResolvedValue(null);
+
+    await tickBackupJobs();
+
+    expect(runBackupMock).not.toHaveBeenCalled();
+    expect(leases.held.size).toBe(0);
+  });
+
+  it("keeps a skipped job's lease until it's reported done", async () => {
+    nightly.value = new Map([["a", "run-1"]]);
+    backupJobsFindMany.mockResolvedValue(nightlyJobs("a"));
+    backupsFindFirst.mockResolvedValue({ id: "bk-running" });
+
+    await tickBackupJobs();
+    await settle();
+
+    expect(leases.events).toEqual(["hold run-1:a", "done run-1:a", "release run-1:a"]);
+  });
+});
+
 describe("tickBackupJobs — while this console drains for a stop", () => {
   it("starts nothing, leaving the schedule to the console replacing it", async () => {
     withExistingBackup(null);
@@ -294,5 +364,20 @@ describe("runRequeuedJob", () => {
 
     expect(runBackupMock).toHaveBeenCalledOnce();
     expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null, trigger: "requeue" });
+  });
+
+  it("holds the job's lease in its run until it reports", async () => {
+    const { runRequeuedJob } = await import("@/lib/backups/tick");
+    let release!: () => void;
+    runBackupMock.mockImplementationOnce(() => new Promise((r) => (release = () => r([]))));
+
+    const run = runRequeuedJob({ id: "job-1", name: "Nightly" }, { runId: "run-1", trigger: "requeue" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect([...leases.held]).toEqual(["run-1:job-1"]);
+    release();
+    await run;
+
+    expect(leases.held.size).toBe(0);
+    expect(leases.events).toEqual(["hold run-1:job-1", "done run-1:job-1", "release run-1:job-1"]);
   });
 });
