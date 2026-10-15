@@ -67,11 +67,22 @@ function calls<T>(type: new (...args: never[]) => T): T[] {
   return send.mock.calls.map((c) => c[0] as unknown).filter((c): c is T => c instanceof type);
 }
 
+/** Each part's bytes as sent. The uploader reuses a part's buffer once the part is stored. */
+const sentParts = new Map<number, Buffer>();
+
+function sentBytes(): Buffer {
+  return Buffer.concat([...sentParts.keys()].sort((a, b) => a - b).map((n) => sentParts.get(n)!));
+}
+
 beforeEach(() => {
   send.mockReset();
+  sentParts.clear();
   send.mockImplementation(async (command: unknown) => {
     if (command instanceof CreateMultipartUploadCommand) return { UploadId: "up-1" };
-    if (command instanceof UploadPartCommand) return { ETag: `"etag-${command.input.PartNumber}"` };
+    if (command instanceof UploadPartCommand) {
+      sentParts.set(command.input.PartNumber!, Buffer.from(command.input.Body as Buffer));
+      return { ETag: `"etag-${command.input.PartNumber}"` };
+    }
     return {};
   });
 });
@@ -97,11 +108,35 @@ describe("S3 uploadStream", () => {
     expect(result.sizeBytes).toBe(data.length);
     const parts = calls(UploadPartCommand);
     expect(parts.map((p) => (p.input.Body as Buffer).length)).toEqual([PART, PART, PART, PART, PART, 17]);
-    expect(Buffer.concat(parts.map((p) => p.input.Body as Buffer)).equals(data)).toBe(true);
+    expect(sentBytes().equals(data)).toBe(true);
     const [complete] = calls(CompleteMultipartUploadCommand);
     expect(complete.input.MultipartUpload!.Parts!.map((p) => p.PartNumber)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(calls(AbortMultipartUploadCommand)).toHaveLength(0);
     expect(calls(PutObjectCommand)).toHaveLength(0);
+  });
+
+  it("holds a small archive in a buffer its own size, not a whole part", async () => {
+    const s3 = new S3BackupStorage({ bucket: "b", region: "auto", accessKeyId: "k", secretAccessKey: "s" });
+    const { body, data } = bytes(100_003);
+
+    await s3.uploadStream("k", body);
+
+    const sent = calls(PutObjectCommand)[0].input.Body as Buffer;
+    expect(sent.equals(data)).toBe(true);
+    expect(sent.buffer.byteLength).toBe(100_003);
+  });
+
+  it("reuses a part's buffer once the part is stored", async () => {
+    // Past Buffer's pool, so every allocation gets its own ArrayBuffer.
+    const partSize = 64 * 1024;
+    const s3 = new S3BackupStorage({ bucket: "b", region: "auto", accessKeyId: "k", secretAccessKey: "s" }, { partSize });
+    const { body, data } = bytes(partSize * 20 + 5);
+
+    await s3.uploadStream("k", body);
+
+    const buffers = new Set(calls(UploadPartCommand).map((p) => (p.input.Body as Buffer).buffer));
+    expect(buffers.size).toBeLessThanOrEqual(PART_QUEUE + 2);
+    expect(sentBytes().equals(data)).toBe(true);
   });
 
   it("retries a part that fails transiently", async () => {
@@ -165,6 +200,19 @@ describe("readParts", () => {
     const sizes: number[] = [];
     for await (const part of readParts(bytes(2500).body, 1000)) sizes.push(part.length);
     expect(sizes).toEqual([1000, 1000, 500]);
+  });
+
+  it("sizes a short archive's buffer to its data, not the part size", async () => {
+    const parts: Buffer[] = [];
+    for await (const part of readParts(bytes(100_003).body, PART_SIZE)) parts.push(part);
+    expect(parts.map((p) => p.length)).toEqual([100_003]);
+    expect(parts[0].buffer.byteLength).toBe(100_003);
+  });
+
+  it("sizes the short tail of a long archive to its data", async () => {
+    const parts: Buffer[] = [];
+    for await (const part of readParts(bytes(2500).body, 1000)) parts.push(part);
+    expect(parts[2].buffer.byteLength).toBe(500);
   });
 });
 

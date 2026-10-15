@@ -128,7 +128,8 @@ export class S3BackupStorage implements BackupStorage {
     const partSize = this.partSize ?? choosePartSize(opts.expectedBytes);
     const queue = partQueueFor(partSize);
     opts.log?.(`Part size ${partSize / MiB} MiB, ${queue} in flight`);
-    const parts = readParts(body, partSize);
+    const spare: Buffer[] = [];
+    const parts = readParts(body, partSize, spare);
 
     const first = await parts.next();
     const firstPart = first.done ? Buffer.alloc(0) : first.value;
@@ -171,6 +172,7 @@ export class S3BackupStorage implements BackupStorage {
         .then(({ ETag }) => {
           if (!ETag) throw new Error(`Storage returned no ETag for part ${PartNumber}`);
           done.push({ ETag, PartNumber });
+          if (data.length === partSize) spare.push(data);
         })
         .catch((err) => {
           failure ??= err;
@@ -277,23 +279,41 @@ export class S3BackupStorage implements BackupStorage {
   }
 }
 
-/** Cut a stream into buffers of exactly `size` bytes, plus a shorter last one. */
-export async function* readParts(body: Readable, size: number): AsyncGenerator<Buffer> {
-  let buf = Buffer.allocUnsafe(size);
+/** First allocation for a part. It doubles up to the part size, so a small archive holds about its own size. */
+const FIRST_PART_ALLOC = 64 * 1024;
+
+/**
+ * Cut a stream into buffers of exactly `size` bytes, plus a shorter last one sized to its data.
+ * Full parts reuse buffers pushed onto `spare`, so an upload holds its in-flight parts and no more.
+ */
+export async function* readParts(body: Readable, size: number, spare: Buffer[] = []): AsyncGenerator<Buffer> {
+  let buf: Buffer = Buffer.allocUnsafeSlow(Math.min(size, FIRST_PART_ALLOC));
   let filled = 0;
   for await (const chunk of body as AsyncIterable<Buffer>) {
     let offset = 0;
     while (offset < chunk.length) {
-      const n = Math.min(size - filled, chunk.length - offset);
+      if (filled === buf.length) {
+        const grown = Buffer.allocUnsafeSlow(Math.min(size, buf.length * 2));
+        buf.copy(grown, 0, 0, filled);
+        buf = grown;
+      }
+      const n = Math.min(buf.length - filled, chunk.length - offset);
       chunk.copy(buf, filled, offset, offset + n);
       filled += n;
       offset += n;
       if (filled === size) {
         yield buf;
-        buf = Buffer.allocUnsafe(size);
+        buf = spare.pop() ?? Buffer.allocUnsafeSlow(size);
         filled = 0;
       }
     }
   }
-  if (filled > 0) yield buf.subarray(0, filled);
+  if (filled === 0) return;
+  if (filled === buf.length) {
+    yield buf;
+    return;
+  }
+  const last = Buffer.allocUnsafeSlow(filled);
+  buf.copy(last, 0, 0, filled);
+  yield last;
 }
