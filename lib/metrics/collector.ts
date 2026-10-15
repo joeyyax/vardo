@@ -150,7 +150,7 @@ async function collect() {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
 
-    // Fill GPU data cAdvisor didn't report.
+    // Fill GPU data the provider didn't report.
     const gpuCollector = getGpuCollector();
     if (gpuCollector) {
       try {
@@ -158,7 +158,7 @@ async function collect() {
           metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
         );
         const gpuMetrics = await Promise.race([
-          gpuCollector.collect(),
+          gpuCollector.collect(metrics),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error("GPU collection timed out")), 15_000),
           ),
@@ -167,7 +167,7 @@ async function collect() {
         await publishGpuSnapshot(gpuMetrics).catch((err) => log.warn("GPU snapshot publish failed:", (err as Error).message));
         const ts = Date.now();
 
-        // The GPU resolver doesn't read labels; take the service from cAdvisor.
+        // The GPU resolver doesn't read labels; take the service from the metrics snapshot.
         const serviceByContainer = new Map(
           metrics.map((m) => [m.containerId, m.labels["com.docker.compose.service"] ?? null]),
         );
