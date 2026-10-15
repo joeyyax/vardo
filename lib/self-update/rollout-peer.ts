@@ -1,4 +1,4 @@
-import { getBuildSha, type ChannelUpdate } from "@/lib/version";
+import { fetchCompare, getBuildSha, type ChannelUpdate } from "@/lib/version";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { evaluateGates } from "./gates";
 import { sameCommit } from "./commit";
@@ -27,6 +27,11 @@ export async function readPeerReadiness(targetSha: string, channel: UpdateChanne
     }
   }
   if (isRunActive(run)) return { state: "busy", sha, reason: "Another update is running", deploymentId: run?.deploymentId ?? null };
+
+  // A failed compare doesn't block the update.
+  if (!sameCommit(sha, targetSha) && (await fetchCompare(sha, targetSha))?.status === "behind") {
+    return { state: "verified", sha, reason: "Already past this target", deploymentId: null };
+  }
 
   const gates = evaluateGates(await collectGateInputs(targetSha, state));
   const blocking = gates.filter((failure) => failure.gate !== "busy");
