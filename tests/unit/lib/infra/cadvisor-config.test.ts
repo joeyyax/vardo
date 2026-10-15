@@ -4,7 +4,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 
-import { applyCadvisorDiskMetrics } from "@/lib/infra/cadvisor-config";
+import { applyCadvisorDiskMetrics, cadvisorWalksDisk } from "@/lib/infra/cadvisor-config";
 import { loadTemplates } from "@/lib/templates/load";
 
 // Loaded through the real template pipeline (YAML.parse dedents the block
@@ -46,5 +46,17 @@ describe("applyCadvisorDiskMetrics", () => {
   it("falls back to the input unchanged when the expected markers are missing", () => {
     const drifted = "services:\n  cadvisor:\n    image: gcr.io/cadvisor/cadvisor:latest\n";
     expect(applyCadvisorDiskMetrics(drifted, true)).toBe(drifted);
+  });
+});
+
+describe("cadvisorWalksDisk", () => {
+  it("follows the toggle in cAdvisor mode", () => {
+    expect(cadvisorWalksDisk(true, {})).toBe(true);
+    expect(cadvisorWalksDisk(false, {})).toBe(false);
+  });
+
+  it("stays off with a collector, which reads sizes from Docker", () => {
+    expect(cadvisorWalksDisk(true, { VARDO_COLLECTOR_URL: "http://collector:9273" })).toBe(false);
+    expect(cadvisorWalksDisk(true, { VARDO_COLLECTOR_IMAGE: "collector:3d51106" })).toBe(false);
   });
 });

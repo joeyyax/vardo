@@ -49,6 +49,8 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         blockWrite: 0,
         diskUsage: m.diskUsage,
         diskLimit: m.diskLimit,
+        // Writable-layer sizes from Docker can be up to an hour old.
+        diskMeasuredAt: m.diskUsage === null ? null : new Date(m.diskUsageAt ?? m.timestamp).toISOString(),
       })),
       timestamp: new Date().toISOString(),
     });

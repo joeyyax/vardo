@@ -2,6 +2,7 @@
 
 import { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
+import { collectorMode } from "@/lib/collector/config";
 
 const log = logger.child("cadvisor-config");
 
@@ -29,6 +30,11 @@ export async function getCadvisorConfig(): Promise<CadvisorConfig> {
 export async function setCadvisorConfig(config: CadvisorConfig): Promise<void> {
   await setSystemSetting(KEY, JSON.stringify(config));
   invalidateSettingsCache(KEY);
+}
+
+/** Whether cAdvisor walks container filesystems. With a collector, Docker measures them instead. */
+export function cadvisorWalksDisk(diskMetricsEnabled: boolean, env: Record<string, string | undefined> = process.env): boolean {
+  return diskMetricsEnabled && collectorMode(env).kind === "off";
 }
 
 // Compose transform. The template ships with disk metrics off, so only on needs a rewrite.

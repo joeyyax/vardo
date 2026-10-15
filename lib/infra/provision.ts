@@ -372,9 +372,9 @@ async function ensureAppDeployed(
 /** Compose content for a template, with cadvisor's disk metrics setting applied. */
 async function resolveComposeContent(template: Template): Promise<string | null> {
   if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
-  const { getCadvisorConfig, applyCadvisorDiskMetrics } = await import("@/lib/infra/cadvisor-config");
+  const { getCadvisorConfig, applyCadvisorDiskMetrics, cadvisorWalksDisk } = await import("@/lib/infra/cadvisor-config");
   const { diskMetricsEnabled } = await getCadvisorConfig();
-  return applyCadvisorDiskMetrics(template.composeContent, diskMetricsEnabled);
+  return applyCadvisorDiskMetrics(template.composeContent, cadvisorWalksDisk(diskMetricsEnabled));
 }
 
 /** Core services that read GPUs, so they get the host's GPUs when it has any. */

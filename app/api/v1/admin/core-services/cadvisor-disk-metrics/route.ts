@@ -7,7 +7,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { getCadvisorConfig, setCadvisorConfig, applyCadvisorDiskMetrics } from "@/lib/infra/cadvisor-config";
+import { getCadvisorConfig, setCadvisorConfig, applyCadvisorDiskMetrics, cadvisorWalksDisk } from "@/lib/infra/cadvisor-config";
 import { loadTemplates } from "@/lib/templates/load";
 import { enqueueDeploy } from "@/lib/deploy/queue";
 import { logger } from "@/lib/logger";
@@ -54,7 +54,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ ...parsed.data, installed: true, deploymentId: null });
     }
 
-    const composeContent = applyCadvisorDiskMetrics(template.composeContent, parsed.data.diskMetricsEnabled);
+    const composeContent = applyCadvisorDiskMetrics(template.composeContent, cadvisorWalksDisk(parsed.data.diskMetricsEnabled));
     await db
       .update(apps)
       .set({ composeContent, needsRedeploy: true, updatedAt: new Date() })

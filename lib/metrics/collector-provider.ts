@@ -58,7 +58,7 @@ export function mapCollectorContainers(
       memoryPercent: memoryLimit > 0 ? round2((memoryUsage / memoryLimit) * 100) : 0,
       networkRxBytes,
       networkTxBytes,
-      // The collector skips the writable-layer walk; see CollectorMetricsProvider's disk source.
+      // Filled from WritableLayerSizes while Disk metrics are on.
       diskUsage: null,
       diskLimit: null,
       diskWriteBytes,
@@ -79,8 +79,8 @@ type LabelSource = (ids: string[]) => Promise<Map<string, Record<string, string>
 type Options = {
   /** Docker labels by full container id. */
   dockerLabels?: LabelSource;
-  /** Per-container filesystem bytes, read from cAdvisor when its disk metrics are on. */
-  disk?: { enabled: () => Promise<boolean>; provider: MetricsProvider };
+  /** Writable-layer sizes from Docker, when Disk metrics are on. */
+  sizes?: WritableLayerSizes;
 };
 
 export class CollectorMetricsProvider implements MetricsProvider {
@@ -99,13 +99,21 @@ export class CollectorMetricsProvider implements MetricsProvider {
     if (containers.length > 0 && containers.every((c) => c.cpu.usage_cores === null)) {
       throw new Error("collector has no rates yet (first collection)");
     }
-    const dockerLabels = this.opts.dockerLabels ? await this.opts.dockerLabels(containers.map((c) => c.id)) : undefined;
+    const ids = containers.map((c) => c.id);
+    const dockerLabels = this.opts.dockerLabels ? await this.opts.dockerLabels(ids) : undefined;
     const metrics = mapCollectorContainers(containers, { timestamp, dockerLabels });
-    await this.fillDisk(metrics);
+    const sizes = this.opts.sizes ? await this.opts.sizes.read(ids) : null;
+    for (const m of metrics) {
+      const size = sizes?.get(m.containerIdFull);
+      if (size) {
+        m.diskUsage = size.bytes;
+        m.diskUsageAt = size.at;
+      }
+    }
     return metrics;
   }
 
-  /** Time of the collector's last collection, ms. Throws when it's stale. */
+  /** Time of the collector's last collection, ms. Throws when it's stale. The collector's `collected_at` replaces this. */
   private async collectedAt(): Promise<number> {
     let at: number;
     try {
@@ -121,48 +129,79 @@ export class CollectorMetricsProvider implements MetricsProvider {
     if (age > STALE_AFTER_MS) throw new Error(`collector is stale (last collection ${Math.round(age / 1000)}s ago)`);
     return at;
   }
-
-  private async fillDisk(metrics: ContainerMetrics[]): Promise<void> {
-    const disk = this.opts.disk;
-    if (!disk || !(await disk.enabled().catch(() => false))) return;
-    let rows: ContainerMetrics[];
-    try {
-      rows = await disk.provider.fetchAll();
-    } catch {
-      return; // Leaves disk unset, as cAdvisor with disk metrics off does.
-    }
-    const byId = new Map(rows.map((r) => [r.containerIdFull || r.containerId, r]));
-    for (const m of metrics) {
-      const row = byId.get(m.containerIdFull) ?? byId.get(m.containerId);
-      if (row) {
-        m.diskUsage = row.diskUsage;
-        m.diskLimit = row.diskLimit;
-      }
-    }
-  }
 }
 
-/** Labels from Docker's container list, refreshed every minute or when an id is missing. */
-export function dockerLabelSource(
-  list: () => Promise<{ id: string; labels: Record<string, string> }[]>,
-  opts: { ttlMs?: number; minRefreshMs?: number; now?: () => number } = {},
-): LabelSource {
-  const ttl = opts.ttlMs ?? 60_000;
-  const minRefresh = opts.minRefreshMs ?? 5_000;
-  const now = opts.now ?? Date.now;
-  let cache: { at: number; byId: Map<string, Record<string, string>> } | null = null;
-
+/**
+ * Labels by container id, inspected once per container: they're fixed for its life, and a full list costs dockerd far more.
+ * The collector's `containers.api_labels` replaces this join.
+ */
+export function dockerLabelSource(inspect: (id: string) => Promise<Record<string, string>>): LabelSource {
+  const cache = new Map<string, Record<string, string>>();
   return async (ids) => {
-    const stale = !cache || now() - cache.at > ttl;
-    const missing = !!cache && ids.some((id) => !cache!.byId.has(id)) && now() - cache.at > minRefresh;
-    if (stale || missing) {
-      try {
-        const rows = await list();
-        cache = { at: now(), byId: new Map(rows.map((r) => [r.id, r.labels])) };
-      } catch {
-        // Keep the last list; the collector's own labels still apply.
-      }
-    }
-    return cache?.byId ?? new Map();
+    const live = new Set(ids);
+    for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
+    await Promise.all(
+      ids.filter((id) => !cache.has(id)).map(async (id) => {
+        try {
+          cache.set(id, await inspect(id));
+        } catch {
+          // Gone or unreadable; the collector's own labels still apply. Tried again next poll.
+        }
+      }),
+    );
+    return cache;
   };
+}
+
+/** Each container's writable layer is measured at most this often. */
+export const SIZE_PERIOD_MS = 60 * 60_000;
+
+/**
+ * Writable-layer sizes, one container at a time and spread across SIZE_PERIOD_MS: `size=1` makes dockerd walk the layer.
+ * Nothing is requested while Disk metrics are off.
+ */
+export class WritableLayerSizes {
+  private cache = new Map<string, { bytes: number; at: number }>();
+  private lastRequestAt = -Infinity;
+  private inFlight: Promise<void> | null = null;
+
+  constructor(
+    private readonly inspectSize: (id: string) => Promise<number | null>,
+    private readonly enabled: () => Promise<boolean>,
+    private readonly opts: { periodMs?: number; now?: () => number } = {},
+  ) {}
+
+  /** Cached sizes for these containers; starts at most one background measurement. */
+  async read(ids: string[]): Promise<Map<string, { bytes: number; at: number }>> {
+    if (!(await this.enabled().catch(() => false))) {
+      this.cache.clear();
+      return this.cache;
+    }
+    const now = (this.opts.now ?? Date.now)();
+    const period = this.opts.periodMs ?? SIZE_PERIOD_MS;
+    const live = new Set(ids);
+    for (const id of this.cache.keys()) if (!live.has(id)) this.cache.delete(id);
+
+    const due = ids
+      .filter((id) => now - (this.cache.get(id)?.at ?? -Infinity) >= period)
+      .sort((a, b) => (this.cache.get(a)?.at ?? -Infinity) - (this.cache.get(b)?.at ?? -Infinity));
+    if (!this.inFlight && due.length > 0 && now - this.lastRequestAt >= period / ids.length) {
+      const id = due[0];
+      this.lastRequestAt = now;
+      this.inFlight = this.inspectSize(id)
+        .then((bytes) => {
+          if (bytes !== null) this.cache.set(id, { bytes, at: now });
+        })
+        .catch(() => {})
+        .finally(() => {
+          this.inFlight = null;
+        });
+    }
+    return this.cache;
+  }
+
+  /** Settles the measurement in flight. For tests. */
+  async settle(): Promise<void> {
+    await this.inFlight;
+  }
 }

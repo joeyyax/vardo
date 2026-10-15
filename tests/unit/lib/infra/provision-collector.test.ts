@@ -75,6 +75,7 @@ vi.mock("@/lib/infra/vardo-org", () => ({ ensureVardoOrg: vi.fn(async () => ({ i
 vi.mock("@/lib/infra/cadvisor-config", () => ({
   getCadvisorConfig: vi.fn(async () => ({ diskMetricsEnabled: false })),
   applyCadvisorDiskMetrics: (c: string) => c,
+  cadvisorWalksDisk: (on: boolean) => on,
 }));
 vi.mock("@/lib/utils/exec", () => ({ execFileAsync: vi.fn(async () => ({ stdout: "{}" })) }));
 vi.mock("@/lib/crypto/encrypt", () => ({

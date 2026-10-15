@@ -8,9 +8,8 @@ import {
   dockerLabelSource,
   mapCollectorContainers,
   STALE_AFTER_MS,
+  WritableLayerSizes,
 } from "@/lib/metrics/collector-provider";
-import type { MetricsProvider } from "@/lib/metrics/provider";
-import type { ContainerMetrics } from "@/lib/metrics/types";
 
 // Fixtures are real /api/v1 responses from collector 3d51106 on OrbStack.
 const fixture = <T>(name: string): T =>
@@ -157,53 +156,87 @@ describe("CollectorMetricsProvider", () => {
     await expect(new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).rejects.toThrow(/401/);
   });
 
-  it("takes per-container disk from cAdvisor only when its disk metrics are on", async () => {
+  it("adds Docker's writable-layer size and when it was measured", async () => {
     stubCollector({ host: fresh() });
-    const cadvisorRow = { containerId: "2f6b7dda3173", containerIdFull: CADVISOR_ID, diskUsage: 123, diskLimit: 456 } as ContainerMetrics;
-    const cadvisor: MetricsProvider = { fetchAll: vi.fn(async () => [cadvisorRow]) };
-    let on = false;
-    const provider = new CollectorMetricsProvider(new CollectorClient("http://c"), {
-      disk: { enabled: async () => on, provider: cadvisor },
-    });
-
-    const off = await provider.fetchAll();
-    expect(off.every((m) => m.diskUsage === null)).toBe(true);
-    expect(cadvisor.fetchAll).not.toHaveBeenCalled();
-
-    on = true;
-    const withDisk = await provider.fetchAll();
-    const m = withDisk.find((r) => r.containerIdFull === CADVISOR_ID)!;
-    expect([m.diskUsage, m.diskLimit]).toEqual([123, 456]);
-    expect(withDisk.find((r) => r.containerIdFull === POSTGRES_ID)!.diskUsage).toBeNull();
+    const sizes = { read: vi.fn(async () => new Map([[CADVISOR_ID, { bytes: 4096, at: 1_000 }]])) } as unknown as WritableLayerSizes;
+    const rows = await new CollectorMetricsProvider(new CollectorClient("http://c"), { sizes }).fetchAll();
+    const m = rows.find((r) => r.containerIdFull === CADVISOR_ID)!;
+    expect([m.diskUsage, m.diskUsageAt, m.diskLimit]).toEqual([4096, 1_000, null]);
+    expect(rows.find((r) => r.containerIdFull === POSTGRES_ID)!.diskUsage).toBeNull();
   });
 });
 
 describe("dockerLabelSource", () => {
-  it("lists once per TTL and again when an unknown id shows up", async () => {
-    let t = 0;
-    const list = vi.fn(async () => [{ id: "a", labels: { x: "1" } }]);
-    const source = dockerLabelSource(list, { ttlMs: 60_000, minRefreshMs: 5_000, now: () => t });
+  it("inspects each container once and forgets ones that are gone", async () => {
+    const inspect = vi.fn(async (id: string) => ({ "vardo.organization": `org-${id}` }));
+    const source = dockerLabelSource(inspect);
 
-    await source(["a"]);
-    t = 1_000;
-    await source(["a"]);
-    expect(list).toHaveBeenCalledTimes(1);
-
-    t = 2_000;
+    expect((await source(["a", "b"])).get("a")).toEqual({ "vardo.organization": "org-a" });
     await source(["a", "b"]);
-    expect(list).toHaveBeenCalledTimes(1); // inside minRefresh
+    expect(inspect).toHaveBeenCalledTimes(2);
 
-    t = 7_000;
-    await source(["a", "b"]);
-    expect(list).toHaveBeenCalledTimes(2);
+    const labels = await source(["b", "c"]);
+    expect(inspect).toHaveBeenCalledTimes(3);
+    expect(labels.has("a")).toBe(false);
   });
 
-  it("keeps the last list when Docker fails", async () => {
-    let t = 0;
-    const list = vi.fn().mockResolvedValueOnce([{ id: "a", labels: { x: "1" } }]).mockRejectedValue(new Error("down"));
-    const source = dockerLabelSource(list, { ttlMs: 10, now: () => t });
-    await source(["a"]);
-    t = 100;
+  it("tries a failed inspect again on the next poll", async () => {
+    const inspect = vi.fn().mockRejectedValueOnce(new Error("gone")).mockResolvedValue({ x: "1" });
+    const source = dockerLabelSource(inspect);
+    expect((await source(["a"])).has("a")).toBe(false);
     expect((await source(["a"])).get("a")).toEqual({ x: "1" });
+  });
+});
+
+describe("WritableLayerSizes", () => {
+  const HOUR = 60 * 60_000;
+
+  it("never asks Docker for a size while Disk metrics are off", async () => {
+    const inspectSize = vi.fn(async () => 1);
+    const sizes = new WritableLayerSizes(inspectSize, async () => false);
+    for (let i = 0; i < 5; i++) expect((await sizes.read(["a", "b"])).size).toBe(0);
+    await sizes.settle();
+    expect(inspectSize).not.toHaveBeenCalled();
+  });
+
+  it("measures one container at a time, spread across the hour, and caches each for an hour", async () => {
+    let t = 0;
+    const inspectSize = vi.fn(async (id: string) => (id === "a" ? 100 : 200));
+    const sizes = new WritableLayerSizes(inspectSize, async () => true, { periodMs: HOUR, now: () => t });
+    const ids = ["a", "b"];
+
+    await sizes.read(ids);
+    await sizes.settle();
+    expect(inspectSize).toHaveBeenCalledTimes(1);
+
+    // The next one waits half the hour (an hour over two containers).
+    t = 10 * 60_000;
+    await sizes.read(ids);
+    expect(inspectSize).toHaveBeenCalledTimes(1);
+
+    t = 30 * 60_000;
+    await sizes.read(ids);
+    await sizes.settle();
+    expect(inspectSize).toHaveBeenCalledTimes(2);
+    expect(Object.fromEntries(await sizes.read(ids))).toEqual({ a: { bytes: 100, at: 0 }, b: { bytes: 200, at: 30 * 60_000 } });
+
+    // Both fresh: nothing until a's hour is up.
+    t = 59 * 60_000;
+    await sizes.read(ids);
+    expect(inspectSize).toHaveBeenCalledTimes(2);
+    t = 61 * 60_000;
+    await sizes.read(ids);
+    await sizes.settle();
+    expect(inspectSize).toHaveBeenLastCalledWith("a");
+  });
+
+  it("drops cached sizes when Disk metrics are turned off", async () => {
+    let on = true;
+    const sizes = new WritableLayerSizes(async () => 5, async () => on);
+    await sizes.read(["a"]);
+    await sizes.settle();
+    expect((await sizes.read(["a"])).size).toBe(1);
+    on = false;
+    expect((await sizes.read(["a"])).size).toBe(0);
   });
 });
