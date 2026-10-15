@@ -2,6 +2,7 @@
 
 import { CollectorHttpError, type CollectorClient, type CollectorContainer } from "@/lib/collector/client";
 import { identityLabels, organizationOf, projectOf } from "./labels";
+import { MetricsNotReadyError } from "./not-ready";
 import type { MetricsProvider } from "./provider";
 import type { ContainerMetrics } from "./types";
 
@@ -118,7 +119,7 @@ export class CollectorMetricsProvider implements MetricsProvider {
     if (containers.length === 0) return [];
     const timestamp = await this.collectedAt(containers);
     if (containers.every((c) => c.cpu.usage_cores === null)) {
-      throw new Error("collector has no rates yet (first collection)");
+      throw new MetricsNotReadyError("collector has no rates yet (first collection)");
     }
     const ids = containers.map((c) => c.id);
     const dockerLabels = this.opts.dockerLabels && !suppliesApiLabels(containers) ? await this.opts.dockerLabels(ids) : undefined;
@@ -154,7 +155,7 @@ export class CollectorMetricsProvider implements MetricsProvider {
         if (typeof health.collected_at === "number") at = health.collected_at * 1000;
         else if (typeof health.last_collect_age_seconds === "number") {
           at = Math.round((Date.now() - health.last_collect_age_seconds * 1000) / 1000) * 1000;
-        } else throw new Error("collector has not collected yet");
+        } else throw new MetricsNotReadyError("collector has not collected yet");
       }
     }
     if (typeof intervalSeconds === "number" && intervalSeconds > 0) this.intervalMs = Math.round(intervalSeconds * 1000);

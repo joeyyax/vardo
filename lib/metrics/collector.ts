@@ -10,6 +10,7 @@ import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/col
 import { publishGpuSnapshot } from "@/lib/gpu/snapshot-store";
 import { setLatestSnapshot } from "./broadcast";
 import { IntervalLoop, type LoopRole } from "@/lib/worker/interval-loop";
+import { MetricsNotReadyError } from "./not-ready";
 
 const log = logger.child("collector");
 
@@ -17,7 +18,6 @@ type CollectorState = {
   started: boolean;
   tickCount: number;
   consecutiveFailures: number;
-  disabled: boolean;
   diskConsecutiveFailures: number;
   projectDiskConsecutiveFailures: number;
 };
@@ -32,7 +32,6 @@ const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= 
   started: false,
   tickCount: 0,
   consecutiveFailures: 0,
-  disabled: false,
   diskConsecutiveFailures: 0,
   projectDiskConsecutiveFailures: 0,
 });
@@ -46,10 +45,8 @@ const FAST_INTERVAL_MS = 5000;
 const NORMAL_INTERVAL_MS = 30000;
 const WARMUP_TICKS = 20;
 
-/** Cap on the exponential backoff between failed collections. */
-const MAX_BACKOFF_MS = 15 * 60_000;
-/** Consecutive failures before the collector stops polling. */
-const DISABLE_THRESHOLD = 20;
+/** Cap on the exponential backoff between failed collections. The loop never gives up. */
+const MAX_BACKOFF_MS = 2 * 60_000;
 
 /** Interval for the next tick. Failures back off exponentially; warmup never polls faster than the provider updates. */
 export function nextInterval(opts: { tickCount: number; consecutiveFailures: number; providerIntervalMs?: number }): number {
@@ -82,7 +79,6 @@ export async function startCollector(role: LoopRole = "web") {
   state.consecutiveFailures = 0;
   state.diskConsecutiveFailures = 0;
   state.projectDiskConsecutiveFailures = 0;
-  state.disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
   // Returns null on non-GPU hosts.
@@ -107,7 +103,6 @@ export const collectorLoop = (globalForCollector.__vardo_metrics_collector_loop 
   run: async () => {
     await collect();
     state.tickCount++;
-    if (state.disabled) void collectorLoop.stop();
   },
 }));
 
@@ -201,22 +196,17 @@ async function collect() {
     }
     state.consecutiveFailures = 0;
   } catch (err) {
-    state.consecutiveFailures++;
-    // Log the first failure and the shutdown, not each retry.
-    if (state.consecutiveFailures === 1) {
-      log.error("Error:", (err as Error).message);
-    }
-    if (state.consecutiveFailures === DEGRADED_THRESHOLD) {
-      updateIntegrationHealth("degraded");
-    }
-    if (state.consecutiveFailures >= DISABLE_THRESHOLD) {
-      state.disabled = true;
-      log.error(
-        `Metrics collection disabled after ${state.consecutiveFailures} consecutive failures — ` +
-          `the provider is unreachable (${(err as Error).message}). ` +
-          `Check the metrics integration, then restart Vardo or re-toggle the metrics feature.`,
-      );
-      return;
+    // Up but not collected twice yet: a skipped tick, not a failure.
+    if (err instanceof MetricsNotReadyError) {
+      log.debug(`Skipped a tick: ${err.message}`);
+    } else {
+      state.consecutiveFailures++;
+      if (shouldLogPersistentFailure(state.consecutiveFailures)) {
+        log.error(`Error (${state.consecutiveFailures}x):`, (err as Error).message);
+      }
+      if (state.consecutiveFailures === DEGRADED_THRESHOLD) {
+        updateIntegrationHealth("degraded");
+      }
     }
   }
 
@@ -295,15 +285,9 @@ async function collect() {
 export function stopCollector(): Promise<void> {
   const stopped = collectorLoop.stop();
   state.started = false;
-  state.disabled = false;
   state.diskConsecutiveFailures = 0;
   state.projectDiskConsecutiveFailures = 0;
   return stopped;
-}
-
-/** True when the collector shut itself off after repeated provider failures. */
-export function isCollectorDisabled() {
-  return state.disabled;
 }
 
 /** Updates metrics integration status. Best-effort. */
