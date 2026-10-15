@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
 // ---------------------------------------------------------------------------
@@ -75,7 +75,10 @@ beforeAll(async () => {
   CADVISOR_COMPOSE = cadvisor.composeContent;
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
+  vi.stubEnv("VARDO_COLLECTOR_IMAGE", "off");
   vi.clearAllMocks();
   mockSetCadvisorConfig.mockResolvedValue(undefined);
   mockLoadTemplates.mockResolvedValue([
