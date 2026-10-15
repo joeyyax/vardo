@@ -106,7 +106,16 @@ type ParseAndSanitizeOpts = {
   allowBindMounts?: boolean;
   allowDockerSocket?: boolean;
   orgTrusted?: boolean;
+  /** The system org's core services keep `pid`, which every other deploy drops. */
+  systemManaged?: boolean;
 };
+
+function keepPid(compose: ComposeFile, raw: unknown): void {
+  const services = (raw as { services?: Record<string, { pid?: unknown } | null> }).services ?? {};
+  for (const [name, svc] of Object.entries(services)) {
+    if (typeof svc?.pid === "string" && svc.pid && compose.services[name]) compose.services[name].pid = svc.pid;
+  }
+}
 
 export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: ParseAndSanitizeOpts): ComposeFile {
   // Check markers before parseCompose drops non-boolean ones; git compose skips the save-route checks.
@@ -121,10 +130,13 @@ export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?
         `which restores the previous slot's containers without rebuilding.`,
     );
   }
-  for (const warning of droppedKeyWarnings(parseComposeYaml(yaml))) {
+  const raw = parseComposeYaml(yaml);
+  const kept = opts?.systemManaged ? ["pid"] : [];
+  for (const warning of droppedKeyWarnings(raw, kept)) {
     log(`[deploy] Warning: ${warning}`);
   }
   const compose = parseCompose(yaml);
+  if (opts?.systemManaged) keepPid(compose, raw);
   for (const warning of unmarkedSharedVolumeWarnings(compose)) {
     log(`[deploy] Warning: ${warning}`);
   }
@@ -473,6 +485,7 @@ async function dockerBuild(
 export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, logs, envMap, signal } = ctx;
   const orgTrusted = ctx.orgTrusted;
+  const systemManaged = ctx.org?.isSystemManaged === true && orgTrusted;
   const projectAllowBindMounts = ctx.projectAllowBindMounts;
   const projectAllowDockerSocket = ctx.projectAllowDockerSocket;
 
@@ -525,7 +538,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     ctx.stage("clone", "skipped");
     ctx.stage("compose", "running");
     if (app.composeContent) {
-      compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
+      compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted, systemManaged });
       log(`[deploy] Using stored compose for imported container: ${app.imageName}`);
     } else {
       const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
@@ -767,7 +780,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     ctx.stage("compose", "running");
 
     if (composeContent && app.deployType === "compose") {
-      compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
+      compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted, systemManaged });
       await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
     } else {
       // Build from repo: Dockerfile, Railpack or Nixpacks.
@@ -917,7 +930,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   } else if (app.composeContent) {
     ctx.stage("clone", "skipped");
     ctx.stage("compose", "running");
-    compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
+    compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted, systemManaged });
     log(`[deploy] Parsed compose content`);
     await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
   } else {

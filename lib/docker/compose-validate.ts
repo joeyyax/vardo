@@ -320,9 +320,9 @@ const DROPPED_SERVICE_KEYS = new Set([
 
 /**
  * Report Compose keys Docker honors and Vardo drops.
- * Adding a key to the parser means removing it here too.
+ * Adding a key to the parser means removing it here too. `kept` names dropped keys the caller restores.
  */
-export function droppedKeyWarnings(compose: unknown): string[] {
+export function droppedKeyWarnings(compose: unknown, kept: readonly string[] = []): string[] {
   if (typeof compose !== "object" || compose === null || Array.isArray(compose)) return [];
   const root = compose as Record<string, unknown>;
   const services = root.services;
@@ -332,7 +332,7 @@ export function droppedKeyWarnings(compose: unknown): string[] {
   for (const [name, raw] of Object.entries(services as Record<string, unknown>)) {
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
     const dropped = Object.keys(raw as Record<string, unknown>).filter(
-      (key) => !PARSED_SERVICE_KEYS.has(key) && DROPPED_SERVICE_KEYS.has(key),
+      (key) => !PARSED_SERVICE_KEYS.has(key) && DROPPED_SERVICE_KEYS.has(key) && !kept.includes(key),
     );
     if (dropped.length > 0) {
       warnings.push(
@@ -594,6 +594,7 @@ export function hostAccessSettings(compose: ComposeFile): { service: string; use
     if (svc.security_opt?.some((o) => !/^no-new-privileges(:true)?$/.test(o))) used.push("security_opt");
     const nm = svc.network_mode;
     if (nm === "host" || nm?.startsWith("container:")) used.push(`network_mode: ${nm}`);
+    if (svc.pid) used.push(`pid: ${svc.pid}`);
     if (used.length > 0) out.push({ service: name, used });
   }
   return out;

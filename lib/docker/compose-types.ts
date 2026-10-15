@@ -59,6 +59,8 @@ export type ComposeService = {
   network_options?: Record<string, Record<string, unknown>>;
   depends_on?: ComposeDependsOn;
   network_mode?: string;
+  /** Kept only on the system org's services; parseCompose drops it. */
+  pid?: string;
   runtime?: string;
   deploy?: {
     resources?: {
