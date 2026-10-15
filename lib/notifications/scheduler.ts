@@ -1,4 +1,5 @@
 import { dropStaleRetries, tickNotificationRetries } from "./retry";
+import { flushResolved } from "./resolved-hold";
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 
@@ -22,4 +23,12 @@ export const notificationRetryLoop = new IntervalLoop({
     }
   },
   run: () => tickNotificationRetries(),
+});
+
+/** Sends held resolutions once their org goes quiet. */
+export const resolvedFlushLoop = new IntervalLoop({
+  name: "resolved-flush",
+  intervalMs: TICK_MS,
+  log,
+  run: () => flushResolved(),
 });

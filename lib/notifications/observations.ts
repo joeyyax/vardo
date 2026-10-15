@@ -7,7 +7,8 @@ import { alertHistory } from "@/lib/db/schema";
 import type { AlertItem } from "@/lib/bus/events";
 import { emit } from "./dispatch";
 import { readOrgNotificationSettings } from "./preferences";
-import { ALERTS, severityRank, type AlertSeverity, type AlertType } from "./registry";
+import { ALERTS, severityRank, sortAlerts, type AlertSeverity, type AlertType } from "./registry";
+import { holdResolved, resolvedNotice, sendHeldResolved, type ResolvedItem } from "./resolved-hold";
 import { claimNotifications, clearNotifications, clearSubjects, type Cleared } from "./throttle";
 import { incidentKey } from "@/lib/incidents/key";
 import { lowerSeverity, openIncident, openSeverities, resolveIncidents, safely } from "@/lib/incidents/store";
@@ -21,13 +22,6 @@ export type Observation = {
   fires: boolean;
   item: AlertItem;
 };
-
-export type ResolvedItem = AlertItem & { firedAt: string; resolvedAt: string };
-
-/** Worst first, then by title. */
-export function sortAlerts<T extends AlertItem>(items: T[]): T[] {
-  return [...items].sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || a.title.localeCompare(b.title));
-}
 
 function firedTitle(items: AlertItem[]): string {
   return items.length === 1 ? items[0].title : `${items.length} alerts: ${items[0].title} and more`;
@@ -106,17 +100,11 @@ function quietItem(row: Cleared, now: Date, incident: IncidentRef): ResolvedItem
   };
 }
 
-function emitResolved(organizationId: string, items: ResolvedItem[], quiet = false): void {
+/** Webhooks get each resolution now. Email and push get it in the org's grouped notice, unless it's quiet. */
+async function emitResolved(organizationId: string, items: ResolvedItem[], now: Date, quiet = false): Promise<void> {
   if (items.length === 0) return;
-  const alerts = sortAlerts(items);
-  emit(organizationId, {
-    type: "alert.resolved",
-    title: alerts.length === 1 ? `Resolved: ${alerts[0].title}` : `${alerts.length} alerts resolved`,
-    message: alerts.map((a) => a.title).join("; "),
-    alerts,
-    ...(alerts.length === 1 && alerts[0].incident ? { incident: alerts[0].incident } : {}),
-    ...(quiet ? { quiet } : {}),
-  });
+  emit(organizationId, resolvedNotice(items, quiet ? { quiet } : { held: true }));
+  if (!quiet) await holdResolved(organizationId, items, now);
 }
 
 /** Runs the evaluated types for one org and emits at most one fired and one resolved notice. */
@@ -181,6 +169,8 @@ export async function notifyObservations(
   }
 
   if (fired.length > 0) {
+    // Held resolutions go first, so none lands after an alert that fired again.
+    await sendHeldResolved(organizationId, now.getTime(), true);
     const alerts = sortAlerts(fired);
     emit(organizationId, {
       type: "alert.fired",
@@ -190,8 +180,8 @@ export async function notifyObservations(
       ...(alerts.length === 1 && alerts[0].incident ? { incident: alerts[0].incident } : {}),
     });
   }
-  emitResolved(organizationId, resolved);
-  emitResolved(organizationId, quiet, true);
+  await emitResolved(organizationId, resolved, now);
+  await emitResolved(organizationId, quiet, now, true);
   return { fired, resolved };
 }
 
@@ -226,8 +216,8 @@ export async function resolveAlert(organizationId: string, type: AlertType, abou
   await closeHistory(organizationId, type, [about], now);
   const row = cleared[0];
   const incident = (await resolveCleared(organizationId, type, cleared, now)).get(about);
-  if (notify && ALERTS[type].resolves && row.detail) emitResolved(organizationId, [resolvedItem(row, now, incident)]);
-  else if (incident) emitResolved(organizationId, [quietItem(row, now, incident)], true);
+  if (notify && ALERTS[type].resolves && row.detail) await emitResolved(organizationId, [resolvedItem(row, now, incident)], now);
+  else if (incident) await emitResolved(organizationId, [quietItem(row, now, incident)], now, true);
   return true;
 }
 
@@ -236,12 +226,13 @@ export async function settleAlerts(organizationId: string, type: AlertType, abou
   const cleared = await clearSubjects(organizationId, type, abouts, now);
   await closeHistory(organizationId, type, cleared.map((c) => c.about), now);
   const incidents = await resolveCleared(organizationId, type, cleared, now);
-  emitResolved(
+  await emitResolved(
     organizationId,
     cleared.flatMap((row) => {
       const incident = incidents.get(row.about);
       return incident ? [quietItem(row, now, incident)] : [];
     }),
+    now,
     true,
   );
 }

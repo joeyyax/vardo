@@ -4,6 +4,7 @@
 //   vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 //   vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 //   vi.mock("@/lib/auth/admin", async () => (await import("@/tests/helpers/mocks")).adminModule());
+//   vi.mock("@/lib/notifications/resolved-hold", async (orig) => (await import("@/tests/helpers/mocks")).resolvedHoldModule(orig));
 import { vi } from "vitest";
 
 export function loggerModule() {
@@ -34,5 +35,16 @@ export function adminModule() {
   return {
     isAppAdmin: vi.fn().mockResolvedValue(false),
     requireAppAdmin: vi.fn().mockResolvedValue(null),
+  };
+}
+
+/** The resolution hold without Redis: holds and sends nothing. The notice builder stays real. */
+export async function resolvedHoldModule(importOriginal: () => Promise<unknown>) {
+  const real = (await importOriginal()) as typeof import("@/lib/notifications/resolved-hold");
+  return {
+    ...real,
+    holdResolved: vi.fn(async () => {}),
+    sendHeldResolved: vi.fn(async () => false),
+    flushResolved: vi.fn(async () => 0),
   };
 }

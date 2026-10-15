@@ -8,11 +8,18 @@ const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
   clear: vi.fn(),
   settings: vi.fn(),
+  hold: vi.fn(),
+  sendHeld: vi.fn(),
 }));
 
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
 vi.mock("@/lib/notifications/throttle", () => ({ claimNotifications: mocks.claim, clearNotifications: mocks.clear }));
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
+vi.mock("@/lib/notifications/resolved-hold", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/notifications/resolved-hold")>()),
+  holdResolved: mocks.hold,
+  sendHeldResolved: mocks.sendHeld,
+}));
 
 const { notifyObservations } = await import("@/lib/notifications/observations");
 import type { Observation } from "@/lib/notifications/observations";
@@ -31,6 +38,8 @@ beforeEach(() => {
     requests.map((r) => ({ about: r.about, previous: null })),
   );
   mocks.clear.mockResolvedValue([]);
+  mocks.hold.mockResolvedValue(undefined);
+  mocks.sendHeld.mockResolvedValue(false);
 });
 
 describe("notifyObservations", () => {
@@ -64,6 +73,21 @@ describe("notifyObservations", () => {
     expect(event.alerts.map((a: AlertItem) => a.type)).toEqual(["host.memory"]);
   });
 
+  it("sends a resolution to webhooks now and holds it for one grouped email", async () => {
+    mocks.clear.mockResolvedValue([{ about: "host", severity: "warning", sentAt: new Date(now.getTime() - 60_000), detail: obs("host.memory", "host").item }]);
+    await notifyObservations("org1", ["host.memory"], [], now);
+    const [, event] = mocks.emit.mock.calls[0];
+    expect(event).toMatchObject({ type: "alert.resolved", held: true });
+    expect(event.quiet).toBeUndefined();
+    expect(mocks.hold).toHaveBeenCalledWith("org1", [expect.objectContaining({ type: "host.memory", about: "host", resolvedAt: now.toISOString() })], now);
+  });
+
+  it("sends held resolutions before an alert that fires", async () => {
+    await notifyObservations("org1", ["host.memory"], [obs("host.memory", "host")], now);
+    expect(mocks.sendHeld).toHaveBeenCalledWith("org1", now.getTime(), true);
+    expect(mocks.sendHeld.mock.invocationCallOrder[0]).toBeLessThan(mocks.emit.mock.invocationCallOrder[0]);
+  });
+
   it("clears quietly when the org turned the category off", async () => {
     mocks.settings.mockResolvedValue({ categories: { backups: true, host: false, apps: true }, batchWindowMinutes: 30 });
     mocks.clear.mockResolvedValue([{ about: "host", severity: "warning", sentAt: now, detail: { title: "x" } }]);
@@ -71,6 +95,7 @@ describe("notifyObservations", () => {
     expect(mocks.claim).toHaveBeenCalledWith("org1", "host.memory", [], 1, now);
     expect(mocks.clear).toHaveBeenCalledWith("org1", "host.memory", [], now);
     expect(mocks.emit).not.toHaveBeenCalled();
+    expect(mocks.hold).not.toHaveBeenCalled();
   });
 
   it("keeps a holding subject in the margin from clearing without sending it", async () => {

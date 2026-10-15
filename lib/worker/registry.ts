@@ -72,6 +72,8 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "digest", roles: BOTH, singleton: true, feature: "digest", load: async () => (await import("@/lib/digest/scheduler")).digestLoop },
   { name: "app-recaps", roles: BOTH, singleton: true, feature: "notifications", load: async () => (await import("@/lib/recaps/scheduler")).recapLoop },
   { name: "notification-retry", roles: BOTH, singleton: true, feature: "notifications", load: async () => (await import("@/lib/notifications/scheduler")).notificationRetryLoop },
+  // Not gated on notifications, so held resolutions never pile up.
+  { name: "resolved-flush", roles: BOTH, singleton: true, load: async () => (await import("@/lib/notifications/scheduler")).resolvedFlushLoop },
   { name: "integration-check", roles: BOTH, singleton: true, load: async () => (await import("@/lib/integrations/check")).integrationCheckLoop },
 
   // Observability

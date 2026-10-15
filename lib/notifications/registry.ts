@@ -1,5 +1,7 @@
 // Every alert Vardo emails about: its category, throttle and whether it sends a resolved notice.
 
+import type { AlertItem } from "@/lib/bus/events";
+
 export type AlertSeverity = "warning" | "critical";
 
 export type Throttle =
@@ -89,4 +91,9 @@ const SEVERITY_RANK: Record<AlertSeverity, number> = { warning: 1, critical: 2 }
 
 export function severityRank(severity: string): number {
   return SEVERITY_RANK[severity as AlertSeverity] ?? 0;
+}
+
+/** Worst first, then by title. */
+export function sortAlerts<T extends AlertItem>(items: T[]): T[] {
+  return [...items].sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || a.title.localeCompare(b.title));
 }

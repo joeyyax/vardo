@@ -37,6 +37,7 @@ export class WebhookNotificationChannel implements NotificationChannel {
 
   /** Throws when any body failed to send, so dispatch retries. Receivers dedupe on `id`. */
   async send(event: BusEvent): Promise<DeliveryReceipt> {
+    if (event.type === "alert.resolved" && event.grouped) return {};
     let status = 0;
     const failures: string[] = [];
     for (const body of webhookPayloads(event)) {
@@ -87,7 +88,7 @@ export class SlackNotificationChannel implements NotificationChannel {
   constructor(private config: { webhookUrl: string }) {}
 
   async send(event: BusEvent): Promise<DeliveryReceipt> {
-    if (event.type === "alert.resolved" && event.quiet) return {};
+    if (event.type === "alert.resolved" && (event.quiet || event.held)) return {};
     const emoji = event.type === "notification.test"
       ? ":wave:"
       : event.type.includes("success")

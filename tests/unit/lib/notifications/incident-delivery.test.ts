@@ -22,7 +22,7 @@ vi.mock("@/lib/time-zone-settings", () => ({ getOrgTimeZone: async () => "UTC" }
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: async () => ({ categories: {} }) }));
 vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://vardo.example.com");
 
-const { WebhookNotificationChannel, webhookPayloads } = await import("@/lib/notifications/webhook-channel");
+const { WebhookNotificationChannel, SlackNotificationChannel, webhookPayloads } = await import("@/lib/notifications/webhook-channel");
 const { NtfyNotificationChannel } = await import("@/lib/notifications/ntfy-channel");
 const { DiscordNotificationChannel } = await import("@/lib/notifications/discord-channel");
 const { TelegramNotificationChannel } = await import("@/lib/notifications/telegram-channel");
@@ -77,14 +77,14 @@ const fired = (incident: IncidentRef): BusEvent => ({
   incident,
 });
 
-const resolved = (incident: IncidentRef, quiet = false): BusEvent => ({
+const resolved = (incident: IncidentRef, flags: { quiet?: boolean; held?: boolean; grouped?: boolean } = {}): BusEvent => ({
   id: "evt_2",
   type: "alert.resolved",
   title: "Resolved: Shop keeps restarting",
   message: "Shop keeps restarting",
   alerts: [{ ...item(incident), firedAt: incident.openedAt, resolvedAt: now.toISOString() }],
   incident,
-  ...(quiet ? { quiet } : {}),
+  ...flags,
 });
 
 const body = (i = 0) => JSON.parse(h.calls[i].init.body as string);
@@ -136,10 +136,26 @@ describe("webhook payload", () => {
   });
 
   it("still posts a quiet resolution, which email and push skip", async () => {
-    const event = resolved(ref("resolved"), true);
+    const event = resolved(ref("resolved"), { quiet: true });
     await new WebhookNotificationChannel({ url: "https://hooks.example.com/in" }).send(event);
     expect(body()).toMatchObject({ quiet: true, incident: { transition: "resolved" } });
     expect(emailsEvent(event, { categories: {} })).toBe(false);
+  });
+
+  it("posts a held resolution now and skips the grouped notice that follows", async () => {
+    const hook = new WebhookNotificationChannel({ url: "https://hooks.example.com/in" });
+    await hook.send(resolved(ref("resolved"), { held: true }));
+    await hook.send(resolved(ref("resolved"), { grouped: true }));
+    expect(h.calls).toHaveLength(1);
+    expect(body()).toMatchObject({ held: true, incident: { transition: "resolved" } });
+  });
+
+  it("Slack skips a held resolution and posts the grouped one", async () => {
+    const slack = new SlackNotificationChannel({ webhookUrl: "https://hooks.slack.com/services/T0/B0/x" });
+    await slack.send(resolved(ref("resolved"), { held: true }));
+    expect(h.calls).toHaveLength(0);
+    await slack.send(resolved(ref("resolved"), { grouped: true }));
+    expect(h.calls).toHaveLength(1);
   });
 });
 
@@ -241,6 +257,18 @@ describe("push updates", () => {
     await channel.send(resolved(ref("resolved")), { priorMessageId: "111222333" });
     expect(h.calls[0].init.method).toBe("PATCH");
     expect(h.calls[0].url).toBe("https://discord.com/api/webhooks/123456789012345678/fakeTokenExample_-0/messages/111222333");
+  });
+
+  it("waits for the grouped resolution, which still edits Discord's opening message", async () => {
+    const held = resolved(ref("resolved"), { held: true });
+    const channel = new DiscordNotificationChannel({ webhookUrl: "https://discord.com/api/webhooks/123456789012345678/fakeTokenExample_-0" });
+    await channel.send(held, { priorMessageId: "111222333" });
+    await new NtfyNotificationChannel({ topic: "ops" }, "org1").send(held);
+    expect(h.calls).toHaveLength(0);
+    expect(emailsEvent(held, { categories: {} })).toBe(false);
+
+    await channel.send(resolved(ref("resolved"), { grouped: true }), { priorMessageId: "111222333" });
+    expect(h.calls[0].init.method).toBe("PATCH");
   });
 
   it("Discord posts a new message when the original is gone", async () => {

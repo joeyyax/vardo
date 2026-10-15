@@ -43,7 +43,7 @@ export function emailsEvent(event: BusEvent, settings: Settings): boolean {
       // A restart that recovered is self-healing; the digest counts it.
       return event.gaveUp || !event.success;
     case "alert.resolved":
-      return !event.quiet;
+      return !event.quiet && !event.held;
     // Only outcomes email: the boot, the restart or the update result says what happened.
     case "system.shutdown":
     case "system.restarting":

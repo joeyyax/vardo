@@ -16,6 +16,15 @@ const m = vi.hoisted(() => ({
 
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: m.emit }));
 vi.mock("@/lib/notifications/throttle", () => ({ claimNotifications: m.claim, clearNotifications: m.clear, clearSubjects: vi.fn(async () => []) }));
+// The hold sends its grouped notice at once, as the flush would.
+vi.mock("@/lib/notifications/resolved-hold", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/notifications/resolved-hold")>();
+  return {
+    ...real,
+    holdResolved: async (org: string, items: Parameters<typeof real.resolvedNotice>[0]) => m.emit(org, real.resolvedNotice(items, { grouped: true })),
+    sendHeldResolved: async () => false,
+  };
+});
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: async () => ({ categories: { host: true } }) }));
 vi.mock("@/lib/incidents/store", () => ({
   openIncident: m.open,
@@ -103,6 +112,9 @@ describe("incident email threading, alert pass to Pouch", () => {
   it("sends a resolution without thread headers when the alert has no incident", async () => {
     m.clear.mockResolvedValue([clearedRow]);
     await notifyObservations("org1", ["host.swap"], [], cleared);
+    expect(m.emit.mock.calls.map(([, e]) => [e.held, e.grouped])).toEqual([[true, undefined], [undefined, true]]);
+    await new EmailNotificationChannel({ recipients: ["ops@example.com"] }, "org1").send(m.emit.mock.calls[0][1]);
+    expect(fetchMock).not.toHaveBeenCalled();
     await deliver();
     expect(posted().subject).toBe("Example Home · ✓ Resolved · Swap 55% used");
     expect(posted()).not.toHaveProperty("headers");
