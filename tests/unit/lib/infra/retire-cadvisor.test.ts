@@ -31,7 +31,8 @@ vi.mock("@/lib/redis-lock", () => ({
 }));
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
 
-import { FIRST_SERVED_KEY, markCollectorServed, retireCadvisor } from "@/lib/infra/retire-cadvisor";
+import { FIRST_SERVED_KEY, markCollectorServed } from "@/lib/collector/served";
+import { retireCadvisor } from "@/lib/infra/retire-cadvisor";
 
 const CADVISOR = { id: "app-cad", organizationId: "vardo-org", isSystemManaged: true };
 const provisioned = { env: {}, readCollector: vi.fn(async () => []) };

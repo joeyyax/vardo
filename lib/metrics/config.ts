@@ -55,7 +55,7 @@ export function metricsProvider(env: Env = process.env): MetricsProvider {
   if (mode.kind === "off") return NO_CONTAINER_METRICS;
   return collectorProvider(mode, env, {
     onFirstServe: () => {
-      import("@/lib/infra/retire-cadvisor")
+      import("@/lib/collector/served")
         .then(({ markCollectorServed }) => markCollectorServed())
         .catch((err) => log.warn("Couldn't record the collector's first read:", err));
     },

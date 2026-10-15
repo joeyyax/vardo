@@ -9,6 +9,7 @@ import { deleteApp } from "@/lib/docker/delete-app";
 import { resolveSystemIncident } from "@/lib/incidents/system";
 import { recordCoreServiceStatus, removeCoreServiceStatus } from "@/lib/infra/core-services";
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
+import { hasCollectorServed } from "@/lib/collector/served";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { logger } from "@/lib/logger";
@@ -19,16 +20,8 @@ const APP_NAME = "cadvisor";
 /** The health probe's name, which its service-down incidents are about. */
 const PROBE_NAME = "cAdvisor";
 const MARKER_KEY = "cadvisor_retired";
-/** Written on the collector's first successful read. */
-export const FIRST_SERVED_KEY = "collector_first_served_at";
 const LOCK_KEY = "lock:retire-cadvisor";
 const LOCK_TTL_MS = 10 * 60_000;
-
-/** Records the collector's first successful read. Later calls only read. */
-export async function markCollectorServed(now = new Date()): Promise<void> {
-  if (await getSystemSettingRaw(FIRST_SERVED_KEY)) return;
-  await setSystemSetting(FIRST_SERVED_KEY, now.toISOString());
-}
 
 export type RetireResult = { state: "retired" | "done" | "waiting"; reason?: string };
 
@@ -92,7 +85,7 @@ export async function retireCadvisor(deps: Deps = defaultDeps): Promise<RetireRe
 
 /** Why cAdvisor stays for now, or null once the collector has proven itself. */
 async function guardProblem(deps: Deps): Promise<string | null> {
-  if (!(await getSystemSettingRaw(FIRST_SERVED_KEY))) return "Stays until the collector has served metrics.";
+  if (!(await hasCollectorServed())) return "Stays until the collector has served metrics.";
   try {
     await deps.readCollector();
   } catch (err) {
