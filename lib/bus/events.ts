@@ -828,6 +828,8 @@ export type AlertItem = {
   facts?: { label: string; value: string }[];
   /** ISO time the condition started. */
   since?: string;
+  /** It started at or before `since`, which is only the earliest reading held. */
+  sinceAtLeast?: boolean;
   /** Set when the alert goes out. */
   incident?: IncidentRef;
   /** The host ran out of memory behind this one. */

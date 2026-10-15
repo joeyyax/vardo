@@ -70,6 +70,23 @@ describe("AppRateTracker", () => {
     expect(r.values.egress).toBeUndefined();
   });
 
+  it("leaves network signals to the owner of a shared network namespace", () => {
+    // Long House, 11:37Z: Gluetun, Port Sync and Qbittorrent all read Gluetun's 62.3 MiB/min outbound.
+    const tx = 62.3 * 1024 ** 2;
+    const t = new AppRateTracker();
+    const shared = new Set(["port-sync", "qbittorrent"]);
+    const read = (at: number, n: number) => ["gluetun", "port-sync", "qbittorrent"].map((id) => t.observe(id, [container(id, at, { rx: n * 1_000, tx: n * tx, write: n * 4_096 })], shared).values);
+    read(0, 0);
+    const [gluetun, portSync, qbittorrent] = read(60_000, 1);
+    expect(gluetun.egress).toBeCloseTo(tx / 60);
+    expect(gluetun.ingress).toBeCloseTo(1_000 / 60);
+    for (const sidecar of [portSync, qbittorrent]) {
+      expect(sidecar.egress).toBeUndefined();
+      expect(sidecar.ingress).toBeUndefined();
+      expect(sidecar.diskWrite).toBeCloseTo(4_096 / 60);
+    }
+  });
+
   it("leaves out the process count when the source doesn't report it", () => {
     const r = new AppRateTracker().observe("a1", [container("c1", 0, { rx: 0, tx: 0, pids: null })]);
     expect(r.values.pids).toBeUndefined();

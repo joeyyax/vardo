@@ -16,7 +16,7 @@ import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { BASELINE_WINDOW_MS, WARMUP_MS, computeBaseline, utcOffset, zoneOffset, type Baseline, type ZoneOffset } from "./baseline";
 import { AnomalyEngine } from "./engine";
 import { anomalyItem, newPortItem, newProcessItem, type AppRef, type Finding } from "./items";
-import { appPorts, probeContainer } from "./probe";
+import { appPorts, probeContainer, sharedNetworkSource } from "./probe";
 import { activeFindings, reconcileSeen, type SeenEntry, type TopProcess } from "./security";
 import { SIGNAL_KEYS, isSensitivity, type Sensitivity, type SignalKey } from "./signals";
 import { appendSample, forgetSeen, resetPidsSamples, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
@@ -65,6 +65,8 @@ const state: State = (globalForAnomaly.__vardo_anomaly ??= {
   lastSnapshotAt: 0,
   pidsReset: false,
 });
+
+const sharedNetwork = sharedNetworkSource();
 
 /** Every pids sample before collector process counts: cAdvisor reported 0 and the collector reported threads. */
 export const PIDS_RELEARN_SINCE = 0;
@@ -235,8 +237,9 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
 
   const readings = new Map<string, AppReading>();
   if (fresh) {
+    const shared = await sharedNetwork(enabled.flatMap((a) => a.metrics.map((m) => m.containerIdFull || m.containerId)));
     for (const app of enabled) {
-      const reading = state.tracker.observe(app.id, app.metrics);
+      const reading = state.tracker.observe(app.id, app.metrics, shared);
       if (reading.restarted) markActivity(app.id, now);
       if (app.metrics.length > 0) readings.set(app.id, reading);
     }

@@ -21,7 +21,7 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
-const { appPorts, probeContainer } = await import("@/lib/anomaly/probe");
+const { appPorts, probeContainer, sharedNetworkSource } = await import("@/lib/anomaly/probe");
 
 const HEADER = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
 // 0.0.0.0:32400 and 0.0.0.0:445 listening.
@@ -59,6 +59,30 @@ describe("probeContainer", () => {
     const probe = await probeContainer("abc");
     expect(probe).toMatchObject({ hostNetwork: false, ports: null });
     expect(probe.processes).toHaveLength(2);
+  });
+});
+
+describe("sharedNetworkSource", () => {
+  // Long House: Port Sync and Qbittorrent run with `network_mode: service:gluetun`.
+  const GLUETUN = "65bcc5b5350843e28ca24dc5816af2374b76c2348e3272c8b57f3df661950bde";
+  const modes: Record<string, string> = { gluetun: "transmission-production-blue_default", "port-sync": `container:${GLUETUN}`, qbittorrent: `container:${GLUETUN}` };
+
+  it("picks out containers on another container's network, inspecting each once", async () => {
+    const inspect = vi.fn(async (id: string) => modes[id]);
+    const shared = sharedNetworkSource(inspect);
+    expect(await shared(["gluetun", "port-sync", "qbittorrent"])).toEqual(new Set(["port-sync", "qbittorrent"]));
+    expect(await shared(["gluetun", "port-sync", "qbittorrent"])).toEqual(new Set(["port-sync", "qbittorrent"]));
+    expect(inspect).toHaveBeenCalledTimes(3);
+  });
+
+  it("counts a container it can't inspect as its own, and asks again", async () => {
+    const inspect = vi.fn(async (id: string) => {
+      if (inspect.mock.calls.length === 1) throw new Error("timeout");
+      return modes[id];
+    });
+    const shared = sharedNetworkSource(inspect);
+    expect(await shared(["port-sync"])).toEqual(new Set());
+    expect(await shared(["port-sync"])).toEqual(new Set(["port-sync"]));
   });
 });
 

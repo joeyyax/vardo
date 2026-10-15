@@ -32,7 +32,7 @@ function cores(percent: number): string {
   return `${(percent / 100).toFixed(1)} cores`;
 }
 
-/** Egress first: the classic sign of a compromised app. */
+/** Signal order breaks ties for which one leads an alert. */
 export const SIGNALS: Record<SignalKey, SignalDef> = {
   egress: { key: "egress", label: "Outbound traffic", floor: MiB / 60, weight: 0.67, sustainMs: 10 * MIN, format: perMinute },
   cpu: { key: "cpu", label: "CPU", floor: 5, weight: 1, sustainMs: 15 * MIN, format: cores },

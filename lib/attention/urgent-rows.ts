@@ -81,7 +81,7 @@ export function anomalyRows(apps: Subject[], open: OpenAnomaly[]): AttentionRow[
       tone: "error",
       group: "anomaly",
       items,
-      footer: "Far outside the app's own normal. If nothing explains it, a compromised app can look like this.",
+      footer: "Outside the app's own normal for this time of day. Check logs, recent deploys and processes.",
     },
   ];
 }

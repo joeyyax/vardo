@@ -116,6 +116,13 @@ describe("several alerts at once", () => {
     const apart: AlertFiredEvent = { ...noMemory, alerts: [noMemory.alerts[0], { ...noMemory.alerts[1], since: "2026-10-09T18:00:00.000Z" }] };
     expect(block(alertFiredMail(apart, FIXTURE_CONTEXT).blocks, "text")?.text).toBe("They fired in the same check.");
   });
+
+  it("doesn't claim they started together when a start is only the first reading after a restart", () => {
+    const event = fixture<"alert.fired">("alert-coalesced");
+    const [a, b] = event.alerts.filter((x) => x.type !== "host.memory");
+    const booted: AlertFiredEvent = { ...event, alerts: [{ ...a, sinceAtLeast: true }, b] };
+    expect(block(alertFiredMail(booted, FIXTURE_CONTEXT).blocks, "text")?.text).toBe("They've been going since at least 14:02 UTC.");
+  });
 });
 
 describe("unusual traffic email", () => {
@@ -155,6 +162,12 @@ describe("resolved email", () => {
       { name: "Shop", sub: "near its memory limit", href: url("/apps/app_shop"), cells: ["13:50 UTC", "51 min"] },
     ]);
     expect(mail.action).toBeUndefined();
+  });
+
+  it("marks a start that's only the first reading held", () => {
+    const event = fixture<"alert.resolved">("alert-resolved");
+    const mail = alertResolvedMail({ ...event, alerts: [{ ...event.alerts[1], sinceAtLeast: true }] }, FIXTURE_CONTEXT);
+    expect(block(mail.blocks, "stats")?.rows[0].cells).toEqual(["by 13:50 UTC", "at least 51 min"]);
   });
 
   it("doesn't speak of alert lines for alerts without one", () => {
