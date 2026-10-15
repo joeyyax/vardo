@@ -29,4 +29,4 @@ A `network_mode: host` container shows no network traffic.
 
 ## Upgrading from cAdvisor
 
-Earlier releases ran cAdvisor next to the collector. Vardo removes that install on its own, about 10 minutes after boot and then hourly, once the collector has served metrics and a direct read of it succeeds. Until then, Admin → Built-in services lists cAdvisor as Retiring and says why. With `VARDO_COLLECTOR_IMAGE=off`, nothing reads cAdvisor, so it's removed without waiting.
+Earlier releases ran cAdvisor next to the collector. Vardo removes that install on its own, about 10 minutes after boot and then hourly. With metrics on and a collector configured, it waits until the collector has served metrics and a direct read of it succeeds. Until then, Admin → Built-in services lists cAdvisor as Retiring and says why. With metrics off or `VARDO_COLLECTOR_IMAGE=off`, nothing reads cAdvisor, so it's removed without waiting.

@@ -35,7 +35,7 @@ import { FIRST_SERVED_KEY, markCollectorServed } from "@/lib/collector/served";
 import { retireCadvisor } from "@/lib/infra/retire-cadvisor";
 
 const CADVISOR = { id: "app-cad", organizationId: "vardo-org", isSystemManaged: true };
-const provisioned = { env: {}, readCollector: vi.fn(async () => []) };
+const provisioned = { env: {}, readCollector: vi.fn(async () => []), metricsEnabled: vi.fn(async () => true) };
 
 describe("retireCadvisor", () => {
   beforeEach(() => {
@@ -88,10 +88,18 @@ describe("retireCadvisor", () => {
   });
 
   it("retires without the guard in off mode, where nothing reads cAdvisor", async () => {
-    const off = { env: { VARDO_COLLECTOR_IMAGE: "off" }, readCollector: vi.fn() };
+    const off = { env: { VARDO_COLLECTOR_IMAGE: "off" }, readCollector: vi.fn(), metricsEnabled: vi.fn(async () => true) };
     expect(await retireCadvisor(off)).toEqual({ state: "retired" });
     expect(off.readCollector).not.toHaveBeenCalled();
     expect(deleteAppMock).toHaveBeenCalledOnce();
+  });
+
+  it("retires without the guard with metrics off, where nothing reads cAdvisor", async () => {
+    const metricsOff = { env: {}, readCollector: vi.fn(), metricsEnabled: vi.fn(async () => false) };
+    expect(await retireCadvisor(metricsOff)).toEqual({ state: "retired" });
+    expect(metricsOff.readCollector).not.toHaveBeenCalled();
+    expect(deleteAppMock).toHaveBeenCalledOnce();
+    expect(settings.has("cadvisor_retired")).toBe(true);
   });
 
   it("leaves it to the process holding the lock", async () => {

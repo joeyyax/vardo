@@ -85,7 +85,8 @@ export const LOOP_REGISTRY: LoopEntry[] = [
     start: async (role) => (await import("@/lib/metrics/collector")).startCollector(role),
     stop: async () => (await import("@/lib/metrics/collector")).stopCollector(),
   },
-  { name: "cadvisor-retire", roles: BOTH, singleton: true, feature: "metrics", load: async () => (await import("@/lib/infra/retire-cadvisor")).retireCadvisorLoop },
+  // Not gated on metrics: with it off, cAdvisor goes without the guard.
+  { name: "cadvisor-retire", roles: BOTH, singleton: true, load: async () => (await import("@/lib/infra/retire-cadvisor")).retireCadvisorLoop },
   { name: "metrics-orphan-sweep", roles: BOTH, singleton: true, feature: "metrics", load: async () => (await import("@/lib/metrics/series-cleanup")).orphanSeriesLoop },
   // Not gated on metrics: domain checks roll up without it.
   { name: "metrics-rollup", roles: BOTH, singleton: true, load: async () => (await import("@/lib/metrics/rollup")).metricsRollupLoop },

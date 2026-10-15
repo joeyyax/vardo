@@ -28,6 +28,7 @@ export type RetireResult = { state: "retired" | "done" | "waiting"; reason?: str
 type Deps = {
   /** One read through a fresh collector provider. Rejects when the collector can't serve. */
   readCollector: () => Promise<unknown>;
+  metricsEnabled: () => Promise<boolean>;
   env?: Record<string, string | undefined>;
 };
 
@@ -38,13 +39,14 @@ const defaultDeps: Deps = {
     const { collectorProvider } = await import("@/lib/metrics/config");
     await collectorProvider(mode).fetchAll();
   },
+  metricsEnabled: async () => (await import("@/lib/config/features")).isFeatureEnabledAsync("metrics"),
 };
 
-/** Removes cAdvisor once nothing could need it. In off mode nothing reads it, so it goes without the guard. */
+/** Removes cAdvisor once nothing could need it. With metrics off or in off mode nothing reads it, so it goes without the guard. */
 export async function retireCadvisor(deps: Deps = defaultDeps): Promise<RetireResult> {
   if (await getSystemSettingRaw(MARKER_KEY)) return { state: "done" };
 
-  if (collectorMode(deps.env).kind !== "off") {
+  if (collectorMode(deps.env).kind !== "off" && (await deps.metricsEnabled())) {
     const reason = await guardProblem(deps);
     if (reason) {
       await recordWaiting(reason);
