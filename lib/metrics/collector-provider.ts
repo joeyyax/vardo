@@ -1,7 +1,7 @@
 // Container metrics from the collector's JSON API, in cAdvisor's ContainerMetrics shape.
 
 import { CollectorHttpError, type CollectorClient, type CollectorContainer } from "@/lib/collector/client";
-import { identityLabels, organizationOf, projectOf } from "./cadvisor";
+import { identityLabels, organizationOf, projectOf } from "./labels";
 import type { MetricsProvider } from "./provider";
 import type { ContainerMetrics } from "./types";
 
