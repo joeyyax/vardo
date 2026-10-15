@@ -24,6 +24,9 @@ export function uncapturedReason(vol: CoverableVolume): string {
   return `Bind mount${path} is not backed up — mark the volume stateful to archive this host path`;
 }
 
+/** How a backup row's log says the engine skipped a bind source that's empty and never held data. */
+export const EMPTY_BIND_SKIP_LOG = "is empty and has never been backed up with data";
+
 export type VolumeCoverage = { covered: true } | { covered: false; reason: string | null };
 
 /**

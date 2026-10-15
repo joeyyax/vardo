@@ -29,6 +29,7 @@ import { trackBackupWork } from "./in-flight";
 import { assertSafeName } from "@/lib/docker/validate";
 import { skipsAsConfig } from "./bind-config";
 import {
+  EMPTY_BIND_SKIP_LOG,
   isUncapturedSource,
   pausedDumpReason,
   removedVolumeReason,
@@ -1260,7 +1261,7 @@ async function runBackupUntracked(
 
       // Empty and never held data is fine. Once it has held data, empty means the mount went missing.
       if (err instanceof EmptyBindSourceError && !(await bindSourceHeldData(vol.appId, vol.name))) {
-        log(`Skipping volume ${vol.name}: ${vol.source} is empty and has never been backed up with data`);
+        log(`Skipping volume ${vol.name}: ${vol.source} ${EMPTY_BIND_SKIP_LOG}`);
         const finishedAt = new Date();
         await db
           .update(backups)
