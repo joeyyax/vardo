@@ -83,3 +83,13 @@ export async function announceRollout(rollout: Rollout, notice: "started" | "bus
     log.error(`Couldn't announce rollout ${notice}:`, error);
   }
 }
+
+export async function closeRolloutIncident(rollout: Rollout): Promise<void> {
+  try {
+    for (const organizationId of await adminOrgIds()) {
+      await safely("resolve", () => resolveIncidents(organizationId, INCIDENT, [rollout.id], new Date()), new Map());
+    }
+  } catch (error) {
+    log.warn("Couldn't close the rollout incident:", error);
+  }
+}

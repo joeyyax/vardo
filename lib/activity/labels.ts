@@ -81,6 +81,7 @@ const PHRASES: Record<string, Phrase> = {
   "system.rollout_completed": { text: "finished a Vardo instance rollout", standalone: true },
   "system.rollout_superseded": { text: "replaced an instance rollout with a newer release", standalone: true },
   "system.rollout_immediate": { text: "skipped the instance priority queue", standalone: true },
+  "system.rollout_dismissed": { text: "dismissed a paused instance rollout", standalone: true },
   "system.rollout_retried": { text: "retried a Vardo instance rollout", standalone: true },
   "system.rollout_member_started": { text: "started updating" },
   "system.rollout_member_busy": { text: "saw an update wait on" },

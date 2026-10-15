@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Rollout, RolloutMember } from "@/lib/self-update/rollout-plan";
 
-export type RolloutAction = { action: "immediate" | "skip" | "retry"; instanceId?: string };
+export type RolloutAction = { action: "immediate" | "skip" | "retry" | "dismiss"; instanceId?: string };
 
 const STATE_LABELS: Record<RolloutMember["state"], string> = {
   waiting: "Waiting", busy: "Busy", updating: "Updating", verified: "Updated",
@@ -15,7 +15,7 @@ const PRIORITY_LABELS: Record<RolloutMember["priority"], string> = {
   critical: "Critical", standard: "Standard", low: "Low",
 };
 
-export function RolloutStatus({ rollout, onAction }: { rollout: Rollout; onAction: (action: RolloutAction) => void }) {
+export function RolloutStatus({ rollout, unlinked = [], onAction }: { rollout: Rollout; unlinked?: string[]; onAction: (action: RolloutAction) => void }) {
   const updated = rollout.members.filter((member) => member.state === "verified").length;
   return (
     <section aria-label="Instance rollout" className="space-y-4 border-t pt-4" aria-live="polite">
@@ -31,7 +31,10 @@ export function RolloutStatus({ rollout, onAction }: { rollout: Rollout; onActio
           <Button variant="outline" size="sm" onClick={() => onAction({ action: "immediate" })}>Roll out everywhere now</Button>
         )}
         {rollout.state === "paused" && (
-          <Button variant="outline" size="sm" onClick={() => onAction({ action: "retry" })}>Retry rollout</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onAction({ action: "retry" })}>Retry rollout</Button>
+            <Button variant="ghost" size="sm" onClick={() => onAction({ action: "dismiss" })}>Dismiss rollout</Button>
+          </div>
         )}
       </div>
       <ul className="divide-y rounded-lg border">
@@ -47,6 +50,9 @@ export function RolloutStatus({ rollout, onAction }: { rollout: Rollout; onActio
             </div>
             {member.state === "busy" && rollout.state === "running" && (
               <Button variant="ghost" size="sm" onClick={() => onAction({ action: "skip", instanceId: member.instanceId })}>Skip this rollout</Button>
+            )}
+            {unlinked.includes(member.instanceId) && (
+              <Button variant="ghost" size="sm" onClick={() => onAction({ action: "skip", instanceId: member.instanceId })}>Remove from rollout</Button>
             )}
           </li>
         ))}

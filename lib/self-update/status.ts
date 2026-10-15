@@ -9,7 +9,7 @@ import { isRunActive } from "./decide";
 import { activeUpdate, type ActiveUpdate } from "./lifecycle";
 import { getRollout, getUpdatePolicy, getUpdateRun, type UpdateRun } from "./store";
 import type { Rollout } from "./rollout-plan";
-import { isRolloutCoordinator } from "./coordinator";
+import { isRolloutCoordinator, unlinkedMemberIds } from "./coordinator";
 import { parseRolloutCapability } from "./rollout-capability";
 
 export type UpdateStatus = {
@@ -27,6 +27,8 @@ export type UpdateStatus = {
   active: ActiveUpdate | null;
   rollout: Rollout | null;
   rolloutCoordinator: boolean;
+  /** Stuck rollout members whose instance is no longer linked. */
+  unlinkedMembers: string[];
   protocolReady: boolean;
   hostCommand: string;
 };
@@ -40,6 +42,7 @@ export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<U
     isRolloutCoordinator(),
     db.query.meshPeers.findMany({ columns: { connectionType: true, type: true, vardoUpdate: true } }),
   ]);
+  const unlinkedMembers = rollout && rolloutCoordinator ? await unlinkedMemberIds(rollout) : [];
   const channel = effectiveChannel(policy);
   const { update, noRelease } = await getChannelCheck(channel, opts);
   const sha = getBuildSha();
@@ -47,7 +50,7 @@ export async function getUpdateStatus(opts: { fresh?: boolean } = {}): Promise<U
     selfDeploy: isSelfDeployLayout(),
     current: { version: formatVersion(pkg.version, sha) ?? pkg.version, sha },
     policy, channel, update, noRelease, checkError: update || noRelease ? null : getGitHubCheckError(), run, runActive: isRunActive(run), active,
-    rollout, rolloutCoordinator,
+    rollout, rolloutCoordinator, unlinkedMembers,
     protocolReady: peers.every((peer) => peer.connectionType !== "direct" || peer.type !== "persistent" || !!parseRolloutCapability(peer.vardoUpdate)),
     hostCommand: "sudo vardo update",
   };
