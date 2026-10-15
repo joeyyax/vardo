@@ -47,7 +47,7 @@ docker compose down                   # Stop all services
 - **`lib/docker/`** — Docker orchestration engine. Blue-green deployments with automatic rollback, compose parsing, container discovery, PR preview environments.
 - **`lib/backups/`** — Backup system with S3, R2, B2, SSH and local storage adapters. Scheduled via cron with retention policies.
 - **`lib/mesh/`** — Wireguard mesh networking for multi-node deployments. Peer management, heartbeats, config inheritance.
-- **`lib/metrics/`** — Time-series metrics from cAdvisor. In-memory store with SSE streaming to frontend.
+- **`lib/metrics/`** — Time-series metrics from the collector (`joeyyax/collector`). In-memory store with SSE streaming to frontend.
 - **`lib/notifications/`** — Alert dispatch to email and webhook channels.
 
 ### Key Patterns
@@ -62,7 +62,7 @@ docker compose down                   # Stop all services
 
 Dev needs `.env` with `ENCRYPTION_MASTER_KEY` set (`openssl rand -hex 32`) and `DB_PASSWORD` matching `DATABASE_URL` (`.env.example` has both).
 
-Compose stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), Wireguard. cAdvisor, Loki and Promtail are deployed as managed apps by Vardo. Production Dockerfile installs Docker CLI, Nixpacks and Railpack for build support.
+Compose stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), Wireguard. The collector, Loki and Promtail are deployed as managed apps by Vardo. Production Dockerfile installs Docker CLI, Nixpacks and Railpack for build support.
 
 ## UI components
 

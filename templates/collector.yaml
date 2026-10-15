@@ -1,7 +1,7 @@
 version: "1"
 name: collector
 displayName: Collector
-description: Host, container and GPU metrics from one agent. cAdvisor stays as the fallback.
+description: Host, container and GPU metrics from one agent.
 icon: https://cdn.simpleicons.org/prometheus/E6522C
 category: monitoring
 source: direct

@@ -1,4 +1,4 @@
-// Which collector Vardo reads, from env: an existing one by URL, one it provisions, or none (cAdvisor only).
+// Which collector Vardo reads, from env: an existing one by URL, one it provisions, or none.
 
 import { readFile } from "node:fs/promises";
 
@@ -18,7 +18,7 @@ export type CollectorMode =
 
 type Env = Record<string, string | undefined>;
 
-/** `VARDO_COLLECTOR_URL` wins; `VARDO_COLLECTOR_IMAGE=off` leaves cAdvisor alone; otherwise Vardo provisions one. */
+/** `VARDO_COLLECTOR_URL` wins; `VARDO_COLLECTOR_IMAGE=off` reads no container metrics; otherwise Vardo provisions one. */
 export function collectorMode(env: Env = process.env): CollectorMode {
   const url = env.VARDO_COLLECTOR_URL?.trim();
   if (url) return { kind: "url", url: url.replace(/\/+$/, "") };

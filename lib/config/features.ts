@@ -145,7 +145,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   metrics: {
     label: "Metrics",
     description:
-      "Container resource metrics via cAdvisor. One cAdvisor scrapes every container on the host and every organization reads it.",
+      "Container and GPU metrics from the collector. One collector reads every container on the host and every organization reads it.",
     group: "observability",
     sharedService: true,
   },

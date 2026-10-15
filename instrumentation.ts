@@ -55,7 +55,7 @@ export async function register() {
       log.warn("Failed to load feature flags:", err)
     );
 
-    // Live metrics streams read cAdvisor from this process even when the worker runs the collector.
+    // Live metrics streams read the collector from this process even when the worker runs the metrics loop.
     const { initMetricsProvider } = await import("./lib/metrics/config");
     await initMetricsProvider().catch((err) => log.warn("Failed to set up the metrics provider:", err));
 
@@ -201,7 +201,7 @@ export async function register() {
       .then(({ recordBackupBootInBackground }) => recordBackupBootInBackground(credentialStep))
       .catch((err) => log.error("Failed to record backup boot steps:", err));
 
-    // Provisions cAdvisor, Loki and Promtail before feature registration so collectors find them.
+    // Provisions the collector, Loki and Promtail before feature registration so their readers find them.
     try {
       const { ensureInfraServices } = await import("./lib/infra/provision");
       await ensureInfraServices();

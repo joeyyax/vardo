@@ -1,4 +1,4 @@
-// Which cAdvisor rows belong to one app, matched on Docker labels.
+// Which metrics rows belong to one app, matched on Docker labels.
 // x-vardo-shared services never get vardo labels (--no-recreate), so they match by compose project name.
 
 import type { ContainerInfo } from "@/lib/docker/client";
@@ -10,7 +10,7 @@ import type { ContainerMetrics } from "./types";
 /** An app row as far as metrics matching is concerned. */
 export type MetricsApp = ReconcilableApp & { organizationId?: string | null };
 
-/** A cAdvisor row in the shape the Docker matcher reads. */
+/** A metrics row in the shape the Docker matcher reads. */
 function asContainer(m: ContainerMetrics): ContainerInfo {
   return {
     id: m.containerIdFull || m.containerId,

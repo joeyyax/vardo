@@ -1,115 +1,105 @@
 [
   {
-    "id": "19bfcccbf533818ecea7050970350385296e39821cca0152146b790aefdc25fd",
-    "name": "bmpr-sampler",
-    "image": "node:22-slim",
+    "id": "7f0bb75bbbd3a691957197197b0ee19e24e7cbc9220f840795b4bf0c074c62d7",
+    "name": "fixture-collector-a",
+    "image": "ghcr.io/joeyyax/collector:0.1.0",
     "labels": {},
-    "pid": 931641,
+    "pid": 1401636,
     "network_mode": "bridge",
-    "started_at": "2026-10-15T00:32:49.762458891Z",
-    "created": "2026-10-15T00:32:49.712376609Z",
+    "started_at": "2026-10-15T03:35:56.679259535Z",
+    "created": "2026-10-15T03:35:56.473721267Z",
     "cpu": {
-      "usage_seconds_total": 4.621305,
-      "usage_cores": 0.0262061472870834,
+      "usage_seconds_total": 0.593612,
+      "usage_cores": 0.013349920889045231,
       "limit_cores": null,
       "throttled_periods_total": 0,
       "throttled_seconds_total": 0.0
     },
     "memory": {
-      "usage_bytes": 4902912,
-      "working_set_bytes": 2551808,
-      "peak_bytes": 7561216,
+      "usage_bytes": 18624512,
+      "working_set_bytes": 16875520,
+      "peak_bytes": 19169280,
       "limit_bytes": null,
-      "rss_bytes": 610304,
-      "cache_bytes": 3551232,
-      "swap_bytes": 446464,
+      "rss_bytes": 15302656,
+      "cache_bytes": 3252224,
+      "swap_bytes": 0,
       "oom_kills_total": 0
     },
     "io": [
       {
-        "device": "/dev/zram0",
-        "read_bytes_total": 32768,
-        "write_bytes_total": 454656
-      },
-      {
         "device": "/dev/vdb",
-        "read_bytes_total": 10514432,
+        "read_bytes_total": 3317760,
         "write_bytes_total": 0
       }
     ],
     "network": [
       {
         "interface": "eth0",
-        "receive_bytes_total": 5066,
-        "transmit_bytes_total": 1330,
-        "receive_bytes_per_second": 58.74219947495942,
-        "transmit_bytes_per_second": 0.0
+        "receive_bytes_total": 3338,
+        "transmit_bytes_total": 1190,
+        "receive_bytes_per_second": 9.337334694555599,
+        "transmit_bytes_per_second": 4.6686673472777995
       }
     ],
     "pids": {
-      "current": 2,
+      "current": 13,
       "limit": null
     }
   },
   {
-    "id": "2f6b7dda317349d1d84c09f510fad4329ddb7e080d2d3c3ab103471b0e828537",
-    "name": "cadvisor-production-green-cadvisor-1",
-    "image": "gcr.io/cadvisor/cadvisor:v0.55.1",
+    "id": "27c699e6dc7e473cb5142e9008a59f0e374a9f06226a5dfaf414f5bb35b953d3",
+    "name": "promtail-production-green-promtail-1",
+    "image": "grafana/promtail:3.6",
     "labels": {
-      "com.docker.compose.project": "cadvisor-production-green",
-      "com.docker.compose.service": "cadvisor",
+      "com.docker.compose.project": "promtail-production-green",
+      "com.docker.compose.service": "promtail",
       "vardo.environment": "production",
-      "vardo.project": "cadvisor"
+      "vardo.project": "promtail"
     },
-    "pid": 2193,
+    "pid": 2194,
     "network_mode": "vardo-monitoring",
-    "started_at": "2026-10-14T15:23:51.746910835Z",
-    "created": "2026-10-14T04:44:34.865775848Z",
+    "started_at": "2026-10-14T15:23:51.741135044Z",
+    "created": "2026-10-14T04:44:54.072663026Z",
     "cpu": {
-      "usage_seconds_total": 30.525955,
-      "usage_cores": 0.0010814025996314241,
+      "usage_seconds_total": 478.498368,
+      "usage_cores": 0.013051259569315089,
       "limit_cores": 8.99999,
       "throttled_periods_total": 0,
       "throttled_seconds_total": 0.0
     },
     "memory": {
-      "usage_bytes": 22761472,
-      "working_set_bytes": 20815872,
-      "peak_bytes": 38277120,
+      "usage_bytes": 91660288,
+      "working_set_bytes": 56774656,
+      "peak_bytes": 177287168,
       "limit_bytes": 268435456,
-      "rss_bytes": 9846784,
-      "cache_bytes": 11993088,
-      "swap_bytes": 3796992,
+      "rss_bytes": 51847168,
+      "cache_bytes": 38719488,
+      "swap_bytes": 3788800,
       "oom_kills_total": 0
     },
     "io": [
       {
         "device": "/dev/zram0",
-        "read_bytes_total": 45150208,
-        "write_bytes_total": 56598528
-      },
-      {
-        "device": "/dev/vda",
-        "read_bytes_total": 1077248,
-        "write_bytes_total": 0
+        "read_bytes_total": 281780224,
+        "write_bytes_total": 324952064
       },
       {
         "device": "/dev/vdb",
-        "read_bytes_total": 3285958656,
-        "write_bytes_total": 0
+        "read_bytes_total": 26304950272,
+        "write_bytes_total": 2292596736
       }
     ],
     "network": [
       {
         "interface": "eth0",
-        "receive_bytes_total": 4604,
-        "transmit_bytes_total": 2170,
+        "receive_bytes_total": 10794,
+        "transmit_bytes_total": 2380,
         "receive_bytes_per_second": 0.0,
         "transmit_bytes_per_second": 0.0
       }
     ],
     "pids": {
-      "current": 15,
+      "current": 16,
       "limit": 4096
     }
   },
@@ -126,39 +116,39 @@
     "started_at": "2026-10-14T15:23:51.677900002Z",
     "created": "2026-10-13T05:07:17.292149541Z",
     "cpu": {
-      "usage_seconds_total": 667.247602,
-      "usage_cores": 0.010538563709433934,
+      "usage_seconds_total": 853.293306,
+      "usage_cores": 0.009488932992846491,
       "limit_cores": null,
       "throttled_periods_total": 0,
       "throttled_seconds_total": 0.0
     },
     "memory": {
-      "usage_bytes": 49000448,
-      "working_set_bytes": 29499392,
+      "usage_bytes": 118935552,
+      "working_set_bytes": 98578432,
       "peak_bytes": 362074112,
       "limit_bytes": 1073741824,
-      "rss_bytes": 937984,
-      "cache_bytes": 46313472,
-      "swap_bytes": 125886464,
+      "rss_bytes": 2637824,
+      "cache_bytes": 113725440,
+      "swap_bytes": 46100480,
       "oom_kills_total": 0
     },
     "io": [
       {
         "device": "/dev/zram0",
-        "read_bytes_total": 770924544,
-        "write_bytes_total": 932114432
+        "read_bytes_total": 901636096,
+        "write_bytes_total": 987435008
       },
       {
         "device": "/dev/vdb",
-        "read_bytes_total": 7617658880,
-        "write_bytes_total": 5099610112
+        "read_bytes_total": 9755140096,
+        "write_bytes_total": 8058892288
       }
     ],
     "network": [
       {
         "interface": "eth0",
-        "receive_bytes_total": 195159782,
-        "transmit_bytes_total": 157571333,
+        "receive_bytes_total": 244857192,
+        "transmit_bytes_total": 193703823,
         "receive_bytes_per_second": 0.0,
         "transmit_bytes_per_second": 0.0
       }

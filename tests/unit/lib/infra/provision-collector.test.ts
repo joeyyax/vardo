@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
-// The collector core service exists unless VARDO_COLLECTOR_IMAGE=off or VARDO_COLLECTOR_URL is set. Nothing provisions cAdvisor.
+// The collector core service exists unless VARDO_COLLECTOR_IMAGE=off or VARDO_COLLECTOR_URL is set.
 
 const {
   dbMock,

@@ -19,7 +19,7 @@ const vardoChild = { isSystemManaged: true, name: "vardo-postgres" };
 // Decomposition created child rows without the parent's flag; migration 0050
 // backfills them, but the guard must not depend on that having run.
 const unflaggedVardoChild = { isSystemManaged: false, name: "vardo-frontend" };
-const infra = { isSystemManaged: true, name: "cadvisor" };
+const infra = { isSystemManaged: true, name: "collector" };
 const userApp = { isSystemManaged: false, name: "my-app" };
 
 describe("systemManagedRefusal", () => {
@@ -84,7 +84,7 @@ describe("isVardoStack", () => {
   });
 
   it("does not match infra apps or lookalike names", () => {
-    expect(isVardoStack("cadvisor")).toBe(false);
+    expect(isVardoStack("collector")).toBe(false);
     expect(isVardoStack("vardose")).toBe(false);
     expect(isVardoStack(null)).toBe(false);
   });

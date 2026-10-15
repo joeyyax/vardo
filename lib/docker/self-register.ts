@@ -32,7 +32,7 @@ const FRONTEND_SERVICE = "frontend";
 /** Port the frontend service listens on. */
 const FRONTEND_PORT = 3000;
 
-// Infrastructure services registered as child apps. cadvisor, loki and promtail live in lib/infra/provision.ts.
+// Infrastructure services registered as child apps. The collector, loki and promtail live in lib/infra/provision.ts.
 const INFRA_SERVICES = new Set([
   "postgres",
   "redis",

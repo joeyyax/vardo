@@ -1,5 +1,5 @@
 /**
- * Rates from cAdvisor's cumulative byte counters.
+ * Rates from cumulative byte counters.
  * A counter drop (restart or set change) and the sample after it are reported as unknown.
  */
 

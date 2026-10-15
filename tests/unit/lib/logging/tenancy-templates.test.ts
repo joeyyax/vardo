@@ -95,7 +95,7 @@ describe("the Promtail template", () => {
 
     it("names no individual service, so a new core service needs no config change", () => {
       const config = JSON.stringify(scrape.relabel_configs);
-      for (const service of ["promtail", "loki", "cadvisor", "vardo"]) {
+      for (const service of ["promtail", "loki", "collector", "vardo"]) {
         expect(config).not.toContain(`"${service}"`);
       }
     });

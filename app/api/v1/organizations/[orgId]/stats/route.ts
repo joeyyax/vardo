@@ -112,7 +112,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         timestamp: new Date().toISOString(),
       });
     } catch {
-      // cAdvisor unavailable; return projects without stats
+      // Metrics unavailable; return projects without stats
       return NextResponse.json({
         projects: orgApps.map((p) => ({ ...p, containers: [] })),
         timestamp: new Date().toISOString(),

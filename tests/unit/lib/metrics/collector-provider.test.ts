@@ -11,14 +11,14 @@ import {
   WritableLayerSizes,
 } from "@/lib/metrics/collector-provider";
 
-// Fixtures are real /api/v1 responses on OrbStack: collector 3d51106 (0.1.0) and 0.2.0 with the template's api_labels.
+// Fixtures are real /api/v1 responses on OrbStack: collector 0.1.0, and 0.2.0 with the template's api_labels.
 const fixture = <T>(name: string): T =>
   JSON.parse(readFileSync(join(__dirname, "fixtures", name), "utf-8")) as T;
 const containers = () => fixture<CollectorContainer[]>("collector-containers.json");
 const host = () => fixture<CollectorHost>("collector-host.json");
 const containers020 = () => fixture<CollectorContainer[]>("collector-0.2-containers.json");
 
-const CADVISOR_ID = "2f6b7dda317349d1d84c09f510fad4329ddb7e080d2d3c3ab103471b0e828537";
+const PROMTAIL_ID = "27c699e6dc7e473cb5142e9008a59f0e374a9f06226a5dfaf414f5bb35b953d3";
 const POSTGRES_ID = "6a04ff5e6683dacbc726fed848e031e0aeb6d5039067066d528923b51dbdbb69";
 
 afterEach(() => {
@@ -29,30 +29,30 @@ afterEach(() => {
 describe("mapCollectorContainers", () => {
   const ts = 1_792_024_558_259;
 
-  it("maps each value Vardo reads from cAdvisor", () => {
-    const [cadvisor] = mapCollectorContainers(containers(), { timestamp: ts }).filter((m) => m.containerIdFull === CADVISOR_ID);
-    expect(cadvisor).toEqual({
-      containerId: "2f6b7dda3173",
-      containerIdFull: CADVISOR_ID,
-      containerName: "cadvisor-production-green-cadvisor-1",
-      projectName: "cadvisor",
+  it("maps each value Vardo reads", () => {
+    const [promtail] = mapCollectorContainers(containers(), { timestamp: ts }).filter((m) => m.containerIdFull === PROMTAIL_ID);
+    expect(promtail).toEqual({
+      containerId: "27c699e6dc7e",
+      containerIdFull: PROMTAIL_ID,
+      containerName: "promtail-production-green-promtail-1",
+      projectName: "promtail",
       organizationId: null,
       labels: {
-        "com.docker.compose.project": "cadvisor-production-green",
-        "com.docker.compose.service": "cadvisor",
+        "com.docker.compose.project": "promtail-production-green",
+        "com.docker.compose.service": "promtail",
         "vardo.environment": "production",
-        "vardo.project": "cadvisor",
+        "vardo.project": "promtail",
       },
-      cpuPercent: 0.11, // usage_cores 0.00108 as percent of one core
-      memoryUsage: 20_815_872, // working set, as cAdvisor
+      cpuPercent: 1.31, // usage_cores 0.01305 as percent of one core
+      memoryUsage: 56_774_656, // working set
       memoryLimit: 268_435_456,
-      memoryPercent: 7.75,
-      networkRxBytes: 4604,
-      networkTxBytes: 2170,
+      memoryPercent: 21.15,
+      networkRxBytes: 10_794,
+      networkTxBytes: 2380,
       diskUsage: null,
       diskLimit: null,
-      diskWriteBytes: 0, // zram0 (swap) excluded; vda and vdb wrote nothing
-      processCount: 15,
+      diskWriteBytes: 2_292_596_736, // vdb; zram0 (swap) excluded
+      processCount: 16,
       gpuUtilization: 0,
       gpuMemoryUsed: 0,
       gpuMemoryTotal: 0,
@@ -63,20 +63,20 @@ describe("mapCollectorContainers", () => {
 
   it("sums disk writes over block devices and reads an unlimited memory limit as 0", () => {
     const pg = mapCollectorContainers(containers(), { timestamp: ts }).find((m) => m.containerIdFull === POSTGRES_ID)!;
-    expect(pg.diskWriteBytes).toBe(5_099_610_112);
-    expect(pg.projectName).toBe("vardo"); // compose project, as cAdvisor falls back to
+    expect(pg.diskWriteBytes).toBe(8_058_892_288);
+    expect(pg.projectName).toBe("vardo"); // compose project, with no Vardo label
     expect(pg.memoryLimit).toBe(1_073_741_824);
   });
 
-  it("drops containers with no project label, as cAdvisor's reader does", () => {
+  it("drops containers with no project label", () => {
     const names = mapCollectorContainers(containers(), { timestamp: ts }).map((m) => m.containerName);
-    expect(names).not.toContain("bmpr-sampler");
+    expect(names).not.toContain("fixture-collector-a");
     expect(names).toHaveLength(2);
   });
 
   it("fills org and project id from Docker labels the collector's allowlist drops", () => {
-    const dockerLabels = new Map([[CADVISOR_ID, { "vardo.organization": "org-1", "vardo.project.id": "app-9", "traefik.enable": "false" }]]);
-    const m = mapCollectorContainers(containers(), { timestamp: ts, dockerLabels }).find((r) => r.containerIdFull === CADVISOR_ID)!;
+    const dockerLabels = new Map([[PROMTAIL_ID, { "vardo.organization": "org-1", "vardo.project.id": "app-9", "traefik.enable": "false" }]]);
+    const m = mapCollectorContainers(containers(), { timestamp: ts, dockerLabels }).find((r) => r.containerIdFull === PROMTAIL_ID)!;
     expect(m.organizationId).toBe("org-1");
     expect(m.labels["vardo.project.id"]).toBe("app-9");
     expect(m.labels["traefik.enable"]).toBeUndefined();
@@ -94,7 +94,7 @@ describe("mapCollectorContainers", () => {
     rows[1].network.push({ interface: "eth1", receive_bytes_total: 10, transmit_bytes_total: 20, receive_bytes_per_second: null, transmit_bytes_per_second: null });
     rows[2].network = [];
     const byId = new Map(mapCollectorContainers(rows, { timestamp: ts }).map((m) => [m.containerIdFull, m]));
-    expect(byId.get(CADVISOR_ID)!.networkRxBytes).toBe(4614);
+    expect(byId.get(PROMTAIL_ID)!.networkRxBytes).toBe(10_804);
     expect(byId.get(POSTGRES_ID)!.networkRxBytes).toBe(0);
   });
 });
@@ -159,9 +159,9 @@ describe("CollectorMetricsProvider", () => {
 
   it("adds Docker's writable-layer size and when it was measured", async () => {
     stubCollector({ host: fresh() });
-    const sizes = { read: vi.fn(async () => new Map([[CADVISOR_ID, { bytes: 4096, at: 1_000 }]])) } as unknown as WritableLayerSizes;
+    const sizes = { read: vi.fn(async () => new Map([[PROMTAIL_ID, { bytes: 4096, at: 1_000 }]])) } as unknown as WritableLayerSizes;
     const rows = await new CollectorMetricsProvider(new CollectorClient("http://c"), { sizes }).fetchAll();
-    const m = rows.find((r) => r.containerIdFull === CADVISOR_ID)!;
+    const m = rows.find((r) => r.containerIdFull === PROMTAIL_ID)!;
     expect([m.diskUsage, m.diskUsageAt, m.diskLimit]).toEqual([4096, 1_000, null]);
     expect(rows.find((r) => r.containerIdFull === POSTGRES_ID)!.diskUsage).toBeNull();
   });
@@ -186,17 +186,17 @@ describe("CollectorMetricsProvider on 0.2.0", () => {
 
   it("takes org and app id from api_labels", async () => {
     stubCollector({ containers: at(3) });
-    const m = (await new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).find((r) => r.containerIdFull === CADVISOR_ID)!;
+    const m = (await new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).find((r) => r.containerIdFull === PROMTAIL_ID)!;
     expect(m.organizationId).toBe("bHLg3AbBrUFsUexeKZw0M");
-    expect(m.labels["vardo.project.id"]).toBe("PUi2_6S4t9W4I10Y61cdZ");
+    expect(m.labels["vardo.project.id"]).toBe("FcZdxGloVT1bYD3rfZhOA");
   });
 
   it("still joins Docker labels for a collector without api_labels", async () => {
     stubCollector({ host: { ...host(), timestamp: Date.now() / 1000 - 3 } });
-    const dockerLabels = vi.fn(async () => new Map([[CADVISOR_ID, { "vardo.organization": "org-1" }]]));
+    const dockerLabels = vi.fn(async () => new Map([[PROMTAIL_ID, { "vardo.organization": "org-1" }]]));
     const rows = await new CollectorMetricsProvider(new CollectorClient("http://c"), { dockerLabels }).fetchAll();
     expect(dockerLabels).toHaveBeenCalledOnce();
-    expect(rows.find((r) => r.containerIdFull === CADVISOR_ID)!.organizationId).toBe("org-1");
+    expect(rows.find((r) => r.containerIdFull === PROMTAIL_ID)!.organizationId).toBe("org-1");
   });
 
   it("judges staleness against interval_seconds and polls at it", async () => {
@@ -229,10 +229,10 @@ describe("CollectorMetricsProvider on 0.2.0", () => {
 
   it("carries per-container GPU memory", async () => {
     const rows = at(3);
-    rows.find((c) => c.id === CADVISOR_ID)!.gpus = [{ uuid: "GPU-abc", memory_used_bytes: 1024 }];
+    rows.find((c) => c.id === PROMTAIL_ID)!.gpus = [{ uuid: "GPU-abc", memory_used_bytes: 1024 }];
     stubCollector({ containers: rows });
     const metrics = await new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll();
-    expect(metrics.find((r) => r.containerIdFull === CADVISOR_ID)!.gpus).toEqual([{ uuid: "GPU-abc", memoryUsedBytes: 1024 }]);
+    expect(metrics.find((r) => r.containerIdFull === PROMTAIL_ID)!.gpus).toEqual([{ uuid: "GPU-abc", memoryUsedBytes: 1024 }]);
     expect(metrics.find((r) => r.containerIdFull === POSTGRES_ID)!.gpus).toEqual([]);
   });
 });

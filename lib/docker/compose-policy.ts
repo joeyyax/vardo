@@ -272,7 +272,7 @@ export function composePolicyReport(config: unknown, policy: ComposePolicy): Com
     for (const [net, attach] of entries(svc.networks)) {
       if (vardoNetworkKeys.has(net)) {
         if (!routed) errors.push(`${label} joins ${NETWORK_NAME} without being routed by Vardo`);
-        // The console finds Traefik, the collector, cAdvisor and Loki by these names there.
+        // The console finds Traefik, the collector and Loki by these names there.
         const names = [name, svc.container_name, svc.hostname].filter((n): n is string => typeof n === "string");
         const reserved = names.find((n) => /^vardo-/i.test(n) || RESERVED_NAMES.has(n.toLowerCase()));
         if (reserved) errors.push(`${label} answers to "${reserved}" on ${NETWORK_NAME}, a name Vardo's own services use`);

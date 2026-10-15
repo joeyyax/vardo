@@ -236,7 +236,7 @@ describe("matchContainers", () => {
   });
 
   it("returns nothing for a registered app whose containers are gone", () => {
-    expect(matchContainers(app({ name: "cadvisor" }), [container()])).toEqual([]);
+    expect(matchContainers(app({ name: "collector" }), [container()])).toEqual([]);
   });
 
   it("prefers the imported container id", () => {
@@ -287,7 +287,7 @@ describe("matchContainers — blue/green decomposition", () => {
   });
 
   it("still reports a genuinely absent service as unmatched", () => {
-    const missing = { ...child, id: "X", name: "cadvisor", parentAppId: null, composeService: null };
+    const missing = { ...child, id: "X", name: "collector", parentAppId: null, composeService: null };
     expect(matchContainers(missing, [container()])).toHaveLength(0);
   });
 

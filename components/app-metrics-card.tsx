@@ -201,7 +201,7 @@ export function MetricsBand({
   const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
   const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
   const mem = metrics ? metrics.memoryUsage : last(history?.memory);
-  // cAdvisor runs with --disable_metrics=disk, so disk comes from history.
+  // Disk is measured about hourly, so history has the latest figure.
   const disk = last(history?.disk) ?? metrics?.diskUsage ?? 0;
   const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
