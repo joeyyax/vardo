@@ -48,7 +48,6 @@ vi.mock("@/lib/anomaly/suppress", () => ({
 vi.mock("@/lib/anomaly/probe", () => ({
   appPorts: () => ({ action: "keep" }),
   probeContainer: async () => ({ processes: [], ports: [] }),
-  sharedNetworkSource: () => async () => new Set(),
 }));
 vi.mock("@/lib/notifications/observations", () => ({ settleAlerts: async () => {} }));
 

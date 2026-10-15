@@ -7,9 +7,11 @@ import {
   CollectorMetricsProvider,
   dockerLabelSource,
   mapCollectorContainers,
+  sharedNetworkSource,
   staleAfterMs,
   WritableLayerSizes,
 } from "@/lib/metrics/collector-provider";
+import { aggregateContainers } from "@/lib/metrics/aggregate";
 
 // Fixtures are real /api/v1 responses on OrbStack: collector 0.1.0, and 0.2.0 with the template's api_labels.
 const fixture = <T>(name: string): T =>
@@ -181,6 +183,22 @@ describe("CollectorMetricsProvider", () => {
     expect([m.diskUsage, m.diskUsageAt, m.diskLimit]).toEqual([4096, 1_000, null]);
     expect(rows.find((r) => r.containerIdFull === POSTGRES_ID)!.diskUsage).toBeNull();
   });
+
+  it("counts a shared network namespace once, on its owner", async () => {
+    // Long House: Qbittorrent runs with `network_mode: service:gluetun` and reads Gluetun's counters.
+    const rows = containers();
+    const owner = rows.find((c) => c.id === PROMTAIL_ID)!;
+    rows.find((c) => c.id === POSTGRES_ID)!.network = owner.network;
+    stubCollector({ host: fresh(), containers: rows });
+    const sharedNetwork = vi.fn(async () => new Set([POSTGRES_ID]));
+
+    const metrics = await new CollectorMetricsProvider(new CollectorClient("http://c"), { sharedNetwork }).fetchAll();
+
+    expect(sharedNetwork).toHaveBeenCalledWith([PROMTAIL_ID, POSTGRES_ID]);
+    expect(metrics.find((m) => m.containerIdFull === POSTGRES_ID)).toMatchObject({ sharedNetwork: true, networkRxBytes: 0, networkTxBytes: 0 });
+    expect(metrics.find((m) => m.containerIdFull === PROMTAIL_ID)!.sharedNetwork).toBeUndefined();
+    expect(aggregateContainers(metrics)).toMatchObject({ networkRx: 10_794, networkTx: 2380 });
+  });
 });
 
 describe("CollectorMetricsProvider on 0.2.0", () => {
@@ -272,6 +290,30 @@ describe("dockerLabelSource", () => {
     const source = dockerLabelSource(inspect);
     expect((await source(["a"])).has("a")).toBe(false);
     expect((await source(["a"])).get("a")).toEqual({ x: "1" });
+  });
+});
+
+describe("sharedNetworkSource", () => {
+  // Long House: Port Sync and Qbittorrent run with `network_mode: service:gluetun`.
+  const GLUETUN = "65bcc5b5350843e28ca24dc5816af2374b76c2348e3272c8b57f3df661950bde";
+  const modes: Record<string, string> = { gluetun: "transmission-production-blue_default", "port-sync": `container:${GLUETUN}`, qbittorrent: `container:${GLUETUN}` };
+
+  it("picks out containers on another container's network, inspecting each once", async () => {
+    const inspect = vi.fn(async (id: string) => modes[id]);
+    const shared = sharedNetworkSource(inspect);
+    expect(await shared(["gluetun", "port-sync", "qbittorrent"])).toEqual(new Set(["port-sync", "qbittorrent"]));
+    expect(await shared(["gluetun", "port-sync", "qbittorrent"])).toEqual(new Set(["port-sync", "qbittorrent"]));
+    expect(inspect).toHaveBeenCalledTimes(3);
+  });
+
+  it("counts a container it can't inspect as its own, and asks again", async () => {
+    const inspect = vi.fn(async (id: string) => {
+      if (inspect.mock.calls.length === 1) throw new Error("timeout");
+      return modes[id];
+    });
+    const shared = sharedNetworkSource(inspect);
+    expect(await shared(["port-sync"])).toEqual(new Set());
+    expect(await shared(["port-sync"])).toEqual(new Set(["port-sync"]));
   });
 });
 

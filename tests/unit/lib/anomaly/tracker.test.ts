@@ -74,8 +74,8 @@ describe("AppRateTracker", () => {
     // Long House, 11:37Z: Gluetun, Port Sync and Qbittorrent all read Gluetun's 62.3 MiB/min outbound.
     const tx = 62.3 * 1024 ** 2;
     const t = new AppRateTracker();
-    const shared = new Set(["port-sync", "qbittorrent"]);
-    const read = (at: number, n: number) => ["gluetun", "port-sync", "qbittorrent"].map((id) => t.observe(id, [container(id, at, { rx: n * 1_000, tx: n * tx, write: n * 4_096 })], shared).values);
+    const read = (at: number, n: number) =>
+      ["gluetun", "port-sync", "qbittorrent"].map((id) => t.observe(id, [{ ...container(id, at, { rx: n * 1_000, tx: n * tx, write: n * 4_096 }), sharedNetwork: id !== "gluetun" }]).values);
     read(0, 0);
     const [gluetun, portSync, qbittorrent] = read(60_000, 1);
     expect(gluetun.egress).toBeCloseTo(tx / 60);
