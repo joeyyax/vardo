@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
+vi.mock("@/lib/notifications/resolved-hold", async (orig) => (await import("@/tests/helpers/mocks")).resolvedHoldModule(orig));
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
 // notification_send in memory, judged by the real claimable rule.
 vi.mock("@/lib/notifications/throttle", async (importOriginal) => {

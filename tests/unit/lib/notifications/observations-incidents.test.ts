@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: m.emit }));
+vi.mock("@/lib/notifications/resolved-hold", async (orig) => (await import("@/tests/helpers/mocks")).resolvedHoldModule(orig));
 vi.mock("@/lib/notifications/throttle", () => ({ claimNotifications: m.claim, clearNotifications: m.clear, clearSubjects: m.clearSubjects }));
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: m.settings }));
 vi.mock("@/lib/incidents/store", () => ({

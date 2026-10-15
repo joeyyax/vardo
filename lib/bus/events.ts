@@ -891,6 +891,10 @@ export type AlertResolvedEvent = {
   alerts: (AlertItem & { firedAt: string; resolvedAt: string })[];
   /** Closes incidents for webhooks only: email and push leave it out. */
   quiet?: boolean;
+  /** Webhooks get it now; email and push get it later in a grouped notice. */
+  held?: boolean;
+  /** Held resolutions sent together for email and push. Webhooks already had each one. */
+  grouped?: boolean;
 };
 
 /** Fields every event can carry. */

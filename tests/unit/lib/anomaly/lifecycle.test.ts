@@ -8,6 +8,7 @@ type Row = { sentAt: Date; clearedAt: Date | null; severity: string; detail: unk
 const mocks = vi.hoisted(() => ({ emit: vi.fn(), rows: new Map<string, Row>() }));
 
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
+vi.mock("@/lib/notifications/resolved-hold", async (orig) => (await import("@/tests/helpers/mocks")).resolvedHoldModule(orig));
 vi.mock("@/lib/notifications/preferences", () => ({
   readOrgNotificationSettings: async () => ({ categories: { anomalies: true, apps: true, host: true, backups: true, cron: true } }),
 }));
