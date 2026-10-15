@@ -10,7 +10,7 @@ import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 import { withBackupSlot } from "./run-limit";
 import { holdRunJobLease } from "./run-lease";
 import { backupsDraining } from "./in-flight";
-import { loadResourceSettings, maxDeployConcurrency } from "@/lib/resources/host";
+import { loadResourceSettings, maxBackupConcurrency } from "@/lib/resources/host";
 
 const log = logger.child("backup");
 
@@ -18,13 +18,13 @@ const log = logger.child("backup");
 const queued = new Set<string>();
 
 
-/** Concurrent backups and drills: the host-sized deploy concurrency. */
+/** Concurrent backups and drills: the deploy concurrency, capped by what fits in this process's memory. */
 async function backupConcurrency(): Promise<number> {
   await loadResourceSettings();
-  return maxDeployConcurrency();
+  return maxBackupConcurrency();
 }
 
-/** Run any enabled backup jobs that are due, at most the host's deploy concurrency at once. Call every minute. */
+/** Run any enabled backup jobs that are due, at most the backup concurrency at once. Call every minute. */
 export async function tickBackupJobs(): Promise<void> {
   const now = new Date();
 

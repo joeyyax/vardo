@@ -59,7 +59,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/cron/parse", () => ({ shouldRunNow: shouldRunNowMock }));
 vi.mock("@/lib/resources/host", () => ({
   loadResourceSettings: async () => ({}),
-  maxDeployConcurrency: () => limit.value,
+  maxBackupConcurrency: async () => limit.value,
 }));
 vi.mock("@/lib/setup", () => ({ needsSetup: needsSetupMock }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: acquireLockMock }));
@@ -249,7 +249,7 @@ describe("tickBackupJobs — jobs due together", () => {
     expect(runs.peak()).toBe(1);
   });
 
-  it("runs up to the host's deploy concurrency at once", async () => {
+  it("runs up to the backup concurrency at once", async () => {
     limit.value = 2;
     withExistingBackup(null);
     backupJobsFindMany.mockResolvedValue(jobs("a", "b", "c"));

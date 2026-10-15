@@ -3,7 +3,9 @@
 import { availableParallelism } from "os";
 import { logger } from "@/lib/logger";
 import {
+  backupConcurrency,
   describeDefaults,
+  parseSizeMb,
   parseAdminSettings,
   resolveDeployConcurrency,
   resolveTierCpus,
@@ -107,6 +109,24 @@ export function tierCpuLimit(tier: QosTier, hostCpus?: number): number | null {
 
 export function maxDeployConcurrency(): number {
   return resolveDeployConcurrency(cache.host, process.env, settings.values.deployConcurrency).value;
+}
+
+/** This container's memory limit under cgroup v2. */
+export const CGROUP_MEMORY_MAX = "/sys/fs/cgroup/memory.max";
+
+/** This process's memory limit in MiB: the cgroup's, else VARDO_WORKER_MEM. Null when neither is set. */
+export async function memoryLimitMb(file = CGROUP_MEMORY_MAX, env: Record<string, string | undefined> = process.env): Promise<number | null> {
+  try {
+    const { readFile } = await import("fs/promises");
+    const bytes = Number((await readFile(file, "utf8")).trim());
+    if (Number.isFinite(bytes) && bytes > 0) return Math.floor(bytes / 1024 / 1024);
+  } catch {}
+  return env.VARDO_WORKER_MEM ? parseSizeMb(env.VARDO_WORKER_MEM) : null;
+}
+
+/** Backups and drills at once: deploy concurrency, capped by this process's memory limit. Read each call, so a live resize applies. */
+export async function maxBackupConcurrency(file = CGROUP_MEMORY_MAX): Promise<number> {
+  return backupConcurrency(maxDeployConcurrency(), await memoryLimitMb(file));
 }
 
 async function containerMemoryMb(name: string): Promise<number | null> {

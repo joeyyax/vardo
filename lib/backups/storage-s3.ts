@@ -30,7 +30,7 @@ const MiB = 1024 * 1024;
 export const PART_SIZE = 16 * MiB;
 /** S3's largest part. */
 export const MAX_PART_SIZE = 5 * 1024 * MiB;
-/** Parts in flight at once. Memory is about (queue + 1) × part size. */
+/** Parts in flight at once, and the most part buffers an upload holds. */
 export const PART_QUEUE = 4;
 /** Queue for parts over LARGE_PART_SIZE, so a huge volume doesn't hold gigabytes. */
 export const LARGE_PART_QUEUE = 2;
@@ -184,10 +184,13 @@ export class S3BackupStorage implements BackupStorage {
     try {
       send(firstPart);
       send(second.value);
-      for await (const part of parts) {
+      // The next part is read only once one is free, so an upload holds `queue` buffers at most.
+      for (;;) {
         while (inFlight.size >= queue && !failure) await Promise.race(inFlight);
         if (failure) break;
-        send(part);
+        const next = await parts.next();
+        if (next.done) break;
+        send(next.value);
       }
       await Promise.all(inFlight);
       if (failure) throw failure;

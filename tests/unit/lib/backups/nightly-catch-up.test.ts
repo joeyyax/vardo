@@ -8,7 +8,7 @@ vi.mock("@/lib/time-zone-settings", () => ({
   getInstanceTimeZone: async () => "UTC",
   resolveTimeZone: (org: string | null, instance: string) => org ?? instance,
 }));
-vi.mock("@/lib/resources/host", () => ({ loadResourceSettings: async () => {}, maxDeployConcurrency: () => 2 }));
+vi.mock("@/lib/resources/host", () => ({ loadResourceSettings: async () => {}, maxBackupConcurrency: async () => 2 }));
 
 import { dbMock } from "@/tests/helpers/db";
 const { startNightlyRuns } = await import("@/lib/backups/runs");
