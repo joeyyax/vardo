@@ -100,6 +100,9 @@ describe("composePolicyErrors", () => {
         'Service "web" answers to "vardo-traefik" on vardo-network, a name Vardo\'s own services use',
       ]);
       expect(composePolicyErrors(config({ hostname: "loki" }), untrusted)).toHaveLength(1);
+      expect(composePolicyErrors(config({ container_name: "Collector" }), untrusted)).toEqual([
+        'Service "web" answers to "Collector" on vardo-network, a name Vardo\'s own services use',
+      ]);
     });
 
     it("passes the file-provider transport Vardo writes", () => {
