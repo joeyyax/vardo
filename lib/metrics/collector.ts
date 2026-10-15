@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import { backoffDelay } from "@/lib/net/backoff";
 import { isMetricsEnabled, initMetricsProvider } from "./config";
-import { fetchAllMetrics } from "./provider";
+import { fetchAllMetrics, metricsPollIntervalMs } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getDiskSnapshot } from "@/lib/docker/disk-snapshot";
@@ -51,12 +51,13 @@ const MAX_BACKOFF_MS = 15 * 60_000;
 /** Consecutive failures before the collector stops polling. */
 const DISABLE_THRESHOLD = 20;
 
-/** Interval for the next tick. Failures back off exponentially from the normal interval. */
-export function nextInterval(opts: { tickCount: number; consecutiveFailures: number }): number {
+/** Interval for the next tick. Failures back off exponentially; warmup never polls faster than the provider updates. */
+export function nextInterval(opts: { tickCount: number; consecutiveFailures: number; providerIntervalMs?: number }): number {
   if (opts.consecutiveFailures > 0) {
     return backoffDelay(opts.consecutiveFailures, { baseMs: NORMAL_INTERVAL_MS, maxMs: MAX_BACKOFF_MS, jitter: "none" });
   }
-  return opts.tickCount < WARMUP_TICKS ? FAST_INTERVAL_MS : NORMAL_INTERVAL_MS;
+  if (opts.tickCount >= WARMUP_TICKS) return NORMAL_INTERVAL_MS;
+  return Math.min(NORMAL_INTERVAL_MS, Math.max(FAST_INTERVAL_MS, opts.providerIntervalMs ?? FAST_INTERVAL_MS));
 }
 
 /** Whether a persistent sub-collection failure logs this cycle: first, then every `every` cycles. */
@@ -95,7 +96,12 @@ export async function startCollector(role: LoopRole = "web") {
 /** Per process: it feeds this process's live snapshot. Waits a full interval after each collection. */
 export const collectorLoop = (globalForCollector.__vardo_metrics_collector_loop ??= new IntervalLoop({
   name: "metrics-collector",
-  intervalMs: () => nextInterval({ tickCount: state.tickCount, consecutiveFailures: state.consecutiveFailures }),
+  intervalMs: () =>
+    nextInterval({
+      tickCount: state.tickCount,
+      consecutiveFailures: state.consecutiveFailures,
+      providerIntervalMs: metricsPollIntervalMs(),
+    }),
   schedule: "delay",
   log,
   run: async () => {
