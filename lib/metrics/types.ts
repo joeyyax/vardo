@@ -14,6 +14,8 @@ export type ContainerMetrics = {
   memoryPercent: number;
   networkRxBytes: number;
   networkTxBytes: number;
+  /** On another container's network namespace. Its network counters are zeroed; the owner reports them. */
+  sharedNetwork?: boolean;
   /** Writable-layer bytes. Null while Disk metrics are off or not yet measured. */
   diskUsage: number | null;
   diskLimit: number | null;

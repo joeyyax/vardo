@@ -23,8 +23,8 @@ export class AppRateTracker {
   private counters = new Map<string, Counters>();
   private containers = new Map<string, Set<string>>();
 
-  /** `sharedNetwork` holds containers on another's network namespace, whose traffic is the owner's. */
-  observe(appId: string, metrics: ContainerMetrics[], sharedNetwork: ReadonlySet<string> = new Set()): AppReading {
+  /** A container on another's network namespace adds no network: its traffic is the owner's. */
+  observe(appId: string, metrics: ContainerMetrics[]): AppReading {
     const ids = new Set(metrics.map(containerKey));
     const known = this.containers.get(appId);
     const changed = !!known && (known.size !== ids.size || [...ids].some((id) => !known.has(id)));
@@ -62,7 +62,7 @@ export class AppRateTracker {
       const write = curr.write !== null && prev.write !== null ? rate(curr.write, prev.write, dt) : null;
       if (curr.tx < prev.tx || curr.rx < prev.rx || (curr.write !== null && prev.write !== null && curr.write < prev.write)) reset = true;
       diskWrite = diskWrite === null || write === null ? null : diskWrite + write;
-      if (sharedNetwork.has(key)) continue;
+      if (m.sharedNetwork) continue;
       networked = true;
       egress = egress === null || tx === null ? null : egress + tx;
       ingress = ingress === null || rx === null ? null : ingress + rx;

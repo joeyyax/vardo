@@ -1,5 +1,5 @@
 import { getMetricsProvider, setMetricsProvider, type MetricsProvider } from "./provider";
-import { CollectorMetricsProvider, dockerLabelSource, WritableLayerSizes } from "./collector-provider";
+import { CollectorMetricsProvider, dockerLabelSource, sharedNetworkSource, WritableLayerSizes } from "./collector-provider";
 import { CollectorClient } from "@/lib/collector/client";
 import { collectorMode, collectorTokenSource, type CollectorMode } from "@/lib/collector/config";
 import { logger } from "@/lib/logger";
@@ -74,6 +74,10 @@ export function collectorProvider(
     dockerLabels: dockerLabelSource(async (id) => {
       const res = await (await docker())<{ Config?: { Labels?: Record<string, string> | null } }>("GET", `/containers/${encodeURIComponent(id)}/json`);
       return res.Config?.Labels ?? {};
+    }),
+    sharedNetwork: sharedNetworkSource(async (id) => {
+      const res = await (await docker())<{ HostConfig?: { NetworkMode?: string } }>("GET", `/containers/${encodeURIComponent(id)}/json`, undefined, { timeoutMs: 5000 });
+      return res.HostConfig?.NetworkMode;
     }),
     // Docker measures the sizes. Collector 0.3.0 measures them itself.
     sizes: new WritableLayerSizes(

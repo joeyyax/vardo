@@ -90,10 +90,13 @@ export function mapCollectorContainers(
 }
 
 type LabelSource = (ids: string[]) => Promise<Map<string, Record<string, string>>>;
+type SharedNetworkSource = (ids: string[]) => Promise<Set<string>>;
 
 type Options = {
   /** Docker labels by full container id, read only when the collector doesn't supply them. */
   dockerLabels?: LabelSource;
+  /** Which full container ids use another container's network namespace. */
+  sharedNetwork?: SharedNetworkSource;
   /** Writable-layer sizes from Docker, when Disk metrics are on. */
   sizes?: WritableLayerSizes;
   /** Called after the first read that returns metrics. */
@@ -128,6 +131,14 @@ export class CollectorMetricsProvider implements MetricsProvider {
     const ids = containers.map((c) => c.id);
     const dockerLabels = this.opts.dockerLabels && !suppliesApiLabels(containers) ? await this.opts.dockerLabels(ids) : undefined;
     const metrics = mapCollectorContainers(containers, { timestamp, dockerLabels });
+    const shared = this.opts.sharedNetwork ? await this.opts.sharedNetwork(metrics.flatMap((m) => (m.containerIdFull ? [m.containerIdFull] : []))) : null;
+    for (const m of metrics) {
+      if (!shared?.has(m.containerIdFull)) continue;
+      // Its counters are the namespace owner's, which the owner reports.
+      m.sharedNetwork = true;
+      m.networkRxBytes = 0;
+      m.networkTxBytes = 0;
+    }
     const sizes = this.opts.sizes ? await this.opts.sizes.read(ids) : null;
     for (const m of metrics) {
       const size = sizes?.get(m.containerIdFull);
@@ -192,6 +203,26 @@ export function dockerLabelSource(inspect: (id: string) => Promise<Record<string
       }),
     );
     return cache;
+  };
+}
+
+/** Which of `ids` use another container's network namespace, each inspected once. */
+export function sharedNetworkSource(networkMode: (id: string) => Promise<string | undefined>): SharedNetworkSource {
+  const cache = new Map<string, boolean>();
+  return async (ids) => {
+    const live = new Set(ids);
+    for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
+    await Promise.all(
+      ids.filter((id) => !cache.has(id)).map(async (id) => {
+        try {
+          // Compose's `service:` arrives as `container:<id>`.
+          cache.set(id, (await networkMode(id))?.startsWith("container:") ?? false);
+        } catch {
+          // Tried again next poll.
+        }
+      }),
+    );
+    return new Set(ids.filter((id) => cache.get(id)));
   };
 }
 

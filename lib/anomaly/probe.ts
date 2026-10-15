@@ -12,6 +12,8 @@ export type ContainerProbe = {
   ports: string[] | null;
   /** Its socket table is the host's, so its ports can't be told apart from anyone else's. */
   hostNetwork: boolean;
+  /** On another container's network namespace, so its socket table is the owner's. */
+  sharedNetwork: boolean;
 };
 
 async function readTable(pid: number, file: string): Promise<string | null> {
@@ -34,7 +36,7 @@ async function readPorts(pid: number): Promise<string[] | null> {
   return [...new Set(tables.flatMap((t) => t ?? []))];
 }
 
-/** Ports are null when the host's /proc isn't mounted, the container can't be inspected or it's on the host network. */
+/** Ports are null when the host's /proc isn't mounted, the container can't be inspected or it's on the host's or another container's network. */
 export async function probeContainer(containerId: string): Promise<ContainerProbe> {
   const id = encodeURIComponent(containerId);
   const [reply, inspect] = await Promise.all([
@@ -42,39 +44,19 @@ export async function probeContainer(containerId: string): Promise<ContainerProb
     dockerRequest<{ State?: { Pid?: number }; HostConfig?: { NetworkMode?: string } }>("GET", `/containers/${id}/json`, undefined, { timeoutMs: 5000 }).catch(() => null),
   ]);
   const processes = parseTop(reply);
-  const hostNetwork = inspect?.HostConfig?.NetworkMode === "host";
+  const mode = inspect?.HostConfig?.NetworkMode;
+  const hostNetwork = mode === "host";
+  // Compose's `service:` arrives as `container:<id>`.
+  const sharedNetwork = mode?.startsWith("container:") ?? false;
   const pid = inspect?.State?.Pid || processes[0]?.pid;
-  if (!inspect || hostNetwork || !pid) return { processes, ports: null, hostNetwork };
-  return { processes, ports: await readPorts(pid), hostNetwork };
-}
-
-/** Which of `ids` use another container's network namespace, each inspected once. */
-export function sharedNetworkSource(
-  networkMode: (id: string) => Promise<string | undefined> = async (id) =>
-    (await dockerRequest<{ HostConfig?: { NetworkMode?: string } }>("GET", `/containers/${encodeURIComponent(id)}/json`, undefined, { timeoutMs: 5000 }))?.HostConfig?.NetworkMode,
-): (ids: string[]) => Promise<Set<string>> {
-  const cache = new Map<string, boolean>();
-  return async (ids) => {
-    const live = new Set(ids);
-    for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
-    await Promise.all(
-      ids.filter((id) => !cache.has(id)).map(async (id) => {
-        try {
-          // Compose's `service:` arrives as `container:<id>`.
-          cache.set(id, (await networkMode(id))?.startsWith("container:") ?? false);
-        } catch {
-          // Tried again next pass.
-        }
-      }),
-    );
-    return new Set(ids.filter((id) => cache.get(id)));
-  };
+  if (!inspect || hostNetwork || sharedNetwork || !pid) return { processes, ports: null, hostNetwork, sharedNetwork };
+  return { processes, ports: await readPorts(pid), hostNetwork, sharedNetwork };
 }
 
 export type AppPorts =
   /** Fold these into the allow-set. */
   | { action: "fold"; ports: string[] }
-  /** On the host network: drop the allow-set, which only ever held the host's ports. */
+  /** On the host's or another container's network: drop the allow-set, which only ever held someone else's ports. */
   | { action: "forget" }
   /** Leave the allow-set alone. */
   | { action: "skip" };
@@ -82,7 +64,10 @@ export type AppPorts =
 /** What an app's probes say about its ports, given how many containers were probed. */
 export function appPorts(probes: ContainerProbe[], probed: number): AppPorts {
   if (probes.some((p) => p.hostNetwork)) return { action: "forget" };
+  // A namespace owner's probe covers the containers on its network.
+  const own = probes.filter((p) => !p.sharedNetwork);
+  if (probes.length === probed && own.length === 0) return { action: "forget" };
   // A container whose ports couldn't be read would look like it closed them all.
-  if (probes.length < probed || probes.some((p) => p.ports === null)) return { action: "skip" };
-  return { action: "fold", ports: [...new Set(probes.flatMap((p) => p.ports ?? []))] };
+  if (probes.length < probed || own.some((p) => p.ports === null)) return { action: "skip" };
+  return { action: "fold", ports: [...new Set(own.flatMap((p) => p.ports ?? []))] };
 }
