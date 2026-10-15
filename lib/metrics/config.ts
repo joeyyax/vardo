@@ -1,62 +1,70 @@
 import { getMetricsProvider, setMetricsProvider, type MetricsProvider } from "./provider";
-import { CadvisorProvider } from "./cadvisor";
 import { CollectorMetricsProvider, dockerLabelSource, WritableLayerSizes } from "./collector-provider";
-import { FallbackMetricsProvider } from "./fallback-provider";
 import { CollectorClient } from "@/lib/collector/client";
-import { collectorMode, collectorTokenSource } from "@/lib/collector/config";
+import { collectorMode, collectorTokenSource, type CollectorMode } from "@/lib/collector/config";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("metrics-config");
 
-/** Whether a metrics provider is configured. */
+type Env = Record<string, string | undefined>;
+
+/** `VARDO_COLLECTOR_IMAGE=off`: no container metrics, while the loop keeps disk usage and business metrics. */
+export const NO_CONTAINER_METRICS: MetricsProvider = {
+  name: "none (VARDO_COLLECTOR_IMAGE=off)",
+  fetchAll: async () => [],
+};
+
+/** Whether container metrics are read. False with the feature off or in off mode. */
 export function isMetricsEnabled(): boolean {
+  const provider = getMetricsProvider();
+  return provider !== null && provider !== NO_CONTAINER_METRICS;
+}
+
+/** Whether the metrics loop runs: the feature is on, with or without container metrics. */
+export function isMetricsLoopEnabled(): boolean {
   return getMetricsProvider() !== null;
 }
 
-/** Initializes the metrics provider from integration settings, falling back to CADVISOR_URL. */
+/** Initializes the metrics provider when the metrics feature is on. */
 export async function initMetricsProvider() {
   if (getMetricsProvider()) return;
   await resolveProvider();
 }
 
-/** Re-resolves the provider. Call after connecting or disconnecting a metrics integration. */
+/** Re-resolves the provider. Call after the metrics feature is toggled. */
 export async function reinitMetricsProvider() {
   setMetricsProvider(null);
   await resolveProvider();
 }
 
-/** Shared resolution logic for init and reinit. */
 async function resolveProvider() {
   try {
     const { isFeatureEnabledAsync } = await import("@/lib/config/features");
-    const metricsEnabled = await isFeatureEnabledAsync("metrics");
-
-    if (metricsEnabled) {
-      const { getSystemSettingRaw } = await import("@/lib/system-settings");
-      const customUrl = await getSystemSettingRaw("metrics.cadvisorUrl");
-      const cadvisor = customUrl ? new CadvisorProvider(customUrl) : new CadvisorProvider();
-      const provider = withCollector(cadvisor);
-      log.info(`Metrics provider: ${provider === cadvisor ? (customUrl ? `custom → ${customUrl}` : "default (cadvisor)") : provider.name}`);
-      setMetricsProvider(provider);
-      return;
-    }
+    if (!(await isFeatureEnabledAsync("metrics"))) return;
+    const provider = metricsProvider();
+    log.info(`Metrics provider: ${provider.name}`);
+    setMetricsProvider(provider);
   } catch {
     // Feature flag system not ready.
   }
 }
 
-/** The collector backed by cAdvisor when VARDO_COLLECTOR_URL or VARDO_COLLECTOR_IMAGE is set, else cAdvisor alone. */
-export function withCollector(cadvisor: MetricsProvider, env: Record<string, string | undefined> = process.env): MetricsProvider {
+/** The collector, or no container metrics in off mode. */
+export function metricsProvider(env: Env = process.env): MetricsProvider {
   const mode = collectorMode(env);
-  if (mode.kind === "off") return cadvisor;
+  return mode.kind === "off" ? NO_CONTAINER_METRICS : collectorProvider(mode, env);
+}
+
+/** A fresh provider for this collector, sharing nothing with the registered one. */
+export function collectorProvider(mode: Exclude<CollectorMode, { kind: "off" }>, env: Env = process.env): CollectorMetricsProvider {
   const client = new CollectorClient(mode.url, collectorTokenSource(mode, env));
   const docker = async () => (await import("@/lib/docker/client")).dockerRequest;
-  const collector = new CollectorMetricsProvider(client, {
+  return new CollectorMetricsProvider(client, {
     dockerLabels: dockerLabelSource(async (id) => {
       const res = await (await docker())<{ Config?: { Labels?: Record<string, string> | null } }>("GET", `/containers/${encodeURIComponent(id)}/json`);
       return res.Config?.Labels ?? {};
     }),
-    // Same Disk metrics toggle as cAdvisor's; collector mode reads sizes from Docker instead. Collector 0.3.0 measures them.
+    // Docker measures the sizes. Collector 0.3.0 measures them itself.
     sizes: new WritableLayerSizes(
       async (id) => {
         const res = await (await docker())<{ SizeRw?: number }>("GET", `/containers/${encodeURIComponent(id)}/json?size=1`, undefined, { timeoutMs: 30_000 });
@@ -65,5 +73,4 @@ export function withCollector(cadvisor: MetricsProvider, env: Record<string, str
       async () => (await import("./disk-setting")).getDiskMetricsEnabled(),
     ),
   });
-  return new FallbackMetricsProvider(collector, cadvisor);
 }

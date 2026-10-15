@@ -3,7 +3,7 @@
 import { parseImageRef, refCacheKey } from "../image-updates/image-ref";
 
 /** Images Vardo runs helper containers from. Re-pulling them mid-backup is a failure mode. */
-const HELPER_REPOSITORIES = ["docker.io/library/alpine", "docker.io/nvidia/cuda"];
+const HELPER_REPOSITORIES = ["docker.io/library/alpine"];
 
 /** Vardo's own images, whatever registry they came from. */
 const SELF_REPOSITORY = /(^|\/)vardo(-[a-z0-9]+)?$/i;

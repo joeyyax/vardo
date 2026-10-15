@@ -39,6 +39,7 @@ vi.mock("@/lib/gpu/collector", () => ({
 }));
 vi.mock("@/lib/metrics/config", () => ({
   isMetricsEnabled: vi.fn().mockReturnValue(true),
+  isMetricsLoopEnabled: vi.fn().mockReturnValue(true),
   initMetricsProvider: vi.fn().mockResolvedValue(undefined),
 }));
 

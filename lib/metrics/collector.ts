@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
 import { backoffDelay } from "@/lib/net/backoff";
-import { isMetricsEnabled, initMetricsProvider } from "./config";
+import { isMetricsLoopEnabled, initMetricsProvider } from "./config";
 import { fetchAllMetrics, metricsPollIntervalMs } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
@@ -70,8 +70,8 @@ export function isCollectorRunning() {
 export async function startCollector(role: LoopRole = "web") {
   if (state.started) return;
   await initMetricsProvider();
-  if (!isMetricsEnabled()) {
-    log.info("Metrics collection disabled — no provider configured");
+  if (!isMetricsLoopEnabled()) {
+    log.info("Metrics collection disabled — the metrics feature is off");
     return;
   }
   state.started = true;
@@ -81,7 +81,7 @@ export async function startCollector(role: LoopRole = "web") {
   state.projectDiskConsecutiveFailures = 0;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
-  // Returns null on non-GPU hosts.
+  // Null in off mode.
   initGpuCollector().catch((err) => {
     log.warn("GPU collector init failed:", (err as Error).message);
   });
@@ -129,14 +129,6 @@ async function collect() {
         if (m.diskWriteBytes !== null) {
           ops.push(storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service));
         }
-        if (m.gpuMemoryTotal > 0) {
-          ops.push(storeGpuMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
-            gpuUtilization: m.gpuUtilization,
-            gpuMemoryUsed: m.gpuMemoryUsed,
-            gpuMemoryTotal: m.gpuMemoryTotal,
-            gpuTemperature: m.gpuTemperature,
-          }, m.organizationId, service));
-        }
         return ops;
       })
     );
@@ -145,13 +137,10 @@ async function collect() {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
 
-    // Fill GPU data the provider didn't report.
+    // GPU readings from the collector, per container.
     const gpuCollector = getGpuCollector();
     if (gpuCollector) {
       try {
-        const containersWithGpu = new Set(
-          metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
-        );
         const gpuMetrics = await Promise.race([
           gpuCollector.collect(metrics),
           new Promise<never>((_, reject) =>
@@ -162,21 +151,19 @@ async function collect() {
         await publishGpuSnapshot(gpuMetrics).catch((err) => log.warn("GPU snapshot publish failed:", (err as Error).message));
         const ts = Date.now();
 
-        // The GPU resolver doesn't read labels; take the service from the metrics snapshot.
+        // GPU readings carry no labels; take the service from the metrics snapshot.
         const serviceByContainer = new Map(
           metrics.map((m) => [m.containerId, m.labels["com.docker.compose.service"] ?? null]),
         );
 
-        const gpuOps = gpuMetrics
-          .filter((gm) => !containersWithGpu.has(gm.containerId))
-          .map((gm) =>
-            storeGpuMetrics(gm.projectName, gm.containerId, gm.containerName, ts, {
-              gpuUtilization: gm.gpuUtilization,
-              gpuMemoryUsed: gm.gpuMemoryUsed,
-              gpuMemoryTotal: gm.gpuMemoryTotal,
-              gpuTemperature: gm.gpuTemperature,
-            }, gm.organizationId, serviceByContainer.get(gm.containerId) ?? null),
-          );
+        const gpuOps = gpuMetrics.map((gm) =>
+          storeGpuMetrics(gm.projectName, gm.containerId, gm.containerName, ts, {
+            gpuUtilization: gm.gpuUtilization,
+            gpuMemoryUsed: gm.gpuMemoryUsed,
+            gpuMemoryTotal: gm.gpuMemoryTotal,
+            gpuTemperature: gm.gpuTemperature,
+          }, gm.organizationId, serviceByContainer.get(gm.containerId) ?? null),
+        );
 
         if (gpuOps.length > 0) {
           const gpuResults = await Promise.allSettled(gpuOps);

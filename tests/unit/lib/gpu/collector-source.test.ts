@@ -1,25 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { nvidiaCtor, detectDevices, dockerRequestMock } = vi.hoisted(() => ({
-  nvidiaCtor: vi.fn(),
-  detectDevices: vi.fn(),
-  dockerRequestMock: vi.fn(),
-}));
-
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
-vi.mock("@/lib/gpu/providers/nvidia", () => ({
-  NvidiaProvider: class {
-    vendor = "nvidia";
-    constructor() {
-      nvidiaCtor();
-    }
-    detectDevices = detectDevices;
-    getDeviceMetrics = vi.fn(async () => []);
-    getProcesses = vi.fn(async () => []);
-  },
-}));
-vi.mock("@/lib/gpu/resolver", () => ({ DockerContainerResolver: class {} }));
-vi.mock("@/lib/docker/client", () => ({ dockerRequest: dockerRequestMock }));
+vi.mock("@/lib/docker/client", () => ({ dockerRequest: vi.fn() }));
 vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: vi.fn(async () => null) }));
 
 import type { CollectorClient, CollectorGpu } from "@/lib/collector/client";
@@ -27,9 +9,7 @@ import {
   attributeGpuMemory,
   attributeGpus,
   CollectorGpuCollector,
-  FallbackGpuCollector,
   gpuAccess,
-  type ContainerGpuSource,
 } from "@/lib/gpu/collector-source";
 import { initGpuCollector } from "@/lib/gpu/collector";
 import type { ContainerMetrics } from "@/lib/metrics/types";
@@ -175,59 +155,16 @@ describe("CollectorGpuCollector", () => {
   });
 });
 
-describe("FallbackGpuCollector — source switch", () => {
-  const reading = (name: string) => [{ containerName: name }] as Awaited<ReturnType<ContainerGpuSource["collect"]>>;
-
-  it("never starts the probe while the collector answers, even with no GPUs", async () => {
-    const initProbe = vi.fn();
-    const source = new FallbackGpuCollector({ collect: async () => [] }, initProbe);
-    await source.collect([]);
-    await source.collect([]);
-    expect(initProbe).not.toHaveBeenCalled();
-  });
-
-  it("starts the probe once when the collector fails, then goes back to the collector", async () => {
-    let t = 0;
-    const primary = { collect: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")) };
-    const probe = { collect: vi.fn(async () => reading("from-probe")) };
-    const initProbe = vi.fn(async () => probe);
-    const source = new FallbackGpuCollector(primary, initProbe, { retryMs: 60_000, now: () => t });
-
-    expect(await source.collect([])).toEqual(reading("from-probe"));
-    t = 10_000;
-    await source.collect([]);
-    expect(initProbe).toHaveBeenCalledTimes(1);
-    expect(primary.collect).toHaveBeenCalledTimes(1);
-
-    t = 61_000;
-    primary.collect.mockResolvedValue(reading("from-collector"));
-    expect(await source.collect([])).toEqual(reading("from-collector"));
-    expect(source.isFallingBack()).toBe(false);
-  });
-
-  it("reports no readings when the collector fails on a host the probe finds no GPU on", async () => {
-    const source = new FallbackGpuCollector({ collect: vi.fn().mockRejectedValue(new Error("down")) }, async () => null);
-    expect(await source.collect([])).toEqual([]);
-  });
-});
-
 describe("initGpuCollector", () => {
   beforeEach(() => {
-    nvidiaCtor.mockReset();
-    detectDevices.mockReset();
     (globalThis as { __vardo_gpu_collector?: unknown }).__vardo_gpu_collector = undefined;
   });
 
-  it("uses the collector and doesn't touch the nvidia-smi probe when one is configured", async () => {
-    const source = await initGpuCollector({ VARDO_COLLECTOR_URL: "http://collector:9273" });
-    expect(source).toBeInstanceOf(FallbackGpuCollector);
-    expect(nvidiaCtor).not.toHaveBeenCalled();
+  it("reads the collector in either mode", async () => {
+    expect(await initGpuCollector({ VARDO_COLLECTOR_URL: "http://collector:9273" })).toBeInstanceOf(CollectorGpuCollector);
   });
 
-  it("keeps the probe with the collector off", async () => {
-    detectDevices.mockResolvedValue([{ index: 0, uuid: "x", name: "RTX", memoryTotal: 1, vendor: "nvidia" }]);
-    const source = await initGpuCollector({ VARDO_COLLECTOR_IMAGE: "off" });
-    expect(source).not.toBeInstanceOf(FallbackGpuCollector);
-    expect(nvidiaCtor).toHaveBeenCalledTimes(1);
+  it("has no GPU source with the collector off", async () => {
+    expect(await initGpuCollector({ VARDO_COLLECTOR_IMAGE: "off" })).toBeNull();
   });
 });

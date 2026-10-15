@@ -11,7 +11,7 @@ export interface MetricsProvider {
   fetchAll(): Promise<ContainerMetrics[]>;
 }
 
-/** cAdvisor's live poll cadence. */
+/** Poll cadence for a provider that doesn't report one. */
 export const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 // Provider registry on globalThis: instrumentation.ts sets it, API routes read it.
