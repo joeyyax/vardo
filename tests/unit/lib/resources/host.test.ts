@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const getSystemInfo = vi.fn();
 vi.mock("@/lib/docker/client", () => ({ getSystemInfo }));
@@ -18,7 +21,9 @@ vi.mock("@/lib/system-settings", () => ({
 const {
   detectHost,
   loadResourceSettings,
+  maxBackupConcurrency,
   maxDeployConcurrency,
+  memoryLimitMb,
   resetHostCache,
   saveResourceSettings,
   setResourceSettingsCache,
@@ -115,5 +120,49 @@ describe("admin resource settings", () => {
     stored.raw = null;
     await loadResourceSettings();
     expect(maxDeployConcurrency()).toBe(6);
+  });
+});
+
+describe("backup concurrency from this process's memory limit", () => {
+  const dir = mkdtempSync(join(tmpdir(), "vardo-memory-max-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const memoryMax = (value: string) => {
+    const file = join(dir, `memory.max.${Math.random()}`);
+    writeFileSync(file, `${value}\n`);
+    return file;
+  };
+
+  beforeEach(async () => {
+    getSystemInfo.mockResolvedValue({ cpus: 32, memoryTotal: 125 * GiB });
+    await detectHost();
+    delete process.env.VARDO_WORKER_MEM;
+  });
+
+  it("reads the cgroup's limit", async () => {
+    expect(await memoryLimitMb(memoryMax("1610612736"), {})).toBe(1536);
+  });
+
+  it("falls back to VARDO_WORKER_MEM when the cgroup has no limit or can't be read", async () => {
+    expect(await memoryLimitMb(memoryMax("max"), { VARDO_WORKER_MEM: "1g" })).toBe(1024);
+    expect(await memoryLimitMb(join(dir, "missing"), { VARDO_WORKER_MEM: "768m" })).toBe(768);
+    expect(await memoryLimitMb(join(dir, "missing"), {})).toBeNull();
+  });
+
+  it("caps the deploy concurrency at the slots the limit holds", async () => {
+    setResourceSettingsCache({ deployConcurrency: 16 });
+    expect(maxDeployConcurrency()).toBe(16);
+    expect(await maxBackupConcurrency(memoryMax("1610612736"))).toBe(7);
+    expect(await maxBackupConcurrency(memoryMax(String(4 * GiB)))).toBe(16);
+  });
+
+  it("follows a live resize", async () => {
+    const file = memoryMax("1610612736");
+    expect(await maxBackupConcurrency(file)).toBe(6);
+    writeFileSync(file, "805306368\n");
+    expect(await maxBackupConcurrency(file)).toBe(1);
+  });
+
+  it("keeps the deploy concurrency with no limit to read", async () => {
+    expect(await maxBackupConcurrency(join(dir, "missing"))).toBe(6);
   });
 });

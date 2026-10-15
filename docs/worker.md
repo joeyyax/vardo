@@ -154,7 +154,7 @@ Set these in `/opt/vardo/.env` and redeploy.
 
 | Variable | Default |
 | --- | --- |
-| `VARDO_WORKER_MEM` | A quarter of RAM, between 768m and 1536m. `install.sh` writes it. |
+| `VARDO_WORKER_MEM` | A quarter of RAM, between 768m and 1536m. `install.sh` writes it. Backups and drills at once fit in it: 512 MiB for the worker, then 144 MiB each. |
 | `VARDO_WORKER_STOP_GRACE` | `10m` |
 | `VARDO_WORKER_DRAIN_SECONDS` | `540` |
 | `VARDO_LOOPS_IN_WEB` | `auto`. `always` keeps every loop in the console; `never` leaves them to the worker. |

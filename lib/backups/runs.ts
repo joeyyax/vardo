@@ -66,9 +66,9 @@ export function describeTarget(target: { name: string; type: string; config: Rec
 }
 
 async function backupConcurrency(): Promise<number> {
-  const { loadResourceSettings, maxDeployConcurrency } = await import("@/lib/resources/host");
+  const { loadResourceSettings, maxBackupConcurrency } = await import("@/lib/resources/host");
   await loadResourceSettings();
-  return maxDeployConcurrency();
+  return maxBackupConcurrency();
 }
 
 /** Each volume's average duration over its last few successful backups and its last size, by `appId:volume`. */

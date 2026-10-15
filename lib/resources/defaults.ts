@@ -125,6 +125,16 @@ export function workerMemMb(memoryMb: number): number {
   return Math.min(1536, Math.max(768, Math.floor(memoryMb / 4 / 64) * 64));
 }
 
+/** MiB the process keeps for itself, and MiB one backup or drill needs at 16 MiB parts. */
+export const BACKUP_SLOT_FORMULA = { reserveMb: 512, slotMb: 144 } as const;
+
+/** Backups and drills at once: deploy concurrency, capped by the slots `memoryMb` holds after the reserve. At least 1. */
+export function backupConcurrency(deploys: number, memoryMb: number | null): number {
+  if (memoryMb === null) return Math.max(1, deploys);
+  const { reserveMb, slotMb } = BACKUP_SLOT_FORMULA;
+  return Math.max(1, Math.min(deploys, Math.floor((memoryMb - reserveMb) / slotMb)));
+}
+
 /** BuildKit's cache ceiling in bytes: an eighth of the disk, between 5 and 60 GiB. install.sh mirrors it. */
 export function buildkitCacheMaxBytes(diskBytes: number): number {
   const gib = 1024 ** 3;

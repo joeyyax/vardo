@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   FALLBACK,
+  backupConcurrency,
   buildkitMemGb,
   deployConcurrency,
   describeDefaults,
@@ -17,6 +18,7 @@ import {
   tierMemoryRuleMb,
   traefikMemMb,
   validateAdminValue,
+  workerMemMb,
   type HostSize,
 } from "@/lib/resources/defaults";
 
@@ -405,5 +407,34 @@ describe("BuildKit cache ceiling", () => {
 
   it("falls back to 10 GiB with nothing set", () => {
     expect(row({}, null)).toMatchObject({ source: "fallback", value: 10 * 1024 });
+  });
+});
+
+describe("backup concurrency", () => {
+  const longHouse = host(32, 48);
+  const jy0: HostSize = { cpus: 8, memoryBytes: Math.floor(15.3 * GiB) };
+
+  it("keeps the deploy concurrency when the worker's memory holds it", () => {
+    expect(deployConcurrency(longHouse)).toBe(6);
+    expect(backupConcurrency(deployConcurrency(longHouse), 1536)).toBe(6);
+    expect(backupConcurrency(deployConcurrency(longHouse), 4096)).toBe(6);
+    expect(workerMemMb(Math.floor(jy0.memoryBytes / 1024 / 1024))).toBe(1536);
+    expect(backupConcurrency(deployConcurrency(jy0), 1536)).toBe(4);
+  });
+
+  it("caps a raised deploy concurrency at the slots the worker's memory holds", () => {
+    expect(backupConcurrency(32, 1536)).toBe(7);
+    expect(backupConcurrency(32, 4096)).toBe(24);
+    expect(backupConcurrency(6, 1024)).toBe(3);
+  });
+
+  it("runs one at a time on the smallest worker and below the reserve", () => {
+    expect(backupConcurrency(6, 768)).toBe(1);
+    expect(backupConcurrency(6, 256)).toBe(1);
+  });
+
+  it("uses the deploy concurrency when the limit is unknown", () => {
+    expect(backupConcurrency(6, null)).toBe(6);
+    expect(backupConcurrency(0, null)).toBe(1);
   });
 });
