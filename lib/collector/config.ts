@@ -8,7 +8,7 @@ export const PROVISIONED_COLLECTOR_URL = "http://collector:9273";
 /** system_settings key holding a provisioned collector's bearer token. */
 export const COLLECTOR_TOKEN_KEY = "collector_token";
 
-/** The collector's default `interval`; the provisioned one sets it explicitly. */
+/** The collector's default `interval`; the provisioned one sets it explicitly. Its `interval_seconds` replaces this. */
 export const COLLECTOR_INTERVAL_MS = 15_000;
 
 export type CollectorMode =

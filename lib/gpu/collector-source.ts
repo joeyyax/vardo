@@ -53,6 +53,7 @@ function hasDevice(access: GpuAccess, gpu: CollectorGpu): boolean {
 /**
  * Device readings split across the containers that share each GPU.
  * The collector has no per-process memory, so a shared GPU's utilization and memory are divided evenly.
+ * The collector's per-container GPU memory replaces this split.
  */
 export function attributeGpus(
   gpus: CollectorGpu[],
