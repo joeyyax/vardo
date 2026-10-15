@@ -76,4 +76,19 @@ describe.skipIf(!conn)("backup coverage on Postgres", { timeout: MIGRATE_TIMEOUT
       { appId: "paperless", appName: "paperless", volumeName: "usr-src-paperless-media", lastSuccessAt: null },
     ]);
   });
+
+  it("leaves apps with backups switched off out of the uncovered list", async () => {
+    const { listUncoveredApps } = await import("@/lib/backups/enroll");
+    expect((await listUncoveredApps("o1", { measure: false })).map((a) => [a.name, a.status])).toEqual([["kuma", "uncovered"]]);
+  });
+
+  it("raises no backup condition for an app with backups switched off", async () => {
+    const { clearAdvisoryCache, loadAdvisoryInputs } = await import("@/lib/docker/condition-inputs");
+    clearAdvisoryCache();
+    const inputs = await loadAdvisoryInputs(NOW);
+    expect(inputs.get("ollama")?.backup).toBeNull();
+    expect(inputs.get("samba")?.backup).toBeNull();
+    expect(inputs.get("kuma")?.backup).toEqual({ hasVolumes: true, configured: false, lastRunAt: null });
+    expect(inputs.get("paperless")?.backup).toMatchObject({ hasVolumes: true, configured: true });
+  });
 });

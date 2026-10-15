@@ -10,9 +10,11 @@ import {
   backupJobs,
   domainCertChecks,
   domains,
+  organizations,
   volumes,
 } from "@/lib/db/schema";
 import { appsWithBackupState, type SelectableVolume } from "@/lib/backups/selection";
+import { getSystemBackupsDefault, resolveBackupSwitch } from "@/lib/backups/switch";
 import type { ConditionInput } from "./conditions";
 
 export type AdvisoryInput = {
@@ -38,8 +40,17 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
   const byApp = new Map<string, AdvisoryInput>();
   try {
     const appRows = await db
-      .select({ id: apps.id, organizationId: apps.organizationId, persistentVolumes: apps.persistentVolumes, parked: apps.parked })
-      .from(apps);
+      .select({
+        id: apps.id,
+        organizationId: apps.organizationId,
+        persistentVolumes: apps.persistentVolumes,
+        parked: apps.parked,
+        backupsEnabled: apps.backupsEnabled,
+        orgBackupsEnabled: organizations.backupsEnabled,
+      })
+      .from(apps)
+      .leftJoin(organizations, eq(organizations.id, apps.organizationId));
+    const systemDefault = await getSystemBackupsDefault().catch(() => true);
 
     const jobRows = await db
       .select({
@@ -90,10 +101,11 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
     );
 
     for (const app of appRows) {
+      // A parked app is off on purpose, as is one with backups switched off. Neither needs a backup.
+      const off = app.parked || !resolveBackupSwitch(app.backupsEnabled, app.orgBackupsEnabled, systemDefault).enabled;
       byApp.set(app.id, {
         security: scanByApp.get(app.id) ?? null,
-        // A parked app is off on purpose; its backups don't go stale.
-        backup: app.parked
+        backup: off
           ? null
           : {
               hasVolumes: withState.has(app.id) || (app.persistentVolumes?.length ?? 0) > 0,
