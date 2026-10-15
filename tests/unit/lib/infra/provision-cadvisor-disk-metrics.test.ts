@@ -119,7 +119,7 @@ describe("ensureInfraServices — cAdvisor disk metrics setting", () => {
   });
 
   it("installs with disk metrics on when the setting is enabled", async () => {
-    getSystemSettingRawMock.mockResolvedValue(JSON.stringify({ diskMetricsEnabled: true }));
+    getSystemSettingRawMock.mockImplementation(async (key: string) => (key === "metrics_disk" ? "true" : null));
     dbMock.query.apps.findFirst.mockResolvedValue(null);
 
     await ensureInfraServices();

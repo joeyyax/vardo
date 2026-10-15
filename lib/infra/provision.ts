@@ -374,9 +374,9 @@ async function resolveComposeContent(template: Template, hasGpu: boolean): Promi
     return applyCollectorGpu(template.composeContent, hasGpu);
   }
   if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
-  const { getCadvisorConfig, applyCadvisorDiskMetrics, cadvisorWalksDisk } = await import("@/lib/infra/cadvisor-config");
-  const { diskMetricsEnabled } = await getCadvisorConfig();
-  return applyCadvisorDiskMetrics(template.composeContent, cadvisorWalksDisk(diskMetricsEnabled));
+  const { applyCadvisorDiskMetrics, cadvisorWalksDisk } = await import("@/lib/infra/cadvisor-config");
+  const { getDiskMetricsEnabled } = await import("@/lib/metrics/disk-setting");
+  return applyCadvisorDiskMetrics(template.composeContent, cadvisorWalksDisk(await getDiskMetricsEnabled()));
 }
 
 /** Core services that read GPUs, so they get the host's GPUs when it has any. */

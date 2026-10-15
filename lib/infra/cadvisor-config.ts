@@ -1,36 +1,9 @@
 // cAdvisor disk metrics setting. Off (default) skips the per-container filesystem walk and holds the memory ceiling at 256m; on raises it to 512m.
 
-import { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 import { collectorMode } from "@/lib/collector/config";
 
 const log = logger.child("cadvisor-config");
-
-const KEY = "cadvisor_config";
-
-export interface CadvisorConfig {
-  diskMetricsEnabled: boolean;
-}
-
-export const DEFAULT_CADVISOR_CONFIG: CadvisorConfig = {
-  diskMetricsEnabled: false,
-};
-
-export async function getCadvisorConfig(): Promise<CadvisorConfig> {
-  const raw = await getSystemSettingRaw(KEY);
-  if (!raw) return { ...DEFAULT_CADVISOR_CONFIG };
-  try {
-    const parsed = JSON.parse(raw) as Partial<CadvisorConfig>;
-    return { diskMetricsEnabled: parsed.diskMetricsEnabled === true };
-  } catch {
-    return { ...DEFAULT_CADVISOR_CONFIG };
-  }
-}
-
-export async function setCadvisorConfig(config: CadvisorConfig): Promise<void> {
-  await setSystemSetting(KEY, JSON.stringify(config));
-  invalidateSettingsCache(KEY);
-}
 
 /** Whether cAdvisor walks container filesystems. With a collector, Docker measures them instead. */
 export function cadvisorWalksDisk(diskMetricsEnabled: boolean, env: Record<string, string | undefined> = process.env): boolean {

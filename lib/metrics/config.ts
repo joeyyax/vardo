@@ -62,7 +62,7 @@ export function withCollector(cadvisor: MetricsProvider, env: Record<string, str
         const res = await (await docker())<{ SizeRw?: number }>("GET", `/containers/${encodeURIComponent(id)}/json?size=1`, undefined, { timeoutMs: 30_000 });
         return typeof res.SizeRw === "number" ? res.SizeRw : null;
       },
-      async () => (await (await import("@/lib/infra/cadvisor-config")).getCadvisorConfig()).diskMetricsEnabled,
+      async () => (await import("./disk-setting")).getDiskMetricsEnabled(),
     ),
   });
   return new FallbackMetricsProvider(collector, cadvisor);
