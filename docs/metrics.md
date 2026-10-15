@@ -19,8 +19,8 @@ GPU readings work the same way: the collector's `nvidia-smi` readings while it a
 ## What comes from where
 
 - **Collector:** CPU, memory, memory limit, network, disk writes, process count and GPU devices. Live charts update every 15 seconds, the collector's interval.
-- **Docker:** the labels outside the collector's allowlist (organization, app id), and which containers were given GPUs.
-- **cAdvisor:** per-container filesystem size, only with **Disk metrics** on under Core services.
+- **Docker:** one inspect per new container for the labels outside the collector's allowlist (organization, app id) and its GPUs.
+- **Docker, with Disk metrics on:** each container's writable-layer size, measured at most hourly and one container at a time, because measuring walks the layer. The stats API gives each size's `diskMeasuredAt`. With Disk metrics off, Vardo never asks for sizes, and in collector mode cAdvisor skips its disk walk either way.
 - **Unchanged:** health state from Docker inspect, per-project disk from `docker system df`.
 
 The collector reports no GPU memory per process, so a GPU shared by several containers is split evenly between them. A `network_mode: host` container shows no network traffic.
