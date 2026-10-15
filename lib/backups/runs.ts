@@ -251,7 +251,7 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
         });
         if (opened) continue;
       }
-      const plan = await planJobs(jobIds);
+      const plan: BackupRunPlan = { ...(await planJobs(jobIds)), jobLeases: true };
       const estimatedMs = await estimatePlan(organizationId, plan, now.getTime());
       const runId = await openRun({ organizationId, kind: "nightly", runKey: key, label: "Nightly backups", plan, estimatedMs, now: now.getTime() });
       if (runId) for (const jobId of jobIds) runOf.set(jobId, runId);
@@ -265,7 +265,7 @@ export async function startNightlyRuns(now: Date): Promise<Map<string, string>> 
 /** Opens a run for one job expected to take longer than LONG_RUN_MS. Null for a quick one. */
 export async function startJobRun(job: { id: string; name: string; organizationId: string | null }, now: Date): Promise<string | null> {
   if (!job.organizationId) return null;
-  const plan = await planJobs([job.id]);
+  const plan: BackupRunPlan = { ...(await planJobs([job.id])), jobLeases: true };
   const estimatedMs = await estimatePlan(job.organizationId, plan, now.getTime());
   if (estimatedMs === null || estimatedMs < LONG_RUN_MS) return null;
   return openRun({
@@ -587,6 +587,20 @@ function unfinishedAppIds(plan: BackupRunPlan, unfinished: string[]): Record<str
   return Object.keys(out).length ? out : undefined;
 }
 
+/** Unfinished job names with no backup row in the run. */
+async function jobsNotStarted(run: RunRow): Promise<string[]> {
+  if (run.kind === "restore") return [];
+  const done = new Set(run.jobsDone);
+  const waiting = run.plan.jobs.filter((j) => !done.has(j.jobId));
+  if (waiting.length === 0) return [];
+  const rows = await db.query.backups.findMany({
+    where: and(inArray(backups.jobId, waiting.map((j) => j.jobId)), gte(backups.startedAt, run.startedAt)),
+    columns: { jobId: true },
+  });
+  const started = new Set((rows ?? []).map((r) => r.jobId));
+  return waiting.filter((j) => !started.has(j.jobId)).map((j) => j.jobName);
+}
+
 async function sendSummary(run: RunRow, now: number): Promise<void> {
   const [settings, { history, lastGood }, orgStale] = await Promise.all([
     readOrgNotificationSettings(run.organizationId),
@@ -601,6 +615,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
   // A clean scheduled run goes to the digest.
   if (!send) return;
   const notBackedUp = run.kind === "nightly" ? await loadNotBackedUp(run.organizationId) : [];
+  const notStarted = unfinished.length ? await jobsNotStarted(run).catch(() => []) : [];
 
   const backed = rows.filter((r) => r.kind === "backup" && !r.config);
   const succeeded = backed.filter((r) => r.outcome === "success").length;
@@ -615,6 +630,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
       estimatedMs: run.estimatedMs,
       actualMs: now - run.startedAt.getTime(),
       unfinished: unfinished.length ? unfinished : undefined,
+      notStarted: notStarted.length ? notStarted : undefined,
       unfinishedAppIds: unfinished.length ? unfinishedAppIds(run.plan, unfinished) : undefined,
       ...(problemsOnly ? { problemsOnly: true } : {}),
     },

@@ -34,6 +34,8 @@ export type BackupRunPlan = {
   apps: { appId: string | null; appName: string; volumes: string[]; lastBytes?: number }[];
   /** "System default · R2 backups/node-a", no credentials. */
   target: string | null;
+  /** Its jobs hold a lease until they report, so a sweep can requeue the ones a dead process held. */
+  jobLeases?: boolean;
 };
 
 /** A run's own job or restore that should take longer than this gets a start notice and a summary. */

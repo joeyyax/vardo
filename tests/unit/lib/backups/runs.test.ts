@@ -282,6 +282,36 @@ describe("finishBackupRuns", () => {
     expect(dbMock.updates).toHaveLength(1);
   });
 
+  describe("a run that timed out", () => {
+    const nightly = { ...overdue(), kind: "nightly", runKey: "nightly:2026-10-10", label: "Nightly backups", estimatedMs: null };
+    /** Backup rows by job since the run started; the progress check's running rows stay empty. */
+    const rowsFor = (jobIds: string[]) =>
+      dbMock.query.backups.findMany.mockImplementation(async (q: unknown) =>
+        (q as { columns?: Record<string, boolean> })?.columns?.jobId ? jobIds.map((jobId) => ({ jobId })) : [],
+      );
+
+    beforeEach(() => {
+      dbMock.query.backupRuns.findMany.mockResolvedValue([nightly]);
+      dbMock.updateReturns([nightly]);
+    });
+
+    it("names the jobs that never got a backup row as not started", async () => {
+      rowsFor([]);
+      await finishBackupRuns(t0 + 61 * MIN);
+      const [, event] = mocks.emit.mock.calls[0];
+      expect(event.run.unfinished).toEqual(["Auto: j2"]);
+      expect(event.run.notStarted).toEqual(["Auto: j2"]);
+    });
+
+    it("leaves a job that started off the not-started list", async () => {
+      rowsFor(["j2"]);
+      await finishBackupRuns(t0 + 61 * MIN);
+      const [, event] = mocks.emit.mock.calls[0];
+      expect(event.run.unfinished).toEqual(["Auto: j2"]);
+      expect(event.run.notStarted).toBeUndefined();
+    });
+  });
+
   it("claims a finished run once before summarizing it", async () => {
     dbMock.query.backupRuns.findMany.mockResolvedValue([
       { id: "r1", organizationId: "org1", plan: plan(["j1"]), jobsDone: ["j1"], deadlineAt: new Date(t0 + 60 * MIN), startedAt: new Date(t0) },

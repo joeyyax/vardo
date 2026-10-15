@@ -92,7 +92,11 @@ export function subjectLine(event: BusEvent): string {
           ? `✗ ${label} · ${event.failed} of ${total} failed`
           : `✗ ${label} · ${failed.length} failed`;
       }
-      if (event.run.unfinished?.length) return `⚠ ${label} · timed out, ${event.run.unfinished.length} didn't finish`;
+      const timedOut = event.run.unfinished?.length ?? 0;
+      if (timedOut) {
+        const allUnstarted = (event.run.notStarted?.length ?? 0) === timedOut;
+        return `⚠ ${label} · timed out, ${timedOut} didn't ${allUnstarted ? "start" : "finish"}`;
+      }
       const shrunk = event.rows.filter((r) => r.shrunk);
       if (shrunk.length) return `⚠ ${label} · ${shrunk[0].appName} much smaller than usual`;
       const skipped = event.rows.filter((r) => r.outcome === "skipped" && !r.expected);

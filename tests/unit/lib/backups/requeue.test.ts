@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   markJobDone: vi.fn(),
   reap: vi.fn(),
   draining: false,
+  /** Lock keys taken, as Redis SET NX would hold them. */
+  locks: new Set<string>(),
+  releaseLock: vi.fn(),
+  leasesHeld: new Set<string>(),
 }));
 
 vi.mock("@/lib/db", async () => {
@@ -23,12 +27,28 @@ vi.mock("@/lib/backups/reap", () => ({
 }));
 vi.mock("@/lib/backups/runs", () => ({ markJobDone: mocks.markJobDone }));
 vi.mock("@/lib/backups/in-flight", () => ({ backupsDraining: () => mocks.draining }));
+vi.mock("@/lib/redis-lock", () => ({
+  acquireLock: async (key: string) => {
+    if (mocks.locks.has(key)) return null;
+    mocks.locks.add(key);
+    return `token:${key}`;
+  },
+  releaseLock: async (key: string, token: string) => {
+    mocks.releaseLock(key, token);
+    return mocks.locks.delete(key);
+  },
+}));
+vi.mock("@/lib/backups/run-lease", () => ({
+  runJobLeaseHeld: async (runId: string, jobId: string) => mocks.leasesHeld.has(`${runId}:${jobId}`),
+}));
 
 import { dbMock } from "@/tests/helpers/db";
 import { backupRuns, backups } from "@/lib/db/schema";
 import {
   planRequeues,
   requeueInterruptedBackups,
+  requeueLockKey,
+  requeueOrphanedRunJobs,
   requeueWindowMs,
   sweepInterruptedBackups,
 } from "@/lib/backups/requeue";
@@ -64,6 +84,9 @@ beforeEach(() => {
   mocks.markJobDone.mockReset();
   mocks.reap.mockReset();
   mocks.draining = false;
+  mocks.locks.clear();
+  mocks.releaseLock.mockReset();
+  mocks.leasesHeld.clear();
   mocks.selectRows = [{ id: "b-1", jobId: "job-1", startedAt: at("02:10:00") }];
   dbMock.query.backupJobs.findFirst.mockResolvedValue({ id: "job-1", name: "Nightly", enabled: true, organizationId: "org-1" });
   dbMock.query.backups.findFirst.mockResolvedValue(undefined);
@@ -141,11 +164,100 @@ describe("requeueInterruptedBackups", () => {
     expect(mocks.markJobDone).toHaveBeenCalledWith("run-1", "job-1");
   });
 
+  it("takes the run's one requeue of the job, so the orphan sweep can't run it again", async () => {
+    await requeueInterruptedBackups(NOW, { runJob });
+
+    expect(mocks.locks.has(requeueLockKey("run-1", "job-1"))).toBe(true);
+  });
+
   it("does nothing with no interrupted rows", async () => {
     mocks.selectRows = [];
 
     expect(await requeueInterruptedBackups(NOW, { runJob })).toEqual([]);
     expect(dbMock.updates).toEqual([]);
+  });
+});
+
+describe("requeueOrphanedRunJobs", () => {
+  // The run opened at 02:00; job-1 was waiting for a slot when its console died, so it never got a row.
+  const leasedRun = (over: Partial<Record<string, unknown>> = {}) =>
+    nightlyRun({ plan: { ...plan(["job-1", "job-2"]), jobLeases: true }, ...over });
+
+  beforeEach(() => {
+    dbMock.query.backupRuns.findMany.mockResolvedValue([leasedRun()]);
+  });
+
+  it("reruns a planned job that never started once no process holds it, and pushes the deadline out", async () => {
+    const started = await requeueOrphanedRunJobs(NOW, { runJob });
+
+    expect(started).toEqual(["job-1"]);
+    expect(runJob).toHaveBeenCalledOnce();
+    expect(runJob).toHaveBeenCalledWith({ id: "job-1", name: "Nightly" }, { runId: "run-1", trigger: "requeue" });
+    const deadline = dbMock.updates.find((u) => u.table === backupRuns)?.set as { deadlineAt: Date };
+    expect(deadline.deadlineAt.getTime()).toBeGreaterThanOrEqual(NOW.getTime() + 60 * 60_000);
+  });
+
+  it("leaves a job alone while a live process holds its lease", async () => {
+    mocks.leasesHeld.add("run-1:job-1");
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+    expect(runJob).not.toHaveBeenCalled();
+  });
+
+  it("leaves a job alone while it has a running row", async () => {
+    dbMock.query.backups.findFirst.mockResolvedValue({ id: "b-running" });
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+    expect(runJob).not.toHaveBeenCalled();
+  });
+
+  it("runs a job once across two consoles sweeping together", async () => {
+    const [a, b] = await Promise.all([requeueOrphanedRunJobs(NOW, { runJob }), requeueOrphanedRunJobs(NOW, { runJob })]);
+
+    expect([...a, ...b]).toEqual(["job-1"]);
+    expect(runJob).toHaveBeenCalledOnce();
+  });
+
+  it("doesn't run a job a second time on a later sweep", async () => {
+    await requeueOrphanedRunJobs(NOW, { runJob });
+    await requeueOrphanedRunJobs(new Date(NOW.getTime() + 5 * 60_000), { runJob });
+
+    expect(runJob).toHaveBeenCalledOnce();
+  });
+
+  it("doesn't rerun a job the interrupted-row sweep already requeued into the run", async () => {
+    await requeueInterruptedBackups(NOW, { runJob });
+    runJob.mockClear();
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+    expect(runJob).not.toHaveBeenCalled();
+  });
+
+  it("gives the claim back when the job is already queued here", async () => {
+    runJob.mockReturnValueOnce(false);
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+    expect(mocks.releaseLock).toHaveBeenCalledOnce();
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual(["job-1"]);
+  });
+
+  it("leaves runs opened before job leases alone", async () => {
+    dbMock.query.backupRuns.findMany.mockResolvedValue([nightlyRun()]);
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+  });
+
+  it("waits out the grace on a run that just opened", async () => {
+    dbMock.query.backupRuns.findMany.mockResolvedValue([leasedRun({ startedAt: new Date(NOW.getTime() - 30_000) })]);
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+  });
+
+  it("reports a job that's off as done instead of running it", async () => {
+    dbMock.query.backupJobs.findFirst.mockResolvedValue({ id: "job-1", name: "Nightly", enabled: false });
+
+    expect(await requeueOrphanedRunJobs(NOW, { runJob })).toEqual([]);
+    expect(mocks.markJobDone).toHaveBeenCalledWith("run-1", "job-1");
   });
 });
 
@@ -155,6 +267,14 @@ describe("sweepInterruptedBackups", () => {
     await sweepInterruptedBackups(NOW);
 
     expect(mocks.reap).toHaveBeenCalledWith(NOW, { minAgeMs: 60_000 });
+  });
+
+  it("also queries open runs for jobs a dead console never started", async () => {
+    mocks.selectRows = [];
+    dbMock.query.backupRuns.findMany.mockResolvedValue([]);
+    await sweepInterruptedBackups(NOW);
+
+    expect(dbMock.query.backupRuns.findMany).toHaveBeenCalled();
   });
 
   it("leaves everything to the next console while this one drains", async () => {

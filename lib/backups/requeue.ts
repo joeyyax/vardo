@@ -1,16 +1,31 @@
-// Reruns scheduled backups a stopped console cut off, once each, and keeps their run's summary waiting for them.
+// Reruns scheduled backups a stopped console cut off or never started, once each, and keeps their run's summary waiting for them.
 
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, like, notIlike, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backupJobs, backupRuns, backups } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
+import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { REQUEUE_TRIGGER } from "./engine";
 import { backupsDraining } from "./in-flight";
 import { INTERRUPTED_REASON } from "./reap";
 import { NOT_REQUEUED_NOTE, REQUEUED_NOTE, SUPERSEDED_REASON } from "./requeue-notes";
-import { runDeadline } from "./run-rules";
+import { runJobLeaseHeld } from "./run-lease";
+import { MAX_RUN_MS, runDeadline } from "./run-rules";
 
 const log = logger.child("backup");
+
+/** A row or run younger than this may not have its lease yet. */
+const LEASE_GRACE_MS = 60_000;
+
+/** Taken once per run and job by whichever console requeues it. */
+export const requeueLockKey = (runId: string, jobId: string) => `lock:backup-requeue:${runId}:${jobId}`;
+
+/** Claims the one requeue of a job into a run, across consoles. Returns its release, or null when another console has it. */
+async function claimRunJob(runId: string, jobId: string): Promise<(() => Promise<boolean>) | null> {
+  const key = requeueLockKey(runId, jobId);
+  const token = await acquireLock(key, MAX_RUN_MS);
+  return token ? () => releaseLock(key, token) : null;
+}
 
 /** Interrupted rows older than this stay failed. */
 export function requeueWindowMs(env: Record<string, string | undefined> = process.env): number {
@@ -61,14 +76,18 @@ async function runAwaiting(organizationId: string | null, jobId: string, now: Da
   });
   const run = open.find((r) => r.plan.jobs.some((j) => j.jobId === jobId) && !r.jobsDone.includes(jobId));
   if (!run) return null;
-  const deadline = runDeadline(now.getTime(), run.estimatedMs);
-  if (deadline > run.deadlineAt.getTime()) {
-    await db
-      .update(backupRuns)
-      .set({ deadlineAt: new Date(deadline) })
-      .where(and(eq(backupRuns.id, run.id), isNull(backupRuns.finishedAt)));
-  }
+  await extendDeadline(run, now);
   return run.id;
+}
+
+/** Pushes an open run's deadline out to cover a rerun starting now. */
+async function extendDeadline(run: { id: string; estimatedMs: number | null; deadlineAt: Date }, now: Date): Promise<void> {
+  const deadline = runDeadline(now.getTime(), run.estimatedMs);
+  if (deadline <= run.deadlineAt.getTime()) return;
+  await db
+    .update(backupRuns)
+    .set({ deadlineAt: new Date(deadline) })
+    .where(and(eq(backupRuns.id, run.id), isNull(backupRuns.finishedAt)));
 }
 
 type RunJob = (
@@ -134,11 +153,70 @@ export async function requeueInterruptedBackups(
         continue;
       }
 
+      if (runId && !(await claimRunJob(runId, job.id))) continue;
       log.info(`Requeuing job "${job.name}" after the console running it stopped`);
       runJob({ id: job.id, name: job.name }, { runId, trigger: REQUEUE_TRIGGER });
       started.push(job.id);
     } catch (err) {
       log.error(`Couldn't requeue job ${plan.jobId}:`, err);
+    }
+  }
+  return started;
+}
+
+/** Reruns each job an open run still waits on that no live process holds, such as one queued for a slot when its console stopped. Returns the job IDs started. */
+export async function requeueOrphanedRunJobs(
+  now = new Date(),
+  deps: { runJob?: RunJob; windowMs?: number } = {},
+): Promise<string[]> {
+  const windowMs = deps.windowMs ?? requeueWindowMs();
+  const runJob = deps.runJob ?? (await import("./tick")).runRequeuedJob;
+
+  const open = await db.query.backupRuns.findMany({
+    where: and(isNull(backupRuns.finishedAt), gte(backupRuns.startedAt, new Date(now.getTime() - windowMs))),
+  });
+
+  const started: string[] = [];
+  for (const run of open) {
+    if (!run.plan.jobLeases || now.getTime() - run.startedAt.getTime() < LEASE_GRACE_MS) continue;
+    const done = new Set(run.jobsDone);
+    for (const { jobId } of run.plan.jobs) {
+      if (done.has(jobId)) continue;
+      try {
+        if (await runJobLeaseHeld(run.id, jobId)) continue;
+        const running = await db.query.backups.findFirst({
+          where: and(
+            eq(backups.jobId, jobId),
+            inArray(backups.status, ["pending", "running"]),
+            gte(backups.startedAt, run.startedAt),
+          ),
+          columns: { id: true },
+        });
+        if (running) continue;
+
+        const job = await db.query.backupJobs.findFirst({
+          where: eq(backupJobs.id, jobId),
+          columns: { id: true, name: true, enabled: true },
+        });
+        if (!job?.enabled) {
+          const { markJobDone } = await import("./runs");
+          await markJobDone(run.id, jobId);
+          log.info(`Not requeuing job ${jobId}: the job is off or gone`);
+          continue;
+        }
+        const claim = await claimRunJob(run.id, jobId);
+        if (!claim) continue;
+        // Queued here for another run; a later sweep tries again.
+        if (runJob({ id: job.id, name: job.name }, { runId: run.id, trigger: REQUEUE_TRIGGER }) === false) {
+          await claim();
+          continue;
+        }
+        log.info(`Requeued job "${job.name}": the console holding it for its run stopped`);
+        await extendDeadline(run, now);
+        started.push(job.id);
+      } catch (err) {
+        log.error(`Couldn't requeue job ${jobId} into run ${run.id}:`, err);
+      }
     }
   }
   return started;
@@ -150,6 +228,7 @@ export async function sweepInterruptedBackups(now = new Date()): Promise<void> {
   if (backupsDraining()) return;
   const { reapInterruptedBackups } = await import("./reap");
   // A row's lease is taken just after its insert.
-  await reapInterruptedBackups(now, { minAgeMs: 60_000 });
+  await reapInterruptedBackups(now, { minAgeMs: LEASE_GRACE_MS });
   await requeueInterruptedBackups(now);
+  await requeueOrphanedRunJobs(now);
 }

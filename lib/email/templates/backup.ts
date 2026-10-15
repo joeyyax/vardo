@@ -25,21 +25,24 @@ const KIND_TITLES: Record<Exclude<BackupSummaryRow["kind"], "backup">, string> =
 /** The rows the email sorts into. */
 function sortRows(event: BackupSummaryEvent) {
   const rows = event.rows;
+  const notStarted = new Set(event.run.notStarted ?? []);
+  const timedOut = event.run.unfinished ?? [];
   return {
     failed: rows.filter((r) => r.outcome === "failed"),
     shrunk: rows.filter((r) => r.shrunk),
     skipped: rows.filter((r) => r.outcome === "skipped" && !r.expected),
     routine: rows.filter((r) => r.outcome === "skipped" && r.expected && !r.config),
     config: rows.filter((r) => r.config),
-    unfinished: event.run.unfinished ?? [],
+    unfinished: timedOut.filter((j) => !notStarted.has(j)),
+    notStarted: timedOut.filter((j) => notStarted.has(j)),
     stale: event.staleVolumes ?? [],
   };
 }
 
-/** Callouts the email shows: one per failed or shrunk row, one each for skips, unfinished jobs and stale volumes. */
+/** Callouts the email shows: one per failed or shrunk row, one each for skips, unfinished jobs, unstarted jobs and stale volumes. */
 export function backupProblemCount(event: BackupSummaryEvent): number {
   const s = sortRows(event);
-  return s.failed.length + s.shrunk.length + [s.skipped, s.unfinished, s.stale].filter((l) => l.length).length;
+  return s.failed.length + s.shrunk.length + [s.skipped, s.unfinished, s.notStarted, s.stale].filter((l) => l.length).length;
 }
 
 function link(text: string, appId: string | null | undefined, ctx: MailContext, tab?: string): MailInline {
@@ -135,15 +138,27 @@ function skippedCallout(rows: BackupSummaryRow[], ctx: MailContext): MailBlock {
   return { kind: "callout", tone: "warn", title: `${plural(rows.length, "volume")} were skipped`, body };
 }
 
-function unfinishedCallout(event: BackupSummaryEvent, ctx: MailContext): MailBlock {
-  const jobs = event.run.unfinished ?? [];
+function jobNames(event: BackupSummaryEvent, jobs: string[], ctx: MailContext): MailInline[] {
   const ids = event.run.unfinishedAppIds ?? {};
-  const names = linkedList(jobs.map((j) => ({ text: backupJobLabel(j), href: ids[j] ? appPage(ctx, ids[j], "backups") : undefined })));
+  return linkedList(jobs.map((j) => ({ text: backupJobLabel(j), href: ids[j] ? appPage(ctx, ids[j], "backups") : undefined })));
+}
+
+function unfinishedCallout(event: BackupSummaryEvent, jobs: string[], ctx: MailContext): MailBlock {
   return {
     kind: "callout",
     tone: "warn",
     title: `${plural(jobs.length, "job")} didn't finish before the timeout`,
-    body: [...names, `. ${jobs.length === 1 ? "It" : "They"} may still be running.`],
+    body: [...jobNames(event, jobs, ctx), `. ${jobs.length === 1 ? "It" : "They"} may still be running.`],
+    action: { label: "View the run", href: consolePage(ctx, "/backups") },
+  };
+}
+
+function notStartedCallout(event: BackupSummaryEvent, jobs: string[], ctx: MailContext): MailBlock {
+  return {
+    kind: "callout",
+    tone: "warn",
+    title: `${plural(jobs.length, "job")} didn't start before the timeout`,
+    body: [...jobNames(event, jobs, ctx), `. Nothing was backed up for ${jobs.length === 1 ? "it" : "them"} in this run.`],
     action: { label: "View the run", href: consolePage(ctx, "/backups") },
   };
 }
@@ -211,7 +226,8 @@ function resultText(row: BackupSummaryRow): string {
 
 export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): NotificationMailBody {
   const tz = ctx.timeZone ?? UTC;
-  const { failed, shrunk, skipped, routine, config, unfinished, stale } = sortRows(event);
+  const { failed, shrunk, skipped, routine, config, unfinished, notStarted, stale } = sortRows(event);
+  const timedOut = unfinished.length + notStarted.length;
   const nightly = event.run.kind === "nightly";
   const problemsOnly = event.run.problemsOnly === true;
   const total = backupRunTotal(event);
@@ -222,7 +238,8 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     ...failed.map((r) => failedCallout(r, ctx)),
     ...shrunk.map((r) => shrunkCallout(r, nightly, ctx)),
     ...(skipped.length ? [skippedCallout(skipped, ctx)] : []),
-    ...(unfinished.length ? [unfinishedCallout(event, ctx)] : []),
+    ...(unfinished.length ? [unfinishedCallout(event, unfinished, ctx)] : []),
+    ...(notStarted.length ? [notStartedCallout(event, notStarted, ctx)] : []),
     ...(stale.length ? [staleCallout(stale, ctx)] : []),
   ];
   const tone: MailTone = failed.length ? "fail" : callouts.length ? "warn" : "success";
@@ -230,7 +247,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   const span = `between ${formatClock(new Date(event.windowStart), tz)} and ${clock(event.windowEnd, tz)}`;
   const lead = !total
     ? `Finished ${span}.`
-    : unfinished.length
+    : timedOut
       ? `${event.succeeded} of ${plural(total, "volume")} backed up before the run timed out at ${clock(event.windowEnd, tz)}.`
       : event.succeeded === total
         ? `${total === 1 ? "1 volume" : `All ${total} volumes`} backed up ${span}.`
@@ -245,8 +262,10 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
         label: "Backed up",
         value: String(event.succeeded),
         unit: `/${total}`,
-        sub: unfinished.length
-          ? `${unfinished.length} didn't finish`
+        sub: timedOut
+          ? unfinished.length
+            ? `${timedOut} didn't finish`
+            : `${timedOut} didn't start`
           : event.failed
             ? `${event.failed} failed`
             : missed
@@ -264,7 +283,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
       {
         label: "Took",
         ...tileParts(formatDuration(event.run.actualMs)),
-        sub: unfinished.length ? "then timed out" : event.run.estimatedMs ? `usually ${formatDuration(event.run.estimatedMs)}` : undefined,
+        sub: timedOut ? "then timed out" : event.run.estimatedMs ? `usually ${formatDuration(event.run.estimatedMs)}` : undefined,
       },
     ];
     blocks.push({ kind: "tiles", tiles });

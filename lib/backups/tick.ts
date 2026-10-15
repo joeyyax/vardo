@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { needsSetup } from "@/lib/setup";
 import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 import { withBackupSlot } from "./run-limit";
+import { holdRunJobLease } from "./run-lease";
 import { backupsDraining } from "./in-flight";
 import { loadResourceSettings, maxDeployConcurrency } from "@/lib/resources/host";
 
@@ -43,10 +44,25 @@ export async function tickBackupJobs(): Promise<void> {
     log.error("Nightly run start error:", err);
     return new Map<string, string>();
   });
+  // Held until each job reports, so a sweep can tell this process's jobs from a dead one's.
+  const leases = new Map<string, Promise<() => Promise<void>>>();
+  const hold = (runId: string, jobId: string) => {
+    if (!leases.has(jobId)) leases.set(jobId, holdRunJobLease(runId, jobId));
+  };
+  const release = async (jobId: string) => {
+    const lease = leases.get(jobId);
+    leases.delete(jobId);
+    await (await lease)?.();
+  };
+  for (const [jobId, runId] of nightlyRun) hold(runId, jobId);
+  const reporting = new Set<string>();
+
   // A nightly job that won't run now still counts as done, or its run waits out the deadline.
   const skipInRun = (jobId: string) => {
     const runId = nightlyRun.get(jobId);
-    if (runId) markJobDone(runId, jobId).catch(() => {});
+    if (!runId) return;
+    reporting.add(jobId);
+    markJobDone(runId, jobId).catch(() => {}).finally(() => release(jobId));
   };
 
   for (const job of jobs) {
@@ -81,18 +97,23 @@ export async function tickBackupJobs(): Promise<void> {
       }
 
       const runId = nightlyRun.get(job.id) ?? (await startJobRun(job, now).catch(() => null));
+      if (runId) hold(runId, job.id);
+      reporting.add(job.id);
       queued.add(job.id);
       runs.push(
         withBackupSlot(limit, () => runJob(job, runId))
           .finally(() => queued.delete(job.id))
           .then(() => (runId ? markJobDone(runId, job.id) : undefined))
-          .catch((err) => log.error(`Job "${job.name}" didn't report to its run:`, err)),
+          .catch((err) => log.error(`Job "${job.name}" didn't report to its run:`, err))
+          .finally(() => release(job.id)),
       );
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);
       skipInRun(job.id);
     }
   }
+  // Jobs this tick left alone are free for a sweep to requeue.
+  for (const jobId of [...leases.keys()]) if (!reporting.has(jobId)) void release(jobId);
 
   try {
     const { startDueInitialBackups } = await import("./initial-backup");
@@ -111,6 +132,7 @@ export function runRequeuedJob(
 ): Promise<void> | false {
   if (queued.has(job.id)) return false;
   queued.add(job.id);
+  const lease = opts.runId ? holdRunJobLease(opts.runId, job.id) : null;
   return backupConcurrency()
     .then((limit) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
     .finally(() => queued.delete(job.id))
@@ -119,7 +141,8 @@ export function runRequeuedJob(
       const { markJobDone } = await import("./runs");
       await markJobDone(opts.runId, job.id);
     })
-    .catch((err) => log.error(`Requeued job "${job.name}" didn't report to its run:`, err));
+    .catch((err) => log.error(`Requeued job "${job.name}" didn't report to its run:`, err))
+    .finally(async () => (await lease)?.());
 }
 
 async function runJob(job: { id: string; name: string }, runId: string | null, trigger?: string): Promise<void> {
