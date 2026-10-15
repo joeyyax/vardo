@@ -37,7 +37,8 @@ export type CollectorContainer = {
     receive_bytes_per_second: number | null;
     transmit_bytes_per_second: number | null;
   }[];
-  pids: { current: number; limit: number | null };
+  /** `current` counts threads. `processes` is the cgroup.procs line count; absent before 0.3.0, null when unreadable. */
+  pids: { current: number; limit: number | null; processes?: number | null };
   /** GPU memory this container's processes hold, per device. Absent before 0.2.0; empty without `pid: host`. */
   gpus?: CollectorContainerGpu[];
   /** Unix seconds of the collection. Absent before 0.2.0. */

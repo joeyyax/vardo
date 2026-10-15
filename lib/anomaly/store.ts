@@ -75,3 +75,13 @@ export async function learningSince(appId: string, now: number): Promise<number>
   await redis.expire(key, SEEN_TTL_S);
   return Number(await redis.hget(key, "learningSince")) || now;
 }
+
+const PIDS_RESET_KEY = "vardo:anomaly:pids-reset:1";
+
+/** Deletes every app's pids samples from `since` to `now` once per Redis. Thread counts from the collector's pids.current sat in them. */
+export async function resetPidsSamples(since: number, now: number): Promise<void> {
+  if (await redis.get(PIDS_RESET_KEY)) return;
+  const keys = (await tsRedis.call("TS.QUERYINDEX", "kind=anomaly", "signal=pids")) as string[];
+  for (const key of keys) await tsRedis.call("TS.DEL", key, String(since), String(now));
+  await redis.set(PIDS_RESET_KEY, String(now));
+}

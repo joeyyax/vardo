@@ -19,7 +19,7 @@ import { anomalyItem, newPortItem, newProcessItem, type AppRef, type Finding } f
 import { appPorts, probeContainer } from "./probe";
 import { activeFindings, reconcileSeen, type SeenEntry, type TopProcess } from "./security";
 import { SIGNAL_KEYS, isSensitivity, type Sensitivity, type SignalKey } from "./signals";
-import { appendSample, forgetSeen, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
+import { appendSample, forgetSeen, resetPidsSamples, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
 import { activityWindows, markActivity, quietApps, recentWorkWindows } from "./suppress";
 import { AppRateTracker, type AppReading } from "./tracker";
 
@@ -46,6 +46,7 @@ type State = {
   top: Map<string, { at: number; processes: TopProcess[] }>;
   seen: Map<string, Record<SeenKind, Map<string, SeenEntry>>>;
   lastSnapshotAt: number;
+  pidsReset: boolean;
 };
 
 const globalForAnomaly = globalThis as unknown as { __vardo_anomaly?: State };
@@ -57,7 +58,11 @@ const state: State = (globalForAnomaly.__vardo_anomaly ??= {
   top: new Map(),
   seen: new Map(),
   lastSnapshotAt: 0,
+  pidsReset: false,
 });
+
+/** When the collector became the metrics source and pids samples started to be thread counts. */
+export const COLLECTOR_PIDS_SINCE = Date.UTC(2026, 9, 15, 2, 30);
 
 type WatchedApp = AppRef & {
   organizationId: string;
@@ -195,6 +200,15 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
   if (!snapshot || snapshot.length === 0 || now - newest > SNAPSHOT_STALE_MS) return null;
   const fresh = newest !== state.lastSnapshotAt;
   state.lastSnapshotAt = newest;
+
+  if (!state.pidsReset) {
+    try {
+      await resetPidsSamples(COLLECTOR_PIDS_SINCE, now);
+      state.pidsReset = true;
+    } catch (err) {
+      log.warn("Pids sample reset failed:", (err as Error).message);
+    }
+  }
 
   const [watched, orgs, work, open] = await Promise.all([watchedApps(snapshot), orgSettings(), recentWorkWindows(now), openAlerts()]);
   const byOrg = new Map<string, Observation[]>();
