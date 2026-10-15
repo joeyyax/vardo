@@ -1,9 +1,9 @@
-import { fetchAllMetrics } from "./provider";
+import { fetchAllMetrics, metricsPollIntervalMs } from "./provider";
 import type { ContainerMetrics } from "./types";
 import { isMetricsEnabled } from "./config";
 import { readGpuSnapshot } from "@/lib/gpu/snapshot-store";
 
-// Shared cAdvisor broadcast: one poll serves all SSE subscribers.
+// Shared metrics broadcast: one poll serves all SSE subscribers, at the provider's own cadence.
 
 type Listener = {
   id: string;
@@ -14,9 +14,7 @@ let listeners: Listener[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 let nextId = 0;
 
-const POLL_INTERVAL_MS = 5000;
-
-/** Subscribes to cAdvisor updates. Polling runs while anyone is subscribed. Returns an unsubscribe function. */
+/** Subscribes to metrics updates. Polling runs while anyone is subscribed. Returns an unsubscribe function. */
 export function subscribe(
   callback: (metrics: ContainerMetrics[]) => void,
 ): () => void {
@@ -95,10 +93,10 @@ async function poll() {
       }
     }
   } catch {
-    // cAdvisor unavailable; skip this tick.
+    // Provider unavailable; skip this tick.
   }
 
   if (listeners.length > 0) {
-    timer = setTimeout(poll, POLL_INTERVAL_MS);
+    timer = setTimeout(poll, metricsPollIntervalMs());
   }
 }

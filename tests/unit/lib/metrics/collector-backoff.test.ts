@@ -23,4 +23,10 @@ describe("nextInterval", () => {
   it("backs off during warmup too", () => {
     expect(nextInterval({ tickCount: 1, consecutiveFailures: 2 })).toBe(60000);
   });
+
+  it("warms up no faster than the provider's own interval", () => {
+    expect(nextInterval({ tickCount: 0, consecutiveFailures: 0, providerIntervalMs: 15_000 })).toBe(15_000);
+    expect(nextInterval({ tickCount: 0, consecutiveFailures: 0, providerIntervalMs: 5_000 })).toBe(5000);
+    expect(nextInterval({ tickCount: 25, consecutiveFailures: 0, providerIntervalMs: 15_000 })).toBe(30000);
+  });
 });

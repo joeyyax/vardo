@@ -1,10 +1,11 @@
 import { logger } from "@/lib/logger";
 import type { ContainerGpuMetrics, ContainerResolver, GpuProvider } from "./types";
+import type { ContainerGpuSource, GpuInspect } from "./collector-source";
 
 const log = logger.child("gpu-collector");
 
 /** Produces per-container GPU metrics from a GpuProvider and ContainerResolver. Empty when no GPUs. */
-export class GpuMetricsCollector {
+export class GpuMetricsCollector implements ContainerGpuSource {
   private provider: GpuProvider;
   private resolver: ContainerResolver;
 
@@ -129,14 +130,38 @@ export class GpuMetricsCollector {
 // Singleton on globalThis to survive Next.js module reloads.
 
 const globalForGpu = globalThis as unknown as {
-  __vardo_gpu_collector?: GpuMetricsCollector | null;
+  __vardo_gpu_collector?: ContainerGpuSource | null;
   __vardo_gpu_snapshot?: ContainerGpuMetrics[];
 };
 
-/** Initializes the GPU collector with an auto-detected provider. */
-export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
+/** Initializes GPU collection: the collector when one is configured, else the nvidia-smi probe. */
+export async function initGpuCollector(env: Record<string, string | undefined> = process.env): Promise<ContainerGpuSource | null> {
   if (globalForGpu.__vardo_gpu_collector) return globalForGpu.__vardo_gpu_collector;
 
+  const { collectorMode, collectorTokenSource } = await import("@/lib/collector/config");
+  const mode = collectorMode(env);
+  if (mode.kind !== "off") {
+    const { CollectorClient } = await import("@/lib/collector/client");
+    const { CollectorGpuCollector, FallbackGpuCollector } = await import("./collector-source");
+    const { dockerRequest } = await import("@/lib/docker/client");
+    const instance = new FallbackGpuCollector(
+      new CollectorGpuCollector(new CollectorClient(mode.url, collectorTokenSource(mode, env)), (id) =>
+        dockerRequest<GpuInspect>("GET", `/containers/${encodeURIComponent(id)}/json`),
+      ),
+      initProbeCollector,
+    );
+    globalForGpu.__vardo_gpu_collector = instance;
+    log.info(`GPU readings from the collector at ${mode.url}; the nvidia-smi probe is the fallback`);
+    return instance;
+  }
+
+  const probe = await initProbeCollector();
+  if (probe) globalForGpu.__vardo_gpu_collector = probe;
+  return probe;
+}
+
+/** The nvidia-smi probe collector, or null without GPUs. */
+async function initProbeCollector(): Promise<GpuMetricsCollector | null> {
   const { NvidiaProvider } = await import("./providers/nvidia");
   const { DockerContainerResolver } = await import("./resolver");
 
@@ -149,14 +174,12 @@ export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
   }
 
   const resolver = new DockerContainerResolver();
-  const instance = new GpuMetricsCollector(provider, resolver);
-  globalForGpu.__vardo_gpu_collector = instance;
   log.info(`GPU collector initialized — ${devices.length} ${provider.vendor} GPU(s): ${devices.map((d) => d.name).join(", ")}`);
-  return instance;
+  return new GpuMetricsCollector(provider, resolver);
 }
 
-/** Current GPU collector, or null without GPUs. */
-export function getGpuCollector(): GpuMetricsCollector | null {
+/** Current GPU source, or null without GPUs. */
+export function getGpuCollector(): ContainerGpuSource | null {
   return globalForGpu.__vardo_gpu_collector ?? null;
 }
 

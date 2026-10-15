@@ -17,6 +17,8 @@ export type ContainerMetrics = {
   /** Container filesystem bytes. Null when cAdvisor reports no filesystem stats. */
   diskUsage: number | null;
   diskLimit: number | null;
+  /** When diskUsage was measured, ms. Unset means with this sample. */
+  diskUsageAt?: number | null;
   /** Cumulative block I/O writes. Null when cAdvisor reports no io_service_bytes. */
   diskWriteBytes: number | null;
   /** Processes in the container. Absent when cAdvisor doesn't report process stats. */

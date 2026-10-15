@@ -1,6 +1,7 @@
 // Core services: one row each in the Vardo system org, shared by every organization.
 
 import type { FeatureFlag } from "@/lib/config/features";
+import { shouldProvisionCollector } from "@/lib/collector/config";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("core-services");
@@ -11,18 +12,32 @@ export const CORE_SERVICES_STATUS_KEY = "core_services_status";
 /** Why a service is instance-wide: "host-agent" reads the whole host; "app" separates orgs inside one instance. */
 export type CoreServiceKind = "host-agent" | "app";
 
+export type CoreServiceDef = {
+  name: string;
+  displayName: string;
+  kind: CoreServiceKind;
+  /** Provisioned only when this returns true. Unset means always, with the flag. */
+  enabled?: () => boolean;
+  /** A failed deploy is recorded but doesn't fail or roll back the flag's other services. */
+  optional?: boolean;
+};
+
 /** A feature flag and the core services it turns on, governing provisioning and every org's access. */
 export type CoreServiceFeature = {
   flag: FeatureFlag;
   /** Template and app name of each service, in deploy order. */
-  services: { name: string; displayName: string; kind: CoreServiceKind }[];
+  services: CoreServiceDef[];
   project: { name: string; displayName: string };
 };
 
 export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
   {
     flag: "metrics",
-    services: [{ name: "cadvisor", displayName: "cAdvisor", kind: "host-agent" }],
+    services: [
+      { name: "cadvisor", displayName: "cAdvisor", kind: "host-agent" },
+      // cAdvisor stays as the fallback until the collector is proven across installs.
+      { name: "collector", displayName: "Collector", kind: "host-agent", enabled: () => shouldProvisionCollector(), optional: true },
+    ],
     project: { name: "metrics", displayName: "Metrics" },
   },
   {
@@ -111,6 +126,11 @@ export async function recordCoreServiceStatus(
   }
 }
 
+/** Whether a service of an enabled flag is provisioned on this install. */
+export function isCoreServiceEnabled(service: CoreServiceDef): boolean {
+  return service.enabled ? service.enabled() : true;
+}
+
 /** Every core service with its last recorded outcome. Never-provisioned services report "off". */
 export function summarizeCoreServices(
   stored: StatusRecord,
@@ -118,7 +138,7 @@ export function summarizeCoreServices(
 ): CoreServiceStatus[] {
   return CORE_SERVICE_FEATURES.flatMap((feature) =>
     feature.services.map((service) => {
-      const enabled = flagState[feature.flag] ?? false;
+      const enabled = (flagState[feature.flag] ?? false) && isCoreServiceEnabled(service);
       const status = stored[service.name];
       if (!enabled) {
         return {

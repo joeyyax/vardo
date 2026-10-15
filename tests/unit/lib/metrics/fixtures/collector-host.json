@@ -1,0 +1,12 @@
+{
+  "host": "orb",
+  "timestamp": 1792024558.2588775,
+  "boot_time": 1791991426,
+  "uptime_seconds": 33132.25887751579,
+  "load": {
+    "load1": 5.95,
+    "load5": 5.64,
+    "load15": 5.21
+  },
+  "gpus": []
+}

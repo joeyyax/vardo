@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
+import { collectorMode } from "@/lib/collector/config";
 import { cpuDisplay, formatBytes, formatDuration, sharePercent } from "@/lib/metrics/format";
 
 export type ServiceStatus = {
@@ -191,6 +192,21 @@ export const SERVICE_PROBES: Probe[] = [
     run: (timeoutMs) =>
       httpProbe(`${process.env.CADVISOR_URL || "http://localhost:7300"}/healthz`, timeoutMs),
   }),
+  {
+    name: "Collector",
+    description: "Container and GPU metrics",
+    timeoutMs: 2000,
+    logsApp: "collector",
+    applies: async () => {
+      if (collectorMode().kind === "off") return false;
+      const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+      return isFeatureEnabledAsync("metrics");
+    },
+    run: async (timeoutMs) => {
+      const mode = collectorMode();
+      if (mode.kind !== "off") await httpProbe(`${mode.url}/health`, timeoutMs);
+    },
+  },
   coreServiceProbe("loki", {
     name: "Loki",
     description: "Log aggregation",

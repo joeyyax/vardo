@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // Issue #79: the cAdvisor disk metrics setting must reach the compose content
@@ -81,7 +81,10 @@ beforeAll(async () => {
   TEMPLATE_COMPOSE = cadvisor.composeContent;
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
+  vi.stubEnv("VARDO_COLLECTOR_IMAGE", "off");
   insertedRows.length = 0;
   updateSets.length = 0;
   enqueueDeployMock.mockReset();

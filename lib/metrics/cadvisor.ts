@@ -60,12 +60,21 @@ export function parseFullContainerId(cgroupPath: string): string {
 /** Label prefixes app matching reads. Others are dropped to keep the snapshot small. */
 const IDENTITY_LABEL_PREFIXES = ["vardo.", "host.", "com.docker.compose."];
 
-function identityLabels(labels: Record<string, string> | undefined): Record<string, string> {
+export function identityLabels(labels: Record<string, string> | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(labels ?? {})) {
     if (IDENTITY_LABEL_PREFIXES.some((prefix) => key.startsWith(prefix))) out[key] = value;
   }
   return out;
+}
+
+/** Vardo project a container's labels name, or "" when none. */
+export function projectOf(labels: Record<string, string> | undefined): string {
+  return labels?.["vardo.project"] || labels?.["host.project"] || labels?.["com.docker.compose.project"] || "";
+}
+
+export function organizationOf(labels: Record<string, string> | undefined): string | null {
+  return labels?.["vardo.organization"] || labels?.["host.organization"] || null;
 }
 
 /** Fetches metrics for all Docker containers from the cAdvisor v2 API. */
@@ -99,14 +108,10 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
     const spec = specsData[key];
     if (!spec) continue;
 
-    const projectName =
-      spec.labels?.["vardo.project"] ||
-      spec.labels?.["host.project"] ||
-      spec.labels?.["com.docker.compose.project"] ||
-      "";
+    const projectName = projectOf(spec.labels);
     if (!projectName) continue;
 
-    const organizationId = spec.labels?.["vardo.organization"] || spec.labels?.["host.organization"] || null;
+    const organizationId = organizationOf(spec.labels);
 
     const prev = statEntries[statEntries.length - 2];
     const curr = statEntries[statEntries.length - 1];
@@ -205,6 +210,8 @@ export class CadvisorProvider implements MetricsProvider {
   constructor(url?: string) {
     this.url = url ?? CADVISOR_URL;
   }
+
+  readonly name = "cAdvisor";
 
   async fetchAll(): Promise<ContainerMetrics[]> {
     return fetchAllContainerMetrics(this.url);

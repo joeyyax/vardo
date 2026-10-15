@@ -32,6 +32,7 @@ const PROBE_APP_NAMES: Record<string, string> = {
   Traefik: "vardo-traefik",
   WireGuard: "vardo-wireguard",
   cAdvisor: "cadvisor",
+  Collector: "collector",
   Loki: "loki",
   Promtail: "promtail",
 };
