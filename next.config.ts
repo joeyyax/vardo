@@ -20,8 +20,12 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha || process.env.NEXT_PUBLIC_GIT_SHA || "",
   },
-  // Matches PROXY_BODY_LIMIT_BYTES; the image ships next.config.ts without lib/.
-  experimental: { proxyClientMaxBodySize: 32 * 1024 * 1024 },
+  experimental: {
+    // Matches PROXY_BODY_LIMIT_BYTES; the image ships next.config.ts without lib/.
+    proxyClientMaxBodySize: 32 * 1024 * 1024,
+    // Cuts the build's peak memory (#1016).
+    turbopackFileSystemCacheForBuild: false,
+  },
   serverExternalPackages: ["node-ical", "nodemailer", "@modelcontextprotocol/sdk"],
   images: {
     remotePatterns: [
