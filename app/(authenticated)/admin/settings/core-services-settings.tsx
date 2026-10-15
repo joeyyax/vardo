@@ -10,7 +10,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Card } from "@/components/ui/card";
 
-type CoreServiceState = "off" | "provisioned" | "conflict" | "missing-template" | "failed";
+type CoreServiceState = "off" | "provisioned" | "conflict" | "missing-template" | "failed" | "retiring";
 
 type CoreService = {
   name: string;
@@ -28,6 +28,7 @@ const STATE_LABEL: Record<CoreServiceState, string> = {
   conflict: "Name conflict",
   "missing-template": "Unavailable",
   failed: "Failed",
+  retiring: "Retiring",
 };
 
 const STATE_VARIANT: Record<CoreServiceState, "success" | "warning" | "error" | "neutral"> = {
@@ -37,6 +38,7 @@ const STATE_VARIANT: Record<CoreServiceState, "success" | "warning" | "error" | 
   conflict: "warning",
   "missing-template": "error",
   failed: "error",
+  retiring: "neutral",
 };
 
 export function CoreServicesSettings() {
@@ -109,7 +111,7 @@ export function CoreServicesSettings() {
 
   // The Disk metrics row follows the last metrics service.
   const metricsOn = services.some((s) => s.flag === "metrics" && s.state !== "off");
-  const lastMetricsService = services.findLast((s) => s.flag === "metrics")?.name;
+  const lastMetricsService = services.findLast((s) => s.flag === "metrics" && s.state !== "retiring")?.name;
 
   if (loading) {
     return (
@@ -146,14 +148,20 @@ export function CoreServicesSettings() {
                   {STATE_LABEL[service.state]}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Turned on by the <span className="font-medium">{service.flag}</span> flag.
-                {service.organization && (
-                  <> Installed in the {service.organization.name} organization.</>
-                )}
-              </div>
-              {service.detail && (
-                <div className="text-xs text-status-error">{service.detail}</div>
+              {service.state === "retiring" ? (
+                service.detail && <div className="text-xs text-muted-foreground">{service.detail}</div>
+              ) : (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    Turned on by the <span className="font-medium">{service.flag}</span> flag.
+                    {service.organization && (
+                      <> Installed in the {service.organization.name} organization.</>
+                    )}
+                  </div>
+                  {service.detail && (
+                    <div className="text-xs text-status-error">{service.detail}</div>
+                  )}
+                </>
               )}
             </div>
           </div>

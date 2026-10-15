@@ -215,6 +215,18 @@ describe("CollectorMetricsProvider on 0.2.0", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("reports its first serve once, and not before it has metrics", async () => {
+    const onFirstServe = vi.fn();
+    const provider = new CollectorMetricsProvider(new CollectorClient("http://c"), { onFirstServe });
+    stubCollector({ containers: [] });
+    await provider.fetchAll();
+    expect(onFirstServe).not.toHaveBeenCalled();
+    stubCollector({ containers: at(3) });
+    await provider.fetchAll();
+    await provider.fetchAll();
+    expect(onFirstServe).toHaveBeenCalledOnce();
+  });
+
   it("carries per-container GPU memory", async () => {
     const rows = at(3);
     rows.find((c) => c.id === CADVISOR_ID)!.gpus = [{ uuid: "GPU-abc", memory_used_bytes: 1024 }];

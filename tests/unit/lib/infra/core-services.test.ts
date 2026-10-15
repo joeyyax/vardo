@@ -242,6 +242,15 @@ describe("core service metadata", () => {
     expect(isCoreServiceApp("wordpress")).toBe(false);
   });
 
+  it("lists a recorded cAdvisor as retiring, with only a retirement reason", () => {
+    const base = { displayName: "cAdvisor", flag: "metrics" as const, organizationId: "o", appId: "a", checkedAt: "" };
+    const installed = summarizeCoreServices({ cadvisor: { ...base, name: "cadvisor", state: "provisioned", detail: null } }, { metrics: true });
+    expect(installed.at(-1)).toMatchObject({ name: "cadvisor", state: "retiring", detail: null });
+    const waiting = summarizeCoreServices({ cadvisor: { ...base, name: "cadvisor", state: "retiring", detail: "Stays until the collector has served metrics." } }, { metrics: true });
+    expect(waiting.at(-1)?.detail).toBe("Stays until the collector has served metrics.");
+    expect(summarizeCoreServices({}, { metrics: true }).map((s) => s.name)).not.toContain("cadvisor");
+  });
+
   it("keeps a leftover cAdvisor row classed as infrastructure", () => {
     expect(CORE_SERVICE_NAMES).not.toContain("cadvisor");
     expect(isCoreServiceApp("cadvisor")).toBe(true);

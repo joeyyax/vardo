@@ -80,7 +80,9 @@ export type CoreServiceState =
   /** The built-in template is missing from the templates directory. */
   | "missing-template"
   /** The app exists but its deploy failed. */
-  | "failed";
+  | "failed"
+  /** A retired service still installed, kept until it's safe to remove. */
+  | "retiring";
 
 export type CoreServiceStatus = {
   name: string;
@@ -126,16 +128,38 @@ export async function recordCoreServiceStatus(
   }
 }
 
+/** Drop a service from the stored record. Best-effort — never throws. */
+export async function removeCoreServiceStatus(name: string): Promise<void> {
+  try {
+    const current = await readCoreServiceStatus();
+    if (!(name in current)) return;
+    delete current[name];
+    const { setSystemSetting } = await import("@/lib/system-settings");
+    await setSystemSetting(CORE_SERVICES_STATUS_KEY, JSON.stringify(current));
+  } catch (err) {
+    log.error("Failed to update core service status:", err);
+  }
+}
+
 /** Whether a service of an enabled flag is provisioned on this install. */
 export function isCoreServiceEnabled(service: CoreServiceDef): boolean {
   return service.enabled ? service.enabled() : true;
 }
 
-/** Every core service with its last recorded outcome. Never-provisioned services report "off". */
+/** Every core service with its last recorded outcome, then retired ones still recorded. Never-provisioned services report "off". */
 export function summarizeCoreServices(
   stored: StatusRecord,
   flagState: Record<string, boolean>,
 ): CoreServiceStatus[] {
+  const retired = RETIRED_CORE_SERVICE_NAMES.flatMap((name) => {
+    const status = stored[name];
+    if (!status) return [];
+    return [{ ...status, state: "retiring" as const, detail: status.state === "retiring" ? status.detail : null }];
+  });
+  return [...currentCoreServices(stored, flagState), ...retired];
+}
+
+function currentCoreServices(stored: StatusRecord, flagState: Record<string, boolean>): CoreServiceStatus[] {
   return CORE_SERVICE_FEATURES.flatMap((feature) =>
     feature.services.map((service) => {
       const enabled = (flagState[feature.flag] ?? false) && isCoreServiceEnabled(service);

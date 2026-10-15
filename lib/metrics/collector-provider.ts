@@ -95,11 +95,14 @@ type Options = {
   dockerLabels?: LabelSource;
   /** Writable-layer sizes from Docker, when Disk metrics are on. */
   sizes?: WritableLayerSizes;
+  /** Called after the first read that returns metrics. */
+  onFirstServe?: () => void;
 };
 
 export class CollectorMetricsProvider implements MetricsProvider {
   readonly name: string;
   private intervalMs = DEFAULT_INTERVAL_MS;
+  private served = false;
 
   constructor(
     private readonly client: CollectorClient,
@@ -131,6 +134,10 @@ export class CollectorMetricsProvider implements MetricsProvider {
         m.diskUsage = size.bytes;
         m.diskUsageAt = size.at;
       }
+    }
+    if (!this.served && metrics.length > 0) {
+      this.served = true;
+      this.opts.onFirstServe?.();
     }
     return metrics;
   }

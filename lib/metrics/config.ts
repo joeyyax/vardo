@@ -52,11 +52,22 @@ async function resolveProvider() {
 /** The collector, or no container metrics in off mode. */
 export function metricsProvider(env: Env = process.env): MetricsProvider {
   const mode = collectorMode(env);
-  return mode.kind === "off" ? NO_CONTAINER_METRICS : collectorProvider(mode, env);
+  if (mode.kind === "off") return NO_CONTAINER_METRICS;
+  return collectorProvider(mode, env, {
+    onFirstServe: () => {
+      import("@/lib/infra/retire-cadvisor")
+        .then(({ markCollectorServed }) => markCollectorServed())
+        .catch((err) => log.warn("Couldn't record the collector's first read:", err));
+    },
+  });
 }
 
 /** A fresh provider for this collector, sharing nothing with the registered one. */
-export function collectorProvider(mode: Exclude<CollectorMode, { kind: "off" }>, env: Env = process.env): CollectorMetricsProvider {
+export function collectorProvider(
+  mode: Exclude<CollectorMode, { kind: "off" }>,
+  env: Env = process.env,
+  opts: { onFirstServe?: () => void } = {},
+): CollectorMetricsProvider {
   const client = new CollectorClient(mode.url, collectorTokenSource(mode, env));
   const docker = async () => (await import("@/lib/docker/client")).dockerRequest;
   return new CollectorMetricsProvider(client, {
@@ -72,5 +83,6 @@ export function collectorProvider(mode: Exclude<CollectorMode, { kind: "off" }>,
       },
       async () => (await import("./disk-setting")).getDiskMetricsEnabled(),
     ),
+    onFirstServe: opts.onFirstServe,
   });
 }
