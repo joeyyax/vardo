@@ -183,7 +183,7 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
   failed: { title: "Failed or crashed", why: "The last deploy or the running container failed.", bulk: "Retry" },
   anomaly: {
     title: "Unusual activity",
-    why: "Far outside its own normal for this time of day. Check logs, recent deploys and processes.",
+    why: "Outside its own normal for this time of day. Check logs, recent deploys and processes.",
     bulk: null,
   },
   missing: {

@@ -12,14 +12,19 @@ export type Finding = { signal: SignalKey; verdict: SignalVerdict; /** Last hour
 export type AppRef = { id: string; name: string };
 
 const TITLE: Record<SignalKey, string> = {
-  egress: "is sending far more traffic than usual",
-  cpu: "is using far more CPU than usual",
-  ingress: "is receiving far more traffic than usual",
-  pids: "is running far more processes than usual",
-  diskWrite: "is writing far more to disk than usual",
+  egress: "is sending {more} traffic than usual",
+  cpu: "is using {more} CPU than usual",
+  ingress: "is receiving {more} traffic than usual",
+  pids: "is running {more} processes than usual",
+  diskWrite: "is writing {more} to disk than usual",
 };
 
-const CHECK = "Check its logs, recent deploys and running processes.";
+/** "far more" only when critical. */
+function title(app: AppRef, f: Finding): string {
+  return `${app.name} ${TITLE[f.signal].replace("{more}", f.verdict.severity === "critical" ? "far more" : "more")}`;
+}
+
+const CHECK = "If nothing explains it, check its logs, recent deploys and running processes.";
 
 function worst(severities: AlertSeverity[]): AlertSeverity {
   return severities.reduce<AlertSeverity>((a, b) => (severityRank(b) > severityRank(a) ? b : a), "warning");
@@ -65,16 +70,11 @@ export function anomalyView(app: AppRef, findings: Finding[], top: TopProcess[] 
   const first = `${verb} ${def.format(value)}, against a usual ${def.format(line.typical)} for this hour.`;
   const proc = busiest[0] && busiest[0].cpu >= 1 ? busiest[0] : undefined;
   const also = rest.filter((f) => !(proc && f.signal === "cpu")).map((f) => `${SIGNALS[f.signal].label} is up too: ${SIGNALS[f.signal].format(f.verdict.value)}, usually ${SIGNALS[f.signal].format(f.verdict.line.typical)}.`);
-  const procLine = proc ? `A process called ${proc.name} is using ${SIGNALS.cpu.format(proc.cpu)}.` : undefined;
-  const risk = proc
-    ? "If you don't recognize it, the app may be compromised."
-    : lead.signal === "egress"
-      ? "Unexpected outbound traffic can mean a compromised app."
-      : "If nothing explains it, a compromised app can look like this.";
+  const procLine = proc ? `A process called ${proc.name} is using ${SIGNALS.cpu.format(proc.cpu)}${fresh.has(proc.name) ? ", and it hasn't run in this app before" : ""}.` : undefined;
   return {
     heading,
-    lead: [[first, ...also, procLine, risk].filter(Boolean).join(" ")],
-    brief: { title: heading ?? `${app.name} ${TITLE[lead.signal]}`, body: [first, procLine].filter(Boolean).join(" ") },
+    lead: [[first, ...also, procLine, CHECK].filter(Boolean).join(" ")],
+    brief: { title: heading ?? title(app, lead), body: [first, procLine].filter(Boolean).join(" ") },
     seriesOver: line.threshold,
     table: busiest.length
       ? {
@@ -95,17 +95,14 @@ export function anomalyItem(app: AppRef, all: Finding[], top: TopProcess[] | nul
   const [lead] = findings;
   const def = SIGNALS[lead.signal];
   const firing = findings.filter((f) => f.verdict.fires);
-  const egress = findings.some((f) => f.signal === "egress");
   return {
     type: "app.anomaly",
     about: app.id,
     appId: app.id,
     appName: app.name,
     severity: worst((firing.length > 0 ? firing : findings).map((f) => f.verdict.severity)),
-    title: `${app.name} ${TITLE[lead.signal]}`,
-    detail: egress
-      ? `Unexpected outbound traffic can mean a compromised app. ${CHECK}`
-      : `It's well above its own normal for this time of day. If nothing explains it, a compromised app can look like this. ${CHECK}`,
+    title: title(app, lead),
+    detail: `It's ${lead.verdict.severity === "critical" ? "well above" : "above"} its own normal for this time of day. ${CHECK}`,
     series: {
       title: `${def.label}, last hour`,
       values: downsample(lead.recent),

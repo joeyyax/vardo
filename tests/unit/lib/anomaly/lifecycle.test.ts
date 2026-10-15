@@ -79,7 +79,7 @@ describe("anomaly episode", () => {
 
     const [fired] = events[0].alerts as AlertItem[];
     expect(fired).toMatchObject({ type: "app.anomaly", appId: "a1", severity: "critical", title: "Shop is sending far more traffic than usual" });
-    expect(fired.detail).toMatch(/compromised/);
+    expect(fired.detail).toBe("It's well above its own normal for this time of day. If nothing explains it, check its logs, recent deploys and running processes.");
     expect(fired.facts?.[0]).toEqual({ label: "Outbound traffic", value: "50 MiB/min now, typically 5.9 KiB/min" });
     expect(Date.parse(fired.since!)).toBe(start + 20 * MIN);
   });

@@ -94,6 +94,14 @@ describe("judgeSignal", () => {
     });
   });
 
+  it("grades egress like any other signal", () => {
+    const egress = lineFor(SIGNALS.egress, flat((11.3 * MiB) / 60), "normal");
+    const modest = judgeSignal(minutes(repeat(1.5 * egress.threshold, 11)), SIGNALS.egress, egress, now);
+    expect(modest).toMatchObject({ fires: true, severity: "warning" });
+    const far = judgeSignal(minutes(repeat(3 * egress.threshold, 11)), SIGNALS.egress, egress, now);
+    expect(far).toMatchObject({ fires: true, severity: "critical" });
+  });
+
   it("is critical for any signal far over the line", () => {
     expect(judgeSignal(minutes(repeat(15, 16)), SIGNALS.cpu, line, now)?.severity).toBe("warning");
     expect(judgeSignal(minutes(repeat(800, 16)), SIGNALS.cpu, line, now)?.severity).toBe("critical");

@@ -43,9 +43,9 @@ describe("newProcessItem", () => {
 describe("anomalyItem", () => {
   const wha = { id: "a3", name: "WHA Staging" };
   const MiB = 1024 ** 2;
-  const finding = (signal: Finding["signal"], fires: boolean, value: number, typical: number, threshold: number): Finding => ({
+  const finding = (signal: Finding["signal"], fires: boolean, value: number, typical: number, threshold: number, severity: "warning" | "critical" = "warning"): Finding => ({
     signal,
-    verdict: { fires, holds: true, severity: signal === "egress" ? "critical" : "warning", value, since, line: { typical, high: typical, threshold, clearBelow: threshold * 0.75 } },
+    verdict: { fires, holds: true, severity, value, since, line: { typical, high: typical, threshold, clearBelow: threshold * 0.75 } },
     recent: [value],
   });
   // jy0, 2026-10-15: pids fired while egress and CPU only held, both at or under typical.
@@ -57,7 +57,7 @@ describe("anomalyItem", () => {
 
   it("leads with the signal that fired", () => {
     const item = anomalyItem(wha, findings, null);
-    expect(item.title).toBe("WHA Staging is running far more processes than usual");
+    expect(item.title).toBe("WHA Staging is running more processes than usual");
     expect(item.severity).toBe("warning");
     expect(item.view?.brief?.body).toBe("Running 16, against a usual 0 for this hour.");
     expect(item.series?.title).toBe("Processes, last hour");
@@ -72,14 +72,34 @@ describe("anomalyItem", () => {
 
   it("keeps a holding signal that is still up", () => {
     const item = anomalyItem(wha, [finding("egress", false, (40 * MiB) / 60, (11.3 * MiB) / 60, 1_701_460), ...findings.slice(1)], null);
-    expect(item.title).toBe("WHA Staging is running far more processes than usual");
+    expect(item.title).toBe("WHA Staging is running more processes than usual");
     expect(item.facts?.map((f) => f.label)).toEqual(["Processes", "Outbound traffic"]);
   });
 
   it("leads with the first holding signal when none fires", () => {
     const item = anomalyItem(wha, [finding("egress", false, (40 * MiB) / 60, (11.3 * MiB) / 60, 1_701_460), finding("cpu", false, 0, 0, 5)], null);
-    expect(item.title).toBe("WHA Staging is sending far more traffic than usual");
-    expect(item.severity).toBe("critical");
+    expect(item.title).toBe("WHA Staging is sending more traffic than usual");
+    expect(item.severity).toBe("warning");
     expect(item.facts?.map((f) => f.label)).toEqual(["Outbound traffic"]);
+  });
+
+  it("says what happened on a modest rise in outbound traffic, without calling it a compromise", () => {
+    const item = anomalyItem(wha, [finding("egress", true, (120 * MiB) / 60, (11.3 * MiB) / 60, 1_701_460)], null);
+    expect(item.title).toBe("WHA Staging is sending more traffic than usual");
+    expect(item.detail).toBe("It's above its own normal for this time of day. If nothing explains it, check its logs, recent deploys and running processes.");
+    expect(item.view?.lead?.[0]).toBe("Sending 120 MiB/min, against a usual 11.3 MiB/min for this hour. If nothing explains it, check its logs, recent deploys and running processes.");
+  });
+
+  it("says far more only when it's critical", () => {
+    const item = anomalyItem(wha, [finding("egress", true, (400 * MiB) / 60, (11.3 * MiB) / 60, 1_701_460, "critical")], null);
+    expect(item.title).toBe("WHA Staging is sending far more traffic than usual");
+    expect(item.detail).toMatch(/^It's well above its own normal/);
+  });
+
+  it("names a new top process as new", () => {
+    const top = [{ pid: 1, name: "kworkerd", cpu: 187, rssKb: 1 }];
+    const lead = (fresh: string[]) => anomalyItem(wha, [finding("cpu", true, 190, 4, 27)], top, fresh).view?.lead?.[0];
+    expect(lead(["kworkerd"])).toContain("A process called kworkerd is using 1.9 cores, and it hasn't run in this app before.");
+    expect(lead([])).toContain("A process called kworkerd is using 1.9 cores.");
   });
 });

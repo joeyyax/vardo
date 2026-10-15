@@ -66,6 +66,6 @@ export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now
   for (let i = points.length - 1; i >= 0 && points[i].value > line.threshold; i--) since = points[i].at;
 
   const low = Math.min(...window.map((p) => p.value));
-  const severity: AlertSeverity = signal.key === "egress" || low >= CRITICAL_RATIO * line.threshold ? "critical" : "warning";
+  const severity: AlertSeverity = low >= CRITICAL_RATIO * line.threshold ? "critical" : "warning";
   return { fires, holds, severity, value: latest.value, since, line };
 }
