@@ -162,6 +162,10 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
       }
     });
 
+    it("caps buildkitd's Go heap (#1016)", () => {
+      expect(resolve({}).services.buildkit.environment?.GOMEMLIMIT).toBe("600MiB");
+    });
+
     it("keeps build steps off the network Postgres and Redis share", () => {
       const cfg = resolve({});
       const buildkitNets = Object.keys(cfg.services.buildkit.networks ?? {});

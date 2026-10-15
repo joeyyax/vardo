@@ -95,6 +95,8 @@ max(1, min(floor((buildkit limit − 640 MiB) / budget), floor(cores / 4)))
 
 A build waits for the gate up to 6 hours.
 
+`buildkitd` runs with `GOMEMLIMIT=600MiB`, which holds it near the gate's 640 MiB allowance. Without it, it keeps about 350 MiB more after each build.
+
 ### BuildKit's size
 
 Before a build into an empty builder, Vardo stops steps an earlier build left running and resizes BuildKit to the host:

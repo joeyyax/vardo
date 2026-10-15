@@ -274,6 +274,9 @@ services:
     mem_limit: ${VARDO_BUILDKIT_MEM:-4g}
     # No swap, except autosize gives hosts under 6 GiB swap equal to memory.
     memswap_limit: ${VARDO_BUILDKIT_MEM:-4g}
+    environment:
+      # buildkitd grows with each build and never gives it back.
+      GOMEMLIMIT: 600MiB
     healthcheck:
       test: ["CMD", "buildctl", "debug", "workers"]
       interval: 30s
