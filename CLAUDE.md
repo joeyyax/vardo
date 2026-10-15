@@ -11,6 +11,7 @@ Vardo is a self-hosted PaaS for managing Docker Compose deployments. This is the
 ```bash
 # Development
 pnpm dev                # Start dev server (Turbopack)
+pnpm dev:admin          # Local admin login for browser checks
 pnpm build              # Production build
 pnpm start              # Production start (runs migrations first)
 

@@ -18,6 +18,7 @@
     "test:e2e:docker": "playwright test --config playwright.lifecycle.config.ts",
     "test:redis": "bash scripts/test-redis-durability.sh",
     "test:load": "tsx scripts/load/run.ts",
+    "dev:admin": "tsx --env-file=.env scripts/dev-admin.ts",
     "email:preview": "tsx scripts/email-preview.ts",
     "release": "tsx scripts/release.ts",
     "db:push": "drizzle-kit push",
