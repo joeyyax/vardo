@@ -587,6 +587,20 @@ function unfinishedAppIds(plan: BackupRunPlan, unfinished: string[]): Record<str
   return Object.keys(out).length ? out : undefined;
 }
 
+/** Unfinished job names with no backup row in the run. */
+async function jobsNotStarted(run: RunRow): Promise<string[]> {
+  if (run.kind === "restore") return [];
+  const done = new Set(run.jobsDone);
+  const waiting = run.plan.jobs.filter((j) => !done.has(j.jobId));
+  if (waiting.length === 0) return [];
+  const rows = await db.query.backups.findMany({
+    where: and(inArray(backups.jobId, waiting.map((j) => j.jobId)), gte(backups.startedAt, run.startedAt)),
+    columns: { jobId: true },
+  });
+  const started = new Set((rows ?? []).map((r) => r.jobId));
+  return waiting.filter((j) => !started.has(j.jobId)).map((j) => j.jobName);
+}
+
 async function sendSummary(run: RunRow, now: number): Promise<void> {
   const [settings, { history, lastGood }, orgStale] = await Promise.all([
     readOrgNotificationSettings(run.organizationId),
@@ -601,6 +615,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
   // A clean scheduled run goes to the digest.
   if (!send) return;
   const notBackedUp = run.kind === "nightly" ? await loadNotBackedUp(run.organizationId) : [];
+  const notStarted = unfinished.length ? await jobsNotStarted(run).catch(() => []) : [];
 
   const backed = rows.filter((r) => r.kind === "backup" && !r.config);
   const succeeded = backed.filter((r) => r.outcome === "success").length;
@@ -615,6 +630,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
       estimatedMs: run.estimatedMs,
       actualMs: now - run.startedAt.getTime(),
       unfinished: unfinished.length ? unfinished : undefined,
+      notStarted: notStarted.length ? notStarted : undefined,
       unfinishedAppIds: unfinished.length ? unfinishedAppIds(run.plan, unfinished) : undefined,
       ...(problemsOnly ? { problemsOnly: true } : {}),
     },

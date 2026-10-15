@@ -807,6 +807,24 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     ),
   },
   {
+    name: "backup-summary-not-started",
+    event: backupSummary(
+      [...NIGHTLY, ...OBSERVABILITY],
+      {
+        run: {
+          kind: "nightly",
+          label: "Nightly backups",
+          estimatedMs: 493_000,
+          actualMs: 3_600_000,
+          problemsOnly: true,
+          unfinished: ["Radarr", "Scrypted", "Open WebUI"].map((app) => `Auto: ${app}`),
+          notStarted: ["Radarr", "Scrypted", "Open WebUI"].map((app) => `Auto: ${app}`),
+        },
+        windowEnd: "2026-10-09T03:00:00.000Z",
+      },
+    ),
+  },
+  {
     name: "backup-summary-failed",
     event: backupSummary(
       [

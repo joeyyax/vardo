@@ -109,6 +109,23 @@ describe("backup run summary", () => {
     expect(blocks(event).some((b) => b.kind === "stats")).toBe(false);
   });
 
+  it("says jobs that never got a backup didn't start, not that they may still be running", async () => {
+    const event = fixture<"backup.summary">("backup-summary-not-started");
+    const email = (await renderNotificationEmail(event, FIXTURE_CONTEXT))!;
+    expect(callouts(event)).toEqual(["3 jobs didn't start before the timeout"]);
+    expect(email.subject).toBe("node-a · ⚠ Nightly backups · timed out, 3 didn't start");
+    expect(email.text).toContain("Radarr, Scrypted and Open WebUI. Nothing was backed up for them in this run.");
+    expect(email.text).toContain("(3 didn't start)");
+    expect(email.text).not.toContain("may still be running");
+  });
+
+  it("splits jobs still running from jobs that never started", () => {
+    const base = fixture<"backup.summary">("backup-summary-not-started");
+    const event = { ...base, run: { ...base.run, unfinished: [...base.run.unfinished!, "Auto: Plex"] } };
+    expect(callouts(event)).toEqual(["1 job didn't finish before the timeout", "3 jobs didn't start before the timeout"]);
+    expect(subjectLine(event)).toBe("⚠ Nightly backups · 2 need you");
+  });
+
   it("says when the failed volume's last good backup was taken", async () => {
     const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
     expect(email.text).toContain("mysqldump lost its connection to the server mid-dump. Its last good backup, from Oct 8 at 02:04 UTC, is still there.");

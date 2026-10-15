@@ -240,6 +240,8 @@ export type BackupSummaryEvent = {
     actualMs: number;
     /** Jobs that hadn't reported when the deadline passed. */
     unfinished?: string[];
+    /** Unfinished jobs that never started a backup. */
+    notStarted?: string[];
     /** Unfinished job name to the one app it backs up. */
     unfinishedAppIds?: Record<string, string>;
     /** A scheduled run emailing because something needs a look: the email lists only the problems. */
