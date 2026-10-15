@@ -68,7 +68,7 @@ function cpuPercent(): number | null {
   return (1 - (now.idle - prev.idle) / (now.total - prev.total)) * 100;
 }
 
-/** Reads the host the console runs on. /proc is the host's inside a container. */
+/** Reads the host the console runs on. /proc is the host's inside a container. Collector 0.3.0's snapshot endpoint replaces these reads. */
 export async function readHostSample(disk: HostSample["disk"], now = Date.now()): Promise<HostSample> {
   let memory: HostSample["memory"] = null;
   let swap: HostSample["swap"] = null;

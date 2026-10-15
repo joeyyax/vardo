@@ -54,6 +54,11 @@ describe("deploy refuses host access for untrusted orgs", () => {
     });
   }
 
+  it("keeps pid only for the system org's services", () => {
+    const compose = parseAndSanitize(svc("    pid: host\n"), log, { orgTrusted: true, systemManaged: true });
+    expect(compose.services.web.pid).toBe("host");
+  });
+
   it("leaves ordinary compose alone", () => {
     expect(() => parseAndSanitize(svc("    cap_drop:\n      - ALL\n"), log, { orgTrusted: false })).not.toThrow();
   });

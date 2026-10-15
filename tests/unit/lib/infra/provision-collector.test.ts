@@ -77,7 +77,8 @@ vi.mock("@/lib/infra/cadvisor-config", () => ({
   applyCadvisorDiskMetrics: (c: string) => c,
   cadvisorWalksDisk: (on: boolean) => on,
 }));
-vi.mock("@/lib/utils/exec", () => ({ execFileAsync: vi.fn(async () => ({ stdout: "{}" })) }));
+const { execFileAsync } = vi.hoisted(() => ({ execFileAsync: vi.fn(async () => ({ stdout: "{}" })) }));
+vi.mock("@/lib/utils/exec", () => ({ execFileAsync }));
 vi.mock("@/lib/crypto/encrypt", () => ({
   encrypt: (plain: string, org: string) => `enc[${org}]:${plain}`,
   decryptOrFallback: (value: string, org: string) => ({ content: value.replace(`enc[${org}]:`, ""), wasEncrypted: true }),
@@ -175,6 +176,23 @@ describe("collector provisioning", () => {
       }),
     );
     expect(enqueueDeployMock).toHaveBeenCalledWith({ appId: "app-c", trigger: "api" });
+  });
+
+  it("gives it the host PID namespace and GPUs only on a GPU host", async () => {
+    await ensureInfraServices();
+    let collector = appsInserted.find((r) => r.name === "collector")!;
+    expect(collector.composeContent).not.toContain("pid:");
+    expect(collector.gpuEnabled).toBe(false);
+
+    appsInserted.length = 0;
+    execFileAsync.mockResolvedValue({ stdout: '{"nvidia":{"path":"nvidia-container-runtime"},"runc":{}}' });
+    await ensureInfraServices();
+    collector = appsInserted.find((r) => r.name === "collector")!;
+    expect(collector.composeContent).toContain("  collector:\n    # GPU host");
+    expect(collector.composeContent).toContain("    pid: host\n");
+    expect(collector.gpuEnabled).toBe(true);
+    expect(appsInserted.find((r) => r.name === "cadvisor")!.composeContent).not.toContain("pid:");
+    execFileAsync.mockResolvedValue({ stdout: "{}" });
   });
 
   it("doesn't fail or roll back cAdvisor when the collector's first deploy fails", async () => {

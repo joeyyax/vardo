@@ -56,7 +56,7 @@ export function withCollector(cadvisor: MetricsProvider, env: Record<string, str
       const res = await (await docker())<{ Config?: { Labels?: Record<string, string> | null } }>("GET", `/containers/${encodeURIComponent(id)}/json`);
       return res.Config?.Labels ?? {};
     }),
-    // Same Disk metrics toggle as cAdvisor's; collector mode reads sizes from Docker instead.
+    // Same Disk metrics toggle as cAdvisor's; collector mode reads sizes from Docker instead. Collector 0.3.0 measures them.
     sizes: new WritableLayerSizes(
       async (id) => {
         const res = await (await docker())<{ SizeRw?: number }>("GET", `/containers/${encodeURIComponent(id)}/json?size=1`, undefined, { timeoutMs: 30_000 });

@@ -7,15 +7,16 @@ import {
   CollectorMetricsProvider,
   dockerLabelSource,
   mapCollectorContainers,
-  STALE_AFTER_MS,
+  staleAfterMs,
   WritableLayerSizes,
 } from "@/lib/metrics/collector-provider";
 
-// Fixtures are real /api/v1 responses from collector 3d51106 on OrbStack.
+// Fixtures are real /api/v1 responses on OrbStack: collector 3d51106 (0.1.0) and 0.2.0 with the template's api_labels.
 const fixture = <T>(name: string): T =>
   JSON.parse(readFileSync(join(__dirname, "fixtures", name), "utf-8")) as T;
 const containers = () => fixture<CollectorContainer[]>("collector-containers.json");
 const host = () => fixture<CollectorHost>("collector-host.json");
+const containers020 = () => fixture<CollectorContainer[]>("collector-0.2-containers.json");
 
 const CADVISOR_ID = "2f6b7dda317349d1d84c09f510fad4329ddb7e080d2d3c3ab103471b0e828537";
 const POSTGRES_ID = "6a04ff5e6683dacbc726fed848e031e0aeb6d5039067066d528923b51dbdbb69";
@@ -129,12 +130,12 @@ describe("CollectorMetricsProvider", () => {
     expect(headers).toEqual(["Bearer tok", "Bearer tok"]);
   });
 
-  it("polls at the collector's 15s interval", () => {
+  it("polls at 15s until a 0.2.0 collector reports its interval", () => {
     expect(new CollectorMetricsProvider(new CollectorClient("http://c")).pollIntervalMs).toBe(15_000);
   });
 
   it("throws on a stale collection so the fallback serves", async () => {
-    stubCollector({ host: { ...host(), timestamp: (Date.now() - STALE_AFTER_MS - 1000) / 1000 } });
+    stubCollector({ host: { ...host(), timestamp: (Date.now() - staleAfterMs(15_000) - 1000) / 1000 } });
     await expect(new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).rejects.toThrow(/stale/);
   });
 
@@ -163,6 +164,64 @@ describe("CollectorMetricsProvider", () => {
     const m = rows.find((r) => r.containerIdFull === CADVISOR_ID)!;
     expect([m.diskUsage, m.diskUsageAt, m.diskLimit]).toEqual([4096, 1_000, null]);
     expect(rows.find((r) => r.containerIdFull === POSTGRES_ID)!.diskUsage).toBeNull();
+  });
+});
+
+describe("CollectorMetricsProvider on 0.2.0", () => {
+  /** The 0.2.0 fixture, collected `ageSeconds` ago at this interval. */
+  const at = (ageSeconds: number, intervalSeconds = 15) =>
+    containers020().map((c) => ({ ...c, collected_at: Date.now() / 1000 - ageSeconds, interval_seconds: intervalSeconds }));
+
+  it("reads only /api/v1/containers and stamps rows with collected_at", async () => {
+    const rows = at(3);
+    const fetchMock = stubCollector({ containers: rows });
+    const dockerLabels = vi.fn(async () => new Map());
+
+    const metrics = await new CollectorMetricsProvider(new CollectorClient("http://c"), { dockerLabels }).fetchAll();
+
+    expect(fetchMock.mock.calls.map(([url]) => new URL(url).pathname)).toEqual(["/api/v1/containers"]);
+    expect(dockerLabels).not.toHaveBeenCalled();
+    expect(metrics[0].timestamp).toBe(Math.round(rows[0].collected_at! * 1000));
+  });
+
+  it("takes org and app id from api_labels", async () => {
+    stubCollector({ containers: at(3) });
+    const m = (await new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).find((r) => r.containerIdFull === CADVISOR_ID)!;
+    expect(m.organizationId).toBe("bHLg3AbBrUFsUexeKZw0M");
+    expect(m.labels["vardo.project.id"]).toBe("PUi2_6S4t9W4I10Y61cdZ");
+  });
+
+  it("still joins Docker labels for a collector without api_labels", async () => {
+    stubCollector({ host: { ...host(), timestamp: Date.now() / 1000 - 3 } });
+    const dockerLabels = vi.fn(async () => new Map([[CADVISOR_ID, { "vardo.organization": "org-1" }]]));
+    const rows = await new CollectorMetricsProvider(new CollectorClient("http://c"), { dockerLabels }).fetchAll();
+    expect(dockerLabels).toHaveBeenCalledOnce();
+    expect(rows.find((r) => r.containerIdFull === CADVISOR_ID)!.organizationId).toBe("org-1");
+  });
+
+  it("judges staleness against interval_seconds and polls at it", async () => {
+    stubCollector({ containers: at(100, 15) });
+    await expect(new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).rejects.toThrow(/stale/);
+
+    stubCollector({ containers: at(100, 60) });
+    const provider = new CollectorMetricsProvider(new CollectorClient("http://c"));
+    await expect(provider.fetchAll()).resolves.toHaveLength(2);
+    expect(provider.pollIntervalMs).toBe(60_000);
+  });
+
+  it("returns nothing for no containers without another call", async () => {
+    const fetchMock = stubCollector({ containers: [] });
+    await expect(new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("carries per-container GPU memory", async () => {
+    const rows = at(3);
+    rows.find((c) => c.id === CADVISOR_ID)!.gpus = [{ uuid: "GPU-abc", memory_used_bytes: 1024 }];
+    stubCollector({ containers: rows });
+    const metrics = await new CollectorMetricsProvider(new CollectorClient("http://c")).fetchAll();
+    expect(metrics.find((r) => r.containerIdFull === CADVISOR_ID)!.gpus).toEqual([{ uuid: "GPU-abc", memoryUsedBytes: 1024 }]);
+    expect(metrics.find((r) => r.containerIdFull === POSTGRES_ID)!.gpus).toEqual([]);
   });
 });
 

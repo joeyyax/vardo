@@ -24,6 +24,7 @@ vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: vi.fn(async () =>
 
 import type { CollectorClient, CollectorGpu } from "@/lib/collector/client";
 import {
+  attributeGpuMemory,
   attributeGpus,
   CollectorGpuCollector,
   FallbackGpuCollector,
@@ -106,8 +107,46 @@ describe("attributeGpus", () => {
   });
 });
 
+describe("attributeGpuMemory", () => {
+  const withGpus = (name: string, id: string, gpus: ContainerMetrics["gpus"]) => ({ ...container(name, id), gpus });
+
+  it("gives each container its own memory and splits utilization by it", () => {
+    const rows = attributeGpuMemory([RTX], [
+      withGpus("ollama", ID_A, [{ uuid: `GPU-${RTX.uuid}`, memoryUsedBytes: 1_500_000_000 }]),
+      withGpus("plex", ID_B, [{ uuid: RTX.uuid, memoryUsedBytes: 500_000_000 }]),
+      withGpus("web", ID_C, []),
+    ]);
+    expect(rows.map((r) => [r.containerName, r.gpuUtilization, r.gpuMemoryUsed, r.gpuMemoryTotal])).toEqual([
+      ["ollama", 30, 1_500_000_000, 12_884_901_888],
+      ["plex", 10, 500_000_000, 12_884_901_888],
+    ]);
+  });
+
+  it("ignores memory on a device the host doesn't report", () => {
+    expect(attributeGpuMemory([RTX], [withGpus("x", ID_A, [{ uuid: "other", memoryUsedBytes: 1 }])])).toEqual([]);
+  });
+});
+
 describe("CollectorGpuCollector", () => {
   const client = (gpus: CollectorGpu[]) => ({ host: vi.fn(async () => ({ host: "lab", timestamp: 0, gpus })) }) as unknown as CollectorClient;
+
+  it("uses per-container memory without inspecting anything", async () => {
+    const inspect = vi.fn();
+    const source = new CollectorGpuCollector(client([RTX]), inspect);
+    const rows = await source.collect([
+      { ...container("ollama", ID_A), gpus: [{ uuid: RTX.uuid, memoryUsedBytes: 1_000 }] },
+      { ...container("plex", ID_B), gpus: [] },
+    ]);
+    expect(rows.map((r) => [r.containerName, r.gpuMemoryUsed, r.gpuUtilization])).toEqual([["ollama", 1_000, 40]]);
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the even split when no container reports GPU memory, as without pid: host", async () => {
+    const inspect = vi.fn(async () => ({ HostConfig: { DeviceRequests: [{ Driver: "nvidia", Count: -1 }] } }));
+    const source = new CollectorGpuCollector(client([RTX]), inspect);
+    const rows = await source.collect([{ ...container("plex", ID_A), gpus: [] }, { ...container("ollama", ID_B), gpus: [] }]);
+    expect(rows.map((r) => [r.containerName, r.gpuMemoryUsed])).toEqual([["plex", 1_000_000_000], ["ollama", 1_000_000_000]]);
+  });
 
   it("reads devices from the collector and inspects each container once", async () => {
     const inspect = vi.fn(async (id: string) =>

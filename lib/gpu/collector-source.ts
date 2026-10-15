@@ -1,4 +1,4 @@
-// Per-container GPU readings from the collector's device readings, with the nvidia-smi probe as the fallback.
+// Per-container GPU readings from the collector, with the nvidia-smi probe as the fallback.
 
 import type { CollectorClient, CollectorGpu } from "@/lib/collector/client";
 import { logger } from "@/lib/logger";
@@ -51,9 +51,54 @@ function hasDevice(access: GpuAccess, gpu: CollectorGpu): boolean {
 }
 
 /**
- * Device readings split across the containers that share each GPU.
- * The collector has no per-process memory, so a shared GPU's utilization and memory are divided evenly.
- * The collector's per-container GPU memory replaces this split.
+ * Each container's GPU memory from the collector, with a device's utilization split by its share of that device's memory.
+ * Containers holding no GPU memory get no reading.
+ */
+export function attributeGpuMemory(gpus: CollectorGpu[], containers: ContainerMetrics[]): ContainerGpuMetrics[] {
+  const devices = new Map(gpus.map((g) => [normalizeGpuId(g.uuid), g]));
+  const held = new Map<string, number>();
+  for (const m of containers) {
+    for (const g of m.gpus ?? []) {
+      const id = normalizeGpuId(g.uuid);
+      if (devices.has(id)) held.set(id, (held.get(id) ?? 0) + g.memoryUsedBytes);
+    }
+  }
+
+  const out: ContainerGpuMetrics[] = [];
+  for (const m of containers) {
+    let utilization = 0;
+    let memoryUsed = 0;
+    let memoryTotal = 0;
+    let temperature = 0;
+    let onDevice = false;
+    for (const g of m.gpus ?? []) {
+      const id = normalizeGpuId(g.uuid);
+      const device = devices.get(id);
+      if (!device) continue;
+      onDevice = true;
+      memoryUsed += g.memoryUsedBytes;
+      utilization += (device.utilization_ratio ?? 0) * 100 * (g.memoryUsedBytes / (held.get(id) || 1));
+      memoryTotal = Math.max(memoryTotal, device.memory_total_bytes ?? 0);
+      temperature = Math.max(temperature, device.temperature_celsius ?? 0);
+    }
+    if (!onDevice) continue;
+    out.push({
+      containerId: m.containerId,
+      containerName: m.containerName,
+      projectName: m.projectName,
+      organizationId: m.organizationId,
+      gpuUtilization: Math.round(utilization * 100) / 100,
+      gpuMemoryUsed: Math.round(memoryUsed),
+      gpuMemoryTotal: memoryTotal,
+      gpuTemperature: temperature,
+    });
+  }
+  return out;
+}
+
+/**
+ * Device readings split evenly across the containers that share each GPU.
+ * Only for a collector that reports no per-container memory: before 0.2.0 or without `pid: host`.
  */
 export function attributeGpus(
   gpus: CollectorGpu[],
@@ -97,7 +142,7 @@ function isCollector(m: ContainerMetrics): boolean {
 }
 
 export class CollectorGpuCollector implements ContainerGpuSource {
-  /** GPU access by full container id. Fixed for a container's life, so inspected once. */
+  /** GPU access by full container id, for the even split. Fixed for a container's life, so inspected once. */
   private access = new Map<string, GpuAccess>();
 
   constructor(
@@ -110,6 +155,8 @@ export class CollectorGpuCollector implements ContainerGpuSource {
     if (gpus.length === 0) return [];
 
     const candidates = containers.filter((m) => !isCollector(m));
+    if (candidates.some((m) => (m.gpus?.length ?? 0) > 0)) return attributeGpuMemory(gpus, candidates);
+
     const ids = new Set(candidates.map((m) => m.containerIdFull || m.containerId));
     for (const id of this.access.keys()) if (!ids.has(id)) this.access.delete(id);
 
