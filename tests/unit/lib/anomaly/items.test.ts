@@ -96,6 +96,12 @@ describe("anomalyItem", () => {
     expect(item.detail).toMatch(/^It's well above its own normal/);
   });
 
+  it("carries a start bounded by the readings held", () => {
+    const bounded = (f: Finding): Finding => ({ ...f, verdict: { ...f.verdict, sinceAtLeast: true } });
+    expect(anomalyItem(wha, [bounded(findings[2])], null).sinceAtLeast).toBe(true);
+    expect(anomalyItem(wha, [findings[2]], null).sinceAtLeast).toBeUndefined();
+  });
+
   it("names a new top process as new", () => {
     const top = [{ pid: 1, name: "kworkerd", cpu: 187, rssKb: 1 }];
     const lead = (fresh: string[]) => anomalyItem(wha, [finding("cpu", true, 190, 4, 27)], top, fresh).view?.lead?.[0];

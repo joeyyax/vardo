@@ -159,7 +159,11 @@ function metricsLink(items: AlertItem[], action: MailLink, ctx: MailContext): Ma
 function togetherLead(items: AlertItem[], ctx: MailContext): string {
   const starts = items.map((a) => (a.since ? Date.parse(a.since) : NaN));
   const together = starts.every(Number.isFinite) && Math.max(...starts) - Math.min(...starts) <= TOGETHER_MS;
-  const when = together ? `They started together at ${clockLabel(Math.min(...starts), ctx.timeZone)}.` : "";
+  const when = !together
+    ? ""
+    : items.some((a) => a.sinceAtLeast)
+      ? `They've been going since at least ${clockLabel(Math.max(...starts), ctx.timeZone)}.`
+      : `They started together at ${clockLabel(Math.min(...starts), ctx.timeZone)}.`;
   const memory = items.some((a) => a.type === "host.memory");
   const killed = items.filter((a) => a.hostMemory);
   if (!memory || killed.length === 0) return when || "They fired in the same check.";
@@ -228,7 +232,8 @@ function startedAt(item: ResolvedItem): number {
 
 function lasted(item: ResolvedItem): string {
   const ms = Date.parse(item.resolvedAt) - startedAt(item);
-  return Number.isFinite(ms) && ms > 0 ? formatDurationRough(ms) : "—";
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  return item.sinceAtLeast ? `at least ${formatDurationRough(ms)}` : formatDurationRough(ms);
 }
 
 /** "Shop" over "near its memory limit" for an app alert; the title otherwise. */
@@ -263,7 +268,7 @@ export function alertResolvedMail(event: AlertResolvedEvent, ctx: MailContext): 
         rows: items.map((item) => ({
           ...resolvedName(item),
           href: item.appId ? appPage(ctx, item.appId) : undefined,
-          cells: [Number.isFinite(startedAt(item)) ? clockLabel(startedAt(item), ctx.timeZone) : "—", lasted(item)],
+          cells: [Number.isFinite(startedAt(item)) ? `${item.sinceAtLeast ? "by " : ""}${clockLabel(startedAt(item), ctx.timeZone)}` : "—", lasted(item)],
         })),
       },
     ],

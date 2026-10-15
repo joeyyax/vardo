@@ -67,6 +67,15 @@ describe("judgeSignal", () => {
     expect(verdict?.since).toBe(now - 10 * MIN);
   });
 
+  it("marks a start that reaches back past the readings held, as after a restart", () => {
+    // WHA Staging pids before #1044: usual 0, reading 16 from the first reading after boot.
+    const pids = lineFor(SIGNALS.pids, flat(0), "normal");
+    const booted = judgeSignal(minutes(repeat(16, 16)), SIGNALS.pids, pids, now);
+    expect(booted).toMatchObject({ fires: true, since: now - 15 * MIN, sinceAtLeast: true });
+    const seen = judgeSignal(minutes([...repeat(0, 5), ...repeat(16, 16)]), SIGNALS.pids, pids, now);
+    expect(seen).toMatchObject({ fires: true, since: now - 15 * MIN, sinceAtLeast: false });
+  });
+
   it("can't fire before readings cover the window, as after a restart", () => {
     expect(judgeSignal(minutes(repeat(90, 5)), SIGNALS.cpu, line, now)?.fires).toBe(false);
   });

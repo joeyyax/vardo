@@ -95,6 +95,7 @@ export function anomalyItem(app: AppRef, all: Finding[], top: TopProcess[] | nul
   const [lead] = findings;
   const def = SIGNALS[lead.signal];
   const firing = findings.filter((f) => f.verdict.fires);
+  const start = Math.min(...findings.map((f) => f.verdict.since));
   return {
     type: "app.anomaly",
     about: app.id,
@@ -115,7 +116,8 @@ export function anomalyItem(app: AppRef, all: Finding[], top: TopProcess[] | nul
       })),
       ...topProcessesFact(top),
     ],
-    since: new Date(Math.min(...findings.map((f) => f.verdict.since))).toISOString(),
+    since: new Date(start).toISOString(),
+    ...(findings.some((f) => f.verdict.sinceAtLeast && f.verdict.since === start) ? { sinceAtLeast: true } : {}),
     view: anomalyView(app, findings, top, newProcesses),
   };
 }

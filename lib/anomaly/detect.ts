@@ -22,6 +22,8 @@ export type SignalVerdict = {
   value: number;
   /** Start of the run over the line, or the latest reading when there isn't one. */
   since: number;
+  /** The run reaches back past the readings held, as after a restart, so it started at or before `since`. */
+  sinceAtLeast?: boolean;
   line: Line;
 };
 
@@ -63,9 +65,10 @@ export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now
   const holds = fires || smooth(points).some((p) => p.at > now - RESOLVE_MS && p.value >= line.clearBelow);
 
   let since = latest.at;
-  for (let i = points.length - 1; i >= 0 && points[i].value > line.threshold; i--) since = points[i].at;
+  let i = points.length - 1;
+  for (; i >= 0 && points[i].value > line.threshold; i--) since = points[i].at;
 
   const low = Math.min(...window.map((p) => p.value));
   const severity: AlertSeverity = low >= CRITICAL_RATIO * line.threshold ? "critical" : "warning";
-  return { fires, holds, severity, value: latest.value, since, line };
+  return { fires, holds, severity, value: latest.value, since, sinceAtLeast: i < 0, line };
 }
