@@ -80,3 +80,6 @@ load-*.json
 
 # Worker bundle
 /dist/
+
+# CLI bundle
+/packages/*/dist/

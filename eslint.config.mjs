@@ -43,8 +43,9 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
-    // Worker bundle:
+    // Worker and CLI bundles:
     "dist/**",
+    "packages/*/dist/**",
     "next-env.d.ts",
     // Generated test reports:
     "coverage/**",
