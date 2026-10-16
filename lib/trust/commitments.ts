@@ -36,7 +36,7 @@ type Def = {
 };
 
 function hours(n: number, lead = ""): string {
-  const text = n >= 48 && n % 24 === 0 ? `${n / 24} days` : `${n} ${n === 1 ? "hour" : "hours"}`;
+  const text = n >= 168 && n % 24 === 0 ? `${n / 24} days` : `${n} ${n === 1 ? "hour" : "hours"}`;
   return lead ? `${lead} ${text}` : text;
 }
 

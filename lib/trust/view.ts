@@ -3,6 +3,8 @@
 import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
 import { getInstanceDisplayName } from "@/lib/system-settings";
+import { loadPublicInput } from "./public-load";
+import { exposureOf, toPublic, type Exposure } from "./public";
 import { policyReviews, readDocuments, type DpaView, type PolicyView } from "./documents";
 import { readSubprocessors } from "./subprocessor-store";
 import { subprocessorReviews } from "./subprocessors";
@@ -24,6 +26,8 @@ export type TrustView = {
   commitments: ResolvedCommitment[];
   subprocessors: { id: string; name: string; purpose: string; region: string | null; status: "suggested" | "confirmed"; manual: boolean; gone: boolean }[];
   documents: { policies: PolicyView[]; dpa: DpaView };
+  /** What the public page would show, for the confirmation. */
+  exposure: Exposure;
   /** Changes waiting on the operator before they can reach the public page. */
   reviews: { id: string; title: string; detail: string; href: string; action: string }[];
   hostingOverride: { provider: string; region: string } | null;
@@ -44,7 +48,7 @@ export type TrustView = {
 const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
 
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results, runs, domains, instanceName, commitments, subprocessorRows, documents] = await Promise.all([
+  const [settings, results, runs, domains, instanceName, commitments, subprocessorRows, documents, publicInput] = await Promise.all([
     getTrustSettings(),
     readResults(),
     readHistory(),
@@ -53,6 +57,7 @@ export async function buildTrustView(): Promise<TrustView> {
     readCommitments(),
     readSubprocessors(),
     readDocuments(),
+    loadPublicInput(),
   ]);
   const score = computeScore(results);
   const hosting = effectiveHosting(settings);
@@ -71,6 +76,7 @@ export async function buildTrustView(): Promise<TrustView> {
       r.status === "dismissed" ? [] : [{ id: r.id, name: r.name, purpose: r.purpose, region: r.region, status: r.status, manual: !r.key, gone: !!r.key && !r.detected }],
     ),
     documents,
+    exposure: exposureOf(toPublic(publicInput)),
     reviews: [...subprocessorReviews(subprocessorRows), ...policyReviews(documents.policies)],
     hostingOverride: settings.hostingOverride,
     hosting: hosting

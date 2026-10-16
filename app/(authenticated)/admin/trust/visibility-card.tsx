@@ -134,17 +134,17 @@ export function VisibilityCard({ view, busy, save }: Props) {
             {domain && <p className="text-sm text-muted-foreground">URL: <span className="font-mono text-foreground">{trustUrl(domain)}</span>. Other paths on {domain} stay with its app.</p>}
           </div>
 
-          <div className="space-y-1.5 text-sm">
+          <div className="max-h-64 space-y-2 overflow-y-auto text-sm">
             <div className="font-medium">What becomes visible</div>
-            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-              <li>{view.operatorName} as the page&apos;s name</li>
-              <li>Hosting provider and region</li>
-              <li>Checks that pass, as plain outcomes with how recently they ran</li>
-              <li>Commitments you turn on</li>
-              <li>Policies and the agreement you review and publish</li>
-              <li>Subprocessors you confirm</li>
-            </ul>
-            <p className="text-muted-foreground">Your score, counts and failing checks stay private.</p>
+            <dl className="space-y-1.5">
+              {view.exposure.map((g) => (
+                <div key={g.label} className="grid grid-cols-[8.5rem_1fr] gap-x-3">
+                  <dt className="text-muted-foreground">{g.label}</dt>
+                  <dd>{g.items.length ? g.items.join(" · ") : <span className="text-muted-foreground">Nothing yet</span>}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-muted-foreground">Only passing checks, confirmed subprocessors, reviewed policies and commitments you turned on appear. Your score, counts and failing checks stay private.</p>
           </div>
 
           <DialogFooter>

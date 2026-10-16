@@ -39,7 +39,7 @@ describe("resolveCommitments", () => {
 
   it("writes durations the way a person would", () => {
     const list = resolveCommitments({ "breach-notification": { enabled: true, amount: 72 }, "maintenance-notice": { enabled: true, amount: 1 }, "data-deletion": { enabled: true, amount: 30 } }, facts);
-    expect(byId(list, "breach-notification").value).toBe("Within 3 days");
+    expect(byId(list, "breach-notification").value).toBe("Within 72 hours");
     expect(byId(list, "maintenance-notice").value).toBe("1 hour ahead");
     expect(byId(list, "data-deletion").value).toBe("Within 30 days");
   });

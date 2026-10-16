@@ -97,3 +97,23 @@ export function checkedAgo(at: Date, now: Date): string {
   const [n, unit] = ms < HOUR ? [Math.floor(ms / MINUTE), "minute"] : ms < DAY ? [Math.floor(ms / HOUR), "hour"] : [Math.floor(ms / DAY), "day"];
   return `checked ${n} ${unit}${n === 1 ? "" : "s"} ago`;
 }
+
+export type Exposure = { label: string; items: string[] }[];
+
+/** What a publish would put on the page, grouped for the confirmation. */
+export function exposureOf(t: PublicTrust): Exposure {
+  return [
+    { label: "Name", items: [t.name] },
+    {
+      label: "Hosting",
+      items: t.hosting
+        ? [[t.hosting.provider, t.hosting.location].filter(Boolean).join(", "), ...(t.hosting.certification ? [`Certified to ${t.hosting.certification.standard}, with a link`] : [])]
+        : [],
+    },
+    { label: "Controls", items: t.controls.flatMap((g) => g.items.map((i) => i.outcome)) },
+    { label: "Commitments", items: t.commitments.map((c) => `${c.label}: ${c.value}`) },
+    { label: "Documents", items: [...t.policies.map((p) => p.title), ...(t.dpa ? ["Data processing agreement"] : [])] },
+    { label: "Subprocessors", items: t.subprocessors.map((s) => s.name) },
+    { label: "Security contact", items: t.securityContact ? [t.securityContact] : [] },
+  ];
+}
