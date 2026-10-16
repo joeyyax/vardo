@@ -18,7 +18,12 @@ async function handlePost() {
     if (!job) return apiError.notFound("system backup job");
 
     const start = await startManualBackup(job.id);
-    if (!start.started) return NextResponse.json({ error: "The system backup is already running.", code: "BACKUP_IN_PROGRESS" }, { status: 409 });
+    if (!start.started) {
+      return NextResponse.json(
+        { error: "Using the system backup already in progress.", code: "BACKUP_IN_PROGRESS", startedAt: start.startedAt?.toISOString() ?? null },
+        { status: 409 },
+      );
+    }
     const results = await start.done;
 
     return NextResponse.json({

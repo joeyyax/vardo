@@ -8,11 +8,17 @@ const h = vi.hoisted(() => ({
   featureOn: vi.fn(async () => true),
   findSystemJob: vi.fn(),
   runBackup: vi.fn(),
+  claimJob: vi.fn(),
 }));
 
+const T = new Date("2026-10-13T03:00:00Z");
+
 vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: h.instanceAdmin }));
-vi.mock("@/lib/db", () => ({ db: { query: { backups: { findFirst: async () => undefined } } } }));
-vi.mock("@/lib/redis-lock", () => ({ acquireLock: async () => "token", releaseLock: async () => true }));
+vi.mock("@/lib/db", () => ({
+  db: { query: { backups: { findFirst: async () => undefined }, backupJobs: { findFirst: async () => ({ id: "sys", name: "Vardo database", organizationId: null }) } } },
+}));
+vi.mock("@/lib/backups/job-claim", () => ({ claimJob: h.claimJob, jobClaimHolder: async () => ({ by: "scheduled", startedAt: T }) }));
+vi.mock("@/lib/backups/runs", () => ({ nightlyRunStartedSince: async () => null, startManualRun: async () => null, markJobDone: async () => {} }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: h.featureOn }));
 vi.mock("@/lib/backups/run-limit", () => ({ withSizedBackupSlot: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", STALE_RUN_MS: 3_600_000, runBackup: h.runBackup }));
@@ -29,6 +35,7 @@ beforeEach(() => {
   h.featureOn.mockResolvedValue(true);
   h.findSystemJob.mockResolvedValue({ id: "sys" });
   h.runBackup.mockReturnValue(new Promise(() => {}));
+  h.claimJob.mockResolvedValue(async () => {});
 });
 
 describe("vardo_run_system_backup", () => {
@@ -57,9 +64,17 @@ describe("vardo_run_system_backup", () => {
 
   it("starts the system job manually without waiting for it", async () => {
     const body = toolBody(await run()({}));
-    expect(h.runBackup).toHaveBeenCalledWith("sys", { trigger: "manual" });
+    await vi.waitFor(() => expect(h.runBackup).toHaveBeenCalledWith("sys", { trigger: "manual" }));
     expect(body).toMatchObject({ status: "started", jobId: "sys" });
     expect(Date.parse(body.startedAt)).not.toBeNaN();
+  });
+
+  it("uses the system backup already in progress", async () => {
+    h.claimJob.mockResolvedValue(null);
+    const res = await run()({});
+    expect(res.isError).toBeUndefined();
+    expect(toolBody(res)).toMatchObject({ status: "in_progress", jobId: "sys", startedAt: T.toISOString() });
+    expect(h.runBackup).not.toHaveBeenCalled();
   });
 
   it("swallows a run rejection after returning", async () => {

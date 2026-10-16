@@ -147,7 +147,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Scoped to this app since a shared job also covers its siblings. A second concurrent run would tar the same volume twice.
     const start = await startManualBackup(job.id, { appIds: [app.id], force: parsed.data.force });
     if (!start.started) {
-      return fail("BACKUP_IN_PROGRESS", "A backup is already running for this app", 409, {
+      return fail("BACKUP_IN_PROGRESS", "Using the backup of this app already in progress", 409, {
         jobId: job.id,
         ...(start.startedAt ? { startedAt: start.startedAt.toISOString() } : {}),
       });

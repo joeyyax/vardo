@@ -92,6 +92,7 @@ export function SystemBackupSection() {
       const res = await fetch("/api/v1/admin/system-backup/run", { method: "POST" });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.success) toast.success("Database backed up");
+      else if (body?.code === "BACKUP_IN_PROGRESS") toast.info(body.error);
       else toast.error(body?.results?.find((r: { error?: string }) => r.error)?.error ?? body?.error ?? "Couldn't back up the database");
     } catch {
       toast.error("Couldn't back up the database");

@@ -44,7 +44,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
         body: "{}",
       });
       const body = await res.json();
-      if (!res.ok) {
+      if (!res.ok && body.code !== "BACKUP_IN_PROGRESS") {
         // NO_VOLUMES and BIND_MOUNTS_ONLY are answers, not failures.
         setState("unavailable");
         setDetail(body.error ?? "Couldn't start a backup");

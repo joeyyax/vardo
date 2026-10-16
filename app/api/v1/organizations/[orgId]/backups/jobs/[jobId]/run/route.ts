@@ -36,7 +36,12 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     }
 
     const start = await startManualBackup(jobId);
-    if (!start.started) return NextResponse.json({ error: "This backup job is already running.", code: "BACKUP_IN_PROGRESS" }, { status: 409 });
+    if (!start.started) {
+      return NextResponse.json(
+        { error: "Using the run of this backup job already in progress.", code: "BACKUP_IN_PROGRESS", startedAt: start.startedAt?.toISOString() ?? null },
+        { status: 409 },
+      );
+    }
     const results = await start.done;
 
     return NextResponse.json({
