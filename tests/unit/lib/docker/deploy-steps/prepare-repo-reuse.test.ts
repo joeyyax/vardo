@@ -3,7 +3,7 @@
 // retags that image instead of building, unless a rebuild was asked for.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
 const { dbSets, dockerCalls, localImages, earlier, nixpacks } = vi.hoisted(() => ({
@@ -101,6 +101,45 @@ vi.mock("@/lib/docker/constants", async (importOriginal) => ({
   ensureWritableDir: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials: vi.fn().mockResolvedValue({}) }));
+
+const { remote } = vi.hoisted(() => ({
+  remote: { on: false, pushed: [] as string[], offered: [] as (string[] | undefined)[] },
+}));
+const TARGET = {
+  id: "lh", kind: "ssh" as const, name: "Long House", host: "10.99.0.2", port: 22, user: "vardo",
+  privateKey: "k", hostKey: "10.99.0.2 ssh-ed25519 AAAA", maxConcurrent: 1,
+};
+vi.mock("@/lib/docker/build-targets", async (orig) => {
+  const real = await orig<typeof import("@/lib/docker/build-targets")>();
+  return {
+    ...real,
+    configuredTargets: async () => (remote.on ? [TARGET] : []),
+    onTarget: (t: typeof TARGET, run: Parameters<typeof real.onTarget>[1]) =>
+      real.onTarget(t, run, async () => ({ env: { DOCKER_HOST: "ssh://vardo@10.99.0.2:22", PATH: "/s/bin:/usr/bin" }, close: async () => {} })),
+  };
+});
+vi.mock("@/lib/docker/build-gate", async (orig) => {
+  const real = await orig<typeof import("@/lib/docker/build-gate")>();
+  return {
+    ...real,
+    withBuildSlot: (gate: Parameters<typeof real.withBuildSlot>[0], bounded: Parameters<typeof real.withBuildSlot>[1], build: Parameters<typeof real.withBuildSlot>[2]) => {
+      remote.offered.push(gate.targets?.map((t) => t.id));
+      return remote.on && gate.targets?.length ? build({ target: gate.targets[0] }) : real.withBuildSlot(gate, bounded, build);
+    },
+  };
+});
+vi.mock("@/lib/docker/registry-auth", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/registry-auth")>()),
+  buildRegistryOps: async () =>
+    remote.on
+      ? {
+          ref: (repo: string, key: string) => `reg.example.com/${repo}:${key}`,
+          pull: async () => false,
+          push: async (local: string) => (remote.pushed.push(local), true),
+          untag: async () => {},
+        }
+      : null,
+}));
 
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
@@ -325,5 +364,45 @@ describe("prepareRepo image reuse", () => {
     const [cmd] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
     expect(cmd).toBe("nixpacks");
     expect(ctx.logLines.some((l) => l.startsWith("[build] Couldn't generate the Nixpacks Dockerfile"))).toBe(true);
+  });
+
+  describe("with a build target", () => {
+    beforeEach(() => {
+      Object.assign(remote, { on: true, pushed: [], offered: [] });
+      earlier.rows = [];
+    });
+
+    afterEach(() => {
+      remote.on = false;
+    });
+
+    it("builds the generated Dockerfile there and pulls the image here instead of pushing it again", async () => {
+      nixpacks.generates = true;
+      const ctx = makeCtx();
+      await prepareRepo(ctx);
+
+      const [cmd, args, opts] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(cmd).toBe("docker");
+      expect(opts.env.DOCKER_HOST).toBe("ssh://vardo@10.99.0.2:22");
+      expect(opts.env.BUILDX_BUILDER).toBeUndefined();
+      expect(args).not.toContain("--output");
+      const ref = dockerCalls.find((a) => a[0] === "push")?.[2];
+      expect(ref).toMatch(/^reg\.example\.com\/shop:[0-9a-f]{64}$/);
+      expect(dockerCalls).toContainEqual(["pull", "--quiet", ref]);
+      expect(dockerCalls).toContainEqual(["tag", ref, newImage]);
+      expect(remote.pushed).toEqual([]);
+      expect(ctx.registryPushes ?? []).toHaveLength(0);
+      expect(ctx.builtImageRefs).toEqual([newImage]);
+    });
+
+    it("keeps Nixpacks' own build here", async () => {
+      const ctx = makeCtx();
+      await prepareRepo(ctx);
+      const [cmd, , opts] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(cmd).toBe("nixpacks");
+      expect(opts.env.DOCKER_HOST).toBeUndefined();
+      expect(remote.offered).toEqual([undefined]);
+      expect(remote.pushed).toEqual([newImage]);
+    });
   });
 });

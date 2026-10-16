@@ -279,7 +279,7 @@ export async function hostKeyFingerprints(hostKey: string): Promise<string[]> {
     const { stdout } = await execFileAsync("ssh-keygen", ["-l", "-f", file], { timeout: 10_000 });
     return String(stdout).split("\n").map((l) => l.trim()).filter(Boolean)
       .map((l) => {
-        const [, fp, , type] = l.match(/^(\d+)\s+(\S+)\s+(.*)\s+\((\w+)\)$/) ?? [];
+        const [, fp, type] = l.match(/^\d+\s+(\S+)\s+.*\s+\((\w+)\)$/) ?? [];
         return fp ? `${fp} (${type})` : l;
       });
   } finally {
