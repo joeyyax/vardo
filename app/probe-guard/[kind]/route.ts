@@ -11,7 +11,7 @@ import { activeCanaries, markUsed, markerFor, recordEvent } from "@/lib/probe-gu
 import { appForHost, guardBlocks } from "@/lib/probe-guard/sync";
 import type { CustomBlock } from "@/lib/probe-guard/blocks";
 import { renderAppRobots } from "@/lib/probe-guard/robots";
-import { banLookup, blockedRangeFor, isAllowlisted } from "@/lib/probe-guard/client-lists";
+import { banLookup, blockedRangeFor, isExempt } from "@/lib/probe-guard/client-lists";
 import { recordBlock } from "@/lib/probe-guard/blocked";
 import { queueAbuseReport } from "@/lib/probe-guard/reporting/queue";
 
@@ -57,7 +57,7 @@ const deps: GuardDeps = {
   markUsed,
   appForHost,
   robotsFor: renderAppRobots,
-  allowed: isAllowlisted,
+  allowed: isExempt,
   blockedRange: blockedRangeFor,
   banLookup,
   recordBlock,
