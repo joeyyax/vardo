@@ -1,7 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { parseDockerHost } from "@/lib/docker/client";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { getConnectionOptions } from "@/lib/docker/client";
 
-describe("parseDockerHost", () => {
+afterEach(() => vi.unstubAllEnvs());
+
+function parseDockerHost(value: string | undefined) {
+  if (value === undefined) vi.stubEnv("DOCKER_HOST", "");
+  else vi.stubEnv("DOCKER_HOST", value);
+  return getConnectionOptions();
+}
+
+describe("getConnectionOptions from DOCKER_HOST", () => {
   it("defaults to the standard socket", () => {
     expect(parseDockerHost(undefined)).toEqual({ socketPath: "/var/run/docker.sock" });
   });
