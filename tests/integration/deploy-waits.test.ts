@@ -103,6 +103,21 @@ describe.skipIf(!conn)("deploy waits on Postgres", { timeout: MIGRATE_TIMEOUT },
     ]);
   });
 
+  it("puts Vardo's own deploy first in the deploy-slot line, as the claim does", async () => {
+    await seed("r1", "a1", "manual", "running");
+    await seed("q2", "a2", "manual", "queued", 60);
+    await seed("vardo", "self", "manual", "queued", 5);
+    await sql`update deployment set bumped_at = now() where id = 'q2'`;
+
+    await w.markQueueWaits({ capacity: 1, workerMissing: false });
+    const rows = await waits();
+    expect(rows.vardo).toMatchObject({ reason: "deploy-slot", ahead: 0, total: 2 });
+    expect(rows.q2).toMatchObject({ reason: "deploy-slot", ahead: 1, total: 2 });
+
+    await sql`update deployment set status = 'success' where id = 'r1'`;
+    expect((await q.claimDeploys("w", { capacity: 1 })).map((c) => c.id)).toEqual(["vardo"]);
+  });
+
   it("writes nothing when nothing changed, and keeps the start time while the reason holds", async () => {
     await seed("r1", "a1", "manual", "running");
     await seed("q2", "a2", "webhook", "queued", 20);
