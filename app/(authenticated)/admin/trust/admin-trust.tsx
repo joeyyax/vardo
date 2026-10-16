@@ -209,7 +209,7 @@ export function AdminTrust() {
                 {view.score.bandLabel && <span className="text-muted-foreground"> · {view.score.bandLabel}</span>}
               </div>
               {view.score.unverified > 0 && (
-                <p className="text-sm text-muted-foreground">{view.score.unverified} points not verified. Vardo couldn&apos;t check these, so they earn nothing.</p>
+                <p className="text-sm text-muted-foreground">{view.score.unverified} points not verified.</p>
               )}
             </div>
             <div className="relative pb-5">

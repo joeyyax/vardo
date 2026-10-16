@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { scheduleIntervalMs } from "@/lib/backups/staleness";
 import { githubGet } from "@/lib/github-api";
 import { getUpdateStatus } from "@/lib/self-update/status";
+import { GITHUB_REPO } from "@/lib/version";
 import { probeCertificate } from "@/lib/system-alerts/cert-probe";
 import { evaluateCertExpiry } from "@/lib/system-alerts/cert-expiry";
 import { getProbeGuardSettings, guardKey } from "@/lib/probe-guard/instance";
@@ -36,7 +37,6 @@ import { CHECK_IDS, type CheckId, type Judgement } from "./types";
 const log = logger.child("trust");
 
 const DAY_MS = 86_400_000;
-const UPDATE_REPO = "joeyyax/vardo";
 const PROBE_CONCURRENCY = 5;
 
 async function readHttps(): Promise<Judgement> {
@@ -125,7 +125,7 @@ async function readProtected(): Promise<Judgement> {
 /** When the commit was made. The update status carries no dates, so this asks GitHub. */
 async function readCommitTime(sha: string): Promise<Date | null> {
   try {
-    const res = await githubGet(UPDATE_REPO, `/commits/${sha}`, "application/vnd.github+json");
+    const res = await githubGet(GITHUB_REPO, `/commits/${sha}`, "application/vnd.github+json");
     if (!res.ok) return null;
     const raw = (JSON.parse(res.text) as { commit?: { committer?: { date?: string } } }).commit?.committer?.date;
     const date = raw ? new Date(raw) : null;
