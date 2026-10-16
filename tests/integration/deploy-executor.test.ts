@@ -268,6 +268,22 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
     });
   });
 
+  describe("engine errors", () => {
+    it("a deploy whose engine throws fails with the error appended to the log so far", async () => {
+      const id = await enqueue("a1", "manual");
+      const [claimed] = await q.claimDeploys(exec.executorId(), { capacity: 1 });
+      await exec.startClaimed(claimed, {
+        run: async () => {
+          await sql`update deployment set log = ${"[deploy] Cloning\n[deploy] Building"} where id = ${id}`;
+          throw new Error("disk full");
+        },
+      });
+      const failed = await row(id);
+      expect(failed.status).toBe("failed");
+      expect(failed.log.split("\n")).toEqual(["[deploy] Cloning", "[deploy] Building", expect.stringMatching(/\[deploy\] ERROR: disk full$/)]);
+    });
+  });
+
   describe("claim scope", () => {
     it("the console claims only Vardo's own deploys, the worker everything else", async () => {
       const app = await enqueue("a1", "manual");
