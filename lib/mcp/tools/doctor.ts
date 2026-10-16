@@ -64,7 +64,7 @@ async function workerCheck(): Promise<DoctorLine[]> {
 
 async function servicesCheck(health: () => Promise<SystemHealth>): Promise<DoctorLine[]> {
   const [{ services }, snapshot] = await Promise.all([health(), getInfrastructureSnapshot()]);
-  return serviceLines(services, infrastructureRows(snapshot, { canLinkToAdmin: true }));
+  return serviceLines(services, infrastructureRows(snapshot, { canLinkToAdmin: true }), snapshot.apps);
 }
 
 async function deployQueueCheck(): Promise<DoctorLine[]> {
@@ -107,7 +107,7 @@ async function backupJobsCheck(): Promise<DoctorLine[]> {
     ...backupJobLines({
       enabledJobs: enabled.length,
       failing: enabled.filter((j) => j.backups[0]?.status === "failed").map((j) => backupJobLabel(j.name)),
-      overdue: overdueBackupJobs(jobs, now).map((o) => ({ name: backupJobLabel(o.job.name), since: o.since, neverRan: o.neverRan })),
+      overdue: overdueBackupJobs(jobs, now).map((o) => ({ id: o.job.id, name: backupJobLabel(o.job.name), since: o.since, neverRan: o.neverRan })),
       now,
     }),
   ];

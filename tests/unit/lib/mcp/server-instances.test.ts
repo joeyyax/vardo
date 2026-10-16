@@ -17,6 +17,7 @@ vi.mock("@/lib/self-update/store", () => ({
 }));
 
 const { createMcpServer } = await import("@/lib/mcp/server");
+const { peerHealthy } = await import("@/lib/mcp/instances");
 
 async function connect(linkedInstances: boolean, adminScope = false) {
   const server = createMcpServer({ userId: "u1", organizationId: "o1", crossOrg: false, linkedInstances, adminScope });
@@ -90,7 +91,7 @@ describe("MCP server across instances", () => {
     const { instances } = JSON.parse((result.content as { text: string }[])[0].text);
     expect(instances.map((i: { name: string }) => i.name)).toEqual(["canary", "prod"]);
     expect(instances[0]).toMatchObject({ local: true, priority: "standard", url: "https://canary.example.com" });
-    expect(instances[1]).toMatchObject({ id: "peer-1", priority: "critical", version: "abc1234", status: "online" });
+    expect(instances[1]).toMatchObject({ id: "peer-1", priority: "critical", version: "abc1234", status: "online", healthy: false });
     await client.close();
   });
 
@@ -101,5 +102,22 @@ describe("MCP server across instances", () => {
     expect(instances).toHaveLength(1);
     expect(note).toMatch(/can't act on linked instances/);
     await client.close();
+  });
+});
+
+describe("peerHealthy", () => {
+  const now = new Date("2026-10-15T12:00:00Z");
+  const seen = (ms: number) => new Date(now.getTime() - ms);
+
+  it("is true for an online peer seen recently that sent no health report", () => {
+    expect(peerHealthy({ status: "online", lastSeenAt: seen(30_000), vardoHealthy: null }, now)).toBe(true);
+    expect(peerHealthy({ status: "online", lastSeenAt: seen(30_000), vardoHealthy: true }, now)).toBe(true);
+  });
+
+  it("is false for a peer that's offline, silent, never seen or reporting itself unhealthy", () => {
+    expect(peerHealthy({ status: "offline", lastSeenAt: seen(30_000), vardoHealthy: true }, now)).toBe(false);
+    expect(peerHealthy({ status: "online", lastSeenAt: seen(6 * 60_000), vardoHealthy: true }, now)).toBe(false);
+    expect(peerHealthy({ status: "online", lastSeenAt: null, vardoHealthy: true }, now)).toBe(false);
+    expect(peerHealthy({ status: "online", lastSeenAt: seen(30_000), vardoHealthy: false }, now)).toBe(false);
   });
 });

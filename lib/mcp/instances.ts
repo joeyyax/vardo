@@ -5,6 +5,7 @@ import { getInstanceConfig } from "@/lib/system-settings";
 import { localVardoStatus } from "@/lib/self-update/peer-status";
 import { getUpdatePolicy } from "@/lib/self-update/store";
 import { parseRolloutCapability } from "@/lib/self-update/rollout-capability";
+import { PEER_SILENT_AFTER_MS } from "@/lib/mesh/peer-watch";
 
 export type PeerRow = typeof meshPeers.$inferSelect;
 
@@ -71,6 +72,15 @@ export type InstanceSummary = {
   lastSeenAt: string | null;
 };
 
+/** Online, heard from within PEER_SILENT_AFTER_MS and not reporting itself unhealthy. */
+export function peerHealthy(
+  peer: { status: string; lastSeenAt: Date | null; vardoHealthy: boolean | null },
+  now: Date,
+): boolean {
+  if (peer.status !== "online" || !peer.lastSeenAt) return false;
+  return now.getTime() - peer.lastSeenAt.getTime() <= PEER_SILENT_AFTER_MS && peer.vardoHealthy !== false;
+}
+
 /** This instance first, then every directly linked peer. */
 export async function listInstances({ includePeers }: { includePeers: boolean }): Promise<InstanceSummary[]> {
   const [self, config, policy] = await Promise.all([localIdentity(), getInstanceConfig(), getUpdatePolicy()]);
@@ -107,6 +117,7 @@ export async function listInstances({ includePeers }: { includePeers: boolean })
     },
   });
 
+  const now = new Date();
   return [
     local,
     ...peers
@@ -120,7 +131,7 @@ export async function listInstances({ includePeers }: { includePeers: boolean })
         type: p.type,
         priority: parseRolloutCapability(p.vardoUpdate)?.priority ?? null,
         version: p.vardoSha,
-        healthy: p.vardoHealthy,
+        healthy: peerHealthy(p, now),
         status: p.status,
         lastSeenAt: p.lastSeenAt?.toISOString() ?? null,
       })),
