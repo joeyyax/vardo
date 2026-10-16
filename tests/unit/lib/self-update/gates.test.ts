@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateGates, UPDATE_MIN_FREE_BYTES, type GateInputs } from "@/lib/self-update/gates";
+import { evaluateGates, HEALTH_GRACE_MS, UPDATE_MIN_FREE_BYTES, type GateInputs } from "@/lib/self-update/gates";
 
 const GB = 1024 ** 3;
 
@@ -10,6 +10,7 @@ const clear: GateInputs = {
   runningDrills: 0,
   disk: { freeBytes: 50 * GB, usedBytes: 50 * GB },
   unhealthyServices: [],
+  unhealthyForMs: 0,
   targetFailedBefore: false,
 };
 
@@ -35,8 +36,13 @@ describe("evaluateGates", () => {
   });
 
   it("refuses an unhealthy instance and a target that already failed here", () => {
-    const failures = evaluateGates({ ...clear, unhealthyServices: ["Redis"], targetFailedBefore: true });
+    const failures = evaluateGates({ ...clear, unhealthyServices: ["Redis"], unhealthyForMs: HEALTH_GRACE_MS, targetFailedBefore: true });
     expect(failures.map((f) => f.gate)).toEqual(["health", "failed-before"]);
     expect(failures[0].reason).toBe("Unhealthy: Redis");
+  });
+
+  it("waits like busy while unhealthy is recent and fails once it persists", () => {
+    const recent = evaluateGates({ ...clear, unhealthyServices: ["Redis"], unhealthyForMs: HEALTH_GRACE_MS - 1 });
+    expect(recent.map((f) => f.gate)).toEqual(["busy"]);
   });
 });
