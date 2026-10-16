@@ -65,7 +65,7 @@ describe("MCP server across instances", () => {
   it("adds the instance argument to the admin-only status tools", async () => {
     const client = await connect(false, true);
     const { tools } = await client.listTools();
-    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now"]) {
+    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now", "vardo_get_update_policy", "vardo_set_update_policy"]) {
       const tool = tools.find((t) => t.name === name);
       expect(tool, name).toBeDefined();
       expect((tool!.inputSchema.properties ?? {}).instance, name).toBeDefined();
@@ -77,7 +77,7 @@ describe("MCP server across instances", () => {
     const client = await connect(false);
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
-    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now"]) expect(names).not.toContain(name);
+    for (const name of ["vardo_instance_status", "vardo_list_tasks", "vardo_update_now", "vardo_get_update_policy", "vardo_set_update_policy"]) expect(names).not.toContain(name);
     for (const name of ["vardo_list_attention", "vardo_list_backup_jobs", "vardo_list_backups", "vardo_list_deployments", "vardo_list_activity", "vardo_security_summary", "vardo_run_backup"]) {
       expect(names).toContain(name);
     }
