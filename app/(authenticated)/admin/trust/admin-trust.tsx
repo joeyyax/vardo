@@ -75,6 +75,7 @@ function levelSummary(view: TrustView): string {
 export function AdminTrust() {
   const [view, setView] = useState<TrustView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingVisibility, setPendingVisibility] = useState<TrustView["visibility"] | null>(null);
   const [contact, setContact] = useState("");
   const [savedContact, setSavedContact] = useState("");
   const [provider, setProvider] = useState("");
@@ -157,7 +158,7 @@ export function AdminTrust() {
       <Card variant="surface" className="space-y-3 p-4">
         <div role="radiogroup" aria-label="Trust center visibility" className="grid gap-2 sm:grid-cols-2">
           {VISIBILITY_OPTIONS.map((opt) => {
-            const selected = view.visibility === opt.value;
+            const selected = (pendingVisibility ?? view.visibility) === opt.value;
             return (
               <button
                 key={opt.value}
@@ -168,7 +169,10 @@ export function AdminTrust() {
                 onClick={() => {
                   if (selected) return;
                   const previous = view.visibility;
-                  void save({ visibility: opt.value }, { visibility: previous }, `Trust center ${opt.label.toLowerCase()}`);
+                  setPendingVisibility(opt.value);
+                  void save({ visibility: opt.value }, { visibility: previous }, `Trust center ${opt.label.toLowerCase()}`).finally(() =>
+                    setPendingVisibility(null),
+                  );
                 }}
                 className={cn(
                   "squircle rounded-md border p-3 text-left transition-colors disabled:opacity-60",
@@ -181,7 +185,13 @@ export function AdminTrust() {
             );
           })}
         </div>
-        <p className="text-xs text-muted-foreground">Not hosting work for others? Leave it off, or use Private to audit this instance.</p>
+        {pendingVisibility && pendingVisibility !== "off" ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+            <Loader2 className="size-3 animate-spin" /> Running checks
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">Not hosting work for others? Leave it off, or use Private to audit this instance.</p>
+        )}
       </Card>
 
       {on && (
