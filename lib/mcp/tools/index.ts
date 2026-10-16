@@ -40,6 +40,7 @@ import { registerDeleteRetiredBackups } from "./delete-retired-backups";
 import { registerListDeployments } from "./list-deployments";
 import { registerListActivity } from "./list-activity";
 import { registerSecuritySummary } from "./security-summary";
+import { registerDoctor } from "./doctor";
 
 /** Registers all MCP tools on the server. */
 export function registerAllTools(
@@ -86,4 +87,5 @@ export function registerAllTools(
   registerListDeployments(server, context);
   registerListActivity(server, context);
   registerSecuritySummary(server, context);
+  registerDoctor(server, context);
 }
