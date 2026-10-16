@@ -10,10 +10,13 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates, limit, nightly, leases } =
+const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, adoptMock, updates, limit, nightly, leases, claims } =
   vi.hoisted(() => ({
     limit: { value: 1 },
     nightly: { value: new Map<string, string>() },
+    /** Job claims held now, by job. */
+    claims: new Map<string, { by: string; startedAt: Date }>(),
+    adoptMock: vi.fn(),
     /** Run job leases held now, and every take, report and release in order. */
     leases: { held: new Set<string>(), events: [] as string[] },
     backupJobsFindMany: vi.fn(),
@@ -68,7 +71,28 @@ vi.mock("@/lib/backups/engine", async (importOriginal) => ({
   runBackup: runBackupMock,
 }));
 vi.mock("@/lib/backups/initial-backup", () => ({ startDueInitialBackups: async () => [] }));
+vi.mock("@/lib/backups/job-claim", () => {
+  const claimJob = async (jobId: string, by: string, startedAt = new Date()) => {
+    if (claims.has(jobId)) return null;
+    claims.set(jobId, { by, startedAt });
+    return async () => {
+      claims.delete(jobId);
+    };
+  };
+  return {
+    claimJob,
+    jobClaimHolder: async (jobId: string) => claims.get(jobId) ?? null,
+    claimJobWhenFree: async (jobId: string, by: string) => {
+      for (;;) {
+        const release = await claimJob(jobId, by);
+        if (release) return release;
+        await new Promise((r) => setTimeout(r, 1));
+      }
+    },
+  };
+});
 vi.mock("@/lib/backups/runs", () => ({
+  adoptManualRun: adoptMock,
   startNightlyRuns: async () => nightly.value,
   startJobRun: async () => null,
   markJobDone: async (runId: string, jobId: string) => {
@@ -135,6 +159,8 @@ beforeEach(() => {
   nightly.value = new Map();
   leases.held.clear();
   leases.events.length = 0;
+  claims.clear();
+  adoptMock.mockReset().mockResolvedValue(false);
 });
 
 describe("tickBackupJobs — before first-run setup", () => {
@@ -332,6 +358,66 @@ describe("tickBackupJobs — run job leases", () => {
     await tickBackupJobs();
     await settle();
 
+    expect(leases.events).toEqual(["hold run-1:a", "done run-1:a", "release run-1:a"]);
+  });
+});
+
+describe("tickBackupJobs — one run of a job at a time", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 5));
+  const nightlyJobs = (...ids: string[]) => ids.map((id) => ({ id, name: id, schedule: "", enabled: true, nightly: true }));
+
+  it("skips a scheduled job while a run started by hand holds it", async () => {
+    withExistingBackup(null);
+    claims.set("job-1", { by: "manual", startedAt: new Date() });
+
+    await tickBackupJobs();
+
+    expect(runBackupMock).not.toHaveBeenCalled();
+    expect(claims.get("job-1")?.by).toBe("manual");
+  });
+
+  it("holds the job while it runs and lets go after", async () => {
+    withExistingBackup(null);
+    let finish!: () => void;
+    runBackupMock.mockImplementation(() => new Promise((r) => (finish = () => r([]))));
+
+    const tick = tickBackupJobs();
+    await settle();
+    expect(claims.get("job-1")?.by).toBe("scheduled");
+    finish();
+    await tick;
+    expect(claims.size).toBe(0);
+  });
+
+  it("waits out a nightly job's run started by hand, then takes its backup without running", async () => {
+    withExistingBackup(null);
+    nightly.value = new Map([["a", "run-1"]]);
+    backupJobsFindMany.mockResolvedValue(nightlyJobs("a"));
+    claims.set("a", { by: "manual", startedAt: new Date() });
+    adoptMock.mockResolvedValue(true);
+
+    const tick = tickBackupJobs();
+    await settle();
+    expect(adoptMock).not.toHaveBeenCalled();
+    expect([...leases.held]).toEqual(["run-1:a"]);
+
+    claims.delete("a");
+    await tick;
+    expect(adoptMock).toHaveBeenCalledWith("run-1", "a", expect.any(Date));
+    expect(runBackupMock).not.toHaveBeenCalled();
+    // The adoption marks it done; nothing else does.
+    expect(leases.events).toEqual(["hold run-1:a", "release run-1:a"]);
+    expect(claims.size).toBe(0);
+  });
+
+  it("runs a nightly job itself when there's no manual backup to take", async () => {
+    withExistingBackup(null);
+    nightly.value = new Map([["a", "run-1"]]);
+    backupJobsFindMany.mockResolvedValue(nightlyJobs("a"));
+
+    await tickBackupJobs();
+
+    expect(runBackupMock).toHaveBeenCalledWith("a", { runId: "run-1" });
     expect(leases.events).toEqual(["hold run-1:a", "done run-1:a", "release run-1:a"]);
   });
 });

@@ -6,7 +6,7 @@ import { findSystemJob } from "@/lib/backups/system-storage";
 import { logger } from "@/lib/logger";
 import type { McpAuthContext } from "../auth";
 import { canAdminInstance } from "../scope";
-import { failure, text } from "./result";
+import { failure, iso, text } from "./result";
 
 const log = logger.child("mcp:run-system-backup");
 
@@ -16,7 +16,7 @@ export function registerRunSystemBackup(server: McpServer, context: McpAuthConte
 
   server.tool(
     "vardo_run_system_backup",
-    "Start a backup of Vardo's own database now, as the System backup page's run button does. Returns at once and runs when a backup slot is free; the last run shows as systemDatabaseJob in vardo_list_backup_jobs. Needs a token with the admin scope.",
+    "Start a backup of Vardo's own database now, as the System backup page's run button does. Returns at once and runs when a backup slot is free, or uses the run in progress; the last run shows as systemDatabaseJob in vardo_list_backup_jobs. Needs a token with the admin scope.",
     {},
     async () => {
       if (!(await canAdminInstance(context))) return failure(ADMIN_FORBIDDEN_MESSAGE);
@@ -27,7 +27,9 @@ export function registerRunSystemBackup(server: McpServer, context: McpAuthConte
 
       const startedAt = new Date();
       const start = await startManualBackup(job.id);
-      if (!start.started) return failure("The system backup is already running");
+      if (!start.started) {
+        return text({ status: "in_progress", jobId: job.id, startedAt: iso(start.startedAt), message: "Using the system backup already in progress" });
+      }
       start.done.catch((err) => {
         log.error(`Manual system backup failed for job ${job.id}:`, err);
       });

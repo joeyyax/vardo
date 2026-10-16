@@ -37,7 +37,8 @@ vi.mock("@/lib/backups/auto-backup", () => ({
 }));
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
-vi.mock("@/lib/redis-lock", () => ({ acquireLock: async () => "token", releaseLock: async () => true }));
+vi.mock("@/lib/backups/job-claim", () => ({ claimJob: async () => async () => {}, jobClaimHolder: async () => null }));
+vi.mock("@/lib/backups/runs", () => ({ nightlyRunStartedSince: async () => null, startManualRun: async () => null, markJobDone: async () => {} }));
 
 const { POST } = await import(
   "@/app/api/v1/organizations/[orgId]/apps/[appId]/backup-now/route"
@@ -75,7 +76,7 @@ describe("POST /apps/[appId]/backup-now — job reuse", () => {
     const res = await POST(request(), params);
 
     expect(res.status).toBe(202);
-    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" });
+    await vi.waitFor(() => expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" }));
     await expect(res.json()).resolves.toMatchObject({ jobId: "job-1", appIds: [APP_ID] });
   });
 
@@ -97,6 +98,6 @@ describe("POST /apps/[appId]/backup-now — job reuse", () => {
     const res = await POST(request(), params);
 
     expect(res.status).toBe(202);
-    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" });
+    await vi.waitFor(() => expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" }));
   });
 });

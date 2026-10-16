@@ -411,8 +411,12 @@ function JobMeta({
     setRunning(true);
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/backups/jobs/${job.id}/run`, { method: "POST" });
+      const body = res.ok ? null : await res.json().catch(() => null);
       if (res.ok) {
         toast.success("Backup started");
+        onRefresh();
+      } else if (body?.code === "BACKUP_IN_PROGRESS") {
+        toast.info(body.error);
         onRefresh();
       } else {
         toast.error("Couldn't start backup");

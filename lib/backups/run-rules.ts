@@ -239,6 +239,9 @@ export function needsAttention(rows: BackupSummaryRow[], staleVolumes: number, u
 /** Run keys of runs someone started by hand. */
 export const MANUAL_RUN_PREFIX = "manual:";
 
+/** A manual backup started this long before a nightly run counts as its result; one asked for this long after joins it. */
+export const NIGHTLY_REUSE_WINDOW_MS = 5 * 60_000;
+
 /**
  * A restore always reports. A nightly run emails when something needs a look, or every night if the org opted in.
  * A single job emails only for a problem its live failure emails didn't cover.

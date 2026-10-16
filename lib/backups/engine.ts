@@ -868,30 +868,8 @@ export async function runBackup(
   jobId: string,
   options: RunBackupOptions = {},
 ): Promise<BackupResult[]> {
-  if (options.trigger === MANUAL_TRIGGER && !options.runId) {
-    const runId = await openManualRun(jobId).catch(() => null);
-    if (runId) {
-      try {
-        return await runBackup(jobId, { ...options, runId });
-      } finally {
-        const { markJobDone } = await import("./runs");
-        await markJobDone(runId, jobId).catch(() => {});
-      }
-    }
-  }
   const label = `job ${jobId}${options.appIds ? ` (${options.appIds.length} app(s))` : ""}`;
   return trackBackupWork("backup", label, () => runBackupUntracked(jobId, options));
-}
-
-/** A run of its own for a job started by hand, so its results stay out of another run's summary. */
-async function openManualRun(jobId: string): Promise<string | null> {
-  const job = await db.query.backupJobs.findFirst({
-    where: eq(backupJobs.id, jobId),
-    columns: { id: true, name: true, organizationId: true },
-  });
-  if (!job) return null;
-  const { startManualRun } = await import("./runs");
-  return startManualRun(job, new Date());
 }
 
 async function runBackupUntracked(

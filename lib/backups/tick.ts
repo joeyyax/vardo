@@ -10,6 +10,8 @@ import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 import { backupSlotLimit, withBackupSlot } from "./run-limit";
 import { holdRunJobLease } from "./run-lease";
 import { backupsDraining } from "./in-flight";
+import { claimJob, claimJobWhenFree, jobClaimHolder, type ReleaseClaim } from "./job-claim";
+import { NIGHTLY_REUSE_WINDOW_MS } from "./run-rules";
 
 const log = logger.child("backup");
 
@@ -17,9 +19,7 @@ const log = logger.child("backup");
 const queued = new Set<string>();
 
 /** Run any enabled backup jobs that are due, at most the backup concurrency at once. Call every minute. */
-export async function tickBackupJobs(): Promise<void> {
-  const now = new Date();
-
+export async function tickBackupJobs(now = new Date(), opts: { claimPollMs?: number } = {}): Promise<void> {
   // A fresh instance's empty database would land in the bucket beside the backups a restore lists.
   if (await needsSetup()) return;
   // This console is about to stop; the one replacing it takes the schedule.
@@ -31,7 +31,7 @@ export async function tickBackupJobs(): Promise<void> {
 
   const limit = await backupSlotLimit();
   const runs: Promise<void>[] = [];
-  const { markJobDone, startJobRun, startNightlyRuns } = await import("./runs");
+  const { adoptManualRun, markJobDone, startJobRun, startNightlyRuns } = await import("./runs");
   const nightlyRun = await startNightlyRuns(now).catch((err) => {
     log.error("Nightly run start error:", err);
     return new Map<string, string>();
@@ -57,7 +57,23 @@ export async function tickBackupJobs(): Promise<void> {
     markJobDone(runId, jobId).catch(() => {}).finally(() => release(jobId));
   };
 
+  // Waits out a run started by hand, then takes a manual backup from the window as the job's result or runs it.
+  const runNightly = async (job: { id: string; name: string }, runId: string, claim: ReleaseClaim | null) => {
+    claim ??= await claimJobWhenFree(job.id, "scheduled", opts.claimPollMs);
+    try {
+      if (await adoptManualRun(runId, job.id, new Date(now.getTime() - NIGHTLY_REUSE_WINDOW_MS))) {
+        log.info(`Job "${job.name}" uses its manual backup as tonight's result`);
+        return;
+      }
+      await withBackupSlot(limit, () => runJob(job, runId));
+      await markJobDone(runId, job.id);
+    } finally {
+      await claim();
+    }
+  };
+
   for (const job of jobs) {
+    let claim: ReleaseClaim | null = null;
     try {
       if (job.nightly ? !nightlyRun.has(job.id) : !shouldRunNow(job.schedule, now)) continue;
       if (queued.has(job.id)) {
@@ -71,36 +87,61 @@ export async function tickBackupJobs(): Promise<void> {
       const locked = await acquireLock(`lock:backup:${job.id}:${minuteTs}`, 61_000);
       if (!locked) continue;
 
+      const nightlyRunId = nightlyRun.get(job.id);
+      claim = await claimJob(job.id, "scheduled", now);
+      // A nightly job waits for a run started by hand, even one still waiting for a slot.
+      if (!claim && !(nightlyRunId && (await jobClaimHolder(job.id))?.by !== "scheduled")) {
+        log.info(`Skipping job "${job.name}" — already running`);
+        skipInRun(job.id);
+        continue;
+      }
+
       // Skip a run in flight. Time-bounded so a crashed run can't block the job forever.
-      const runningBackup = await db.query.backups.findFirst({
-        where: and(
-          eq(backups.jobId, job.id),
-          inArray(backups.status, ["pending", "running"]),
-          gt(backups.startedAt, new Date(now.getTime() - STALE_RUN_MS)),
-        ),
-      });
+      const runningBackup = claim
+        ? await db.query.backups.findFirst({
+            where: and(
+              eq(backups.jobId, job.id),
+              inArray(backups.status, ["pending", "running"]),
+              gt(backups.startedAt, new Date(now.getTime() - STALE_RUN_MS)),
+            ),
+          })
+        : undefined;
 
       if (runningBackup) {
         log.info(
           `Skipping job "${job.name}" — already running (backup ${runningBackup.id})`,
         );
+        await claim?.();
+        claim = null;
         skipInRun(job.id);
         continue;
       }
 
-      const runId = nightlyRun.get(job.id) ?? (await startJobRun(job, now).catch(() => null));
-      if (runId) hold(runId, job.id);
       reporting.add(job.id);
       queued.add(job.id);
+      const held = claim;
+      claim = null;
+      if (nightlyRunId) {
+        runs.push(
+          runNightly(job, nightlyRunId, held)
+            .finally(() => queued.delete(job.id))
+            .catch((err) => log.error(`Job "${job.name}" didn't report to its run:`, err))
+            .finally(() => release(job.id)),
+        );
+        continue;
+      }
+      const runId = await startJobRun(job, now).catch(() => null);
+      if (runId) hold(runId, job.id);
       runs.push(
         withBackupSlot(limit, () => runJob(job, runId))
           .finally(() => queued.delete(job.id))
           .then(() => (runId ? markJobDone(runId, job.id) : undefined))
           .catch((err) => log.error(`Job "${job.name}" didn't report to its run:`, err))
-          .finally(() => release(job.id)),
+          .finally(() => Promise.all([release(job.id), held?.()])),
       );
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);
+      await claim?.();
       skipInRun(job.id);
     }
   }
@@ -117,7 +158,7 @@ export async function tickBackupJobs(): Promise<void> {
   await Promise.all(runs);
 }
 
-/** Runs an interrupted job again under the slot cap, then reports it to its run. False when the job is already queued. */
+/** Runs an interrupted job again under the slot cap once no other run holds it, then reports it to its run. False when the job is already queued. */
 export function runRequeuedJob(
   job: { id: string; name: string },
   opts: { runId: string | null; trigger: string },
@@ -125,8 +166,9 @@ export function runRequeuedJob(
   if (queued.has(job.id)) return false;
   queued.add(job.id);
   const lease = opts.runId ? holdRunJobLease(opts.runId, job.id) : null;
-  return backupSlotLimit()
-    .then((limit) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
+  const claim = claimJobWhenFree(job.id, "scheduled");
+  return Promise.all([backupSlotLimit(), claim])
+    .then(([limit]) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
     .finally(() => queued.delete(job.id))
     .then(async () => {
       if (!opts.runId) return;
@@ -134,7 +176,10 @@ export function runRequeuedJob(
       await markJobDone(opts.runId, job.id);
     })
     .catch((err) => log.error(`Requeued job "${job.name}" didn't report to its run:`, err))
-    .finally(async () => (await lease)?.());
+    .finally(async () => {
+      await (await claim.catch(() => null))?.();
+      await (await lease)?.();
+    });
 }
 
 async function runJob(job: { id: string; name: string }, runId: string | null, trigger?: string): Promise<void> {

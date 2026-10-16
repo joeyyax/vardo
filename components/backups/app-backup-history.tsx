@@ -70,6 +70,10 @@ export function AppBackupHistory({
         body: "{}",
       });
       const body = await res.json();
+      if (body.code === "BACKUP_IN_PROGRESS") {
+        toast.info(body.error);
+        return;
+      }
       if (!res.ok) {
         toast.error(body.error || "Couldn't start a backup");
         return;

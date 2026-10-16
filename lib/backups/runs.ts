@@ -274,10 +274,11 @@ export async function startJobRun(job: { id: string; name: string; organizationI
   });
 }
 
-/** Opens a run for a job someone started by hand, so its results stay out of another run's summary. */
+/** Opens a run for a job someone started by hand, so its results stay out of another run's summary. `appIds` scopes it to those apps. */
 export async function startManualRun(
   job: { id: string; name: string; organizationId: string | null },
   now: Date,
+  appIds?: string[],
 ): Promise<string | null> {
   if (!job.organizationId) return null;
   return openRun({
@@ -285,10 +286,51 @@ export async function startManualRun(
     kind: "job",
     runKey: `${MANUAL_RUN_PREFIX}${job.id}:${now.getTime()}`,
     label: job.name,
-    plan: { jobs: [{ jobId: job.id, jobName: job.name }], apps: [], target: null },
+    plan: { jobs: [{ jobId: job.id, jobName: job.name, ...(appIds ? { appIds } : {}) }], apps: [], target: null },
     estimatedMs: null,
     now: now.getTime(),
   });
+}
+
+/** When a nightly run covering the job started at or after `since`. Null for none. */
+export async function nightlyRunStartedSince(jobId: string, since: Date): Promise<Date | null> {
+  const run = await db.query.backupRuns.findFirst({
+    where: and(
+      eq(backupRuns.kind, "nightly"),
+      gte(backupRuns.startedAt, since),
+      sql`${backupRuns.plan}->'jobs' @> ${JSON.stringify([{ jobId }])}::jsonb`,
+    ),
+    columns: { startedAt: true },
+  });
+  return run?.startedAt ?? null;
+}
+
+/**
+ * Takes the latest whole-job manual run of the job started at or after `since` that finished with results
+ * as the job's result in a nightly run, marking it done there once. False when there's none to take.
+ */
+export async function adoptManualRun(runId: string, jobId: string, since: Date): Promise<boolean> {
+  const manual = await db.query.backupRuns.findMany({
+    where: and(
+      sql`starts_with(${backupRuns.runKey}, ${`${MANUAL_RUN_PREFIX}${jobId}:`})`,
+      gte(backupRuns.startedAt, since),
+      sql`${backupRuns.jobsDone} @> ${JSON.stringify([jobId])}::jsonb`,
+    ),
+    orderBy: [desc(backupRuns.startedAt)],
+  });
+  const items = manual
+    .filter((r) => !r.plan.jobs.some((j) => j.jobId === jobId && j.appIds))
+    .map((r) => r.items.filter((i) => i.jobId === jobId))
+    .find((found) => found.length > 0);
+  if (!items) return false;
+  await db
+    .update(backupRuns)
+    .set({
+      items: sql`${backupRuns.items} || ${JSON.stringify(items)}::jsonb`,
+      jobsDone: sql`${backupRuns.jobsDone} || ${JSON.stringify([jobId])}::jsonb`,
+    })
+    .where(and(eq(backupRuns.id, runId), isNull(backupRuns.finishedAt), sql`not ${backupRuns.jobsDone} @> ${JSON.stringify([jobId])}::jsonb`));
+  return true;
 }
 
 /** Opens a run for a restore whose backup took longer than LONG_RUN_MS to take. Null for a quick one. */

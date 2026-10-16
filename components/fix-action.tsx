@@ -29,7 +29,8 @@ export type Handled = { name: string; displayName: string; title: string; outcom
 async function post(url: string): Promise<void> {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string; code?: string };
+    if (body.code === "BACKUP_IN_PROGRESS") return;
     throw new Error(body.error ?? body.message ?? `Failed (${res.status})`);
   }
 }
