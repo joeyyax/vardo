@@ -7,7 +7,6 @@ export const trustSettings = pgTable("trust_settings", {
   id: text("id").primaryKey().default("instance"),
   /** "off" or "private". */
   visibility: text("visibility").notNull().default("off"),
-  securityContact: text("security_contact").notNull().default(""),
   /** Provider and region the operator set by hand. Wins over detection. */
   hostingOverride: jsonb("hosting_override").$type<{ provider: string; region: string }>(),
   /** What the last run read from cloud metadata. */
@@ -21,5 +20,7 @@ export const trustChecks = pgTable("trust_check", {
   /** "passing", "partial", "failing" or "unknown". */
   state: text("state").notNull(),
   evidence: text("evidence").notNull(),
+  /** The next-step title when the state needs one other than the check's default. */
+  fix: text("fix"),
   checkedAt: timestamp("checked_at").defaultNow().notNull(),
 });

@@ -11,8 +11,10 @@ import { evaluateCertExpiry } from "@/lib/system-alerts/cert-expiry";
 import { getProbeGuardSettings, guardKey } from "@/lib/probe-guard/instance";
 import { normalizeAppProbeGuard } from "@/lib/probe-guard/settings";
 import { detectHosting } from "./hosting";
+import { DEFAULT_DATA_ROOT, HOST_MOUNTS_FILE, judgeDiskEncryption, realSys } from "./disk";
+import { dockerRequest } from "@/lib/docker/client";
+import { readFile } from "fs/promises";
 import {
-  DISK_ENCRYPTION_UNKNOWN,
   RESTORE_TEST_WINDOW_MS,
   judgeBackupsProtected,
   judgeHttps,
@@ -166,6 +168,14 @@ async function readRestoreTested(now: Date): Promise<Judgement> {
   );
 }
 
+async function readDisk(): Promise<Judgement> {
+  const [mounts, info] = await Promise.all([
+    readFile(HOST_MOUNTS_FILE, "utf8").catch(() => null),
+    dockerRequest<{ DockerRootDir?: string }>("GET", "/info").catch(() => null),
+  ]);
+  return judgeDiskEncryption({ mounts, dataRoot: info?.DockerRootDir || DEFAULT_DATA_ROOT, sys: realSys });
+}
+
 async function guarded(id: CheckId, read: () => Promise<Judgement>): Promise<Judgement> {
   try {
     return await read();
@@ -186,7 +196,7 @@ export async function runChecks(now = new Date()): Promise<void> {
 
   const probeGuardContact = (await getProbeGuardSettings().catch(() => null))?.securityContact ?? "";
   const readers: Record<CheckId, () => Promise<Judgement>> = {
-    "security-contact": async () => judgeSecurityContact(settings.securityContact, probeGuardContact),
+    "security-contact": async () => judgeSecurityContact(probeGuardContact),
     https: readHttps,
     "nightly-backups": () => readNightly(now),
     "backups-protected": readProtected,
@@ -194,7 +204,7 @@ export async function runChecks(now = new Date()): Promise<void> {
     "two-step": readTwoStep,
     "probe-guard": readProbeGuard,
     "restore-tested": () => readRestoreTested(now),
-    "disk-encrypted": async () => DISK_ENCRYPTION_UNKNOWN,
+    "disk-encrypted": readDisk,
     "provider-cert": async () => judgeProviderCert(effectiveHosting(settings)),
   };
 

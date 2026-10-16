@@ -8,7 +8,6 @@ const ROW_ID = "instance";
 
 export type TrustSettings = {
   visibility: Visibility;
-  securityContact: string;
   hostingOverride: { provider: string; region: string } | null;
   hostingDetected: { provider: string; region: string | null; location: string | null } | null;
 };
@@ -21,13 +20,12 @@ export async function getTrustSettings(): Promise<TrustSettings> {
   const row = await db.query.trustSettings.findFirst({ where: eq(trustSettings.id, ROW_ID) });
   return {
     visibility: parseVisibility(row?.visibility),
-    securityContact: row?.securityContact ?? "",
     hostingOverride: row?.hostingOverride ?? null,
     hostingDetected: row?.hostingDetected ?? null,
   };
 }
 
-export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "securityContact" | "hostingOverride">>;
+export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "hostingOverride">>;
 
 export async function updateTrustSettings(patch: TrustSettingsPatch): Promise<TrustSettings> {
   const set = { ...patch, updatedAt: new Date() };
@@ -58,16 +56,16 @@ export async function readResults(): Promise<CheckResult[]> {
   const known = new Set<string>(CHECK_IDS);
   return rows
     .filter((r) => known.has(r.id))
-    .map((r) => ({ id: r.id as CheckId, state: r.state as CheckState, evidence: r.evidence, checkedAt: r.checkedAt }));
+    .map((r) => ({ id: r.id as CheckId, state: r.state as CheckState, evidence: r.evidence, fix: r.fix, checkedAt: r.checkedAt }));
 }
 
 export async function writeResults(results: Record<CheckId, Judgement>, at = new Date()): Promise<void> {
   for (const id of CHECK_IDS) {
-    const { state, evidence } = results[id];
+    const { state, evidence, fix = null } = results[id];
     await db
       .insert(trustChecks)
-      .values({ id, state, evidence, checkedAt: at })
-      .onConflictDoUpdate({ target: trustChecks.id, set: { state, evidence, checkedAt: at } });
+      .values({ id, state, evidence, fix, checkedAt: at })
+      .onConflictDoUpdate({ target: trustChecks.id, set: { state, evidence, fix, checkedAt: at } });
   }
 }
 

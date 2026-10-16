@@ -4,7 +4,7 @@ import { CHECKS, LEVELS, type CheckDef, type CheckResult, type CheckState, type 
 
 export type LevelSummary = { level: Level; passing: number; total: number; complete: boolean };
 
-export type NextStep = { check: CheckDef; state: Exclude<CheckState, "passing">; evidence: string };
+export type NextStep = { check: CheckDef; fix: string; state: Exclude<CheckState, "passing">; evidence: string };
 
 function stateOf(byId: Map<string, CheckResult>, id: string): CheckState {
   return byId.get(id)?.state ?? "unknown";
@@ -37,7 +37,8 @@ export function nextSteps(results: CheckResult[]): NextStep[] {
   for (const check of CHECKS) {
     const state = stateOf(byId, check.id);
     if (state !== "failing" && state !== "partial") continue;
-    steps.push({ check, state, evidence: byId.get(check.id)?.evidence ?? "" });
+    const result = byId.get(check.id);
+    steps.push({ check, fix: result?.fix ?? check.fix, state, evidence: result?.evidence ?? "" });
   }
   return steps;
 }

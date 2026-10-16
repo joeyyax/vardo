@@ -14,10 +14,10 @@ import { LEVEL_LABELS, type CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
 
 const ENDPOINT = "/api/v1/admin/trust";
+const PROBE_GUARD_ENDPOINT = "/api/v1/admin/probe-guard";
 
 type Patch = {
   visibility?: TrustView["visibility"];
-  securityContact?: string;
   hostingOverride?: { provider: string; region: string } | null;
 };
 
@@ -76,12 +76,12 @@ export function AdminTrust() {
   const [view, setView] = useState<TrustView | null>(null);
   const [busy, setBusy] = useState(false);
   const [contact, setContact] = useState("");
+  const [savedContact, setSavedContact] = useState("");
   const [provider, setProvider] = useState("");
   const [region, setRegion] = useState("");
 
   const apply = useCallback((next: TrustView) => {
     setView(next);
-    setContact(next.securityContact);
     setProvider(next.hostingOverride?.provider ?? "");
     setRegion(next.hostingOverride?.region ?? "");
   }, []);
@@ -91,6 +91,13 @@ export function AdminTrust() {
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then(apply)
       .catch(() => toast.error("Couldn't load the trust center"));
+    fetch(PROBE_GUARD_ENDPOINT)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: { settings: { securityContact: string } }) => {
+        setContact(data.settings.securityContact);
+        setSavedContact(data.settings.securityContact);
+      })
+      .catch(() => toast.error("Couldn't load the security contact"));
   }, [apply]);
 
   const request = useCallback(async (method: "PATCH" | "POST", url: string, body?: Patch): Promise<TrustView | null> => {
@@ -243,12 +250,9 @@ export function AdminTrust() {
                   value={contact}
                   placeholder="security@example.com"
                   onChange={(e) => setContact(e.target.value)}
-                  onBlur={() => {
-                    if (contact.trim() === view.securityContact) return;
-                    void save({ securityContact: contact.trim() });
-                  }}
+                  onBlur={() => void saveContact()}
                 />
-                <p className="text-xs text-muted-foreground">Where people report problems.</p>
+                <p className="text-xs text-muted-foreground">Where people report problems. Published at /.well-known/security.txt.</p>
               </CardContent>
             </Card>
 
@@ -281,11 +285,11 @@ export function AdminTrust() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="trust-provider">Provider</Label>
-                    <Input id="trust-provider" value={provider} placeholder="Hetzner Online" onChange={(e) => setProvider(e.target.value)} onBlur={() => saveHosting()} />
+                    <Input id="trust-provider" value={provider} placeholder="Provider name" onChange={(e) => setProvider(e.target.value)} onBlur={() => saveHosting()} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="trust-region">Region</Label>
-                    <Input id="trust-region" value={region} placeholder="Hillsboro" onChange={(e) => setRegion(e.target.value)} onBlur={() => saveHosting()} />
+                    <Input id="trust-region" value={region} placeholder="Location or region" onChange={(e) => setRegion(e.target.value)} onBlur={() => saveHosting()} />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -312,6 +316,28 @@ export function AdminTrust() {
       )}
     </div>
   );
+
+  async function saveContact() {
+    const next = contact.trim();
+    if (next === savedContact) return;
+    setBusy(true);
+    try {
+      const res = await fetch(PROBE_GUARD_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ securityContact: next }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Couldn't save");
+      setSavedContact(next);
+      toast.success("Saved");
+      await request("POST", `${ENDPOINT}/run`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save");
+      setContact(savedContact);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function saveHosting() {
     if (!view) return;

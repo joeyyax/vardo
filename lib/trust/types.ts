@@ -47,7 +47,8 @@ export const CHECKS: CheckDef[] = [
   { id: "provider-cert", level: "great", title: "Provider certification covers the location", fix: "Get the provider's audit report for this location", effort: "A few days", href: "#hosting", action: "Hosting" },
 ];
 
-export type CheckResult = { id: CheckId; state: CheckState; evidence: string; checkedAt: Date | null };
-export type Judgement = { state: CheckState; evidence: string };
+export type CheckResult = { id: CheckId; state: CheckState; evidence: string; fix?: string | null; checkedAt: Date | null };
+/** `fix` is the next-step title for this state, when the check's default doesn't fit. */
+export type Judgement = { state: CheckState; evidence: string; fix?: string };
 
 export const RUN_INTERVAL_MS = 15 * 60_000;

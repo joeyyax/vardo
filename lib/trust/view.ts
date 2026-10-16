@@ -7,7 +7,6 @@ import { CHECKS, type CheckState, type Level } from "./types";
 
 export type TrustView = {
   visibility: "off" | "private";
-  securityContact: string;
   hostingOverride: { provider: string; region: string } | null;
   hosting: {
     provider: string;
@@ -32,7 +31,6 @@ export async function buildTrustView(): Promise<TrustView> {
 
   return {
     visibility: settings.visibility,
-    securityContact: settings.securityContact,
     hostingOverride: settings.hostingOverride,
     hosting: hosting
       ? {
@@ -51,7 +49,7 @@ export async function buildTrustView(): Promise<TrustView> {
     levels: summarizeLevels(results),
     level: computeLevel(results),
     counts: countStates(results),
-    steps: nextSteps(results).map((s) => ({ id: s.check.id, level: s.check.level, fix: s.check.fix, effort: s.check.effort, href: s.check.href, action: s.check.action, state: s.state, evidence: s.evidence })),
+    steps: nextSteps(results).map((s) => ({ id: s.check.id, level: s.check.level, fix: s.fix, effort: s.check.effort, href: s.check.href, action: s.check.action, state: s.state, evidence: s.evidence })),
     lastRunAt: lastRun?.toISOString() ?? null,
   };
 }

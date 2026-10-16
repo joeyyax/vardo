@@ -49,6 +49,12 @@ describe("nextSteps", () => {
     expect(steps[1].state).toBe("partial");
   });
 
+  it("uses a result's own title over the check's default", () => {
+    const rows = results({ "nightly-backups": "failing" }).map((r) => (r.id === "nightly-backups" ? { ...r, fix: "Set up nightly backups" } : r));
+    expect(nextSteps(rows)[0].fix).toBe("Set up nightly backups");
+    expect(nextSteps(results({ "nightly-backups": "failing" }))[0].fix).toBe("Fix the failing backup jobs");
+  });
+
   it("is empty when nothing is failing", () => {
     expect(nextSteps(results({ "disk-encrypted": "unknown" }))).toEqual([]);
   });

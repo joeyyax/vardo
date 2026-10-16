@@ -11,7 +11,6 @@ import { VISIBILITIES } from "@/lib/trust/types";
 const patchSchema = z
   .object({
     visibility: z.enum(VISIBILITIES),
-    securityContact: z.union([z.literal(""), z.string().trim().email().max(254)]),
     hostingOverride: z.object({ provider: z.string().trim().max(80), region: z.string().trim().max(80) }).nullable(),
   })
   .partial()
@@ -39,7 +38,7 @@ async function handlePatch(request: NextRequest) {
     const after = await updateTrustSettings(patch);
     if (after.visibility === "off") {
       if (before.visibility !== "off") await clearResults();
-    } else if (before.visibility === "off" || patch.securityContact !== undefined || patch.hostingOverride !== undefined) {
+    } else if (before.visibility === "off" || patch.hostingOverride !== undefined) {
       await runChecks();
     }
     return NextResponse.json(await buildTrustView());

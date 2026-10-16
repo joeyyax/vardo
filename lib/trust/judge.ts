@@ -22,9 +22,8 @@ function tally(good: number, total: number): "passing" | "partial" | "failing" {
   return good === 0 ? "failing" : "partial";
 }
 
-export function judgeSecurityContact(contact: string, fallback: string): Judgement {
+export function judgeSecurityContact(contact: string): Judgement {
   if (contact.trim()) return { state: "passing", evidence: `Reports go to ${contact.trim()}.` };
-  if (fallback.trim()) return { state: "passing", evidence: `Probe guard's security.txt lists ${fallback.trim()}.` };
   return { state: "failing", evidence: "No security contact is set." };
 }
 
@@ -55,9 +54,11 @@ export function judgeHttps(domains: DomainTls[]): Judgement {
 export type JobRun = { status: string; startedAt: Date };
 export type NightlyJob = { name: string; enabled: boolean; intervalMs: number | null; runs: JobRun[] };
 
+const NO_JOBS = "No backup jobs are enabled.";
+
 export function judgeNightlyBackups(jobs: NightlyJob[], now: Date): Judgement {
   const enabled = jobs.filter((j) => j.enabled);
-  if (enabled.length === 0) return { state: "failing", evidence: "No backup jobs are enabled." };
+  if (enabled.length === 0) return { state: "failing", evidence: NO_JOBS, fix: "Set up nightly backups" };
   let ok = 0;
   let failed = 0;
   let missing = 0;
@@ -82,7 +83,7 @@ export type JobProtection = {
 
 export function judgeBackupsProtected(jobs: JobProtection[]): Judgement {
   const enabled = jobs.filter((j) => j.enabled);
-  if (enabled.length === 0) return { state: "failing", evidence: "No backup jobs are enabled." };
+  if (enabled.length === 0) return { state: "failing", evidence: NO_JOBS, fix: "Back up to encrypted, off-host storage" };
   const withArchive = enabled.filter((j) => j.latest);
   const encrypted = withArchive.filter((j) => j.latest!.encrypted).length;
   const offHost = withArchive.filter((j) => j.latest!.offHost).length;
@@ -132,7 +133,7 @@ export type VolumeDrill = { jobId: string; volumeKey: string; verifiedAt: Date |
 /** A job is tested when each of its volumes has a verified restore in the window. */
 export function judgeRestoreTested(jobs: { id: string; enabled: boolean }[], drills: VolumeDrill[], now: Date): Judgement {
   const enabled = jobs.filter((j) => j.enabled);
-  if (enabled.length === 0) return { state: "failing", evidence: "No backup jobs are enabled." };
+  if (enabled.length === 0) return { state: "failing", evidence: NO_JOBS, fix: "Set up backups to restore-test" };
   const tested = enabled.filter((job) => {
     const mine = drills.filter((d) => d.jobId === job.id);
     if (mine.length === 0) return false;
@@ -152,7 +153,3 @@ export function judgeRestoreTested(jobs: { id: string; enabled: boolean }[], dri
   return { state, evidence };
 }
 
-export const DISK_ENCRYPTION_UNKNOWN: Judgement = {
-  state: "unknown",
-  evidence: "Vardo has no host disk check yet, so this can't be confirmed.",
-};

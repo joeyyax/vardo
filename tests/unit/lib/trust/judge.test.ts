@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DISK_ENCRYPTION_UNKNOWN,
   judgeBackupsProtected,
   judgeHttps,
   judgeNightlyBackups,
@@ -16,12 +15,12 @@ const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
 const daysAgo = (d: number) => hoursAgo(d * 24);
 
 describe("judgeSecurityContact", () => {
-  it("fails with no contact anywhere", () => {
-    expect(judgeSecurityContact(" ", "").state).toBe("failing");
+  it("fails with an empty or blank contact", () => {
+    expect(judgeSecurityContact("").state).toBe("failing");
+    expect(judgeSecurityContact("  ").state).toBe("failing");
   });
-  it("passes on the trust contact or the probe guard one", () => {
-    expect(judgeSecurityContact("a@b.co", "").state).toBe("passing");
-    expect(judgeSecurityContact("", "sec@b.co").state).toBe("passing");
+  it("passes with a contact and names it", () => {
+    expect(judgeSecurityContact("a@b.co")).toEqual({ state: "passing", evidence: "Reports go to a@b.co." });
   });
 });
 
@@ -152,8 +151,14 @@ describe("judgeRestoreTested", () => {
   });
 });
 
-describe("disk encryption", () => {
-  it("is unknown until a host check exists", () => {
-    expect(DISK_ENCRYPTION_UNKNOWN.state).toBe("unknown");
+describe("next-step titles with no backup jobs", () => {
+  it("names the missing setup, not failing jobs", () => {
+    expect(judgeNightlyBackups([], now).fix).toBe("Set up nightly backups");
+    expect(judgeBackupsProtected([]).fix).toBe("Back up to encrypted, off-host storage");
+    expect(judgeRestoreTested([], [], now).fix).toBe("Set up backups to restore-test");
+  });
+  it("leaves the default title when jobs exist", () => {
+    const job = { name: "j", enabled: true, intervalMs: 86_400_000, runs: [{ status: "failed", startedAt: hoursAgo(2) }] };
+    expect(judgeNightlyBackups([job], now).fix).toBeUndefined();
   });
 });

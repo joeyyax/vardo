@@ -1,5 +1,5 @@
 {
-  "id": "f0c146d5-e71e-4583-9c6b-afaa9bad136c",
+  "id": "fa89a832-bfe5-444b-b4e4-a6c3ac26f6e5",
   "prevId": "c746d268-0705-4aeb-b8af-5cabc9778e3b",
   "version": "7",
   "dialect": "postgresql",
@@ -8898,6 +8898,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "fix": {
+          "name": "fix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "checked_at": {
           "name": "checked_at",
           "type": "timestamp",
@@ -8931,13 +8937,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'off'"
-        },
-        "security_contact": {
-          "name": "security_contact",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
         },
         "hosting_override": {
           "name": "hosting_override",
