@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { invalidatePublicTrust } from "@/lib/trust/public-load";
 import { runChecks } from "@/lib/trust/run";
 import { getTrustSettings } from "@/lib/trust/store";
 import { buildTrustView } from "@/lib/trust/view";
@@ -12,6 +13,7 @@ async function handlePost(request: NextRequest) {
     await requireAdminAuth(request);
     if ((await getTrustSettings()).visibility === "off") return NextResponse.json({ error: "Trust center is off." }, { status: 409 });
     await runChecks();
+    invalidatePublicTrust();
     return NextResponse.json(await buildTrustView());
   } catch (error) {
     return handleRouteError(error, "Error running trust checks");

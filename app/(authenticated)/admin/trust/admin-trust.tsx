@@ -145,10 +145,15 @@ export function AdminTrust() {
           <p className="text-sm text-muted-foreground">A page for your clients on how this instance is hosted, backed up and secured. Your score and what&apos;s missing stay with admins.</p>
         </div>
         {on && (
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            Run checks
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href="/api/public/trust?preview=1" target="_blank" rel="noreferrer">Preview<ExternalLink className="size-3.5" /></a>
+            </Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Run checks
+            </Button>
+          </div>
         )}
       </div>
 

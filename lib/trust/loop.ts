@@ -1,8 +1,10 @@
-// Reruns the trust checks every 15 minutes while the page is on.
+// Reruns the trust checks every 15 minutes while the page is on, and keeps the public routes in place.
 
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
+import { invalidatePublicTrust } from "./public-load";
 import { runChecks } from "./run";
+import { syncTrustRoutes } from "./route";
 import { getTrustSettings } from "./store";
 import { RUN_INTERVAL_MS } from "./types";
 
@@ -12,7 +14,10 @@ export const trustLoop = new IntervalLoop({
   firstRunMs: 30_000,
   log: logger.child("trust"),
   run: async () => {
-    if ((await getTrustSettings()).visibility === "off") return;
+    const { visibility } = await getTrustSettings();
+    if (visibility === "off") return;
     await runChecks();
+    invalidatePublicTrust();
+    if (visibility === "public") await syncTrustRoutes();
   },
 });

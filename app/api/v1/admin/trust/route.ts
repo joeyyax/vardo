@@ -3,7 +3,10 @@ import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { logger } from "@/lib/logger";
 import { listTrustDomains } from "@/lib/trust/domains";
+import { invalidatePublicTrust } from "@/lib/trust/public-load";
+import { syncTrustRoutes } from "@/lib/trust/route";
 import { runChecks } from "@/lib/trust/run";
 import { clearResults, getTrustSettings, updateTrustSettings } from "@/lib/trust/store";
 import { buildTrustView } from "@/lib/trust/view";
@@ -56,6 +59,8 @@ async function handlePatch(request: NextRequest) {
     } else if (before.visibility === "off" || patch.hostingOverride !== undefined) {
       await runChecks();
     }
+    invalidatePublicTrust();
+    await syncTrustRoutes().catch((err) => logger.child("trust").error("Couldn't write the trust routes:", err));
     return NextResponse.json(await buildTrustView());
   } catch (error) {
     return handleRouteError(error, "Error saving trust center");
