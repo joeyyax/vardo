@@ -115,12 +115,21 @@ async function stopDeadDeployEnvironment(
   await stopProject(appId, appName, envName);
 }
 
-type DeadRow = { id: string; appId: string; environmentId: string | null; scopeKey: string | null; stage: string | null; startedAt: Date };
+type DeadRow = {
+  id: string;
+  appId: string;
+  environmentId: string | null;
+  scopeKey: string | null;
+  stage: string | null;
+  startedAt: Date;
+  claimedAt: Date | null;
+};
 
 /** Fails a deploy whose executor stopped: records it, resets the app status and stops a slot that serves nothing. */
 async function failDeadDeploy(deploy: DeadRow, reason: string, guard: ReturnType<typeof and>): Promise<boolean> {
   const now = new Date();
-  const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+  // From the last claim, so queue time and an earlier run don't count.
+  const durationMs = now.getTime() - new Date(deploy.claimedAt ?? deploy.startedAt).getTime();
   const text = line("deploy", `ERROR: ${reason}`);
   const failed = await db
     .update(deployments)
@@ -210,6 +219,7 @@ export async function sweepExpiredLeases(): Promise<void> {
       claimedBy: deployments.claimedBy,
       cancelRequestedAt: deployments.cancelRequestedAt,
       startedAt: deployments.startedAt,
+      claimedAt: deployments.claimedAt,
     })
     .from(deployments)
     .where(
@@ -256,6 +266,8 @@ export async function sweepExpiredLeases(): Promise<void> {
           .returning({ id: deployments.id });
         if (requeued.length > 0) {
           streamLine(deploy.id, text, deploy.stage);
+          // The rerun gets the full time budget.
+          await redis.del(runningSinceKey(deploy.id)).catch((err) => log.warn(`Couldn't reset the running clock of ${deploy.id}:`, err));
           log.info(`Requeued deployment ${deploy.id}: its executor stopped during ${stage}`);
         }
         continue;
@@ -296,7 +308,7 @@ export async function sweepStuckDeployments(): Promise<void> {
 export async function sweepQueuedDeployments(): Promise<void> {
   const now = Date.now();
 
-  // Automatic deploys queued past the TTL. Explicit ones wait as long as it takes.
+  // Automatic deploys queued past the TTL, a requeued one counted from its last claim. Explicit ones wait as long as it takes.
   const stale = await db
     .update(deployments)
     .set({
@@ -308,7 +320,7 @@ export async function sweepQueuedDeployments(): Promise<void> {
       and(
         eq(deployments.status, "queued"),
         inArray(deployments.trigger, ["webhook", "relay", "poll"]),
-        lt(deployments.startedAt, new Date(now - AUTOMATIC_QUEUE_TTL_MS)),
+        sql`coalesce(${deployments.claimedAt}, ${deployments.startedAt}) < now() - ${AUTOMATIC_QUEUE_TTL_MS}::int * interval '1 millisecond'`,
       ),
     )
     .returning({ id: deployments.id, appId: deployments.appId });

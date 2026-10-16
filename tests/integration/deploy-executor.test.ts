@@ -307,6 +307,38 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect(streamed.filter((e) => e.id === id).at(-1)?.line).toMatch(/ERROR: The executor stopped during compose again/);
     });
 
+    it("a requeued deploy keeps its place in line but its rerun gets a fresh clock, TTL and duration", async () => {
+      const id = await enqueue("a1", "webhook");
+      await sql`update deployment set started_at = now() - interval '25 hours' where id = ${id}`;
+      await claimAll();
+      await enter(id, "build");
+      const mark = `deploy:sweep:running-since:${id}`;
+      store.set(mark, String(Date.now() - 20 * 60_000));
+      await expire(id);
+      await sweeper.sweepExpiredLeases();
+      expect(await row(id)).toMatchObject({ status: "queued", attempts: 1 });
+      expect(store.has(mark)).toBe(false);
+
+      // Queued a day ago, requeued just now: the TTL leaves it.
+      await sweeper.sweepQueuedDeployments();
+      expect((await row(id)).status).toBe("queued");
+
+      await exec.renewNowForTests();
+      await runs.get(id)!.done;
+      await until(() => exec.runningHere(), (ids) => !ids.includes(id));
+      runs.delete(id);
+
+      // Ahead of a push queued after it.
+      await enqueue("a2", "webhook");
+      expect((await q.claimDeploys("x", { capacity: 1 })).map((c) => c.id)).toEqual([id]);
+      await sql`update deployment set stage = 'compose' where id = ${id}`;
+      await expire(id);
+      await sweeper.sweepExpiredLeases();
+      const [failed] = await sql`select status, duration_ms from deployment where id = ${id}`;
+      expect(failed.status).toBe("failed");
+      expect(failed.duration_ms).toBeLessThan(60_000);
+    });
+
     it("requeues a deploy whose executor died before its first stage without using up the rerun", async () => {
       const id = await enqueue("a1", "manual");
       await sql`update deployment set status = 'running', claimed_by = 'gone', lease_expires_at = now() - interval '1 second' where id = ${id}`;
