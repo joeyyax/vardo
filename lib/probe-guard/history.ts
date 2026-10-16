@@ -1,11 +1,12 @@
 // The Security page's range view: counts, recent bans, what was probed and top sources, for one app or all.
 
-import { and, count, desc, eq, gt, gte, inArray, lt, isNull, min, ne, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, lt, isNull, min, ne, notInArray, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { probeBans, probeEvents, user } from "@/lib/db/schema";
 import { bansSince, permanentBanCount } from "./bans";
 import { banDetails } from "./ban-detail";
 import { trapsSince } from "./events";
+import { exemptProbeEvents } from "./exempt-events";
 import { dailyHits, hourlyHits, ruleHits, type DayCount, type RuleHitCounts } from "./hits";
 import { getProbeGuardSettings } from "./instance";
 import { banReports } from "./overview";
@@ -92,6 +93,14 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
   const counted: RuleHitCounts = await ruleHits(appId ?? null, buckets.unit, buckets.count, now).catch(() => ({ counts: {}, since: null }));
   const until = fallbackUntil(since, counted.since, now);
 
+  // Hits recorded before bans' exempt addresses stopped being counted stay in the table and out of the summary.
+  const exempt = await exemptProbeEvents(since, appId).catch(() => ({ ips: [] as string[], count: 0 }));
+  const probeFilters = (extra: SQL[] = []) => {
+    const filters = [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since), ...extra];
+    if (exempt.ips.length > 0) filters.push(notInArray(probeEvents.ip, exempt.ips));
+    return scoped(probeEvents, appId, filters);
+  };
+
   const [bans, traps, permanent, banRows, pathRows, earlierRows, sourceRows, settings] = await Promise.all([
     bansSince(since, appId),
     trapsSince(since, appId),
@@ -119,19 +128,19 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
     db
       .select({ path: probeEvents.path, appId: probeEvents.appId, count: count() })
       .from(probeEvents)
-      .where(scoped(probeEvents, appId, [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since)]))
+      .where(probeFilters())
       .groupBy(probeEvents.path, probeEvents.appId),
     until
       ? db
           .select({ path: probeEvents.path, appId: probeEvents.appId, count: count() })
           .from(probeEvents)
-          .where(scoped(probeEvents, appId, [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since), lt(probeEvents.createdAt, until)]))
+          .where(probeFilters([lt(probeEvents.createdAt, until)]))
           .groupBy(probeEvents.path, probeEvents.appId)
       : Promise.resolve([] as { path: string | null; appId: string | null; count: number }[]),
     db
       .select({ ip: probeEvents.ip, count: count() })
       .from(probeEvents)
-      .where(scoped(probeEvents, appId, [eq(probeEvents.kind, "probe"), gte(probeEvents.createdAt, since)]))
+      .where(probeFilters())
       .groupBy(probeEvents.ip)
       .orderBy(desc(count()))
       .limit(TOP_SOURCES),
@@ -162,7 +171,8 @@ export async function guardHistory(opts: { range: GuardRange; appId?: string; no
     label: rangeLabel(range, now, first.any),
     phrase: rangePhrase(range, now, first.any),
     since,
-    stats: { probes: Math.max(probes, recorded), bans, traps, permanent },
+    // Counters hold no addresses, so older exempt hits come off by the events recorded for them.
+    stats: { probes: Math.max(probes - exempt.count, recorded), bans, traps, permanent },
     bans: banRows.map((b) => ({
       ...b,
       status: banStatus(b, now),

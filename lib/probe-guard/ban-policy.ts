@@ -102,6 +102,15 @@ export function neverBanMatcher(ctx: NeverBanContext = {}): { contains: (ip: str
   return { contains: cidrMatcher(ranges), addrs: ranges.map((r) => parseCidr(r)!.addr) };
 }
 
+/** Whether an address is one Vardo never bans: the same ranges and addresses `neverBanReason` checks. */
+export function neverBanCheck(ctx: NeverBanContext = {}): (raw: string) => boolean {
+  const contains = cidrMatcher(neverBanRanges(ctx));
+  return (raw) => {
+    const ip = normalizeIp(raw);
+    return !!ip && contains(ip);
+  };
+}
+
 /** Ban length for an address with `priorBans` recent bans: doubling from the base, capped. */
 export function banDurationMs(priorBans: number, settings: Pick<InstanceProbeGuard, "banMinutes" | "maxBanHours">): number {
   const base = settings.banMinutes * 60_000;

@@ -4,6 +4,7 @@ import { cidrMatcher } from "@/lib/cloudflare-ips";
 import { getAllowlist } from "./allowlist-store";
 import { getAbuseSettings, getDropRanges } from "./abuse-store";
 import { rangeFinder, type BanRef } from "./block-source";
+import { neverBanCheck } from "./ban-policy";
 import { blockableRanges } from "./blocklist/import";
 
 const TTL_MS = 60_000;
@@ -33,6 +34,29 @@ async function lists(): Promise<Lists> {
 
 export async function isAllowlisted(ip: string): Promise<boolean> {
   return (await lists()).allowed(ip);
+}
+
+type Exempt = { at: number; check: (ip: string) => boolean };
+let exempt: Exempt | null = null;
+let loadingExempt: Promise<Exempt> | null = null;
+
+/** Matches the addresses bans skip: private ranges, Cloudflare, this instance, trusted proxies, linked instances and the allowlist. */
+export async function exemptCheck(): Promise<(ip: string) => boolean> {
+  if (!exempt || Date.now() - exempt.at >= TTL_MS) {
+    loadingExempt ??= import("./bans")
+      .then((m) => m.neverBanContext())
+      .then((ctx) => ({ at: Date.now(), check: neverBanCheck(ctx) }))
+      .finally(() => {
+        loadingExempt = null;
+      });
+    exempt = await loadingExempt;
+  }
+  return exempt.check;
+}
+
+/** Whether an address is one bans skip, so its requests aren't counted either. */
+export async function isExempt(ip: string): Promise<boolean> {
+  return (await exemptCheck())(ip);
 }
 
 /** The DROP range an address is in, or null. */
@@ -68,4 +92,5 @@ export async function banLookup(ips: readonly string[]): Promise<(ip: string) =>
 export function resetClientLists(): void {
   cached = null;
   bans = null;
+  exempt = null;
 }

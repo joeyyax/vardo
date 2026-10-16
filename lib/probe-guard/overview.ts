@@ -10,6 +10,7 @@ import { getProbeGuardSettings } from "./instance";
 import type { BanDetail } from "./summary";
 import { hitsThisWeek } from "./hits";
 import { trapsSince } from "./events";
+import { exemptProbeEvents } from "./exempt-events";
 import { detectWordPress } from "./suggestions";
 
 const WEEK_MS = 7 * 86_400_000;
@@ -18,13 +19,14 @@ export type GuardStats = { probes: number; bans: number; traps: number; permanen
 
 export async function weekStats(appId?: string, now = new Date()): Promise<GuardStats> {
   const since = new Date(now.getTime() - WEEK_MS);
-  const [probes, bans, traps, permanent] = await Promise.all([
+  const [probes, exempt, bans, traps, permanent] = await Promise.all([
     hitsThisWeek(appId ?? null, now).catch(() => 0),
+    exemptProbeEvents(since, appId).catch(() => ({ count: 0 })),
     bansSince(since, appId),
     trapsSince(since, appId),
     permanentBanCount(appId),
   ]);
-  return { probes, bans, traps, permanent };
+  return { probes: Math.max(0, probes - exempt.count), bans, traps, permanent };
 }
 
 /** `reportedTo` is the reporter id that took a report since the ban began. */
