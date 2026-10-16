@@ -260,5 +260,13 @@ export type DeployContext = {
   /** Proxy object for helpers that expect { push }. */
   logs: { push: (line: string) => void };
   logLines: string[];
+  /** The row's log from before this run, such as requeue notes. Kept ahead of `logLines` when saved. */
+  logPrefix?: string;
   startTime: number;
 };
+
+/** The deployment log to save: anything written before this run, then this run's lines. */
+export function savedLog({ logLines, logPrefix }: Pick<DeployContext, "logLines" | "logPrefix">): string {
+  const lines = logLines.join("\n");
+  return logPrefix ? `${logPrefix}\n${lines}` : lines;
+}

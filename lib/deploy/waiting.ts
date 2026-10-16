@@ -147,7 +147,7 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
     SELECT r.id, r.reason, r.wait_reason, r.wait_ahead, r.wait_total, r.wait_eta,
       CASE WHEN r.reason = 'deploy-slot' THEN ${typicalDeploySql(sql`r.app_id`)} END AS typical_ms
     FROM reasons r
-    ORDER BY r.bumped_at DESC NULLS LAST, r.explicit DESC, r.started_at, r.id`);
+    ORDER BY r.app_name = ${VARDO_SELF_APP_NAME} DESC, r.bumped_at DESC NULLS LAST, r.explicit DESC, r.started_at, r.id`);
 
   const line = [...queued].filter((r) => r.reason === "deploy-slot");
   const now = opts.now ?? Date.now();

@@ -1,6 +1,6 @@
 // Runs claimed deploys in this process: lease renewal, cancels, the claim fence and the drain.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, deployments, type DeployCancelReason } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -153,12 +153,13 @@ async function onStage(job: Job, stage: DeployStage): Promise<void> {
   }
 }
 
-/** Fails a claimed row that can't run, such as one whose app is gone. */
+/** Fails a claimed row that can't run, such as one whose app is gone. Appends to the log so far. */
 async function failClaimed(id: string, message: string): Promise<void> {
   const now = new Date();
+  const line = `[${now.toISOString()}] [deploy] ERROR: ${message}`;
   await db
     .update(deployments)
-    .set({ status: "failed", log: `[${now.toISOString()}] [deploy] ERROR: ${message}`, finishedAt: now })
+    .set({ status: "failed", log: sql`coalesce(${deployments.log} || E'\n', '') || ${line}`, finishedAt: now })
     .where(and(eq(deployments.id, id), eq(deployments.claimedBy, executorId()), eq(deployments.status, "running")));
 }
 

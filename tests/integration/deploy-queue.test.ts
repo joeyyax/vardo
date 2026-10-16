@@ -138,6 +138,34 @@ describe.skipIf(!conn)("deploy queue on Postgres", { timeout: MIGRATE_TIMEOUT },
       expect((await q.claimDeploys("worker", { capacity: 5, self: "exclude" })).map((c) => c.id)).toEqual(["other"]);
       expect((await q.claimDeploys("web", { capacity: 5, self: "only" })).map((c) => c.id)).toEqual(["vardo"]);
     });
+
+    it("at capacity 1 a freed slot goes to Vardo's own deploy, whichever claimer runs first", async () => {
+      await seed("build", "a1", "manual", "running", { claimedBy: "worker" });
+      await seed("other", "a2", "manual", "queued", { ageS: 60 });
+      await seed("vardo", "self", "api", "queued", { ageS: 5 });
+      await sql`update deployment set bumped_at = now() where id = 'other'`;
+      await finish("build");
+
+      expect(await q.claimDeploys("worker", { capacity: 1, self: "exclude" })).toEqual([]);
+      expect((await q.claimDeploys("web", { capacity: 1, self: "only" })).map((c) => c.id)).toEqual(["vardo"]);
+      await finish("vardo");
+      expect((await q.claimDeploys("worker", { capacity: 1, self: "exclude" })).map((c) => c.id)).toEqual(["other"]);
+    });
+
+    it("the worker leaves one slot per ready self-deploy and takes the rest", async () => {
+      await seed("vardo", "self", "api", "queued", { ageS: 5 });
+      await seed("o1", "a1", "manual", "queued", { ageS: 30 });
+      await seed("o2", "a2", "manual", "queued", { ageS: 20 });
+      expect((await q.claimDeploys("worker", { capacity: 2, self: "exclude" })).map((c) => c.id)).toEqual(["o1"]);
+    });
+
+    it("one claimer for everything takes Vardo's own first", async () => {
+      await seed("other", "a1", "manual", "queued", { ageS: 60 });
+      await seed("vardo", "self", "api", "queued", { ageS: 5 });
+      await sql`update deployment set bumped_at = now() where id = 'other'`;
+      expect((await q.claimDeploys("w", { capacity: 1 })).map((c) => c.id)).toEqual(["vardo"]);
+      expect((await q.claimDeploys("w", { capacity: 2 })).map((c) => c.id)).toEqual(["other"]);
+    });
   });
 
   describe("enqueue", () => {

@@ -6,7 +6,9 @@ import { db } from "@/lib/db";
 import { workerJobs, type WorkerJobStatus } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { redis } from "@/lib/redis";
+import { waitText } from "@/lib/docker/deploy-logger";
 import { LEASE_RENEW_MS, LEASE_TTL_MS } from "./queue";
+import { workerMissing } from "./waiting";
 
 const log = logger.child("deploy-group-job");
 
@@ -81,13 +83,16 @@ export async function claimGroupJobs(executorId: string, limit: number): Promise
   return [...rows].map((r) => ({ id: r.id, request: r.request }));
 }
 
-/** Extends this executor's group-job leases. */
-export async function renewGroupLeases(executorId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await db
+/** Extends this executor's group-job leases. Returns the ids it no longer holds. */
+export async function renewGroupLeases(executorId: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
     .update(workerJobs)
     .set({ leaseExpiresAt: sql`now() + ${LEASE_TTL_MS}::int * interval '1 millisecond'` })
-    .where(and(inArray(workerJobs.id, ids), eq(workerJobs.claimedBy, executorId), eq(workerJobs.status, "running")));
+    .where(and(inArray(workerJobs.id, ids), eq(workerJobs.claimedBy, executorId), eq(workerJobs.status, "running")))
+    .returning({ id: workerJobs.id });
+  const held = new Set(rows.map((r) => r.id));
+  return ids.filter((id) => !held.has(id));
 }
 
 async function finishGroupJob(id: string, executorId: string, status: WorkerJobStatus): Promise<void> {
@@ -97,22 +102,46 @@ async function finishGroupJob(id: string, executorId: string, status: WorkerJobS
     .where(and(eq(workerJobs.id, id), eq(workerJobs.claimedBy, executorId), eq(workerJobs.status, "running")));
 }
 
-const g = globalThis as unknown as { __vardo_group_jobs?: { jobs: Map<string, Promise<void>>; timer: NodeJS.Timeout | null } };
-const state = (g.__vardo_group_jobs ??= { jobs: new Map(), timer: null });
+type RunningGroupJob = { done: Promise<void>; controller: AbortController };
+
+const g = globalThis as unknown as {
+  __vardo_group_jobs?: { jobs: Map<string, RunningGroupJob>; timer: NodeJS.Timeout | null; executorId: string | null };
+};
+const state = (g.__vardo_group_jobs ??= { jobs: new Map(), timer: null, executorId: null });
 
 /** Group jobs this process runs. */
 export function groupJobsHere(): string[] {
   return [...state.jobs.keys()];
 }
 
+/** Renews leases and stops jobs that lost theirs. Their app deploys carry on. */
+async function renewGroupPass(): Promise<void> {
+  if (!state.executorId) return;
+  try {
+    for (const id of await renewGroupLeases(state.executorId, groupJobsHere())) {
+      const job = state.jobs.get(id);
+      if (!job || job.controller.signal.aborted) continue;
+      log.warn(`Stopping group deploy ${id}: its lease was lost`);
+      job.controller.abort(new Error("The group deploy's lease was lost"));
+    }
+  } catch (err) {
+    log.warn("Couldn't renew group-job leases:", err);
+  }
+}
+
+/** Tests only: one renewal pass now. */
+export function renewGroupNowForTests(): Promise<void> {
+  return renewGroupPass();
+}
+
 /** Runs a claimed group job without waiting for it. */
 export function startGroupJob(job: ClaimedGroupJob, executorId: string): Promise<void> {
+  state.executorId = executorId;
   if (!state.timer) {
-    state.timer = setInterval(() => {
-      void renewGroupLeases(executorId, groupJobsHere()).catch((err) => log.warn("Couldn't renew group-job leases:", err));
-    }, LEASE_RENEW_MS);
+    state.timer = setInterval(() => void renewGroupPass(), LEASE_RENEW_MS);
     state.timer.unref?.();
   }
+  const controller = new AbortController();
   const done = (async () => {
     let status: WorkerJobStatus = "failed";
     try {
@@ -122,13 +151,17 @@ export function startGroupJob(job: ClaimedGroupJob, executorId: string): Promise
         onLog: (app, line) => void addGroupEvent(job.id, "log", { app, line }).catch(() => {}),
         onStage: (app, stage, s) => void addGroupEvent(job.id, "stage", { app, stage, status: s }).catch(() => {}),
         onTier: (tier, apps) => void addGroupEvent(job.id, "tier", { tier, apps }).catch(() => {}),
+        signal: controller.signal,
       });
       status = result.success ? "success" : "failed";
-      await addGroupEvent(job.id, "done", { success: result.success, results: result.results, totalDurationMs: result.totalDurationMs });
+      // The sweeper closed the stream of a job that lost its lease.
+      if (!controller.signal.aborted) {
+        await addGroupEvent(job.id, "done", { success: result.success, results: result.results, totalDurationMs: result.totalDurationMs });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.error(`Group job ${job.id} failed:`, err);
-      await addGroupEvent(job.id, "done", { success: false, error: message, results: [] }).catch(() => {});
+      if (!controller.signal.aborted) await addGroupEvent(job.id, "done", { success: false, error: message, results: [] }).catch(() => {});
     } finally {
       await finishGroupJob(job.id, executorId, status).catch((err) => log.warn(`Couldn't close group job ${job.id}:`, err));
       state.jobs.delete(job.id);
@@ -138,13 +171,13 @@ export function startGroupJob(job: ClaimedGroupJob, executorId: string): Promise
       }
     }
   })();
-  state.jobs.set(job.id, done);
+  state.jobs.set(job.id, { done, controller });
   return done;
 }
 
 /** Waits for the group jobs running here, up to the budget. */
 export async function drainGroupJobs(budgetMs: number): Promise<void> {
-  const pending = [...state.jobs.values()];
+  const pending = [...state.jobs.values()].map((j) => j.done);
   if (pending.length === 0) return;
   let timer: NodeJS.Timeout | undefined;
   await Promise.race([Promise.allSettled(pending), new Promise((r) => (timer = setTimeout(r, budgetMs)))]);
@@ -155,13 +188,15 @@ export async function drainGroupJobs(budgetMs: number): Promise<void> {
 export async function tailGroupJob(
   id: string,
   send: (event: string, data: unknown) => void,
-  opts: { signal?: AbortSignal; pollMs?: number } = {},
+  opts: { signal?: AbortSignal; pollMs?: number; workerMissing?: () => Promise<boolean> } = {},
 ): Promise<void> {
   const { readStream } = await import("@/lib/stream/consumer");
+  const missing = opts.workerMissing ?? workerMissing;
   const reader = new AbortController();
   const stop = () => reader.abort();
   opts.signal?.addEventListener("abort", stop, { once: true });
   let queuedSaid = false;
+  let workerSaid = false;
   // A job that dies without a `done` event ends the tail once its row is terminal.
   const watch = (async () => {
     while (!reader.signal.aborted) {
@@ -170,6 +205,11 @@ export async function tailGroupJob(
       if (row?.status === "queued" && !queuedSaid) {
         queuedSaid = true;
         send("log", { app: "group", line: "[group] Queued" });
+      }
+      // Only the worker claims group jobs.
+      if (row?.status === "queued" && !workerSaid && (await missing())) {
+        workerSaid = true;
+        send("log", { app: "group", line: `[group] ${waitText("worker")}` });
       }
       if (!row || TERMINAL.has(row.status)) {
         await new Promise((r) => setTimeout(r, opts.pollMs ?? 2_000));

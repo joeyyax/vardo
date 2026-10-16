@@ -264,30 +264,40 @@ export function isScopeConflict(err: unknown): boolean {
   return false;
 }
 
-/** Claims queued deploys up to free capacity: one per idle scope, bumped first (latest bump first), then explicit triggers, then oldest. */
+/**
+ * Claims queued deploys up to free capacity: one per idle scope, Vardo's own first, then bumped (latest bump first),
+ * then explicit triggers, then oldest. A claimer that excludes Vardo's own leaves a slot for each one ready to claim.
+ */
 export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Promise<ClaimedDeploy[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
   const leaseMs = opts.leaseMs ?? LEASE_TTL_MS;
   const automatic = sql`d.trigger IN ('webhook', 'relay', 'poll')`;
-  const selfFilter =
-    opts.self === "only"
-      ? sql`AND a.name = ${VARDO_SELF_APP_NAME}`
-      : opts.self === "exclude"
-        ? sql`AND a.name <> ${VARDO_SELF_APP_NAME}`
-        : sql``;
+  const isSelf = sql`a.name = ${VARDO_SELF_APP_NAME}`;
+  const selfFilter = opts.self === "only" ? sql`AND ${isSelf}` : opts.self === "exclude" ? sql`AND NOT ${isSelf}` : sql``;
+  // Queued in a scope nothing runs in.
+  const claimable = sql`
+    d.status = 'queued' AND d.scope_key IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running')
+    -- Delete next release: a pre-queue running row has no scope, so it holds every scope of its app.
+    AND NOT EXISTS (
+      SELECT 1 FROM deployment l
+      WHERE l.app_id = d.app_id AND l.status = 'running' AND l.scope_key IS NULL AND l.claimed_by IS NULL
+    )`;
 
   try {
     const claimed = await db.transaction(async (tx) => {
       await lockClaims(tx);
 
-      const [state] = await tx.execute<{ running: number; exclusive: boolean }>(sql`
+      const [state] = await tx.execute<{ running: number; exclusive: boolean; self_ready: number }>(sql`
         SELECT
           (SELECT count(*)::int FROM deployment WHERE status = 'running') AS running,
           EXISTS (
             SELECT 1 FROM deployment
             WHERE exclusive_requested_at > now() - ${EXCLUSIVE_MAX_AGE_MS}::int * interval '1 millisecond'
-          ) AS exclusive`);
-      const free = capacity - state.running;
+          ) AS exclusive,
+          (SELECT count(DISTINCT d.scope_key)::int FROM deployment d JOIN app a ON a.id = d.app_id
+           WHERE ${claimable} AND ${isSelf}) AS self_ready`);
+      const free = capacity - state.running - (opts.self === "exclude" ? state.self_ready : 0);
       if (state.exclusive || free <= 0) return [];
 
       return tx.execute<{
@@ -300,26 +310,21 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
         scope_key: string;
         request: DeployRequest | null;
         attempts: number;
+        is_self: boolean;
         explicit: boolean;
         waited: boolean;
         started_at: Date;
         bumped_at: Date | null;
       }>(sql`
         WITH heads AS (
-          SELECT DISTINCT ON (d.scope_key) d.id, NOT ${automatic} AS explicit, d.started_at, d.bumped_at
+          SELECT DISTINCT ON (d.scope_key) d.id, ${isSelf} AS is_self, NOT ${automatic} AS explicit, d.started_at, d.bumped_at
           FROM deployment d JOIN app a ON a.id = d.app_id
-          WHERE d.status = 'queued' AND d.scope_key IS NOT NULL ${selfFilter}
-            AND NOT EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running')
-            -- Delete next release: a pre-queue running row has no scope, so it holds every scope of its app.
-            AND NOT EXISTS (
-              SELECT 1 FROM deployment l
-              WHERE l.app_id = d.app_id AND l.status = 'running' AND l.scope_key IS NULL AND l.claimed_by IS NULL
-            )
+          WHERE ${claimable} ${selfFilter}
           ORDER BY d.scope_key, d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id
         ), picked AS (
-          SELECT d.id, h.explicit, h.bumped_at, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
+          SELECT d.id, h.is_self, h.explicit, h.bumped_at, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
           WHERE d.status = 'queued'
-          ORDER BY h.bumped_at DESC NULLS LAST, h.explicit DESC, h.started_at, h.id
+          ORDER BY h.is_self DESC, h.bumped_at DESC NULLS LAST, h.explicit DESC, h.started_at, h.id
           LIMIT ${free}
           FOR UPDATE OF d SKIP LOCKED
         )
@@ -338,12 +343,13 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           bumped_at = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,
-          d.scope_key, d.request, d.attempts, picked.explicit, picked.waited, d.started_at, picked.bumped_at`);
+          d.scope_key, d.request, d.attempts, picked.is_self, picked.explicit, picked.waited, d.started_at, picked.bumped_at`);
     });
 
     return [...claimed]
       .sort(
         (a, b) =>
+          Number(b.is_self) - Number(a.is_self) ||
           (b.bumped_at ? +new Date(b.bumped_at) : 0) - (a.bumped_at ? +new Date(a.bumped_at) : 0) ||
           Number(b.explicit) - Number(a.explicit) ||
           +new Date(a.started_at) - +new Date(b.started_at),

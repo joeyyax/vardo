@@ -5,12 +5,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 import type { DeployOpts, DeployResult } from "@/lib/docker/deploy";
+import type { GroupDeployOpts, GroupDeployResult } from "@/lib/docker/deploy-group";
 import { ownSlot } from "@/lib/docker/own-slot";
 
-const { store, engine, streamed } = vi.hoisted(() => ({
+const { store, engine, streamed, groupEvents, group } = vi.hoisted(() => ({
   store: new Map<string, string>(),
   streamed: [] as { id: string; line: string }[],
   engine: { run: null as null | ((id: string, opts: DeployOpts) => Promise<DeployResult>) },
+  groupEvents: [] as { key: string; event: string }[],
+  group: { run: null as null | ((opts: GroupDeployOpts) => Promise<GroupDeployResult>) },
 }));
 
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
@@ -30,7 +33,7 @@ vi.mock("@/lib/redis", () => {
         const p = { set: (k: string, v: string, ...a: unknown[]) => (ops.push(() => set(k, v, ...a)), p), exec: () => Promise.all(ops.map((o) => o())) };
         return p;
       },
-      xadd: async () => "1-0",
+      xadd: async (key: string, ...args: string[]) => (groupEvents.push({ key, event: args[args.indexOf("event") + 1] }), "1-0"),
       pexpire: async () => 1,
     },
   };
@@ -38,6 +41,13 @@ vi.mock("@/lib/redis", () => {
 vi.mock("@/lib/docker/deploy", () => ({
   runDeployment: (id: string, opts: DeployOpts) => engine.run!(id, opts),
   stopProject: vi.fn(async () => ({ success: true, log: "" })),
+}));
+vi.mock("@/lib/docker/deploy-group", () => ({ deployGroup: (opts: GroupDeployOpts) => group.run!(opts) }));
+vi.mock("@/lib/stream/consumer", () => ({
+  // An empty stream that ends when the reader stops.
+  readStream: async function* (_key: string, { signal }: { signal: AbortSignal }) {
+    await new Promise((r) => signal.addEventListener("abort", r, { once: true }));
+  },
 }));
 vi.mock("@/lib/docker/rollback-monitor", () => ({
   performRollback: vi.fn(),
@@ -258,6 +268,22 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
     });
   });
 
+  describe("engine errors", () => {
+    it("a deploy whose engine throws fails with the error appended to the log so far", async () => {
+      const id = await enqueue("a1", "manual");
+      const [claimed] = await q.claimDeploys(exec.executorId(), { capacity: 1 });
+      await exec.startClaimed(claimed, {
+        run: async () => {
+          await sql`update deployment set log = ${"[deploy] Cloning\n[deploy] Building"} where id = ${id}`;
+          throw new Error("disk full");
+        },
+      });
+      const failed = await row(id);
+      expect(failed.status).toBe("failed");
+      expect(failed.log.split("\n")).toEqual(["[deploy] Cloning", "[deploy] Building", expect.stringMatching(/\[deploy\] ERROR: disk full$/)]);
+    });
+  });
+
   describe("claim scope", () => {
     it("the console claims only Vardo's own deploys, the worker everything else", async () => {
       const app = await enqueue("a1", "manual");
@@ -307,6 +333,38 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect(streamed.filter((e) => e.id === id).at(-1)?.line).toMatch(/ERROR: The executor stopped during compose again/);
     });
 
+    it("a requeued deploy keeps its place in line but its rerun gets a fresh clock, TTL and duration", async () => {
+      const id = await enqueue("a1", "webhook");
+      await sql`update deployment set started_at = now() - interval '25 hours' where id = ${id}`;
+      await claimAll();
+      await enter(id, "build");
+      const mark = `deploy:sweep:running-since:${id}`;
+      store.set(mark, String(Date.now() - 20 * 60_000));
+      await expire(id);
+      await sweeper.sweepExpiredLeases();
+      expect(await row(id)).toMatchObject({ status: "queued", attempts: 1 });
+      expect(store.has(mark)).toBe(false);
+
+      // Queued a day ago, requeued just now: the TTL leaves it.
+      await sweeper.sweepQueuedDeployments();
+      expect((await row(id)).status).toBe("queued");
+
+      await exec.renewNowForTests();
+      await runs.get(id)!.done;
+      await until(() => exec.runningHere(), (ids) => !ids.includes(id));
+      runs.delete(id);
+
+      // Ahead of a push queued after it.
+      await enqueue("a2", "webhook");
+      expect((await q.claimDeploys("x", { capacity: 1 })).map((c) => c.id)).toEqual([id]);
+      await sql`update deployment set stage = 'compose' where id = ${id}`;
+      await expire(id);
+      await sweeper.sweepExpiredLeases();
+      const [failed] = await sql`select status, duration_ms from deployment where id = ${id}`;
+      expect(failed.status).toBe("failed");
+      expect(failed.duration_ms).toBeLessThan(60_000);
+    });
+
     it("requeues a deploy whose executor died before its first stage without using up the rerun", async () => {
       const id = await enqueue("a1", "manual");
       await sql`update deployment set status = 'running', claimed_by = 'gone', lease_expires_at = now() - interval '1 second' where id = ${id}`;
@@ -335,6 +393,21 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       await expire(id);
       await sweeper.sweepExpiredLeases();
       expect(await row(id)).toMatchObject({ status: "failed", attempts: 0 });
+    });
+
+    it("fails an in-process rollback whose process died instead of requeuing it, and requeues a queued one", async () => {
+      // As an instant or auto-rollback writes it: running, claimed, no stage and no target.
+      await sql`insert into deployment (id, app_id, trigger, status, scope_key, claimed_by, lease_expires_at, log)
+                values ('instant', 'a1', 'rollback', 'running', 'a1', 'gone', now() - interval '1 second', '[rollback] Instant rollback in progress')`;
+      const queued = await enqueue("a2", "rollback", { rollback: { targetDeploymentId: "earlier" } });
+      await sql`update deployment set status = 'running', claimed_by = 'gone', lease_expires_at = now() - interval '1 second' where id = ${queued}`;
+
+      await sweeper.sweepExpiredLeases();
+      const instant = await row("instant");
+      expect(instant.status).toBe("failed");
+      expect(instant.log).toMatch(/ERROR: The process running this rollback stopped/);
+      expect(await row(queued)).toMatchObject({ status: "queued", request: { rollback: { targetDeploymentId: "earlier" } } });
+      expect(await claimAll()).toEqual([queued]);
     });
 
     it("leaves a deploy whose lease is current", async () => {
@@ -564,6 +637,63 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       await sweeper.sweepGroupJobs();
       const [job] = await sql`select status from worker_job where id = ${id}`;
       expect(job.status).toBe("failed");
+    });
+
+    it("a group job that lost its lease starts no further tier and leaves the sweeper's done event", async () => {
+      const g = await import("@/lib/deploy/group-job");
+      const tiers: number[] = [];
+      let signal: AbortSignal | undefined;
+      // Tier 0 runs until aborted; the next tier checks the signal first, as deployGroup does.
+      group.run = async (opts) => {
+        signal = opts.signal;
+        tiers.push(0);
+        await new Promise((r) => opts.signal?.addEventListener("abort", r, { once: true }));
+        if (opts.signal?.aborted) throw new Error("Group deployment aborted");
+        tiers.push(1);
+        return { success: true, results: [], totalDurationMs: 1 };
+      };
+      const id = await g.enqueueGroupDeploy({ projectId: "p1", organizationId: "o1", trigger: "manual" });
+      const [job] = await g.claimGroupJobs("x", 1);
+      const done = g.startGroupJob(job, "x");
+      await until(() => tiers.length, (n) => n === 1);
+
+      await g.renewGroupNowForTests();
+      expect(signal?.aborted).toBe(false);
+
+      await sql`update worker_job set lease_expires_at = now() - interval '1 second' where id = ${id}`;
+      await sweeper.sweepGroupJobs();
+      await g.renewGroupNowForTests();
+      await until(() => signal?.aborted, Boolean, 1_000);
+      await done;
+
+      expect(tiers).toEqual([0]);
+      expect(groupEvents.filter((e) => e.key === g.groupStream(id) && e.event === "done")).toHaveLength(1);
+      expect(g.groupJobsHere()).toEqual([]);
+      const [row] = await sql`select status from worker_job where id = ${id}`;
+      expect(row.status).toBe("failed");
+    });
+
+    it("a queued group job's stream says when it waits for the worker", async () => {
+      const g = await import("@/lib/deploy/group-job");
+      const waitLine = "[group] Waiting for the worker. Deploys start when it's back";
+      const tail = async (missing: boolean) => {
+        const id = await g.enqueueGroupDeploy({ projectId: "p1", organizationId: "o1", trigger: "manual" });
+        const lines: string[] = [];
+        const reader = new AbortController();
+        const done = g.tailGroupJob(id, (_event, data) => lines.push((data as { line: string }).line), {
+          signal: reader.signal,
+          pollMs: 20,
+          workerMissing: async () => missing,
+        });
+        await until(() => lines, (l) => l.includes("[group] Queued"));
+        await new Promise((r) => setTimeout(r, 100));
+        reader.abort();
+        await done;
+        await sql`delete from worker_job where id = ${id}`;
+        return lines;
+      };
+      expect(await tail(true)).toEqual(["[group] Queued", waitLine]);
+      expect(await tail(false)).toEqual(["[group] Queued"]);
     });
   });
 
