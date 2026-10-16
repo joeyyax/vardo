@@ -202,4 +202,33 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
       expect(await takeCatchUpRequest()).toBe(false);
     });
   });
+
+  describe("worker presence", () => {
+    const beat = (id: string, ago: string, draining = false) =>
+      sql`insert into worker (id, role, heartbeat_at, draining_at)
+          values (${id}, 'all', now() - ${ago}::interval, ${draining ? sql`now()` : null})`;
+    const ids = async () => (await sql`select id from worker order by id`).map((r) => r.id);
+
+    it("prunes rows that stopped beating a day ago and keeps a draining worker that still beats", async () => {
+      const presence = await import("@/lib/worker/presence");
+      await sql`delete from worker`;
+      await beat("gone-2d", "2 days", true);
+      await beat("gone-25h", "25 hours");
+      await beat("stopped-23h", "23 hours", true);
+      await beat("draining", "5 seconds", true);
+
+      expect(await presence.pruneWorkers()).toBe(2);
+      expect(await ids()).toEqual(["draining", "stopped-23h"]);
+    });
+
+    it("keeps the newest row when every worker is long gone", async () => {
+      const presence = await import("@/lib/worker/presence");
+      await sql`delete from worker`;
+      await beat("gone-3d", "3 days");
+      await beat("gone-2d", "2 days");
+
+      expect(await presence.pruneWorkers()).toBe(1);
+      expect(await ids()).toEqual(["gone-2d"]);
+    });
+  });
 });

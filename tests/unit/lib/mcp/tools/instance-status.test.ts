@@ -24,8 +24,11 @@ vi.mock("@/lib/attention/infrastructure", () => ({ getInfrastructureSnapshot: h.
 vi.mock("@/lib/attention/infrastructure-rows", () => ({ infrastructureRows: () => [] }));
 vi.mock("@/lib/incidents/host", () => ({ listOpenHostIncidents: h.incidents }));
 vi.mock("@/lib/worker/status", () => ({ readLoopStatus: h.loops }));
-vi.mock("@/lib/worker/mode", () => ({ workerMode: () => "external", workerExpected: () => true }));
-vi.mock("@/lib/worker/presence", () => ({ isPresent: () => true, readWorkers: h.workers }));
+vi.mock("@/lib/worker/mode", () => ({ workerMode: () => "external", workerExpected: () => true, WORKER_FRESH_MS: 90_000 }));
+vi.mock("@/lib/worker/presence", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/worker/presence")>()),
+  readWorkers: h.workers,
+}));
 vi.mock("@/lib/worker/watch", () => ({ readHostHeartbeats: h.heartbeats, watchdogSilent: () => false }));
 vi.mock("@/lib/self-update/runner", () => ({ UpdateBlockedError: h.UpdateBlockedError }));
 vi.mock("@/lib/self-update/update-now", () => ({ updateNow: h.updateNow }));
@@ -122,6 +125,25 @@ describe("vardo_instance_status", () => {
     expect(body.worker).toMatchObject({ ready: true, watchdog: { silent: false } });
     expect(body.worker.workers[0]).toMatchObject({ id: "w1", inFlight: ["backup-tick"] });
     expect(body.hostIncidents).toEqual([{ kind: "host.worker-down", title: "Worker is down", severity: "critical", openedAt: NOW.toISOString() }]);
+  });
+
+  it("lists live and recently stopped workers, newest beat first, and drops long-stopped ones", async () => {
+    const worker = (id: string, beatAgoMin: number, draining: boolean) => ({
+      id, role: "all", slot: "blue", gitSha: "abc", startedAt: NOW, readyAt: NOW,
+      heartbeatAt: new Date(NOW.getTime() - beatAgoMin * 60_000),
+      drainingAt: draining ? NOW : null,
+      inFlight: [],
+    });
+    h.workers.mockResolvedValue({
+      now: NOW,
+      rows: [worker("stopped-2h", 120, true), worker("stopped-20m", 20, true), worker("draining", 0, true), worker("live", 0.1, false)],
+    });
+    const body = toolBody(await tools().get("vardo_instance_status")!({}));
+    expect(body.worker.workers.map((w: { id: string; present: boolean }) => [w.id, w.present])).toEqual([
+      ["draining", false],
+      ["live", true],
+      ["stopped-20m", false],
+    ]);
   });
 
   it("reports a failing section instead of failing the call", async () => {

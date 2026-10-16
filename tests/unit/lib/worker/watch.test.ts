@@ -9,6 +9,7 @@ vi.mock("@/lib/db", () => ({ db: { execute: vi.fn(async () => [{ at: null }]) } 
 vi.mock("@/lib/incidents/host", () => ({ syncHostProblem: sync }));
 vi.mock("@/lib/worker/presence", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/worker/presence")>()),
+  pruneWorkers: async () => 0,
   readWorkers: async () => ({
     now: hb.now,
     rows: hb.workerAt ? [{ heartbeatAt: hb.workerAt, readyAt: hb.workerAt, drainingAt: null }] : [],

@@ -1,4 +1,4 @@
-// This host's worker and watchdog as web sees them: incidents when either goes quiet.
+// This host's worker and watchdog as web sees them: incidents when either goes quiet, and long-gone worker rows pruned.
 
 import { stat } from "fs/promises";
 import { sql } from "drizzle-orm";
@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger";
 import { WATCHDOG_ALIVE_FILE } from "@/lib/system-alerts/watchdog-events";
 import { IntervalLoop } from "./interval-loop";
 import { HANDOFF_CHECK_MS, WATCHDOG_SILENT_AFTER_MS, WORKER_DOWN_AFTER_MS, workerExpected } from "./mode";
-import { readWorkers, summarizeWorkers, type WorkerSummary } from "./presence";
+import { pruneWorkers, readWorkers, summarizeWorkers, type WorkerSummary } from "./presence";
 
 const log = logger.child("worker-watch");
 
@@ -82,6 +82,8 @@ export async function workerWatchPass(): Promise<void> {
     silent,
     "The watchdog is checking again.",
   );
+  const pruned = await pruneWorkers();
+  if (pruned > 0) log.info(`Pruned ${pruned} worker row(s) that stopped beating a day ago`);
 }
 
 export const workerWatchLoop = new IntervalLoop({
