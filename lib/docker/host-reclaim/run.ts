@@ -17,6 +17,7 @@ import {
 } from "../client";
 import { BUILD_CACHE_MAX_BYTES } from "../constants";
 import { isDeployQueueIdleInDb } from "@/lib/deploy/queue";
+import { noDeployCanRun } from "@/lib/deploy/waiting";
 import { PRUNE_LOCK_KEY } from "../prune-lock";
 import { olderThan, selectUnusedImages, staleOneOffs, type ImageSelection } from "./policy";
 import { loadProtection } from "./protect";
@@ -96,7 +97,8 @@ export async function runHostReclaim(trigger: ReclaimTrigger, now = Date.now()):
 
   const config = await getHostReclaimConfig();
   if (!config.enabled && trigger !== "manual") return finish("Turned off");
-  if (!(await isDeployQueueIdleInDb())) return finish("Deploys in flight", false);
+  // Deploys queued behind a missing worker can't start, so they don't hold the host.
+  if (!(await isDeployQueueIdleInDb()) && !(await noDeployCanRun())) return finish("Deploys in flight", false);
   const lock = await acquireLock(PRUNE_LOCK_KEY, RECLAIM_LOCK_TTL_MS);
   if (!lock) return finish("Another prune is running", false);
 

@@ -1,18 +1,34 @@
 // Worker rows: each worker's heartbeat, readiness and drain state. Every time comes from the database clock.
 
-import { eq, lt, sql } from "drizzle-orm";
+import { and, eq, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { workers, type WorkerRow } from "@/lib/db/schema";
 import { WORKER_FRESH_MS } from "./mode";
 
-/** Rows older than this are pruned when a worker registers. */
+/** Rows that last beat longer ago than this are pruned. */
 const PRUNE_AFTER_MS = 24 * 60 * 60_000;
+/** A stopped worker stays listed this long after its last beat. */
+const LISTED_AFTER_STOP_MS = 60 * 60_000;
 
 export type WorkerIdentity = { id: string; role: string; slot: string | null; gitSha: string | null };
 
+/** Deletes rows that stopped beating PRUNE_AFTER_MS ago. The newest stays, so an outage keeps its start. */
+export async function pruneWorkers(): Promise<number> {
+  const gone = await db
+    .delete(workers)
+    .where(
+      and(
+        lt(workers.heartbeatAt, sql`now() - ${PRUNE_AFTER_MS}::int * interval '1 millisecond'`),
+        ne(workers.id, sql`(SELECT id FROM worker ORDER BY heartbeat_at DESC LIMIT 1)`),
+      ),
+    )
+    .returning({ id: workers.id });
+  return gone.length;
+}
+
 /** Records a starting worker and prunes long-gone ones. */
 export async function registerWorker(w: WorkerIdentity): Promise<void> {
-  await db.delete(workers).where(lt(workers.heartbeatAt, sql`now() - ${PRUNE_AFTER_MS}::int * interval '1 millisecond'`));
+  await pruneWorkers();
   await db
     .insert(workers)
     .values({ id: w.id, role: w.role, slot: w.slot, gitSha: w.gitSha, startedAt: sql`now()`, heartbeatAt: sql`now()` })
@@ -50,6 +66,13 @@ type Presence = Pick<WorkerRow, "heartbeatAt" | "readyAt" | "drainingAt">;
 /** Beat within the window, booted and not draining: a worker web can hand its loops to. */
 export function isPresent(row: Presence, now: Date, freshMs = WORKER_FRESH_MS): boolean {
   return now.getTime() - row.heartbeatAt.getTime() < freshMs && !!row.readyAt && !row.drainingAt;
+}
+
+/** Workers that beat within LISTED_AFTER_STOP_MS, newest beat first. */
+export function recentWorkers<T extends Pick<WorkerRow, "heartbeatAt">>(rows: T[], now: Date): T[] {
+  return rows
+    .filter((row) => now.getTime() - row.heartbeatAt.getTime() < LISTED_AFTER_STOP_MS)
+    .sort((a, b) => b.heartbeatAt.getTime() - a.heartbeatAt.getTime());
 }
 
 export type WorkerSummary = {

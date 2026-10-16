@@ -8,7 +8,7 @@ import { listOpenHostIncidents } from "@/lib/incidents/host";
 import { getUpdateStatus } from "@/lib/self-update/status";
 import { readLoopStatus } from "@/lib/worker/status";
 import { workerExpected, workerMode } from "@/lib/worker/mode";
-import { isPresent, readWorkers } from "@/lib/worker/presence";
+import { isPresent, readWorkers, recentWorkers } from "@/lib/worker/presence";
 import { readHostHeartbeats, watchdogSilent } from "@/lib/worker/watch";
 import type { McpAuthContext } from "../auth";
 import { canAdminInstance } from "../scope";
@@ -90,7 +90,7 @@ async function workerSection() {
     lastWorkerBeat: iso(beats.workerAt),
     lastConsoleBeat: iso(beats.consoleAt),
     watchdog: { lastTick: iso(beats.watchdogAt), silent: watchdogSilent(beats.watchdogAt, now) },
-    workers: rows.map((w) => ({
+    workers: recentWorkers(rows, now).map((w) => ({
       id: w.id,
       role: w.role,
       slot: w.slot,
@@ -117,7 +117,7 @@ export function registerInstanceStatusTools(server: McpServer, context: McpAuthC
 
   server.tool(
     "vardo_instance_status",
-    "Instance health in one call: version and self-update status, service and resource health, core service problems, worker and watchdog state and open host incidents. Needs a token with the admin scope.",
+    "Instance health in one call: version and self-update status, service and resource health, core service problems, worker and watchdog state (live workers and those stopped in the last hour) and open host incidents. Needs a token with the admin scope.",
     {},
     async () => {
       if (!(await canAdminInstance(context))) return failure(ADMIN_FORBIDDEN_MESSAGE);
