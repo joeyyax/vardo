@@ -42,7 +42,8 @@ import {
 } from "@/lib/crypto/deploy-key";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "../compat";
 import { checkoutCommit } from "./checkout-sha";
-import { withRegistryAuth } from "../registry-auth";
+import { buildRegistryOps, withRegistryAuth } from "../registry-auth";
+import type { RegistryOps } from "../build-registry";
 import {
   APP_UID,
   GIT_CLONE_TIMEOUT,
@@ -325,12 +326,13 @@ type RepoBuildEngine = "dockerfile" | "railpack" | "nixpacks";
 /** How many earlier deploys with the same key to look through for an image still on the host. */
 const REUSE_LOOKBACK = 10;
 
-/** Tags this app's newest image built with `key` as `imageName`. Null when none is left on the host. */
-async function reuseImage(
+/** Tags this app's newest image built with `key` as `imageName`, from the host or else the build registry. Null when neither has it. */
+export async function reuseImage(
   ctx: DeployContext,
   key: string,
   imageName: string,
-): Promise<{ id: string; buildPlan: BuildPlanRecord | null } | null> {
+  registry: RegistryOps | null,
+): Promise<{ id: string | null; buildPlan: BuildPlanRecord | null } | null> {
   try {
     const rows = await db.query.deployments.findMany({
       where: and(eq(deployments.appId, ctx.appId), eq(deployments.buildKey, key), ne(deployments.id, ctx.deploymentId)),
@@ -344,9 +346,17 @@ async function reuseImage(
         execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT })
           .then(() => true, () => false),
     );
-    if (!found) return null;
-    await execFileAsync("docker", ["tag", found.image, imageName], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT });
-    return { id: found.id, buildPlan: rows.find((r) => r.id === found.id)?.buildPlan ?? null };
+    if (found) {
+      await execFileAsync("docker", ["tag", found.image, imageName], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT });
+      return { id: found.id, buildPlan: rows.find((r) => r.id === found.id)?.buildPlan ?? null };
+    }
+    if (!registry) return null;
+    const ref = registry.ref(ctx.app.name, key);
+    if (!(await registry.pull(ref))) return null;
+    await execFileAsync("docker", ["tag", ref, imageName], { env: dockerEnv(), timeout: GIT_METADATA_TIMEOUT });
+    await registry.untag(ref);
+    ctx.log(`[build] Pulled ${ref} from the build registry`);
+    return { id: null, buildPlan: rows[0]?.buildPlan ?? null };
   } catch (err) {
     ctx.log(`[build] Couldn't reuse an earlier image, building: ${err instanceof Error ? err.message : err}`);
     return null;
@@ -846,10 +856,13 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             })
           : undefined;
       let key = await keyFor();
-      const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName) : null;
+      const registry = key ? await buildRegistryOps(log, signal) : null;
+      const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName, registry) : null;
 
       if (reused) {
-        log(`[build] Reused image from deploy ${reused.id.slice(0, 8)}, nothing build-relevant changed`);
+        log(reused.id
+          ? `[build] Reused image from deploy ${reused.id.slice(0, 8)}, nothing build-relevant changed`
+          : `[build] Reused the build registry's image, nothing build-relevant changed`);
         if (reused.buildPlan) {
           await db.update(deployments).set({ buildPlan: reused.buildPlan }).where(eq(deployments.id, ctx.deploymentId))
             .catch(() => log(`[build] Couldn't save the build plan`));
@@ -907,6 +920,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw buildErr;
           }
         }
+        if (registry && key) (ctx.registryPushes ??= []).push(registry.push(imageName, registry.ref(app.name, key)));
       }
 
       if (key) {

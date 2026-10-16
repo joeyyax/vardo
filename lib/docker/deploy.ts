@@ -565,6 +565,7 @@ export async function runDeployment(
     await recordSelfUpdate(ctx, { state: "started" });
     ctx = await swap(ctx);
     ctx = await postDeploy(ctx);
+    if (ctx.registryPushes?.length) await Promise.all(ctx.registryPushes);
 
     const timingLine = formatTimings(timer.snapshot());
     if (timingLine) log(timingLine);

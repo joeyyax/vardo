@@ -14,6 +14,15 @@ const { getRegistryCredentials } = vi.hoisted(() => ({
 
 vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials }));
 
+const { getBuildRegistry } = vi.hoisted(() => ({
+  getBuildRegistry: vi.fn(async () => null as null | { host: string; prefix: string; credential: { username: string; password: string } | null }),
+}));
+
+vi.mock("@/lib/docker/build-registry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/docker/build-registry")>()),
+  getBuildRegistry,
+}));
+
 const { buildDockerConfig, registryAuthHint, withRegistryAuth } = await import(
   "@/lib/docker/registry-auth"
 );
@@ -25,6 +34,7 @@ const originalDockerConfig = process.env.DOCKER_CONFIG;
 beforeEach(async () => {
   vi.clearAllMocks();
   getRegistryCredentials.mockResolvedValue({});
+  getBuildRegistry.mockResolvedValue(null);
   const { mkdtemp } = await import("fs/promises");
   const { tmpdir } = await import("os");
   const { join } = await import("path");
@@ -88,6 +98,19 @@ describe("withRegistryAuth", () => {
     expect(seen.dir).not.toBe(emptyConfigDir);
     expect(seen.config.auths["ghcr.io"].auth).toBe(Buffer.from("svc:s3cret").toString("base64"));
     expect(seen.mode).toBe(0o600);
+  });
+
+  it("adds the build registry's login, which wins for its host", async () => {
+    getRegistryCredentials.mockResolvedValue({ "localhost:5001": { username: "old", password: "old" } });
+    getBuildRegistry.mockResolvedValue({
+      host: "localhost:5001",
+      prefix: "localhost:5001/vardo",
+      credential: { username: "builder", password: "tok" },
+    });
+
+    const config = await withRegistryAuth(async (env) => JSON.parse(await readFile(`${env.DOCKER_CONFIG}/config.json`, "utf-8")));
+
+    expect(config.auths["localhost:5001"].auth).toBe(Buffer.from("builder:tok").toString("base64"));
   });
 
   it("removes the config once the command returns", async () => {
