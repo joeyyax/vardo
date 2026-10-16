@@ -2,7 +2,7 @@
 
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "./interval-loop";
-import { HANDOFF_CHECK_MS, WEB_RESUME_AFTER_MS, loopsInWeb, type LoopsInWeb } from "./mode";
+import { HANDOFF_CHECK_MS, WEB_RESUME_AFTER_MS, loopsInWeb, webLoopsEnabled, type LoopsInWeb } from "./mode";
 import { isPresent, readWorkers } from "./presence";
 import type { LoopEntry } from "./registry";
 import { isDeferrable, startLoops, stopLoops, type StartLoopsOptions } from "./start";
@@ -90,6 +90,10 @@ export async function handoffPass(now = Date.now()): Promise<HandoffAction> {
  * ones stay stopped from the start.
  */
 export async function startWebLoops(ready?: StartLoopsOptions["ready"]): Promise<void> {
+  if (!webLoopsEnabled()) {
+    log.info("Background loops off in development; set VARDO_DEV_WORKERS=1 to start them");
+    return;
+  }
   shared.ready = ready;
   const mode = loopsInWeb();
   let deferNow = mode === "never";
