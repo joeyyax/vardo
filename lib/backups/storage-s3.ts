@@ -54,12 +54,6 @@ export function partQueueFor(partSize: number): number {
   return Math.max(2, Math.min(PART_QUEUE, Math.floor(SLOT_BUFFER_BYTES / partSize)));
 }
 
-/** Backup slots an upload with `partSize` parts needs: one, plus one per slot's memory its buffers pass the first slot's by. */
-export function uploadSlotWeight(partSize: number): number {
-  const over = partSize * partQueueFor(partSize) - SLOT_BUFFER_BYTES;
-  return 1 + Math.max(0, Math.ceil(over / (BACKUP_SLOT_FORMULA.slotMb * MiB)));
-}
-
 export type S3StorageConfig = {
   bucket: string;
   region: string;
@@ -128,8 +122,11 @@ export class S3BackupStorage implements BackupStorage {
     return key;
   }
 
+  /** One slot, plus one per slot's memory the part buffers pass the first slot's by. */
   slotWeight(expectedBytes: number | null | undefined): number {
-    return uploadSlotWeight(this.partSize ?? choosePartSize(expectedBytes));
+    const partSize = this.partSize ?? choosePartSize(expectedBytes);
+    const over = partSize * partQueueFor(partSize) - SLOT_BUFFER_BYTES;
+    return 1 + Math.max(0, Math.ceil(over / (BACKUP_SLOT_FORMULA.slotMb * MiB)));
   }
 
   /** One PUT under a part's size, otherwise a multipart upload that aborts on any failure. */
