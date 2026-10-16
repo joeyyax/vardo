@@ -706,12 +706,12 @@ describe("self-preview with a flag off", () => {
     vi.clearAllMocks();
   });
 
-  it.each(["previews", "selfManagement"])("refuses to build when %s is off", async (flag) => {
+  it.each(["previews", "selfManagement", "selfPreviews"])("refuses to build when %s is off", async (flag) => {
     vi.mocked(isFeatureEnabledAsync).mockImplementation(async (f) => f !== flag);
 
     await expect(
       createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo" }),
-    ).rejects.toThrow(/Previews and Self-management/);
+    ).rejects.toThrow(/Vardo previews need/);
     expect(execFileAsyncMock).not.toHaveBeenCalled();
   });
 

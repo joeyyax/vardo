@@ -66,8 +66,13 @@ export async function createVardoPreview(
 ): Promise<VardoPreviewResult> {
   const { prNumber, branch, repoFullName } = opts;
 
-  if (!(await isFeatureEnabledAsync("previews")) || !(await isFeatureEnabledAsync("selfManagement"))) {
-    throw new Error("Vardo previews need both Previews and Self-management enabled");
+  const flags = await Promise.all([
+    isFeatureEnabledAsync("previews"),
+    isFeatureEnabledAsync("selfManagement"),
+    isFeatureEnabledAsync("selfPreviews"),
+  ]);
+  if (!flags.every(Boolean)) {
+    throw new Error("Vardo previews need PR previews, Self-management and Vardo previews enabled");
   }
 
   // Used in filesystem paths and container names.

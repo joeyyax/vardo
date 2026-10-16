@@ -130,7 +130,8 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
   if (isFeatureEnabled("selfManagement")) {
     const vardoApp = await getSystemManagedApp(repoFullName);
     if (vardoApp) {
-      if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
+      const selfPreviews = previewsEnabled && (await isFeatureEnabledAsync("selfPreviews"));
+      if (selfPreviews && (action === "opened" || action === "reopened" || action === "synchronize")) {
         try {
           const result = await createVardoPreview({ prNumber, branch, repoFullName });
           void previewLive(repoFullName, prNumber, [{ appName: "vardo", domain: result.domain }]);
@@ -152,7 +153,7 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
       }
       return NextResponse.json({
         ok: true,
-        skipped: previewsEnabled ? `PR action: ${action}` : "previews disabled",
+        skipped: selfPreviews ? `PR action: ${action}` : "Vardo previews disabled",
       });
     }
   }
