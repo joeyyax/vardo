@@ -1,9 +1,9 @@
 // The page's payload, built from settings and the latest results.
 
-import { computeLevel, countStates, nextSteps, summarizeLevels } from "./level";
+import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
-import { effectiveHosting, getTrustSettings, providerLabel, readResults } from "./store";
-import { CHECKS, type CheckState, type Level } from "./types";
+import { effectiveHosting, getTrustSettings, providerLabel, readHistory, readResults } from "./store";
+import { BANDS, CHECKS, type Band, type CheckState } from "./types";
 
 export type TrustView = {
   visibility: "off" | "private";
@@ -14,16 +14,19 @@ export type TrustView = {
     source: "detected" | "manual";
     certification: { standard: string; number: string | null; url: string; state: CheckState; evidence: string } | null;
   } | null;
-  checks: { id: string; level: Level; title: string; state: CheckState; evidence: string; checkedAt: string | null }[];
-  levels: ReturnType<typeof summarizeLevels>;
-  level: Level | null;
+  checks: { id: string; weight: number; earned: number; title: string; state: CheckState; evidence: string; checkedAt: string | null }[];
+  score: { score: number; max: number; unverified: number; band: Band | null; bandLabel: string | null; bands: { band: Band; label: string; at: number }[] };
   counts: Record<CheckState, number>;
-  steps: { id: string; level: Level; fix: string; effort: string; href: string; action: string; state: CheckState; evidence: string }[];
+  steps: { id: string; gain: number; fix: string; effort: string; href: string; action: string; state: CheckState; evidence: string }[];
+  history: { days: { day: string; score: number; max: number }[]; changes: { at: string; text: string }[] };
   lastRunAt: string | null;
 };
 
+const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
+
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results] = await Promise.all([getTrustSettings(), readResults()]);
+  const [settings, results, runs] = await Promise.all([getTrustSettings(), readResults(), readHistory()]);
+  const score = computeScore(results);
   const hosting = effectiveHosting(settings);
   const provider = hosting ? findProvider(hosting.provider) : null;
   const lastRun = results.reduce<Date | null>((latest, r) => (r.checkedAt && (!latest || r.checkedAt > latest) ? r.checkedAt : latest), null);
@@ -42,14 +45,24 @@ export async function buildTrustView(): Promise<TrustView> {
             : null,
         }
       : null,
-    checks: CHECKS.map((c) => {
-      const r = byId.get(c.id);
-      return { id: c.id, level: c.level, title: c.title, state: r?.state ?? "unknown", evidence: r?.evidence ?? "Not checked yet.", checkedAt: r?.checkedAt?.toISOString() ?? null };
+    checks: score.lines.map((l) => {
+      const r = byId.get(l.check.id);
+      return { id: l.check.id, weight: l.check.weight, earned: l.earned, title: l.check.title, state: l.state, evidence: r?.evidence ?? "Not checked yet.", checkedAt: r?.checkedAt?.toISOString() ?? null };
     }),
-    levels: summarizeLevels(results),
-    level: computeLevel(results),
+    score: {
+      score: score.score,
+      max: score.max,
+      unverified: score.unverified,
+      band: score.band,
+      bandLabel: BANDS.find((b) => b.band === score.band)?.label ?? null,
+      bands: BANDS.map((b) => ({ band: b.band, label: b.label, at: Math.ceil(score.max * b.share) })),
+    },
     counts: countStates(results),
-    steps: nextSteps(results).map((s) => ({ id: s.check.id, level: s.check.level, fix: s.fix, effort: s.check.effort, href: s.check.href, action: s.check.action, state: s.state, evidence: s.evidence })),
+    steps: nextSteps(results).map((s) => ({ id: s.check.id, gain: s.gain, fix: s.fix, effort: s.check.effort, href: s.check.href, action: s.check.action, state: s.state, evidence: s.evidence })),
+    history: {
+      days: dailyLast(runs).map((r) => ({ day: r.ranAt.toISOString(), score: r.score, max: r.max })),
+      changes: historyChanges(runs, titleOf).map((c) => ({ at: c.at.toISOString(), text: c.text })),
+    },
     lastRunAt: lastRun?.toISOString() ?? null,
   };
 }

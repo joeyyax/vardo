@@ -981,6 +981,13 @@
       "when": 1792182672596,
       "tag": "0139_busy_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1792184935872,
+      "tag": "0140_puzzling_maginty",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { apps, backupJobs, backups, backupTargets, domains, passkey, user } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { scheduleIntervalMs } from "@/lib/backups/staleness";
+import { githubGet } from "@/lib/github-api";
 import { getUpdateStatus } from "@/lib/self-update/status";
 import { probeCertificate } from "@/lib/system-alerts/cert-probe";
 import { evaluateCertExpiry } from "@/lib/system-alerts/cert-expiry";
@@ -28,12 +29,14 @@ import {
   type UpdateReading,
 } from "./judge";
 import { judgeProviderCert } from "./hosting";
-import { effectiveHosting, getTrustSettings, saveDetectedHosting, writeResults } from "./store";
+import { computeScore } from "./score";
+import { effectiveHosting, getTrustSettings, recordRun, saveDetectedHosting, writeResults } from "./store";
 import { CHECK_IDS, type CheckId, type Judgement } from "./types";
 
 const log = logger.child("trust");
 
 const DAY_MS = 86_400_000;
+const UPDATE_REPO = "joeyyax/vardo";
 const PROBE_CONCURRENCY = 5;
 
 async function readHttps(): Promise<Judgement> {
@@ -119,11 +122,32 @@ async function readProtected(): Promise<Judgement> {
   );
 }
 
-async function readUpdated(): Promise<Judgement> {
+/** When the commit was made. The update status carries no dates, so this asks GitHub. */
+async function readCommitTime(sha: string): Promise<Date | null> {
+  try {
+    const res = await githubGet(UPDATE_REPO, `/commits/${sha}`, "application/vnd.github+json");
+    if (!res.ok) return null;
+    const raw = (JSON.parse(res.text) as { commit?: { committer?: { date?: string } } }).commit?.committer?.date;
+    const date = raw ? new Date(raw) : null;
+    return date && !Number.isNaN(date.getTime()) ? date : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readUpdated(now: Date): Promise<Judgement> {
   const status = await getUpdateStatus();
   let reading: UpdateReading;
   if (status.update?.hasUpdate) {
-    reading = { kind: "behind", version: status.current.version, target: status.update.targetLabel, mode: status.policy.mode === "auto" ? "automatic" : status.policy.mode === "notify" ? "notify only" : "off" };
+    const auto = status.policy.mode === "auto";
+    reading = {
+      kind: "behind",
+      version: status.current.version,
+      target: status.update.targetLabel,
+      mode: auto ? "automatic" : status.policy.mode === "notify" ? "notify only" : "off",
+      auto,
+      targetCommittedAt: auto ? await readCommitTime(status.update.targetSha) : null,
+    };
   } else if (status.update) {
     reading = { kind: "current", version: status.current.version };
   } else if (status.noRelease) {
@@ -133,7 +157,7 @@ async function readUpdated(): Promise<Judgement> {
   } else {
     reading = { kind: "unknown", reason: "This build has no commit to compare against the channel." };
   }
-  return judgeUpdated(reading);
+  return judgeUpdated(reading, now);
 }
 
 async function readTwoStep(): Promise<Judgement> {
@@ -200,7 +224,7 @@ export async function runChecks(now = new Date()): Promise<void> {
     https: readHttps,
     "nightly-backups": () => readNightly(now),
     "backups-protected": readProtected,
-    "vardo-updated": readUpdated,
+    "vardo-updated": () => readUpdated(now),
     "two-step": readTwoStep,
     "probe-guard": readProbeGuard,
     "restore-tested": () => readRestoreTested(now),
@@ -209,5 +233,7 @@ export async function runChecks(now = new Date()): Promise<void> {
   };
 
   const entries = await Promise.all(CHECK_IDS.map(async (id) => [id, await guarded(id, readers[id])] as const));
-  await writeResults(Object.fromEntries(entries) as Record<CheckId, Judgement>, now);
+  const judged = Object.fromEntries(entries) as Record<CheckId, Judgement>;
+  await writeResults(judged, now);
+  await recordRun(computeScore(CHECK_IDS.map((id) => ({ id, ...judged[id], checkedAt: now }))), now);
 }

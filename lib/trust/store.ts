@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, gte, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { trustChecks, trustSettings } from "@/lib/db/schema";
+import { trustChecks, trustRuns, trustSettings } from "@/lib/db/schema";
 import { findProvider, manualHosting, type Hosting } from "./hosting";
+import { weightsOf, type HistoryRun, type Score } from "./score";
 import { CHECK_IDS, VISIBILITIES, type CheckId, type CheckResult, type CheckState, type Judgement, type Visibility } from "./types";
 
 const ROW_ID = "instance";
@@ -56,19 +57,38 @@ export async function readResults(): Promise<CheckResult[]> {
   const known = new Set<string>(CHECK_IDS);
   return rows
     .filter((r) => known.has(r.id))
-    .map((r) => ({ id: r.id as CheckId, state: r.state as CheckState, evidence: r.evidence, fix: r.fix, checkedAt: r.checkedAt }));
+    .map((r) => ({ id: r.id as CheckId, state: r.state as CheckState, evidence: r.evidence, fix: r.fix, credit: r.credit, checkedAt: r.checkedAt }));
 }
 
 export async function writeResults(results: Record<CheckId, Judgement>, at = new Date()): Promise<void> {
   for (const id of CHECK_IDS) {
-    const { state, evidence, fix = null } = results[id];
+    const { state, evidence, fix = null, credit = null } = results[id];
     await db
       .insert(trustChecks)
-      .values({ id, state, evidence, fix, checkedAt: at })
-      .onConflictDoUpdate({ target: trustChecks.id, set: { state, evidence, fix, checkedAt: at } });
+      .values({ id, state, evidence, fix, credit, checkedAt: at })
+      .onConflictDoUpdate({ target: trustChecks.id, set: { state, evidence, fix, credit, checkedAt: at } });
   }
+}
+
+export const HISTORY_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+/** Stores the run's score and check weights, and drops runs older than the history window. */
+export async function recordRun(score: Pick<Score, "score" | "max">, at = new Date()): Promise<void> {
+  await db.insert(trustRuns).values({ ranAt: at, score: score.score, max: score.max, weights: weightsOf() });
+  await db.delete(trustRuns).where(lt(trustRuns.ranAt, new Date(at.getTime() - (HISTORY_DAYS + 1) * DAY_MS)));
+}
+
+export async function readHistory(now = new Date()): Promise<HistoryRun[]> {
+  const rows = await db
+    .select()
+    .from(trustRuns)
+    .where(gte(trustRuns.ranAt, new Date(now.getTime() - HISTORY_DAYS * DAY_MS)))
+    .orderBy(asc(trustRuns.ranAt));
+  return rows.map((r) => ({ ranAt: r.ranAt, score: r.score, max: r.max, weights: r.weights }));
 }
 
 export async function clearResults(): Promise<void> {
   await db.delete(trustChecks);
+  await db.delete(trustRuns);
 }
