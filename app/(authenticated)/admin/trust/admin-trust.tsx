@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { StatusMark, type StatusDotTone } from "@/components/ui/status-dot";
 import { toast } from "@/lib/messenger";
 import { cn } from "@/lib/utils";
-import { LEVEL_LABELS, type CheckState } from "@/lib/trust/types";
+import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
 
 const ENDPOINT = "/api/v1/admin/trust";
@@ -27,13 +27,6 @@ const STATE_MARK: Record<CheckState, { tone: StatusDotTone; pending?: boolean; l
   failing: { tone: "issue", label: "Failing" },
   unknown: { tone: "neutral", pending: true, label: "Unknown" },
 };
-
-const LEVEL_DESCRIPTIONS = {
-  basic: "Contact listed, HTTPS on every domain",
-  good: "Backups, updates, sign-in and probe guard",
-  better: "Restore tests and disk encryption",
-  great: "Provider certification covers your location",
-} as const;
 
 const VISIBILITY_OPTIONS = [
   { value: "off", label: "Off", hint: "No checks run." },
@@ -59,17 +52,29 @@ function CheckRow({ state, title, evidence, aside }: { state: CheckState; title:
   );
 }
 
-function levelSummary(view: TrustView): string {
-  const next = view.levels.find((l) => !l.complete);
-  if (!next) return "Every check passes.";
-  const open = view.checks.filter((c) => c.level === next.level && c.state !== "passing");
-  const unknown = open.filter((c) => c.state === "unknown").length;
-  const failing = open.length - unknown;
-  const parts = [
-    failing ? `${failing} ${failing === 1 ? "check" : "checks"} not passing` : "",
-    unknown ? `${unknown} Vardo can't verify` : "",
-  ].filter(Boolean);
-  return `${LEVEL_LABELS[next.level]} needs ${open.length} more: ${parts.join(", ")}.`;
+function points(n: number): string {
+  return String(Number(n.toFixed(1)));
+}
+
+function shortDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function Sparkline({ days }: { days: TrustView["history"]["days"] }) {
+  const w = 240;
+  const h = 40;
+  const lo = Math.min(...days.map((d) => d.score));
+  const span = Math.max(1, Math.max(...days.map((d) => d.score)) - lo);
+  const x = (i: number) => (days.length === 1 ? w / 2 : (i / (days.length - 1)) * w);
+  const y = (score: number) => h - 3 - ((score - lo) / span) * (h - 6);
+  const line = days.map((d, i) => `${x(i).toFixed(1)},${y(d.score).toFixed(1)}`).join(" ");
+  const last = days[days.length - 1];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-10 w-full max-w-60 overflow-visible text-muted-foreground" role="img" aria-label={`Score over ${days.length} days, ${points(days[0].score)} to ${points(last.score)}`}>
+      <polyline points={line} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={x(days.length - 1)} cy={y(last.score)} r="2.5" className="fill-foreground" />
+    </svg>
+  );
 }
 
 export function AdminTrust() {
@@ -145,7 +150,7 @@ export function AdminTrust() {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="type-h2">Trust center</h2>
-          <p className="text-sm text-muted-foreground">Checks this instance against four levels and lists what&apos;s missing. Admins only.</p>
+          <p className="text-sm text-muted-foreground">Scores this instance on weighted checks and lists what&apos;s missing. Admins only.</p>
         </div>
         {on && (
           <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
@@ -198,33 +203,32 @@ export function AdminTrust() {
         <>
           <Card variant="surface" className="space-y-4 p-5">
             <div>
-              <div className="text-xs font-medium text-muted-foreground">Your level <span className="font-normal">· only admins see this</span></div>
-              <div className="type-h1">{view.level ? LEVEL_LABELS[view.level] : "Not yet Basic"}</div>
-              <p className="text-sm text-muted-foreground">{levelSummary(view)}</p>
+              <div className="text-xs font-medium text-muted-foreground">Your score <span className="font-normal">· only admins see this</span></div>
+              <div className="type-h1 tabular-nums">
+                {view.score.score} of {view.score.max}
+                {view.score.bandLabel && <span className="text-muted-foreground"> · {view.score.bandLabel}</span>}
+              </div>
+              {view.score.unverified > 0 && (
+                <p className="text-sm text-muted-foreground">{view.score.unverified} points not verified.</p>
+              )}
             </div>
-            <div className="grid gap-3 sm:grid-cols-4">
-              {view.levels.map((l) => {
-                const current = view.level === l.level;
-                return (
-                  <div key={l.level} className="space-y-1.5">
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-                      <div className={cn("h-full rounded-full", l.complete ? "bg-success" : "bg-muted-foreground/45")} style={{ width: `${(l.passing / l.total) * 100}%` }} />
-                    </div>
-                    <div className={cn("flex justify-between text-sm", current ? "font-semibold" : "font-medium")}>
-                      <span>{LEVEL_LABELS[l.level]}</span>
-                      <span className="text-muted-foreground tabular-nums">{l.passing}/{l.total}</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">{LEVEL_DESCRIPTIONS[l.level]}</div>
-                  </div>
-                );
-              })}
+            <div className="relative pb-5">
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                <div className="h-full rounded-full bg-success" style={{ width: `${(view.score.score / view.score.max) * 100}%` }} />
+              </div>
+              {view.score.bands.map((b) => (
+                <div key={b.band} className="absolute top-0 text-xs text-muted-foreground" style={{ left: `${(b.at / view.score.max) * 100}%` }}>
+                  <span className="absolute -top-0.5 left-0 h-2.5 w-px bg-border" aria-hidden />
+                  <span className={cn("absolute left-0 top-3 -translate-x-1/2 whitespace-nowrap", b.band === view.score.band && "font-semibold text-foreground")}>{b.label}</span>
+                </div>
+              ))}
             </div>
           </Card>
 
           <Card variant="surface" className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="type-h3">Next steps</h3>
-              <p className="text-xs text-muted-foreground">{view.steps.length ? "In level order" : "Nothing is failing."}</p>
+              <p className="text-xs text-muted-foreground">{view.steps.length ? "Most points first" : "Nothing is failing."}</p>
             </div>
             {view.steps.length > 0 && (
               <ul className="mt-2 divide-y">
@@ -237,7 +241,7 @@ export function AdminTrust() {
                     aside={
                       <>
                         <span>{s.effort}</span>
-                        <span className="rounded-full bg-muted px-2 py-0.5 font-medium">{LEVEL_LABELS[s.level]}</span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 font-medium tabular-nums">+{points(s.gain)} points</span>
                         <Button asChild variant="outline" size="xs">
                           {s.href.startsWith("#") ? <a href={s.href}>{s.action}</a> : <Link href={s.href}>{s.action}</Link>}
                         </Button>
@@ -309,6 +313,34 @@ export function AdminTrust() {
             </Card>
           </div>
 
+          <Card variant="surface" className="space-y-3 p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="type-h3">History</h3>
+              <p className="text-xs text-muted-foreground">Last 30 days</p>
+            </div>
+            {view.history.days.length < 2 ? (
+              <p className="text-sm text-muted-foreground">The chart shows once two days have results.</p>
+            ) : (
+              <div className="space-y-1">
+                <Sparkline days={view.history.days} />
+                <div className="flex max-w-60 justify-between text-xs text-muted-foreground tabular-nums">
+                  <span>{shortDay(view.history.days[0].day)} · {points(view.history.days[0].score)}</span>
+                  <span>{shortDay(view.history.days[view.history.days.length - 1].day)} · {points(view.history.days[view.history.days.length - 1].score)}</span>
+                </div>
+              </div>
+            )}
+            {view.history.changes.length > 0 && (
+              <ul className="divide-y text-sm">
+                {[...view.history.changes].reverse().map((c, i) => (
+                  <li key={`${c.at}-${i}`} className="flex justify-between gap-3 py-2">
+                    <span>{c.text}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{shortDay(c.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           <Card variant="surface" className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="type-h3">All checks</h3>
@@ -318,7 +350,7 @@ export function AdminTrust() {
             </div>
             <ul className="mt-2 divide-y">
               {view.checks.map((c) => (
-                <CheckRow key={c.id} state={c.state} title={c.title} evidence={c.evidence} aside={<span>{checkedAt(c.checkedAt)}</span>} />
+                <CheckRow key={c.id} state={c.state} title={c.title} evidence={c.evidence} aside={<><span className="tabular-nums">{points(c.earned)} of {c.weight}</span><span>{checkedAt(c.checkedAt)}</span></>} />
               ))}
             </ul>
           </Card>

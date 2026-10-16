@@ -6,7 +6,7 @@ import { GitHubError, githubGet, resetGitHubApiState } from "@/lib/github-api";
 
 const log = logger.child("version");
 
-const GITHUB_REPO = "joeyyax/vardo";
+export const GITHUB_REPO = "joeyyax/vardo";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 type CacheEntry = {

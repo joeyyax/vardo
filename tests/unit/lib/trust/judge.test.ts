@@ -34,14 +34,29 @@ describe("judgeHttps", () => {
       { ...ok("a.dev"), expiresAt: new Date("2027-01-02T00:00:00Z") },
       { ...ok("b.dev"), expiresAt: new Date("2026-11-28T00:00:00Z") },
     ]);
-    expect(j).toEqual({ state: "passing", evidence: "2 of 2 valid. Soonest expiry Nov 28." });
+    expect(j).toMatchObject({ state: "passing", credit: 1, evidence: "2 of 2 valid. Soonest expiry Nov 28." });
   });
   it("is partial with one invalid among valid, failing with none valid", () => {
     expect(judgeHttps([ok("a.dev"), { domain: "b.dev", tls: "invalid", expiresAt: null }]).state).toBe("partial");
     expect(judgeHttps([{ domain: "b.dev", tls: "no-https", expiresAt: null }]).state).toBe("failing");
   });
-  it("is unknown, not passing, when a domain didn't answer", () => {
-    expect(judgeHttps([ok("a.dev"), { domain: "b.dev", tls: "unreachable", expiresAt: null }]).state).toBe("unknown");
+  it("counts only answered domains and says how many didn't answer", () => {
+    const silent = { domain: "x.dev", tls: "unreachable" as const, expiresAt: null };
+    const domains = [...Array.from({ length: 42 }, (_, i) => ok(`d${i}.dev`)), ...Array.from({ length: 5 }, () => silent)];
+    const j = judgeHttps(domains);
+    expect(j.state).toBe("passing");
+    expect(j.evidence.startsWith("42 of 42 valid. 5 domains didn't answer on port 443.")).toBe(true);
+  });
+  it("is partial with credit valid over answered when an answered domain is invalid", () => {
+    const j = judgeHttps([ok("a.dev"), ok("b.dev"), ok("c.dev"), { domain: "d.dev", tls: "invalid", expiresAt: null }, { domain: "e.dev", tls: "unreachable", expiresAt: null }]);
+    expect(j.state).toBe("partial");
+    expect(j.credit).toBeCloseTo(0.75);
+    expect(j.evidence).toContain("3 of 4 valid. 1 domain didn't answer");
+  });
+  it("is unknown, earning nothing, when no domain answered", () => {
+    const j = judgeHttps([{ domain: "b.dev", tls: "unreachable", expiresAt: null }]);
+    expect(j.state).toBe("unknown");
+    expect(j.credit).toBeUndefined();
   });
 });
 
@@ -69,6 +84,7 @@ describe("judgeNightlyBackups", () => {
   it("is partial when some jobs pass", () => {
     const j = judgeNightlyBackups([job([{ status: "success", h: 3 }]), job([{ status: "failed", h: 3 }])], now);
     expect(j.state).toBe("partial");
+    expect(j.credit).toBe(0.5);
   });
   it("widens the window for a weekly job", () => {
     const weekly = job([{ status: "success", h: 100 }], { intervalMs: 7 * 86_400_000 });
@@ -78,25 +94,42 @@ describe("judgeNightlyBackups", () => {
 
 describe("judgeBackupsProtected", () => {
   const job = (latest: { encrypted: boolean; offHost: boolean } | null) => ({ name: "j", enabled: true, latest });
-  it("passes only when encrypted and off the host", () => {
-    expect(judgeBackupsProtected([job({ encrypted: true, offHost: true })]).state).toBe("passing");
-    expect(judgeBackupsProtected([job({ encrypted: true, offHost: false })]).state).toBe("failing");
-    expect(judgeBackupsProtected([job({ encrypted: false, offHost: true })]).state).toBe("failing");
+  const both = { encrypted: true, offHost: true };
+  it("passes with full credit only when encrypted and off the host", () => {
+    expect(judgeBackupsProtected([job(both)])).toMatchObject({ state: "passing", credit: 1 });
   });
-  it("is partial when one job is protected and another isn't", () => {
-    expect(judgeBackupsProtected([job({ encrypted: true, offHost: true }), job({ encrypted: false, offHost: true })]).state).toBe("partial");
+  it("averages the encrypted and off-host fractions", () => {
+    expect(judgeBackupsProtected([job({ encrypted: true, offHost: false })])).toMatchObject({ state: "partial", credit: 0.5 });
+    expect(judgeBackupsProtected([job(both), job({ encrypted: false, offHost: true }), job({ encrypted: false, offHost: true }), job(both)])).toMatchObject({ state: "partial", credit: 0.75 });
   });
-  it("is unknown when no job has an archive, partial when only some lack one", () => {
+  it("fails with no credit when nothing is encrypted or off the host", () => {
+    expect(judgeBackupsProtected([job({ encrypted: false, offHost: false })])).toMatchObject({ state: "failing", credit: 0 });
+  });
+  it("counts a job without an archive as unprotected, and is unknown when none has one", () => {
     expect(judgeBackupsProtected([job(null)]).state).toBe("unknown");
-    expect(judgeBackupsProtected([job({ encrypted: true, offHost: true }), job(null)]).state).toBe("partial");
+    expect(judgeBackupsProtected([job(both), job(null)])).toMatchObject({ state: "partial", credit: 0.5 });
   });
 });
 
 describe("judgeUpdated", () => {
+  const behind = (over: Partial<{ auto: boolean; targetCommittedAt: Date | null }> = {}) => ({
+    kind: "behind" as const, version: "1.0", target: "abc1234", mode: "automatic", auto: true, targetCommittedAt: hoursAgo(2), ...over,
+  });
   it("fails when the channel is ahead and unknown when it can't be read", () => {
-    expect(judgeUpdated({ kind: "behind", version: "1.0", target: "1.1", mode: "notify only" }).state).toBe("failing");
-    expect(judgeUpdated({ kind: "unknown", reason: "x" }).state).toBe("unknown");
-    expect(judgeUpdated({ kind: "current", version: "1.0" }).state).toBe("passing");
+    expect(judgeUpdated(behind({ auto: false }), now).state).toBe("failing");
+    expect(judgeUpdated({ kind: "unknown", reason: "x" }, now).state).toBe("unknown");
+    expect(judgeUpdated({ kind: "current", version: "1.0" }, now).state).toBe("passing");
+  });
+  it("passes when auto-update is on and the newer commit is under 24 hours old", () => {
+    expect(judgeUpdated(behind(), now).state).toBe("passing");
+    expect(judgeUpdated(behind({ targetCommittedAt: hoursAgo(23.9) }), now).state).toBe("passing");
+  });
+  it("fails once the commit is 24 hours old, or when its age is unknown", () => {
+    expect(judgeUpdated(behind({ targetCommittedAt: hoursAgo(24) }), now).state).toBe("failing");
+    expect(judgeUpdated(behind({ targetCommittedAt: null }), now).state).toBe("failing");
+  });
+  it("fails a fresh commit when updates aren't automatic", () => {
+    expect(judgeUpdated(behind({ auto: false }), now).state).toBe("failing");
   });
 });
 
@@ -105,6 +138,7 @@ describe("judgeTwoStep", () => {
     const j = judgeTwoStep([{ twoFactor: true, passkeys: 0 }, { twoFactor: false, passkeys: 2 }, { twoFactor: false, passkeys: 0 }]);
     expect(j.state).toBe("partial");
     expect(j.evidence).toContain("2 of 3 members");
+    expect(j.credit).toBeCloseTo(2 / 3);
   });
   it("is unknown with no members", () => {
     expect(judgeTwoStep([]).state).toBe("unknown");
@@ -117,7 +151,7 @@ describe("judgeProbeGuard", () => {
   });
   it("tallies apps", () => {
     expect(judgeProbeGuard({ apps: 3, enabled: 3, keyAvailable: true }).state).toBe("passing");
-    expect(judgeProbeGuard({ apps: 3, enabled: 1, keyAvailable: true }).state).toBe("partial");
+    expect(judgeProbeGuard({ apps: 3, enabled: 1, keyAvailable: true })).toMatchObject({ state: "partial", credit: 1 / 3 });
     expect(judgeProbeGuard({ apps: 3, enabled: 0, keyAvailable: true }).state).toBe("failing");
     expect(judgeProbeGuard({ apps: 0, enabled: 0, keyAvailable: true }).state).toBe("unknown");
   });
@@ -135,7 +169,7 @@ describe("judgeRestoreTested", () => {
     expect(judgeRestoreTested(jobs, [drill("a", "x", 2), drill("b", "y", 6)], now).state).toBe("passing");
   });
   it("fails a job whose verification is 8 days old or failed", () => {
-    expect(judgeRestoreTested(jobs, [drill("a", "x", 2), drill("b", "y", 8)], now).state).toBe("partial");
+    expect(judgeRestoreTested(jobs, [drill("a", "x", 2), drill("b", "y", 8)], now)).toMatchObject({ state: "partial", credit: 0.5 });
     expect(judgeRestoreTested(jobs, [drill("a", "x", 1, "failed"), drill("b", "y", 1, "failed")], now).state).toBe("failing");
   });
   it("needs every volume of a job verified", () => {

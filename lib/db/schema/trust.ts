@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Text columns: adding a visibility or check state needs no migration.
 
@@ -22,5 +22,17 @@ export const trustChecks = pgTable("trust_check", {
   evidence: text("evidence").notNull(),
   /** The next-step title when the state needs one other than the check's default. */
   fix: text("fix"),
+  /** Share of the check's weight earned, 0 to 1. Set on partial results. */
+  credit: real("credit"),
   checkedAt: timestamp("checked_at").defaultNow().notNull(),
+});
+
+/** One row per check run: the score, the maximum and each check's weight at the time. */
+export const trustRuns = pgTable("trust_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ranAt: timestamp("ran_at").defaultNow().notNull(),
+  score: integer("score").notNull(),
+  max: integer("max").notNull(),
+  /** Check id to weight, for every check that ran. */
+  weights: jsonb("weights").$type<Record<string, number>>().notNull(),
 });
