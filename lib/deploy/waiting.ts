@@ -1,6 +1,6 @@
 // What a deploy waits on, kept on its row and its stream.
 
-import { and, count, eq, inArray, isNotNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -43,6 +43,26 @@ export async function deploysWaitingForWorker(organizationId?: string): Promise<
       ),
     );
   return row?.n ?? 0;
+}
+
+/** No deploy runs and none can start: the worker is missing and every queued deploy needs it. Fails closed. */
+export async function noDeployCanRun(): Promise<boolean> {
+  if (!(await workerMissing())) return false;
+  try {
+    const [row] = await db
+      .select({ n: count() })
+      .from(deployments)
+      .leftJoin(apps, eq(apps.id, deployments.appId))
+      .where(
+        or(
+          eq(deployments.status, "running"),
+          and(eq(deployments.status, "queued"), or(isNull(apps.name), eq(apps.name, VARDO_SELF_APP_NAME))),
+        ),
+      );
+    return row?.n === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Records a running deploy's own wait on its row. `restart` stamps a new start time. */

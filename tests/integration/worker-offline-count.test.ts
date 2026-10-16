@@ -1,4 +1,4 @@
-// Deploys queued behind a missing worker, per org and instance-wide, against a scratch database.
+// Deploys queued behind a missing worker, per org and instance-wide, and whether any deploy can run, against a scratch database.
 // Skips without a Postgres it can create databases on: MIGRATE_TEST_ADMIN_URL, DATABASE_URL or a DATABASE_URL line in .env.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,10 @@ import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
-vi.mock("@/lib/worker/presence", () => ({ readWorkers: async () => ({ now: new Date(), rows: [] }) }));
+const workers = vi.hoisted(() => ({ beating: false }));
+vi.mock("@/lib/worker/presence", () => ({
+  readWorkers: async () => ({ now: new Date(), rows: workers.beating ? [{ heartbeatAt: new Date(), drainingAt: null }] : [] }),
+}));
 
 const conn = await connectScratchServer();
 
@@ -45,5 +48,23 @@ describe.skipIf(!conn)("deploysWaitingForWorker on Postgres", { timeout: MIGRATE
     expect(await w.deploysWaitingForWorker("o1")).toBe(2);
     expect(await w.deploysWaitingForWorker("o2")).toBe(1);
     expect(await w.deploysWaitingForWorker()).toBe(3);
+  });
+
+  it("finds no deploy can run only when none runs and every queued one needs the missing worker", async () => {
+    try {
+      // d3 runs.
+      expect(await w.noDeployCanRun()).toBe(false);
+      await sql`update deployment set status = 'success' where id = 'd3'`;
+      // Vardo's own d5 runs in web.
+      expect(await w.noDeployCanRun()).toBe(false);
+      await sql`update deployment set status = 'cancelled' where id = 'd5'`;
+      expect(await w.noDeployCanRun()).toBe(true);
+      workers.beating = true;
+      expect(await w.noDeployCanRun()).toBe(false);
+    } finally {
+      workers.beating = false;
+      await sql`update deployment set status = 'running' where id = 'd3'`;
+      await sql`update deployment set status = 'queued' where id = 'd5'`;
+    }
   });
 });
