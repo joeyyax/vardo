@@ -9,7 +9,7 @@ export const PROVISIONED_COLLECTOR_URL = "http://collector:9273";
 export const COLLECTOR_TOKEN_KEY = "collector_token";
 
 /** Provisioned when `VARDO_COLLECTOR_IMAGE` is unset. */
-export const DEFAULT_COLLECTOR_IMAGE = "ghcr.io/joeyyax/collector:0.3.1";
+export const DEFAULT_COLLECTOR_IMAGE = "ghcr.io/joeyyax/collector:0.4.0";
 
 export type CollectorMode =
   | { kind: "off" }
