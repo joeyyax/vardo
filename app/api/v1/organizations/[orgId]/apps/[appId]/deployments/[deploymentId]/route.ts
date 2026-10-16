@@ -31,11 +31,16 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
     const deployment = await db.query.deployments.findFirst({
       where: and(eq(deployments.id, deploymentId), eq(deployments.appId, appId)),
-      columns: { id: true },
+      columns: { id: true, status: true, trigger: true, request: true },
     });
 
     if (!deployment) {
       return apiError.notFound("deployment");
+    }
+
+    // Instant and auto-rollbacks run in-process outside the queue and never read the cancel flag.
+    if (deployment.status === "running" && deployment.trigger === "rollback" && !deployment.request?.rollback) {
+      return NextResponse.json({ error: "A rollback in progress can't be cancelled. It finishes on its own." }, { status: 409 });
     }
 
     const outcome = await requestCancel(deploymentId, "user");

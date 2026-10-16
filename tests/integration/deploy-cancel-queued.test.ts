@@ -94,6 +94,25 @@ describe.skipIf(!conn)("cancelling a queued deploy on Postgres", { timeout: MIGR
     expect(row.cancel_reason).toBe("user");
   });
 
+  it("refuses a running instant or auto-rollback and leaves it unflagged", async () => {
+    await sql`insert into deployment (id, app_id, trigger, status, scope_key, claimed_by) values ('rb1', 'app1', 'rollback', 'running', 'app1', 'web-1')`;
+
+    const res = await del("rb1");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/can't be cancelled/);
+    const [row] = await sql`select status, cancel_requested_at from deployment where id = 'rb1'`;
+    expect(row).toEqual({ status: "running", cancel_requested_at: null });
+  });
+
+  it("still cancels a queued rollback, which runs as a deploy", async () => {
+    const { id } = await q.enqueueDeploy({ appId: "app1", trigger: "rollback", rollback: { targetDeploymentId: "d0" } });
+    await q.claimDeploys("exec-1");
+
+    const res = await del(id);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, cancelling: true });
+  });
+
   it("a finished deployment can't be cancelled", async () => {
     const { id } = await q.enqueueDeploy({ appId: "app1", trigger: "manual" });
     await sql`update deployment set status = 'success' where id = ${id}`;
