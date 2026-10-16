@@ -10,7 +10,9 @@ import { composeImageName, planComposeReuse, writeBuildKeysFile } from "./compos
 import { serviceRepo, type RegistryOps } from "./build-registry";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
-import { withBuildSlot } from "./build-gate";
+import { withBuildSlot, type BuildPlacement } from "./build-gate";
+import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
+import { TARGET_BUILD, bringBack } from "./remote-build";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -45,7 +47,9 @@ export type ComposeBuildOpts = {
   /** Opens a `build-slot` wait while the build queues for the builder. */
   wait?: WaitWriter;
   /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
-  gate?: <T>(run: () => Promise<T>) => Promise<T>;
+  gate?: <T>(run: (placement?: BuildPlacement) => Promise<T>) => Promise<T>;
+  /** Targets the build may run on when every service to build is keyed for the registry. */
+  targets?: BuildTarget[];
   /** Build registry: keyed images are pulled from it for reuse and pushed to it once built. */
   registry?: { ops: RegistryOps; appName: string } | null;
   /** Collects the pushes, which run on after the build returns. */
@@ -115,9 +119,26 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     }
   }
   if (services.length === 0) return null;
-  const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal }, opts.bounded, run));
-  const output = await gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
-  if (opts.registry) {
+  const registry = opts.registry;
+  // Images come back by key, so every service built remotely needs one.
+  const remote = registry && services.every((name) => keys[name] && images[name])
+    ? services.map((name) => ({ image: images[name], ref: registry.ops.ref(serviceRepo(registry.appName, name), keys[name]) }))
+    : null;
+  const targets = remote ? (opts.targets ?? []) : [];
+  const gate = opts.gate ?? ((run) =>
+    withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets }, opts.bounded, run));
+  let ranRemotely = false;
+  const output = await gate(async (placement) => {
+    const target = placement?.target;
+    if (!target || !remote) return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
+    return onTarget(target, async (session) => {
+      const built = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
+      await bringBack(remote, { authEnv: opts.env, session, log, signal: opts.signal, exec });
+      ranRemotely = true;
+      return built;
+    });
+  });
+  if (opts.registry && !ranRemotely) {
     const { ops, appName } = opts.registry;
     for (const name of services) {
       if (!keys[name] || !images[name]) continue;
@@ -127,10 +148,17 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
   return output;
 }
 
-async function runComposeBuild(opts: ComposeBuildOpts, exec: Exec, services: string[], keyFileArgs: string[]): Promise<Output> {
-  const { slotDir, project, bounded } = opts;
+async function runComposeBuild(
+  opts: ComposeBuildOpts,
+  exec: Exec,
+  services: string[],
+  keyFileArgs: string[],
+  bounded: BoundedBuild,
+  baseEnv: NodeJS.ProcessEnv,
+): Promise<Output> {
+  const { slotDir, project } = opts;
   const files = [...opts.composeFileArgs, ...keyFileArgs];
-  const env = { ...opts.env, ...bounded.env };
+  const env = { ...baseEnv, ...bounded.env };
   const run = { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: MAX_BUFFER, signal: opts.signal };
   const noCache = opts.noCache ? ["--no-cache"] : [];
   const reused = services.length < opts.services.length;

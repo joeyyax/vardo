@@ -21,6 +21,7 @@ import type { WaitWriter } from "./deploy-logger";
 import { builderLimitBytes, sizeBuildKit } from "./buildkit-size";
 import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
 import { typicalBuildMs } from "@/lib/deploy/eta-history";
+import { BuilderError, describeTarget, isTargetReady, markTargetDown, type BuildTarget } from "./build-targets";
 
 const log = logger.child("build-gate");
 
@@ -35,6 +36,10 @@ const BUILD_GATE_KEYS = {
   admits: "build:gate:admits",
   /** When each running build was admitted, for start estimates. */
   started: "build:gate:started",
+  /** Waiting builds that may run on a target. */
+  remote: "build:gate:remote",
+  /** Prefix of each target's running set. */
+  target: "build:gate:target:",
 };
 
 const LEASE_MS = 45_000;
@@ -55,40 +60,71 @@ export const MIN_PEAK_BYTES = 64 * 1024 ** 2;
 const MIN_PEAK_BUILD_MS = 2 * SAMPLE_MS;
 const CACHE_MS = 30_000;
 
-// Admits the head when nothing runs, or when a slot is free and no hold is set. The first build into an empty builder holds it for the sweep.
-// KEYS: queue, seen, running, hold, admits, started. ARGV: id, limit, leaseMs, waiterLeaseMs, sweepHoldMs, dirtyHoldMs.
-// Returns {admitted, admit number, alone}.
+// Admits the head here when nothing runs, or when a slot is free and no hold is set. The first build into an empty builder holds it for the sweep.
+// Otherwise a build that may run remotely takes the first target with a free slot, unless a live remote-eligible build is ahead of it.
+// KEYS: queue, seen, running, hold, admits, started, remote, then each target's running set.
+// ARGV: id, limit, leaseMs, waiterLeaseMs, sweepHoldMs, dirtyHoldMs, eligible, then each target's limit.
+// Returns {admitted, admit number, alone, target}; target 0 is this host, n the nth target.
 const LUA_TRY = `
 local t = redis.call('TIME')
 local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+local stale = now - tonumber(ARGV[4])
 local lapsed = redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now)
 if lapsed > 0 and not redis.call('GET', KEYS[4]) then redis.call('SET', KEYS[4], 'lapsed', 'PX', ARGV[6]) end
 if not redis.call('LPOS', KEYS[1], ARGV[1]) then redis.call('RPUSH', KEYS[1], ARGV[1]) end
 redis.call('HSET', KEYS[2], ARGV[1], now)
+if ARGV[7] == '1' then redis.call('HSET', KEYS[7], ARGV[1], 1) else redis.call('HDEL', KEYS[7], ARGV[1]) end
 while true do
   local head = redis.call('LINDEX', KEYS[1], 0)
   if not head or head == ARGV[1] then break end
   local seen = tonumber(redis.call('HGET', KEYS[2], head))
-  if seen and seen >= now - tonumber(ARGV[4]) then break end
+  if seen and seen >= stale then break end
   redis.call('LPOP', KEYS[1])
   redis.call('HDEL', KEYS[2], head)
+  redis.call('HDEL', KEYS[7], head)
 end
-if redis.call('LINDEX', KEYS[1], 0) ~= ARGV[1] then return {0, 0, 0} end
-local running = redis.call('ZCARD', KEYS[3])
-local hold = redis.call('GET', KEYS[4])
-if hold and string.sub(hold, 1, 6) == 'sweep:' then return {0, 0, 0} end
-if running > 0 and (hold or running >= tonumber(ARGV[2])) then return {0, 0, 0} end
-redis.call('LPOP', KEYS[1])
-redis.call('HDEL', KEYS[2], ARGV[1])
-redis.call('ZADD', KEYS[3], now + tonumber(ARGV[3]), ARGV[1])
-if running == 0 then redis.call('DEL', KEYS[6]) end
-redis.call('HSET', KEYS[6], ARGV[1], now)
-local n = redis.call('INCR', KEYS[5])
-if running == 0 then
-  redis.call('SET', KEYS[4], 'sweep:' .. ARGV[1], 'PX', ARGV[5])
-  return {1, n, 1}
+local leave = function()
+  redis.call('LREM', KEYS[1], 0, ARGV[1])
+  redis.call('HDEL', KEYS[2], ARGV[1])
+  redis.call('HDEL', KEYS[7], ARGV[1])
 end
-return {1, n, 0}
+if redis.call('LINDEX', KEYS[1], 0) == ARGV[1] then
+  local running = redis.call('ZCARD', KEYS[3])
+  local hold = redis.call('GET', KEYS[4])
+  local swept = hold and string.sub(hold, 1, 6) == 'sweep:'
+  if not swept and not (running > 0 and (hold or running >= tonumber(ARGV[2]))) then
+    leave()
+    redis.call('ZADD', KEYS[3], now + tonumber(ARGV[3]), ARGV[1])
+    if running == 0 then redis.call('DEL', KEYS[6]) end
+    redis.call('HSET', KEYS[6], ARGV[1], now)
+    local n = redis.call('INCR', KEYS[5])
+    if running == 0 then
+      redis.call('SET', KEYS[4], 'sweep:' .. ARGV[1], 'PX', ARGV[5])
+      return {1, n, 1, 0}
+    end
+    return {1, n, 0, 0}
+  end
+end
+if ARGV[7] ~= '1' or #KEYS < 8 then return {0, 0, 0, 0} end
+for _, entry in ipairs(redis.call('LRANGE', KEYS[1], 0, -1)) do
+  if entry == ARGV[1] then break end
+  if redis.call('HGET', KEYS[7], entry) then
+    local seen = tonumber(redis.call('HGET', KEYS[2], entry))
+    if seen and seen >= stale then return {0, 0, 0, 0} end
+    redis.call('LREM', KEYS[1], 0, entry)
+    redis.call('HDEL', KEYS[2], entry)
+    redis.call('HDEL', KEYS[7], entry)
+  end
+end
+for i = 8, #KEYS do
+  redis.call('ZREMRANGEBYSCORE', KEYS[i], '-inf', now)
+  if redis.call('ZCARD', KEYS[i]) < tonumber(ARGV[i]) then
+    leave()
+    redis.call('ZADD', KEYS[i], now + tonumber(ARGV[3]), ARGV[1])
+    return {1, 0, 0, i - 7}
+  end
+end
+return {0, 0, 0, 0}
 `;
 
 // KEYS: running, hold, admits, started. ARGV: id, dirty, dirtyHoldMs. Returns the admit count, which says whether anyone joined.
@@ -114,7 +150,7 @@ redis.call('SET', KEYS[2], 'sweep:' .. ARGV[1], 'PX', ARGV[2])
 return 1
 `;
 
-// KEYS: running. ARGV: id, leaseMs.
+// KEYS: running set, local or a target's. ARGV: id, leaseMs.
 const LUA_RENEW = `
 local t = redis.call('TIME')
 local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
@@ -135,7 +171,11 @@ end
 return 0
 `;
 
-type Admission = { gen: number; alone: boolean; local: boolean };
+/** `target` is the remote target's id, null for this host. */
+type Admission = { gen: number; alone: boolean; local: boolean; target: string | null };
+
+/** A target's id and how many builds it takes at once. */
+export type TargetSlot = { id: string; limit: number };
 
 /** The queue in order and the running builds with when each was admitted (epoch ms, null when unknown). */
 export type GateSnapshot = { queue: string[]; running: { id: string; since: number | null }[] };
@@ -144,22 +184,30 @@ type Keys = typeof BUILD_GATE_KEYS;
 
 /** The Redis store; `keys` is for tests. */
 export function redisBuildStore(keys: Keys = BUILD_GATE_KEYS, client = redis): SlotStore<Admission> & {
+  /** As tryAcquire, overflowing to the first target with a free slot when this host has none. */
+  tryAcquireAt(id: string, limit: number, targets: TargetSlot[]): Promise<Admission | null>;
   release(id: string, dirty: boolean): Promise<number>;
-  renew(id: string): Promise<void>;
+  releaseTarget(id: string, target: string): Promise<void>;
+  renew(id: string, target?: string | null): Promise<void>;
   claimSweep(id: string): Promise<boolean>;
   endSweep(): Promise<void>;
   runningCount(): Promise<number>;
   snapshot(): Promise<GateSnapshot>;
   bump(deploymentId: string): Promise<boolean>;
 } {
+  const tryAcquireAt = async (id: string, limit: number, targets: TargetSlot[]): Promise<Admission | null> => {
+    const [admitted, gen, alone, at] = (await client.eval(
+      LUA_TRY, 7 + targets.length, keys.queue, keys.seen, keys.running, keys.hold, keys.admits, keys.started, keys.remote,
+      ...targets.map((t) => keys.target + t.id),
+      id, String(limit), String(LEASE_MS), String(WAITER_LEASE_MS), String(SWEEP_HOLD_MS), String(DIRTY_HOLD_MS),
+      targets.length > 0 ? "1" : "0", ...targets.map((t) => String(t.limit)),
+    )) as number[];
+    if (admitted !== 1) return null;
+    return { gen, alone: alone === 1, local: false, target: at > 0 ? (targets[at - 1]?.id ?? null) : null };
+  };
   return {
-    async tryAcquire(id, limit) {
-      const [admitted, gen, alone] = (await client.eval(
-        LUA_TRY, 6, keys.queue, keys.seen, keys.running, keys.hold, keys.admits, keys.started,
-        id, String(limit), String(LEASE_MS), String(WAITER_LEASE_MS), String(SWEEP_HOLD_MS), String(DIRTY_HOLD_MS),
-      )) as number[];
-      return admitted === 1 ? { gen, alone: alone === 1, local: false } : null;
-    },
+    tryAcquire: (id, limit) => tryAcquireAt(id, limit, []),
+    tryAcquireAt,
     async place(id) {
       try {
         const [[, index], [, total]] = (await client.multi().lpos(keys.queue, id).llen(keys.queue).exec()) ?? [[], []];
@@ -171,14 +219,18 @@ export function redisBuildStore(keys: Keys = BUILD_GATE_KEYS, client = redis): S
     async remove(id) {
       await client.lrem(keys.queue, 0, id);
       await client.hdel(keys.seen, id);
+      await client.hdel(keys.remote, id);
+    },
+    async releaseTarget(id, target) {
+      await client.zrem(keys.target + target, id);
     },
     async release(id, dirty) {
       return Number(
         await client.eval(LUA_RELEASE, 4, keys.running, keys.hold, keys.admits, keys.started, id, dirty ? "1" : "0", String(DIRTY_HOLD_MS)),
       );
     },
-    async renew(id) {
-      await client.eval(LUA_RENEW, 1, keys.running, id, String(LEASE_MS));
+    async renew(id, target) {
+      await client.eval(LUA_RENEW, 1, target ? keys.target + target : keys.running, id, String(LEASE_MS));
     },
     async claimSweep(id) {
       return (await client.eval(LUA_CLAIM_SWEEP, 2, keys.running, keys.hold, id, String(SWEEP_HOLD_MS))) === 1;
@@ -218,7 +270,7 @@ export function localBuildStore(): SlotStore<Admission> & { release(id: string):
       if (queue[0] !== id || (running.size > 0 && running.size >= limit)) return null;
       queue.shift();
       running.add(id);
-      return { gen: 0, alone: false, local: true };
+      return { gen: 0, alone: false, local: true, target: null };
     },
     async place(id) {
       const index = queue.indexOf(id);
@@ -460,11 +512,29 @@ export type BuildGate = {
   /** Opens a `build-slot` wait on the deploy's stream and row, which also pauses its sweeper clock. */
   wait?: WaitWriter;
   signal?: AbortSignal;
+  /** Targets this build may overflow to, in order. Without any it builds here. */
+  targets?: BuildTarget[];
 };
 
-/** Runs `build` once the builder has a slot for it. Records the builder's memory peak when the build ran alone. */
-export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, build: () => Promise<T>): Promise<T> {
+/** Where an admitted build runs: a target, or this host when null. */
+export type BuildPlacement = { target: BuildTarget | null };
+
+/**
+ * Runs `build` once this host or a target has a slot for it. Records the builder's memory peak when the build ran alone here.
+ * A build a target failed for the target's own reasons runs again here.
+ */
+export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, build: (placement: BuildPlacement) => Promise<T>): Promise<T> {
   const store = gateStores.redis;
+  const targets = gate.targets ?? [];
+  const readyTargets = async (): Promise<TargetSlot[]> => {
+    const ready = await Promise.all(targets.map((t) => isTargetReady(t)));
+    return targets.filter((_, i) => ready[i]).map((t) => ({ id: t.id, limit: t.maxConcurrent }));
+  };
+  const gated: SlotStore<Admission> = {
+    tryAcquire: async (slotId, limit) => store.tryAcquireAt(slotId, limit, targets.length > 0 ? await readyTargets() : []),
+    place: (slotId) => store.place(slotId),
+    remove: (slotId) => store.remove(slotId),
+  };
   // A build that retries in the same deploy queues on its own token.
   const id = `${gate.deploymentId ?? "build"}:${Math.random().toString(36).slice(2, 8)}`;
   let latest = await currentLimit(bounded);
@@ -510,6 +580,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     },
   };
 
+  // This host first, without waiting on target checks.
   let slot = await store.tryAcquire(id, latest.limit).catch((err) => {
     toLocal(err);
     return gateStores.local.tryAcquire(id, latest.limit);
@@ -518,13 +589,14 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     const running = local ? gateStores.local.runningCount() : await store.runningCount().catch(() => null);
     gate.log(
       `[queue] Waiting for the builder: ${running ?? "?"} running, ${latest.limit} at a time` +
-        (latest.pressured ? " (host memory under pressure)" : ""),
+        (latest.pressured ? " (host memory under pressure)" : "") +
+        (targets.length > 0 && !local ? `, or a slot on ${targets.map((t) => t.name).join(", ")}` : ""),
     );
     // The wait writer pauses the sweeper's clock; without one the gate pauses it itself.
     void gate.wait?.("build-slot");
     const clock = !gate.wait && gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
     try {
-      slot = local ? await waitForFifoSlot(gateStores.local, id, localOpts()) : await waitForFifoSlot(store, id, waitOpts);
+      slot = local ? await waitForFifoSlot(gateStores.local, id, localOpts()) : await waitForFifoSlot(gated, id, waitOpts);
     } finally {
       waiting = false;
       await gate.wait?.(null);
@@ -532,12 +604,33 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     }
     gate.log("[queue] Builder free, starting build");
   }
+  const placed = slot.target ? (targets.find((t) => t.id === slot.target) ?? null) : null;
+  if (placed) return runRemote(placed);
+  if (targets.length > 0) gate.log("[build] Building on this server");
   return runHeld(slot);
+
+  async function runRemote(on: BuildTarget): Promise<T> {
+    gate.log(`[build] Building on ${describeTarget(on)}`);
+    const renew = setInterval(() => void store.renew(id, on.id).catch(() => {}), RENEW_MS);
+    renew.unref?.();
+    try {
+      return await build({ target: on });
+    } catch (err) {
+      if (!(err instanceof BuilderError) || gate.signal?.aborted) throw err;
+      markTargetDown(on);
+      log.warn(`Build target ${on.name} failed: ${err.reason}`, err.cause);
+      gate.log(`[build] ${on.name} couldn't build: ${err.reason}. Building on this server instead`);
+    } finally {
+      clearInterval(renew);
+      await store.releaseTarget(id, on.id).catch(() => {});
+    }
+    return withBuildSlot({ ...gate, targets: [] }, bounded, build);
+  }
 
   async function runHeld(held: Admission): Promise<T> {
     if (held.local) {
       try {
-        return await build();
+        return await build({ target: null });
       } finally {
         gateStores.local.release(id);
       }
@@ -564,7 +657,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
         if (bounded.container) sampler = sampleBuilder(bounded.container);
       }
       buildStart = Date.now();
-      const result = await build();
+      const result = await build({ target: null });
       ok = true;
       return result;
     } finally {

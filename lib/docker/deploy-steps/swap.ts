@@ -34,6 +34,7 @@ import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-ga
 import { publishesHostPorts } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
 import { buildRegistryOps, registryAuthHint, withRegistryAuth } from "../registry-auth";
+import { configuredTargets } from "../build-targets";
 import { partitionBySlot, sharedProjectName, slotBoundServices, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, holdSlot, NO_HOLD, type CutoverGuard } from "../traefik-cutover";
@@ -518,6 +519,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           wait: ctx.wait,
           registry: registry ? { ops: registry, appName: app.name } : null,
           pushes: (ctx.registryPushes ??= []),
+          targets: registry ? await configuredTargets() : [],
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);
