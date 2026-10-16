@@ -233,7 +233,7 @@ export function AdminTrust() {
           </Card>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Card id="about" variant="surface">
+            <Card id="about" variant="surface" className="space-y-4 py-5">
               <CardHeader><CardTitle>Contact</CardTitle></CardHeader>
               <CardContent className="max-w-md space-y-2">
                 <Label htmlFor="trust-contact">Security contact</Label>
@@ -252,7 +252,7 @@ export function AdminTrust() {
               </CardContent>
             </Card>
 
-            <Card id="hosting" variant="surface">
+            <Card id="hosting" variant="surface" className="space-y-4 py-5">
               <CardHeader><CardTitle>Hosting</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <ul className="divide-y">
