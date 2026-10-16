@@ -1,13 +1,13 @@
-# @vardo/cli
+# @joeyyax/vardo
 
 Runs a Vardo console's MCP tools from the command line. Each tool is a command: `vardo_deploy_app` is `vardo deploy-app`. The commands come from the console at run time, so new tools show up without a new release.
 
 ## Install
 
 ```bash
-npx @vardo/cli --help
+npx @joeyyax/vardo --help
 # or
-npm i -g @vardo/cli
+npm i -g @joeyyax/vardo
 ```
 
 Installs the `vardo` command. Needs Node 22 or later.

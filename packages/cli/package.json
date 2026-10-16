@@ -1,5 +1,5 @@
 {
-  "name": "@vardo/cli",
+  "name": "@joeyyax/vardo",
   "version": "0.1.0",
   "description": "Run Vardo's MCP tools from the command line.",
   "license": "MIT",
