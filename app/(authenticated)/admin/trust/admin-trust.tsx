@@ -63,9 +63,10 @@ function shortDay(iso: string): string {
 function Sparkline({ days }: { days: TrustView["history"]["days"] }) {
   const w = 240;
   const h = 40;
-  const top = Math.max(...days.map((d) => d.max));
+  const lo = Math.min(...days.map((d) => d.score));
+  const span = Math.max(1, Math.max(...days.map((d) => d.score)) - lo);
   const x = (i: number) => (days.length === 1 ? w / 2 : (i / (days.length - 1)) * w);
-  const y = (score: number) => h - 3 - (score / top) * (h - 6);
+  const y = (score: number) => h - 3 - ((score - lo) / span) * (h - 6);
   const line = days.map((d, i) => `${x(i).toFixed(1)},${y(d.score).toFixed(1)}`).join(" ");
   const last = days[days.length - 1];
   return (
@@ -208,7 +209,7 @@ export function AdminTrust() {
                 {view.score.bandLabel && <span className="text-muted-foreground"> · {view.score.bandLabel}</span>}
               </div>
               {view.score.unverified > 0 && (
-                <p className="text-sm text-muted-foreground">{view.score.unverified} points not verified. Vardo can&apos;t check them yet, so they earn nothing.</p>
+                <p className="text-sm text-muted-foreground">{view.score.unverified} points not verified. Vardo couldn&apos;t check these, so they earn nothing.</p>
               )}
             </div>
             <div className="relative pb-5">
@@ -318,7 +319,7 @@ export function AdminTrust() {
               <p className="text-xs text-muted-foreground">Last 30 days</p>
             </div>
             {view.history.days.length < 2 ? (
-              <p className="text-sm text-muted-foreground">History fills in as days pass. One daily score is kept.</p>
+              <p className="text-sm text-muted-foreground">The chart shows once two days have results.</p>
             ) : (
               <div className="space-y-1">
                 <Sparkline days={view.history.days} />
