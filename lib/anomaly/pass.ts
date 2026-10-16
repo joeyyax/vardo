@@ -13,13 +13,13 @@ import type { ContainerMetrics } from "@/lib/metrics/types";
 import { settleAlerts, type Observation } from "@/lib/notifications/observations";
 import type { AlertType } from "@/lib/notifications/registry";
 import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
-import { BASELINE_WINDOW_MS, WARMUP_MS, computeBaseline, utcOffset, zoneOffset, type Baseline, type ZoneOffset } from "./baseline";
-import { AnomalyEngine } from "./engine";
+import { BASELINE_WINDOW_MS, WARMUP_MS, computeBaseline, peakOf, utcOffset, zoneOffset, type Baseline, type ZoneOffset } from "./baseline";
+import { AnomalyEngine, type FlushedSample } from "./engine";
 import { anomalyItem, newPortItem, newProcessItem, type AppRef, type Finding } from "./items";
 import { appPorts, probeContainer } from "./probe";
 import { activeFindings, reconcileSeen, type SeenEntry, type TopProcess } from "./security";
 import { SIGNAL_KEYS, isSensitivity, type Sensitivity, type SignalKey } from "./signals";
-import { appendSample, forgetSeen, resetPidsSamples, learningSince, readSamples, readSeen, writeSeen, type SeenKind } from "./store";
+import { appendSample, forgetSeen, resetPidsSamples, learningSince, readSamples, readSeen, writeSeen, type SeenKind, type Series } from "./store";
 import { activityWindows, markActivity, quietApps, recentWorkWindows } from "./suppress";
 import { AppRateTracker, type AppReading } from "./tracker";
 
@@ -43,7 +43,7 @@ export const GAP_HOLD_MS = 15 * 60_000;
 type State = {
   engine: AnomalyEngine;
   tracker: AppRateTracker;
-  baselines: Map<string, { baseline: Baseline | null; at: number }>;
+  baselines: Map<string, { baseline: Baseline | null; peak: number; at: number }>;
   probedAt: Map<string, number>;
   top: Map<string, { at: number; processes: TopProcess[] }>;
   seen: Map<string, Record<SeenKind, Map<string, SeenEntry>>>;
@@ -118,25 +118,37 @@ async function orgSettings(): Promise<Map<string, { sensitivity: Sensitivity; of
   );
 }
 
-/** Cached baselines, refreshing at most a budget per pass. */
-async function baselinesFor(appId: string, offset: ZoneOffset, now: number, budget: { left: number }): Promise<Partial<Record<SignalKey, Baseline | null>>> {
-  const out: Partial<Record<SignalKey, Baseline | null>> = {};
+type Learned = {
+  baselines: Partial<Record<SignalKey, Baseline | null>>;
+  peaks: Partial<Record<SignalKey, number>>;
+};
+
+/** Cached baselines and peaks, refreshing at most a budget per pass. */
+async function baselinesFor(appId: string, offset: ZoneOffset, now: number, budget: { left: number }): Promise<Learned> {
+  const out: Learned = { baselines: {}, peaks: {} };
   for (const signal of SIGNAL_KEYS) {
     const k = `${appId}:${signal}`;
     const cached = state.baselines.get(k);
     if (cached && now - cached.at < BASELINE_TTL_MS) {
-      out[signal] = cached.baseline;
+      out.baselines[signal] = cached.baseline;
+      out.peaks[signal] = cached.peak;
       continue;
     }
     if (budget.left <= 0) {
-      out[signal] = cached?.baseline ?? null;
+      out.baselines[signal] = cached?.baseline ?? null;
+      out.peaks[signal] = cached?.peak ?? 0;
       continue;
     }
     budget.left--;
-    const samples = await readSamples(appId, signal, now - BASELINE_WINDOW_MS, now);
+    const from = now - BASELINE_WINDOW_MS;
+    const cutoff = state.engine.peakCutoff(appId, signal, now);
+    const samples = await readSamples(appId, signal, from, now);
+    const all = await readSamples(appId, signal, from, cutoff, "all");
     const baseline = computeBaseline(samples, now, offset);
-    state.baselines.set(k, { baseline, at: now });
-    out[signal] = baseline;
+    const peak = Math.max(peakOf(samples, from, cutoff), peakOf(all, from, cutoff));
+    state.baselines.set(k, { baseline, peak, at: now });
+    out.baselines[signal] = baseline;
+    out.peaks[signal] = peak;
   }
   return out;
 }
@@ -252,16 +264,21 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
     const org = orgs.get(app.organizationId) ?? { sensitivity: "normal" as const, offset: utcOffset };
     const reading = readings.get(app.id);
     if (reading) {
-      for (const s of state.engine.record(app.id, reading.values, newest, isQuiet(app))) {
-        await appendSample(app.id, s.signal, s.at, s.value).catch((err) => log.warn(`Sample write failed for ${app.id}:`, (err as Error).message));
-      }
+      const all: FlushedSample[] = [];
+      const learned = state.engine.record(app.id, reading.values, newest, isQuiet(app), all);
+      const write = (s: FlushedSample, series: Series) =>
+        appendSample(app.id, s.signal, s.at, s.value, series).catch((err) => log.warn(`Sample write failed for ${app.id}:`, (err as Error).message));
+      for (const s of learned) await write(s, "baseline");
+      for (const s of all) await write(s, "all");
     }
 
-    const evaluation = state.engine.evaluate(app.id, await baselinesFor(app.id, org.offset, now, budget), {
+    const { baselines, peaks } = await baselinesFor(app.id, org.offset, now, budget);
+    const evaluation = state.engine.evaluate(app.id, baselines, {
       now,
       sensitivity: org.sensitivity,
       offset: org.offset,
       quiet: isQuiet(app),
+      peaks,
     });
     if (evaluation.state === "unknown") {
       const held = openByAbout.get(`app.anomaly:${app.id}`);

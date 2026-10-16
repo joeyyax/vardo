@@ -11,7 +11,11 @@ const SERIES_RETENTION_MS = BASELINE_WINDOW_MS + 24 * 60 * 60_000;
 /** A deleted app's allow-set goes after this. */
 const SEEN_TTL_S = 30 * 24 * 60 * 60;
 
-export const seriesKey = (appId: string, signal: SignalKey) => `anomaly:${appId}:${signal}`;
+/** "baseline" leaves out episode samples; "all" keeps them for the app's peak. */
+export type Series = "baseline" | "all";
+
+export const seriesKey = (appId: string, signal: SignalKey, series: Series = "baseline") =>
+  series === "all" ? `anomaly:${appId}:${signal}:all` : `anomaly:${appId}:${signal}`;
 const seenKey = (appId: string, kind: SeenKind) => `vardo:anomaly:${kind}:${appId}`;
 const metaKey = (appId: string) => `vardo:anomaly:meta:${appId}`;
 
@@ -19,8 +23,8 @@ export type SeenKind = "procs" | "ports";
 
 const created = new Set<string>();
 
-export async function appendSample(appId: string, signal: SignalKey, at: number, value: number): Promise<void> {
-  const key = seriesKey(appId, signal);
+export async function appendSample(appId: string, signal: SignalKey, at: number, value: number, series: Series = "baseline"): Promise<void> {
+  const key = seriesKey(appId, signal, series);
   if (!created.has(key)) {
     try {
       await tsRedis.call(
@@ -36,9 +40,9 @@ export async function appendSample(appId: string, signal: SignalKey, at: number,
   await tsRedis.call("PEXPIRE", key, String(SERIES_RETENTION_MS));
 }
 
-export async function readSamples(appId: string, signal: SignalKey, from: number, to: number): Promise<Sample[]> {
+export async function readSamples(appId: string, signal: SignalKey, from: number, to: number, series: Series = "baseline"): Promise<Sample[]> {
   try {
-    const rows = (await tsRedis.call("TS.RANGE", seriesKey(appId, signal), String(from), String(to))) as [string, string][];
+    const rows = (await tsRedis.call("TS.RANGE", seriesKey(appId, signal, series), String(from), String(to))) as [string, string][];
     return rows.map(([at, value]) => ({ at: Number(at), value: Number(value) }));
   } catch {
     return [];

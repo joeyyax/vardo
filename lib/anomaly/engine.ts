@@ -10,7 +10,9 @@ export const RECENT_MS = 60 * 60_000;
 /** An episode this old is taken as the new normal and feeds the baseline again. */
 export const NEW_NORMAL_MS = 24 * 60 * 60_000;
 
-type Accumulator = { bucket: number; sum: number; n: number; tainted: boolean };
+type Accumulator = { bucket: number; sum: number; n: number; quiet: boolean; episode: boolean };
+
+export type FlushedSample = { signal: SignalKey; at: number; value: number };
 
 export type Evaluation =
   /** Nothing to judge: quiet window, warming up or no fresh readings. An open alert should hold. */
@@ -25,9 +27,9 @@ export class AnomalyEngine {
   /** Signal key to when its episode opened. */
   private episodes = new Map<string, number>();
 
-  /** Records one reading per signal and returns finished five-minute samples, minus quiet or episode ones. */
-  record(appId: string, values: Partial<Record<SignalKey, number>>, at: number, quiet: boolean): { signal: SignalKey; at: number; value: number }[] {
-    const out: { signal: SignalKey; at: number; value: number }[] = [];
+  /** Records one reading per signal and returns finished five-minute samples, minus quiet or episode ones. Pushes every non-quiet one to `all`. */
+  record(appId: string, values: Partial<Record<SignalKey, number>>, at: number, quiet: boolean, all: FlushedSample[] = []): FlushedSample[] {
+    const out: FlushedSample[] = [];
     for (const signal of SIGNAL_KEYS) {
       const value = values[signal];
       if (value === undefined || !Number.isFinite(value)) continue;
@@ -40,16 +42,21 @@ export class AnomalyEngine {
 
       const bucket = Math.floor(at / SAMPLE_MS) * SAMPLE_MS;
       const opened = this.episodes.get(k);
-      const tainted = quiet || (opened !== undefined && at - opened < NEW_NORMAL_MS);
+      const episode = opened !== undefined && at - opened < NEW_NORMAL_MS;
       const current = this.acc.get(k);
       if (current && current.bucket !== bucket) {
-        if (!current.tainted && current.n > 0) out.push({ signal, at: current.bucket, value: current.sum / current.n });
+        if (!current.quiet && current.n > 0) {
+          const sample = { signal, at: current.bucket, value: current.sum / current.n };
+          all.push(sample);
+          if (!current.episode) out.push(sample);
+        }
         this.acc.delete(k);
       }
-      const next = this.acc.get(k) ?? { bucket, sum: 0, n: 0, tainted: false };
+      const next = this.acc.get(k) ?? { bucket, sum: 0, n: 0, quiet: false, episode: false };
       next.sum += value;
       next.n += 1;
-      next.tainted ||= tainted;
+      next.quiet ||= quiet;
+      next.episode ||= episode;
       this.acc.set(k, next);
     }
     return out;
@@ -59,11 +66,16 @@ export class AnomalyEngine {
     return this.recent.get(key(appId, signal)) ?? [];
   }
 
-  /** Judges every warm signal against its baseline for the hour. */
+  /** Samples at or before this feed the signal's peak: those that ended before its episode opened, or before the sustain window. */
+  peakCutoff(appId: string, signal: SignalKey, now: number): number {
+    return (this.episodes.get(key(appId, signal)) ?? now - SIGNALS[signal].sustainMs) - SAMPLE_MS;
+  }
+
+  /** Judges every warm signal against its baseline for the hour and its peak. */
   evaluate(
     appId: string,
     baselines: Partial<Record<SignalKey, Baseline | null>>,
-    opts: { now: number; sensitivity: Sensitivity; offset: ZoneOffset; quiet: boolean },
+    opts: { now: number; sensitivity: Sensitivity; offset: ZoneOffset; quiet: boolean; peaks?: Partial<Record<SignalKey, number>> },
   ): Evaluation {
     if (opts.quiet) return { state: "unknown" };
     const findings: Finding[] = [];
@@ -78,7 +90,7 @@ export class AnomalyEngine {
       const stats = statsAt(baseline, opts.now, opts.offset);
       const points = this.recentValues(appId, signal);
       if (!stats) continue;
-      const verdict = judgeSignal(points, SIGNALS[signal], lineFor(SIGNALS[signal], stats, opts.sensitivity), opts.now);
+      const verdict = judgeSignal(points, SIGNALS[signal], lineFor(SIGNALS[signal], stats, opts.sensitivity), opts.now, opts.peaks?.[signal]);
       if (!verdict) continue;
       judged++;
       if (verdict.holds) {

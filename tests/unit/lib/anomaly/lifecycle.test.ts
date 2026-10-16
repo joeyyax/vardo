@@ -71,12 +71,13 @@ beforeEach(() => {
 });
 
 describe("anomaly episode", () => {
-  it("alerts once, holds through the episode and resolves when it settles", async () => {
+  it("alerts once, holds through the episode and clears silently when it settles", async () => {
     const MiBps = 1024 ** 2 / 60;
     await simulate(new AnomalyEngine(), start, [...repeat(100, 20), ...repeat(50 * MiBps, 40), ...repeat(100, 20)]);
 
     const events = mocks.emit.mock.calls.map(([, e]) => e);
-    expect(events.map((e) => e.type)).toEqual(["alert.fired", "alert.resolved"]);
+    expect(events.map((e) => e.type)).toEqual(["alert.fired"]);
+    expect(mocks.rows.get(app.id)?.clearedAt).toBeInstanceOf(Date);
 
     const [fired] = events[0].alerts as AlertItem[];
     expect(fired).toMatchObject({ type: "app.anomaly", appId: "a1", severity: "critical", title: "Shop is sending far more traffic than usual" });
@@ -110,6 +111,6 @@ describe("pids signal going absent", () => {
     }
     expect(open).toBe(true);
     expect(mocks.rows.get(app.id)?.clearedAt).toBeInstanceOf(Date);
-    expect(mocks.emit.mock.calls.map(([, e]) => e.type)).toEqual(["alert.fired", "alert.resolved"]);
+    expect(mocks.emit.mock.calls.map(([, e]) => e.type)).toEqual(["alert.fired"]);
   });
 });

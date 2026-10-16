@@ -110,6 +110,13 @@ export function computeBaseline(samples: Sample[], now: number, offset: ZoneOffs
   };
 }
 
+/** Highest sample in (from, to], or 0 with none. */
+export function peakOf(samples: Sample[], from: number, to: number): number {
+  let peak = 0;
+  for (const s of samples) if (s.at > from && s.at <= to && Number.isFinite(s.value)) peak = Math.max(peak, s.value);
+  return peak;
+}
+
 export function isWarm(baseline: Baseline | null | undefined, now: number): baseline is Baseline {
   return !!baseline && now - baseline.learningSince >= WARMUP_MS;
 }
