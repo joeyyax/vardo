@@ -1,6 +1,5 @@
 // Loads the approved page for the chosen domain and keeps the rendered HTML for a minute.
 
-import { getInstanceDisplayName } from "@/lib/system-settings";
 import { getProbeGuardSettings } from "@/lib/probe-guard/instance";
 import { readCommitments } from "./commitment-facts";
 import { readPublicDocuments } from "./documents";
@@ -15,16 +14,15 @@ const TTL_MS = 60_000;
 /** Everything the page may show, before the approval filter. */
 export async function loadPublicInput(): Promise<PublicInput> {
   const settings = await getTrustSettings();
-  const [results, instanceName, guard, commitments, subprocessors, documents] = await Promise.all([
+  const [results, guard, commitments, subprocessors, documents] = await Promise.all([
     readResults(),
-    getInstanceDisplayName().catch(() => null),
     getProbeGuardSettings().catch(() => null),
     readCommitments(),
     readSubprocessors(),
     readPublicDocuments(),
   ]);
   return {
-    name: settings.name ?? instanceName ?? "This operator",
+    name: settings.name ?? "This operator",
     domain: settings.domain ?? "",
     securityContact: guard?.securityContact?.trim() || null,
     hosting: effectiveHosting(settings),

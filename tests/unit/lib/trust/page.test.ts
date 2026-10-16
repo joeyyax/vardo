@@ -75,4 +75,32 @@ describe("renderBody", () => {
     const out = renderBody("## Title\n\nFirst <b>line</b>\nsecond\n\n- one\n- two");
     expect(out).toBe("<h4>Title</h4><p>First &lt;b&gt;line&lt;/b&gt;<br>second</p><ul><li>one</li><li>two</li></ul>");
   });
+
+  it("renders a heading directly followed by text or a list, as generated policies write them", () => {
+    const out = renderBody("## Storage\n- Encrypted\n- Off the host\n\n## Retention\nKept for 30 days.");
+    expect(out).toBe("<h4>Storage</h4><ul><li>Encrypted</li><li>Off the host</li></ul><h4>Retention</h4><p>Kept for 30 days.</p>");
+    expect(out).not.toContain("##");
+    expect(out).not.toContain("- ");
+  });
+
+  it("escapes script tags in a body", () => {
+    const out = renderBody("## <script>alert(1)</script>\n- <script>x</script>\n<script>y</script>");
+    expect(out).not.toContain("<script");
+    expect(out).toContain("&lt;script&gt;");
+  });
+
+  it("renders every generated policy without leftover markup", async () => {
+    const { generatePolicy } = await import("@/lib/trust/policies");
+    for (const id of ["backup", "access", "incident"] as const) {
+      const html = renderBody(
+        generatePolicy(id, {
+          name: "Joey Yax",
+          backup: { jobs: true, recoveryPointHours: 24, retentionDays: 30, offHost: true, encrypted: true },
+          access: { methods: ["passkey", "password"], registration: "closed", sessionDays: 7 },
+          incident: { securityContact: "s@x.example", breachNotification: "Within 72 hours", email: true, backupFailureAlerts: true },
+        }),
+      );
+      expect(html).not.toMatch(/##|<p>- |<br>- /);
+    }
+  });
 });

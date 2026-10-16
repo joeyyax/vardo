@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jobRetentionDays, recoveryPointHours, resolveCommitments, retentionDays, validAmount, type CommitmentFacts, type RetentionRule } from "@/lib/trust/commitments";
+import { hoursText, jobRetentionDays, recoveryPointHours, resolveCommitments, retentionDays, validAmount, type CommitmentFacts, type RetentionRule } from "@/lib/trust/commitments";
 
 const facts: CommitmentFacts = { recoveryPointHours: 24, retentionDays: 30, autoUpdate: true };
 const byId = (list: ReturnType<typeof resolveCommitments>, id: string) => list.find((c) => c.id === id)!;
@@ -42,6 +42,19 @@ describe("resolveCommitments", () => {
     expect(byId(list, "breach-notification").value).toBe("Within 72 hours");
     expect(byId(list, "maintenance-notice").value).toBe("1 hour ahead");
     expect(byId(list, "data-deletion").value).toBe("Within 30 days");
+  });
+});
+
+describe("hoursText", () => {
+  it("keeps hours until 7 days, in every place that shows a duration", async () => {
+    expect(hoursText(1)).toBe("1 hour");
+    expect(hoursText(72)).toBe("72 hours");
+    expect(hoursText(167)).toBe("167 hours");
+    expect(hoursText(168)).toBe("7 days");
+    expect(hoursText(170)).toBe("170 hours");
+    const { generatePolicy } = await import("@/lib/trust/policies");
+    const f = { name: "A", backup: { jobs: true, recoveryPointHours: 48, retentionDays: null, offHost: false, encrypted: false }, access: { methods: [], registration: "closed" as const, sessionDays: 1 }, incident: { securityContact: null, breachNotification: null, email: false, backupFailureAlerts: false } };
+    expect(generatePolicy("backup", f)).toContain("longest gap between runs is 48 hours");
   });
 });
 

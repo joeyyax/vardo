@@ -49,6 +49,10 @@ async function handlePatch(request: NextRequest) {
       return NextResponse.json({ error: "That domain isn't one of this instance's domains." }, { status: 400 });
     }
     const visibility = patch.visibility ?? before.visibility;
+    const name = patch.name === undefined ? before.name : patch.name;
+    if (visibility === "public" && !name) {
+      return NextResponse.json({ error: "Add your name before making the page public." }, { status: 400 });
+    }
     if (visibility === "public" && !domain) {
       return NextResponse.json({ error: "Pick a domain before making the page public." }, { status: 400 });
     }

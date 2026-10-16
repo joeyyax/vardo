@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { backupJobs, backups, backupTargets } from "@/lib/db/schema";
 import { ALL_AUTH_METHODS, getAuthMethodLayers, resolveAuthMethod } from "@/lib/config/auth-methods";
 import { getProbeGuardSettings } from "@/lib/probe-guard/instance";
-import { getAuthConfig, getEmailProviderConfig, getInstanceDisplayName } from "@/lib/system-settings";
+import { getAuthConfig, getEmailProviderConfig } from "@/lib/system-settings";
 import { readCommitments } from "./commitment-facts";
 import type { PolicyFacts } from "./policies";
 import { getTrustSettings } from "./store";
@@ -20,9 +20,8 @@ function offHost(target: { type: string; config: unknown }): boolean {
 }
 
 export async function readPolicyFacts(): Promise<PolicyFacts> {
-  const [settings, instanceName, jobs, commitments, layers, auth, email, guard] = await Promise.all([
+  const [settings, jobs, commitments, layers, auth, email, guard] = await Promise.all([
     getTrustSettings(),
-    getInstanceDisplayName().catch(() => null),
     db.select().from(backupJobs).where(eq(backupJobs.enabled, true)),
     readCommitments(),
     getAuthMethodLayers(),
@@ -44,7 +43,7 @@ export async function readPolicyFacts(): Promise<PolicyFacts> {
   const byCommitment = new Map(commitments.map((c) => [c.id, c]));
 
   return {
-    name: settings.name ?? instanceName ?? "This operator",
+    name: settings.name ?? "This operator",
     backup: {
       jobs: jobs.length > 0,
       recoveryPointHours: byCommitment.get("recovery-point")?.amount ?? null,

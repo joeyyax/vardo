@@ -35,8 +35,13 @@ type Def = {
   format: (amount: number) => string;
 };
 
+/** Hours, or days from 7 days up. */
+export function hoursText(n: number): string {
+  return n >= 168 && n % 24 === 0 ? `${n / 24} days` : `${n} ${n === 1 ? "hour" : "hours"}`;
+}
+
 function hours(n: number, lead = ""): string {
-  const text = n >= 168 && n % 24 === 0 ? `${n / 24} days` : `${n} ${n === 1 ? "hour" : "hours"}`;
+  const text = hoursText(n);
   return lead ? `${lead} ${text}` : text;
 }
 

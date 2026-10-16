@@ -2,7 +2,6 @@
 
 import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
-import { getInstanceDisplayName } from "@/lib/system-settings";
 import { loadPublicInput } from "./public-load";
 import { exposureOf, toPublic, type Exposure } from "./public";
 import { policyReviews, readDocuments, type DpaView, type PolicyView } from "./documents";
@@ -19,10 +18,8 @@ export type TrustView = {
   domain: string | null;
   /** Instance domains the page can live on. */
   domains: string[];
-  /** The name set for the page. Null uses the instance name. */
+  /** The name the public page and policies use. Required before the page can go public. */
   name: string | null;
-  /** The name the public page shows. */
-  operatorName: string;
   commitments: ResolvedCommitment[];
   subprocessors: { id: string; name: string; purpose: string; region: string | null; status: "suggested" | "confirmed"; manual: boolean; gone: boolean }[];
   documents: { policies: PolicyView[]; dpa: DpaView };
@@ -48,12 +45,11 @@ export type TrustView = {
 const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
 
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results, runs, domains, instanceName, commitments, subprocessorRows, documents, publicInput] = await Promise.all([
+  const [settings, results, runs, domains, commitments, subprocessorRows, documents, publicInput] = await Promise.all([
     getTrustSettings(),
     readResults(),
     readHistory(),
     listTrustDomains(),
-    getInstanceDisplayName().catch(() => null),
     readCommitments(),
     readSubprocessors(),
     readDocuments(),
@@ -70,7 +66,6 @@ export async function buildTrustView(): Promise<TrustView> {
     domain: settings.domain,
     domains,
     name: settings.name,
-    operatorName: settings.name ?? instanceName ?? "This operator",
     commitments,
     subprocessors: subprocessorRows.flatMap((r) =>
       r.status === "dismissed" ? [] : [{ id: r.id, name: r.name, purpose: r.purpose, region: r.region, status: r.status, manual: !r.key, gone: !!r.key && !r.detected }],

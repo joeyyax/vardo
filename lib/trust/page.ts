@@ -15,16 +15,31 @@ export function initials(name: string): string {
 
 /** Blank-line paragraphs, "- " bullets and "## " headings. Everything is escaped. */
 export function renderBody(text: string): string {
-  return text
-    .trim()
-    .split(/\n{2,}/)
-    .map((block) => {
-      const lines = block.split("\n").map((l) => l.trimEnd());
-      if (lines.every((l) => l.startsWith("- "))) return `<ul>${lines.map((l) => `<li>${esc(l.slice(2))}</li>`).join("")}</ul>`;
-      if (lines.length === 1 && lines[0].startsWith("## ")) return `<h4>${esc(lines[0].slice(3))}</h4>`;
-      return `<p>${lines.map(esc).join("<br>")}</p>`;
-    })
-    .join("");
+  const out: string[] = [];
+  let paragraph: string[] = [];
+  let items: string[] = [];
+  const flush = () => {
+    if (paragraph.length) out.push(`<p>${paragraph.map(esc).join("<br>")}</p>`);
+    if (items.length) out.push(`<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`);
+    paragraph = [];
+    items = [];
+  };
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    if (!line.trim()) flush();
+    else if (line.startsWith("## ")) {
+      flush();
+      out.push(`<h4>${esc(line.slice(3))}</h4>`);
+    } else if (line.startsWith("- ")) {
+      if (paragraph.length) flush();
+      items.push(line.slice(2));
+    } else {
+      if (items.length) flush();
+      paragraph.push(line);
+    }
+  }
+  flush();
+  return out.join("");
 }
 
 const dateFmt = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });

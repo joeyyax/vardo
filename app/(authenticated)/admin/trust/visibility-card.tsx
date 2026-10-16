@@ -147,9 +147,20 @@ export function VisibilityCard({ view, busy, save }: Props) {
             <p className="text-muted-foreground">Only passing checks, confirmed subprocessors, reviewed policies and commitments you turned on appear. Your score, counts and failing checks stay private.</p>
           </div>
 
+          {!view.name && (
+            <p className="text-sm text-status-warning" role="alert">
+              The page needs your name first.{" "}
+              {view.visibility === "off" ? (
+                "Switch to Private, then add it under About you."
+              ) : (
+                <a href="#about" className="underline underline-offset-2" onClick={() => setConfirming(false)}>Add it under About you</a>
+              )}
+            </p>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirming(false)}>Cancel</Button>
-            <Button onClick={() => void publish()} disabled={!domain || busy}>Make public</Button>
+            <Button onClick={() => void publish()} disabled={!domain || !view.name || busy}>Make public</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

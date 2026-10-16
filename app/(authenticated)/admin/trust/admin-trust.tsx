@@ -76,6 +76,7 @@ function Sparkline({ days }: { days: TrustView["history"]["days"] }) {
 export function AdminTrust() {
   const [view, setView] = useState<TrustView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [savedContact, setSavedContact] = useState("");
   const [provider, setProvider] = useState("");
@@ -83,6 +84,7 @@ export function AdminTrust() {
 
   const apply = useCallback((next: TrustView) => {
     setView(next);
+    setName(next.name ?? "");
     setProvider(next.hostingOverride?.provider ?? "");
     setRegion(next.hostingOverride?.region ?? "");
   }, []);
@@ -235,8 +237,20 @@ export function AdminTrust() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card id="about" variant="surface" className="space-y-4 py-5">
-              <CardHeader><CardTitle>Contact</CardTitle></CardHeader>
-              <CardContent className="max-w-md space-y-2">
+              <CardHeader><CardTitle>About you</CardTitle></CardHeader>
+              <CardContent className="max-w-md space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="trust-name">Name</Label>
+                  <Input
+                    id="trust-name"
+                    value={name}
+                    placeholder="You or your business"
+                    onChange={(e) => setName(e.target.value)}
+                    onBlur={() => saveName()}
+                  />
+                  <p className="text-xs text-muted-foreground">Shown at the top of the page and used in the policies. Required to go public.</p>
+                </div>
+                <div className="space-y-2">
                 <Label htmlFor="trust-contact">Security contact</Label>
                 <Input
                   id="trust-contact"
@@ -247,6 +261,7 @@ export function AdminTrust() {
                   onBlur={() => void saveContact()}
                 />
                 <p className="text-xs text-muted-foreground">Where people report problems. Published at /.well-known/security.txt.</p>
+                </div>
               </CardContent>
             </Card>
 
@@ -365,6 +380,18 @@ export function AdminTrust() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function saveName() {
+    if (!view) return;
+    const next = name.trim() || null;
+    if (next === view.name) return;
+    if (!next && view.visibility === "public") {
+      toast.error("The public page needs a name");
+      setName(view.name ?? "");
+      return;
+    }
+    void save({ name: next }, { name: view.name });
   }
 
   function saveHosting() {

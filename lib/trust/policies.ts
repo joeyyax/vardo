@@ -1,6 +1,7 @@
 // Policy drafts written from settings. Each sentence states what a setting does; none promises anything for the operator.
 
 import { createHash } from "crypto";
+import { hoursText } from "./commitments";
 
 export const POLICY_IDS = ["backup", "access", "incident"] as const;
 export type PolicyId = (typeof POLICY_IDS)[number];
@@ -41,11 +42,6 @@ export function list(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-function every(hours: number): string {
-  if (hours % 24 === 0) return hours === 24 ? "24 hours" : `${hours / 24} days`;
-  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-}
-
 const METHOD_NAMES: Record<string, string> = {
   password: "a password",
   passkey: "a passkey",
@@ -60,7 +56,7 @@ function backupPolicy(f: PolicyFacts): string {
   if (!b.jobs) return [...out, "No backup jobs are enabled."].join("\n\n");
 
   const schedule: string[] = [];
-  if (b.recoveryPointHours) schedule.push(`Backups run on a schedule. The longest gap between runs is ${every(b.recoveryPointHours)}.`);
+  if (b.recoveryPointHours) schedule.push(`Backups run on a schedule. The longest gap between runs is ${hoursText(b.recoveryPointHours)}.`);
   else schedule.push("Backups run on a schedule.");
   out.push(`## Schedule\n${schedule.join(" ")}`);
 

@@ -13,7 +13,7 @@ export const trustSettings = pgTable("trust_settings", {
   hostingDetected: jsonb("hosting_detected").$type<{ provider: string; region: string | null; location: string | null }>(),
   /** The instance domain that serves /trust. Set before the page can go public. */
   domain: text("domain"),
-  /** The name the public page uses. Null falls back to the instance name. */
+  /** The name the public page and policies use. Required for Public. */
   name: text("name"),
   /** The operator's switch and value per commitment id. */
   commitments: jsonb("commitments").$type<Record<string, { enabled?: boolean; amount?: number | null }>>().notNull().default({}),
