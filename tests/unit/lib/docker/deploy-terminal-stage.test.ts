@@ -9,10 +9,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // so a process killed mid-deploy leaves something behind.
 // ---------------------------------------------------------------------------
 
-const { dbMock, events, dockerCalls } = vi.hoisted(() => {
+const { dbMock, events, dockerCalls, claimRow, logWrites } = vi.hoisted(() => {
   type Event = { kind: "stage" | "log-flush" | "row"; detail: string };
   const events: Event[] = [];
   const dockerCalls: string[] = [];
+  // The row's log when the run claims it, and every log the run writes.
+  const claimRow = { log: null as string | null };
+  const logWrites: string[] = [];
 
   const appRow = {
     id: "app-1",
@@ -28,8 +31,11 @@ const { dbMock, events, dockerCalls } = vi.hoisted(() => {
   };
 
   function makeUpdateChain(table: unknown) {
-    const where = vi.fn().mockImplementation(() => Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row" }] }));
+    const where = vi.fn().mockImplementation(() =>
+      Object.assign(Promise.resolve(undefined), { returning: async () => [{ id: "row", log: claimRow.log }] }),
+    );
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
+      if (typeof values.log === "string") logWrites.push(values.log);
       const isDeploymentRow = typeof values.status === "string" && "finishedAt" in values;
       if (isDeploymentRow) events.push({ kind: "row", detail: String(values.status) });
       else if (typeof values.log === "string") {
@@ -55,7 +61,7 @@ const { dbMock, events, dockerCalls } = vi.hoisted(() => {
   };
 
 
-  return { dbMock, events, dockerCalls };
+  return { dbMock, events, dockerCalls, claimRow, logWrites };
 });
 
 const { assertDiskHeadroom } = vi.hoisted(() => ({ assertDiskHeadroom: vi.fn(async () => {}) }));
@@ -226,6 +232,23 @@ describe("runDeployment log persistence", () => {
     const flushes = events.filter((e) => e.kind === "log-flush");
     expect(events.some((e) => e.kind === "row")).toBe(false);
     expect(flushes.at(-1)?.detail).toContain("[deploy] cloned");
+  });
+
+  it("keeps lines written before the claim, such as a requeue note, ahead of every write", async () => {
+    const earlier = "[deploy] Requeued: the executor running it stopped during build. It runs once more from the start";
+    claimRow.log = earlier;
+    logWrites.length = 0;
+    vi.mocked(build).mockRejectedValue(new Error("boom"));
+    try {
+      await runDeployment("dep-1", { ...OPTS, onStage });
+      await settle();
+    } finally {
+      claimRow.log = null;
+    }
+
+    expect(logWrites.length).toBeGreaterThan(1);
+    for (const written of logWrites) expect(written.startsWith(`${earlier}\n`)).toBe(true);
+    expect(logWrites.at(-1)).toContain("[deploy] cloned");
   });
 });
 

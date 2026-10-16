@@ -25,7 +25,7 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import { recordPostDeployIncomplete } from "./deploy-incomplete";
 import type { DeployStage } from "./deploy-logger";
-import type { DeployContext } from "./deploy-context";
+import { savedLog, type DeployContext } from "./deploy-context";
 import {
   COMPOSE_DOWN_TIMEOUT,
   COMPOSE_RESTART_TIMEOUT,
@@ -168,6 +168,9 @@ export async function runDeployment(
   // Execution clock for durationMs. Time before this is queue wait.
   const startTime = Date.now();
   const logLines: string[] = [];
+  // The row's log from before this run, read when the run confirms its claim.
+  let logPrefix: string | undefined;
+  const saved = () => savedLog({ logLines, logPrefix });
 
   // Redis Stream logger (persistent, replayable).
   const streamLogger = createDeployLogger(deploymentId);
@@ -186,7 +189,7 @@ export async function runDeployment(
 
   /** Persist the log so far, so a process that dies mid-deploy keeps it. */
   function flushLog() {
-    const snapshot = logLines.join("\n");
+    const snapshot = saved();
     const stageTimings = timer.snapshot();
     logFlush = logFlush
       .then(() =>
@@ -252,18 +255,14 @@ export async function runDeployment(
 
   try {
     // A claimed row is already running; without an executor, only while still queued.
-    const claimed = opts.executorId
-      ? await db
-          .select({ id: deployments.id })
-          .from(deployments)
-          .where(ownedRow(deploymentId, opts.executorId))
-          .then((rows) => rows.length > 0)
+    const [claimed] = opts.executorId
+      ? await db.select({ log: deployments.log }).from(deployments).where(ownedRow(deploymentId, opts.executorId))
       : await db
           .update(deployments)
           .set({ status: "running" })
           .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
-          .returning({ id: deployments.id })
-          .then((rows) => rows.length > 0);
+          .returning({ log: deployments.log });
+    logPrefix = claimed?.log ?? undefined;
     if (!claimed) {
       log("[deploy] Not started: the deployment was closed while it waited in the queue");
       await streamLogger.flush();
@@ -549,6 +548,7 @@ export async function runDeployment(
       timer,
       logs,
       logLines,
+      logPrefix,
       startTime,
     };
 
@@ -632,7 +632,7 @@ export async function runDeployment(
           .set({
             status: "superseded",
             supersededBy: supersededById,
-            log: logLines.join("\n"),
+            log: saved(),
             durationMs,
             finishedAt: new Date(),
           })
@@ -660,7 +660,7 @@ export async function runDeployment(
           .update(deployments)
           .set({
             status: "cancelled",
-            log: logLines.join("\n"),
+            log: saved(),
             durationMs,
             finishedAt: new Date(),
           })
@@ -738,7 +738,7 @@ export async function runDeployment(
     // A row the sweeper already closed keeps its record and the app status it set.
     const recorded = await db
       .update(deployments)
-      .set({ status: "failed", log: logLines.join("\n"), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
+      .set({ status: "failed", log: saved(), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
       .where(ownedRow(deploymentId, opts.executorId))
       .returning({ id: deployments.id })
       .then((rows) => rows.length > 0);

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { recordActivity } from "@/lib/activity";
-import type { DeployContext } from "./deploy-context";
+import { savedLog, type DeployContext } from "./deploy-context";
 
 /** Log line for unfinished work. */
 export function incompleteLogLine(reason: string): string {
@@ -24,7 +24,7 @@ export async function recordPostDeployIncomplete(
       .set({
         // Appended; one deploy can leave several things undone.
         postDeployError: sql`concat_ws(chr(10), ${deployments.postDeployError}, ${reason})`,
-        log: ctx.logLines.join("\n"),
+        log: savedLog(ctx),
       })
       .where(eq(deployments.id, ctx.deploymentId));
   } catch {

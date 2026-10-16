@@ -48,7 +48,7 @@ import {
   incompleteLogLine,
   recordPostDeployIncomplete,
 } from "../deploy-incomplete";
-import type { DeployContext, SlotStopOutcome } from "../deploy-context";
+import { savedLog, type DeployContext, type SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
 import { CONSOLE_PORT, CONSOLE_SERVICE } from "@/lib/mesh/constants";
@@ -378,7 +378,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     .update(deployments)
     .set({
       status: "success",
-      log: ctx.logLines.join("\n"),
+      log: savedLog(ctx),
       durationMs,
       finishedAt: new Date(),
       envSnapshot,
