@@ -27,6 +27,9 @@ pnpm lint               # ESLint
 pnpm test               # Full suite: typecheck + lint + vitest
 pnpm test:e2e           # Playwright end-to-end tests
 
+# CLI (packages/cli, the npm `vardo` client; not in the console image)
+pnpm --filter ./packages/cli build    # Bundle to packages/cli/dist/vardo.mjs
+
 # Infrastructure
 docker compose up -d postgres redis   # Local dev (plain `up -d` also starts Traefik and WireGuard)
 docker compose down                   # Stop all services

@@ -1,0 +1,28 @@
+{
+  "name": "vardo",
+  "version": "0.1.0",
+  "description": "Run Vardo's MCP tools from the command line.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joeyyax/vardo.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "bin": {
+    "vardo": "dist/vardo.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

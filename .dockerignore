@@ -23,6 +23,8 @@ playwright.config.ts
 vitest.config.ts
 install.sh
 update.sh
+# The npm CLI, not part of the image.
+packages
 **/*.tsbuildinfo
 !drizzle/**
 dist
