@@ -11,6 +11,7 @@ export type FeatureFlag =
   | "bindMounts"
   | "dockerSocket"
   | "selfManagement"
+  | "selfPreviews"
   | "backups"
   | "terminal"
   | "cron"
@@ -80,7 +81,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   previews: {
     label: "PR previews",
     description:
-      "Ephemeral preview environments for pull requests, created on PR open and torn down on close. Disabling leaves git deploys working without spinning up per-PR stacks. Previews of Vardo itself also need Self-management.",
+      "Ephemeral preview environments for pull requests, created on PR open and torn down on close. Disabling leaves git deploys working without spinning up per-PR stacks. Previews of Vardo itself also need Vardo previews.",
     defaultValue: false,
     group: "deployment",
   },
@@ -114,6 +115,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Self-management",
     description:
       "Register Vardo as a managed project visible in the dashboard. Enables PR preview deployments against the Vardo repo. On by default once Vardo deploys itself.",
+    defaultValue: false,
+    group: "deployment",
+  },
+  selfPreviews: {
+    label: "Vardo previews",
+    description: "Preview deployments for pull requests against the Vardo repo. Needs PR previews and Self-management.",
     defaultValue: false,
     group: "deployment",
   },

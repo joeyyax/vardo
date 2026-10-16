@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
 
 // GitHub times a webhook out after ten seconds. The handler awaited the whole
@@ -138,9 +138,35 @@ describe("GitHub pull_request webhook with previews off", () => {
 
     const res = (await POST(prEvent("opened"), {})) as Response;
 
-    expect(await res.json()).toMatchObject({ skipped: "previews disabled" });
+    expect(await res.json()).toMatchObject({ skipped: "Vardo previews disabled" });
     expect(createVardoPreview).not.toHaveBeenCalled();
     expect(destroyVardoPreview).not.toHaveBeenCalled();
     vi.mocked(isFeatureEnabled).mockReturnValue(false);
+  });
+});
+
+describe("GitHub pull_request webhook with Vardo previews off", () => {
+  beforeEach(() => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(isFeatureEnabledAsync).mockImplementation(async (flag) => flag !== "selfPreviews");
+    vi.mocked(getSystemManagedApp).mockResolvedValue({ id: "vardo" } as never);
+  });
+
+  afterEach(() => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(false);
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValue(true);
+  });
+
+  it("builds no Vardo preview while other previews stay on", async () => {
+    const res = (await POST(prEvent("opened"), {})) as Response;
+
+    expect(await res.json()).toMatchObject({ skipped: "Vardo previews disabled" });
+    expect(createVardoPreview).not.toHaveBeenCalled();
+  });
+
+  it("still removes an existing Vardo preview on close", async () => {
+    await POST(prEvent("closed"), {});
+
+    expect(destroyVardoPreview).toHaveBeenCalledWith(25);
   });
 });
