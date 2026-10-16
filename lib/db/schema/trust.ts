@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Text columns: adding a visibility or check state needs no migration.
 
@@ -17,6 +17,8 @@ export const trustSettings = pgTable("trust_settings", {
   name: text("name"),
   /** The operator's switch and value per commitment id. */
   commitments: jsonb("commitments").$type<Record<string, { enabled?: boolean; amount?: number | null }>>().notNull().default({}),
+  /** Whether Cloudflare fronts the instance's domains, and when Vardo last probed. */
+  cloudflare: jsonb("cloudflare").$type<{ behind: boolean; checkedAt: string }>(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -41,4 +43,20 @@ export const trustRuns = pgTable("trust_run", {
   max: integer("max").notNull(),
   /** Check id to weight, for every check that ran. */
   weights: jsonb("weights").$type<Record<string, number>>().notNull(),
+});
+
+/** A third party that can handle client data. Only confirmed rows reach the public page. */
+export const trustSubprocessors = pgTable("trust_subprocessor", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Detection key such as backup:r2. Null for a subprocessor the operator added. */
+  key: text("key").unique(),
+  name: text("name").notNull(),
+  purpose: text("purpose").notNull(),
+  region: text("region"),
+  /** "suggested", "confirmed" or "dismissed". */
+  status: text("status").notNull().default("suggested"),
+  /** The last detection still found it. A confirmed row that stops being detected stays listed until the operator removes it. */
+  detected: boolean("detected").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

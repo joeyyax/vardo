@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
 import { CommitmentsCard } from "./commitments-card";
+import { SubprocessorsCard } from "./subprocessors-card";
 import { VisibilityCard, type TrustPatch } from "./visibility-card";
 
 const ENDPOINT = "/api/v1/admin/trust";
@@ -189,8 +190,24 @@ export function AdminTrust() {
           <Card variant="surface" className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="type-h3">Next steps</h3>
-              <p className="text-xs text-muted-foreground">{view.steps.length ? "Most points first" : "Nothing is failing."}</p>
+              <p className="text-xs text-muted-foreground">{view.steps.length ? "Most points first" : view.reviews.length ? "" : "Nothing is failing."}</p>
             </div>
+            {view.reviews.length > 0 && (
+              <div className="mt-2">
+                <div className="text-xs font-medium text-muted-foreground">To review before it&apos;s public</div>
+                <ul className="divide-y">
+                  {view.reviews.map((r) => (
+                    <CheckRow
+                      key={r.id}
+                      state="unknown"
+                      title={r.title}
+                      evidence={r.detail}
+                      aside={<Button asChild variant="outline" size="xs"><a href={r.href}>{r.action}</a></Button>}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
             {view.steps.length > 0 && (
               <ul className="mt-2 divide-y">
                 {view.steps.map((s) => (
@@ -275,6 +292,8 @@ export function AdminTrust() {
           </div>
 
           <CommitmentsCard commitments={view.commitments} busy={busy} call={request} />
+
+          <SubprocessorsCard rows={view.subprocessors} busy={busy} call={request} />
 
           <Card variant="surface" className="space-y-3 p-5">
             <div className="flex items-baseline justify-between gap-3">
