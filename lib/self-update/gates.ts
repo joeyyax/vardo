@@ -12,6 +12,8 @@ export type GateInputs = {
   disk: { freeBytes: number; usedBytes: number } | null;
   /** Core services the health probe reports unhealthy. */
   unhealthyServices: string[];
+  /** How long the probe has reported unhealthy without a clean one in between. */
+  unhealthyForMs: number;
   /** The target already failed here and was rolled back. */
   targetFailedBefore: boolean;
 };
@@ -23,6 +25,8 @@ export type GateFailure = { gate: GateName; reason: string };
 /** A build, the new slot and the dump all need room. */
 export const UPDATE_MIN_FREE_BYTES = 5 * 1024 ** 3;
 export const UPDATE_MAX_USED_PERCENT = 90;
+/** Unhealthy this long, across ticks, fails the health gate; shorter waits like busy. */
+export const HEALTH_GRACE_MS = 3 * 60_000;
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -51,7 +55,9 @@ export function evaluateGates(inputs: GateInputs): GateFailure[] {
   }
 
   if (inputs.unhealthyServices.length > 0) {
-    failures.push({ gate: "health", reason: `Unhealthy: ${inputs.unhealthyServices.join(", ")}` });
+    const reason = `Unhealthy: ${inputs.unhealthyServices.join(", ")}`;
+    if (inputs.unhealthyForMs >= HEALTH_GRACE_MS) failures.push({ gate: "health", reason });
+    else failures.push({ gate: "busy", reason: `${reason} (rechecking)` });
   }
 
   if (inputs.targetFailedBefore) {

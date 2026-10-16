@@ -63,6 +63,8 @@ async function unhealthyServices(fresh = false): Promise<string[]> {
 
 // Gates
 
+let unhealthySince: number | null = null;
+
 async function runningDrills(): Promise<number> {
   try {
     const { listContainers } = await import("@/lib/docker/client");
@@ -90,6 +92,7 @@ export async function collectGateInputs(targetSha: string, state: UpdateState): 
     runningDrills(),
     unhealthyServices(true),
   ]);
+  unhealthySince = unhealthy.length === 0 ? null : (unhealthySince ?? now.getTime());
   const { readDiskSpace } = await import("@/lib/docker/disk-guard");
   return {
     activeDeploys: active.length,
@@ -98,6 +101,7 @@ export async function collectGateInputs(targetSha: string, state: UpdateState): 
     runningDrills: drills,
     disk: await readDiskSpace(),
     unhealthyServices: unhealthy,
+    unhealthyForMs: unhealthySince === null ? 0 : now.getTime() - unhealthySince,
     targetFailedBefore: state.failedTargets.some((sha) => sameCommit(sha, targetSha)),
   };
 }
