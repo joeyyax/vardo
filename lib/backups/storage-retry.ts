@@ -82,6 +82,8 @@ export function withStorageRetry(storage: BackupStorage): BackupStorage {
     list: (prefix) => withRetry("list", prefix, () => storage.list(prefix)),
   };
 
+  if (storage.slotWeight) wrapped.slotWeight = storage.slotWeight.bind(storage);
+
   // Presigning checks the object exists first.
   if (storage.getDownloadUrl) {
     const getDownloadUrl = storage.getDownloadUrl.bind(storage);

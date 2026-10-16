@@ -21,6 +21,7 @@ import { promisify } from "util";
 import { ArchiveMissingError, type BackupStorage, type StoredObject, type UploadStreamOptions } from "./storage-port";
 import { withRetry } from "./storage-retry";
 import { assertEndpointReachable, backupEndpointLookup } from "./target-guard";
+import { BACKUP_SLOT_FORMULA } from "@/lib/resources/defaults";
 
 const pipelineAsync = promisify(pipeline);
 
@@ -30,11 +31,10 @@ const MiB = 1024 * 1024;
 export const PART_SIZE = 16 * MiB;
 /** S3's largest part. */
 export const MAX_PART_SIZE = 5 * 1024 * MiB;
-/** Parts in flight at once, and the most part buffers an upload holds. */
+/** Most parts in flight at once, and the most part buffers an upload holds. */
 export const PART_QUEUE = 4;
-/** Queue for parts over LARGE_PART_SIZE, so a huge volume doesn't hold gigabytes. */
-export const LARGE_PART_QUEUE = 2;
-export const LARGE_PART_SIZE = 64 * MiB;
+/** Part buffers one backup slot covers. */
+export const SLOT_BUFFER_BYTES = PART_QUEUE * PART_SIZE;
 const MAX_PARTS = 10_000;
 /** Parts the expected size is spread over, leaving headroom under MAX_PARTS. */
 const TARGET_PARTS = 9_000;
@@ -49,8 +49,15 @@ export function choosePartSize(expectedBytes: number | null | undefined): number
   return Math.min(MAX_PART_SIZE, Math.max(PART_SIZE, wholeMiB));
 }
 
+/** As many parts as fit in a slot's buffers, at least the two an upload reads before it picks PUT or multipart. */
 export function partQueueFor(partSize: number): number {
-  return partSize > LARGE_PART_SIZE ? LARGE_PART_QUEUE : PART_QUEUE;
+  return Math.max(2, Math.min(PART_QUEUE, Math.floor(SLOT_BUFFER_BYTES / partSize)));
+}
+
+/** Backup slots an upload with `partSize` parts needs: one, plus one per slot's memory its buffers pass the first slot's by. */
+export function uploadSlotWeight(partSize: number): number {
+  const over = partSize * partQueueFor(partSize) - SLOT_BUFFER_BYTES;
+  return 1 + Math.max(0, Math.ceil(over / (BACKUP_SLOT_FORMULA.slotMb * MiB)));
 }
 
 export type S3StorageConfig = {
@@ -119,6 +126,10 @@ export class S3BackupStorage implements BackupStorage {
       return `${trimmed}/${key}`;
     }
     return key;
+  }
+
+  slotWeight(expectedBytes: number | null | undefined): number {
+    return uploadSlotWeight(this.partSize ?? choosePartSize(expectedBytes));
   }
 
   /** One PUT under a part's size, otherwise a multipart upload that aborts on any failure. */

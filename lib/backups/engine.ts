@@ -26,6 +26,7 @@ import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
 import { trackBackupWork } from "./in-flight";
+import { withSlotWeight } from "./run-limit";
 import { assertSafeName } from "@/lib/docker/validate";
 import { skipsAsConfig } from "./bind-config";
 import {
@@ -535,17 +536,20 @@ export async function backupVolumeTar(
 
     logFn(`Archiving volume ${dockerVolumeName}`);
     const expectedBytes = await volumeSizeBytes(dockerVolumeName);
-    const result = await streamTarBackup({
-      mountArgs: ["-v", `${dockerVolumeName}:/data`],
-      workDir,
-      containerName: backupContainerName(backupId),
-      excludePatterns,
-      label: `Volume ${dockerVolumeName}`,
-      storage,
-      storageKey,
-      logFn,
-      expectedBytes,
-    });
+    // Claimed before the producer starts, so a wait for slots can't trip its stall timer.
+    const result = await withSlotWeight(storage.slotWeight?.(expectedBytes) ?? 1, () =>
+      streamTarBackup({
+        mountArgs: ["-v", `${dockerVolumeName}:/data`],
+        workDir,
+        containerName: backupContainerName(backupId),
+        excludePatterns,
+        label: `Volume ${dockerVolumeName}`,
+        storage,
+        storageKey,
+        logFn,
+        expectedBytes,
+      }),
+    );
     if (excludePatterns.length > 0) {
       logFn(`Excluded ${result.excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
     }

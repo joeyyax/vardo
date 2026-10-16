@@ -18,6 +18,9 @@ export interface BackupStorage {
    */
   uploadStream(key: string, body: Readable, opts?: UploadStreamOptions): Promise<{ sizeBytes: number }>;
 
+  /** Backup slots an upload of up to `expectedBytes` holds memory for. One when absent. */
+  slotWeight?(expectedBytes: number | null | undefined): number;
+
   /** Download a file from the storage target to a local path. */
   download(key: string, destPath: string): Promise<void>;
 

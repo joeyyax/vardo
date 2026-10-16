@@ -26,9 +26,11 @@ function grant(): void {
   }
 }
 
-function claim(weight: number, limit: number): Promise<void> {
+function claim(weight: number, limit: number, front = false): Promise<void> {
   return new Promise((resolve) => {
-    slots.waiting.push({ weight, limit, grant: resolve });
+    const waiter = { weight, limit, grant: resolve };
+    if (front) slots.waiting.unshift(waiter);
+    else slots.waiting.push(waiter);
     grant();
   });
 }
@@ -56,6 +58,28 @@ export async function withBackupSlot<T>(limit: number, fn: () => Promise<T>): Pr
 /** `withBackupSlot` at this process's slot limit. */
 export async function withSizedBackupSlot<T>(fn: () => Promise<T>): Promise<T> {
   return withBackupSlot(await backupSlotLimit(), fn);
+}
+
+/**
+ * Inside a slot, holds `weight` slots while `fn` runs, at most the limit. Waits at the head of the line
+ * holding none, so two runs growing at once can't deadlock. Outside a slot, runs `fn` as is.
+ */
+export async function withSlotWeight<T>(weight: number, fn: () => Promise<T>): Promise<T> {
+  const held = heldSlots.getStore();
+  const want = held ? Math.min(Math.ceil(weight), held.limit) : 0;
+  if (!held || want <= held.weight) return fn();
+  const was = held.weight;
+  slots.active -= was;
+  held.weight = 0;
+  await claim(want, held.limit, true);
+  held.weight = want;
+  try {
+    return await fn();
+  } finally {
+    slots.active -= want - was;
+    held.weight = was;
+    grant();
+  }
 }
 
 /** Whether any run holds or waits for a slot. */

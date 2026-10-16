@@ -37,6 +37,7 @@ const {
   recordMock,
   manualRunMock,
   jobDoneMock,
+  slotWeightMock,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
@@ -55,6 +56,7 @@ const {
   recordMock: vi.fn(),
   manualRunMock: vi.fn(),
   jobDoneMock: vi.fn(),
+  slotWeightMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -99,7 +101,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 vi.mock("@/lib/backups/storage-factory", () => ({
-  createBackupStorage: () => ({ uploadStream: uploadMock, delete: vi.fn(), download: vi.fn() }),
+  createBackupStorage: () => ({ uploadStream: uploadMock, slotWeight: slotWeightMock, delete: vi.fn(), download: vi.fn() }),
 }));
 
 import { MANUAL_TRIGGER, runBackup, runSucceeded } from "@/lib/backups/engine";
@@ -110,6 +112,7 @@ import {
   MIN_VALID_GZIP_BYTES,
 } from "@/lib/backups/archive";
 import { backupJobs } from "@/lib/db/schema";
+import { withBackupSlot } from "@/lib/backups/run-limit";
 import { VALID_ARCHIVE, fakeChild, recordingUpload, tarGz } from "./fake-archive";
 
 const execImpl = (...args: unknown[]) => {
@@ -227,6 +230,30 @@ beforeEach(() => {
   listContainersMock.mockReset().mockResolvedValue([]);
   resolveDefaultEnvMock.mockReset().mockResolvedValue({ id: "env-1", name: "production" });
   uploadMock.mockClear();
+  slotWeightMock.mockReset().mockReturnValue(1);
+});
+
+describe("runBackup — backup slots", () => {
+  it("waits for a second slot before archiving a volume whose upload needs two", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    volumeSizeMock.mockResolvedValue(400e9);
+    slotWeightMock.mockReturnValue(2);
+    let free!: () => void;
+    const other = withBackupSlot(2, () => new Promise<void>((r) => (free = r)));
+    const run = withBackupSlot(2, () => runBackup("job-1"));
+
+    await vi.waitFor(() => expect(slotWeightMock).toHaveBeenCalledWith(400e9));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(dockerRuns()).toHaveLength(0);
+    expect(uploadMock).not.toHaveBeenCalled();
+
+    free();
+    await other;
+    const [result] = await run;
+    expect(result.outcome).toBe("success");
+    expect(dockerRuns()).toHaveLength(1);
+  });
 });
 
 describe("runBackup — bind mounts", () => {
