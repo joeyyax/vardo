@@ -23,7 +23,6 @@ export async function loadPublicInput(): Promise<PublicInput> {
   ]);
   return {
     name: settings.name ?? "This operator",
-    domain: settings.domain ?? "",
     securityContact: guard?.securityContact?.trim() || null,
     hosting: effectiveHosting(settings),
     results,

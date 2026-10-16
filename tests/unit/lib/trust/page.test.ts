@@ -7,7 +7,6 @@ const NOW = new Date("2026-10-16T12:00:00Z");
 
 const base: PublicInput = {
   name: "Acme",
-  domain: "acme.example",
   securityContact: "security@acme.example",
   hosting: manualHosting({ provider: "hetzner", region: "nbg1" }),
   results: [

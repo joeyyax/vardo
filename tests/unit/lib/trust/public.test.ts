@@ -13,7 +13,6 @@ function result(id: CheckId, state: CheckState, minutesAgo = 5): CheckResult {
 function input(over: Partial<PublicInput> = {}): PublicInput {
   return {
     name: "Acme",
-    domain: "acme.example",
     securityContact: "security@acme.example",
     hosting: null,
     results: [],

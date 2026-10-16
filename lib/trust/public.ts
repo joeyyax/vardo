@@ -27,7 +27,6 @@ export type DpaInput = { reviewedAt: Date | null; hasFile: boolean };
 
 export type PublicInput = {
   name: string;
-  domain: string;
   securityContact: string | null;
   hosting: Hosting | null;
   results: CheckResult[];
@@ -39,7 +38,6 @@ export type PublicInput = {
 
 export type PublicTrust = {
   name: string;
-  domain: string;
   securityContact: string | null;
   hosting: {
     provider: string;
@@ -69,7 +67,6 @@ export function toPublic(input: PublicInput): PublicTrust {
 
   return {
     name: input.name,
-    domain: input.domain,
     securityContact: input.securityContact && EMAIL_RE.test(input.securityContact) ? input.securityContact : null,
     hosting: input.hosting
       ? {

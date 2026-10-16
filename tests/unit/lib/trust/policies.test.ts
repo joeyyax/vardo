@@ -91,7 +91,6 @@ describe("review state", () => {
 
     const pub = toPublic({
       name: "Acme",
-      domain: "acme.example",
       securityContact: null,
       hosting: null,
       results: [],

@@ -15,7 +15,7 @@ const ENDPOINT = "/api/v1/admin/trust/subprocessors";
 
 function Fields({ values, onChange, onBlur, label }: { values: { name: string; purpose: string; region: string }; onChange: (next: { name: string; purpose: string; region: string }) => void; onBlur?: () => void; label: string }) {
   return (
-    <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[1fr_1.4fr_0.7fr]">
+    <div className="grid min-w-0 flex-1 basis-full gap-2 sm:basis-0 sm:grid-cols-[1fr_1.4fr_0.7fr]">
       <Input aria-label={`${label} name`} placeholder="Name" value={values.name} onChange={(e) => onChange({ ...values, name: e.target.value })} onBlur={onBlur} />
       <Input aria-label={`${label} purpose`} placeholder="What it does for client data" value={values.purpose} onChange={(e) => onChange({ ...values, purpose: e.target.value })} onBlur={onBlur} />
       <Input aria-label={`${label} region`} placeholder="Region" value={values.region} onChange={(e) => onChange({ ...values, region: e.target.value })} onBlur={onBlur} />

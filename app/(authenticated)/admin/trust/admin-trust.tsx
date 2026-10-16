@@ -145,8 +145,8 @@ export function AdminTrust() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-72 space-y-1">
           <h2 className="type-h2">Trust center</h2>
           <p className="text-sm text-muted-foreground">A page for your clients on how this instance is hosted, backed up and secured. Your score and what&apos;s missing stay with admins.</p>
         </div>
