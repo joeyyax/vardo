@@ -35,6 +35,8 @@ export const RESOLVE_MS = 10 * 60_000;
 const COVERAGE_SLACK_MS = 90_000;
 /** This many times the line is critical for any signal. */
 const CRITICAL_RATIO = 3;
+/** Firing also takes readings over this many times the app's peak five-minute sample. */
+export const PEAK_MULTIPLE = 2;
 
 /** max(k × high, high + floor), with k and the floor set by sensitivity and the signal's weight. */
 export function lineFor(signal: SignalDef, stats: BucketStats, sensitivity: Sensitivity): Line {
@@ -53,15 +55,16 @@ function smooth(points: Sample[]): Sample[] {
   });
 }
 
-/** Null without a fresh reading, so the caller neither fires nor clears. */
-export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now: number): SignalVerdict | null {
+/** Null without a fresh reading, so the caller neither fires nor clears. A `peak` of 0 leaves firing to the line. */
+export function judgeSignal(points: Sample[], signal: SignalDef, line: Line, now: number, peak = 0): SignalVerdict | null {
   const latest = points.at(-1);
   if (!latest || now - latest.at > STALE_MS) return null;
 
   const start = now - signal.sustainMs;
   const covered = points[0].at <= start + COVERAGE_SLACK_MS;
   const window = points.filter((p) => p.at > start);
-  const fires = covered && window.length > 0 && window.every((p) => p.value > line.threshold);
+  const gate = PEAK_MULTIPLE * peak;
+  const fires = covered && window.length > 0 && window.every((p) => p.value > line.threshold && p.value > gate);
   const holds = fires || smooth(points).some((p) => p.at > now - RESOLVE_MS && p.value >= line.clearBelow);
 
   let since = latest.at;

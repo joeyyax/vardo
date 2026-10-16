@@ -98,6 +98,18 @@ describe("notifyObservations", () => {
     expect(mocks.hold).not.toHaveBeenCalled();
   });
 
+  it("clears anomaly alerts without a resolved email", async () => {
+    mocks.settings.mockResolvedValue({ categories: { anomalies: true }, batchWindowMinutes: 30 });
+    mocks.clear.mockImplementation(async (_org: string, type: Observation["type"]) =>
+      [{ about: "a1", severity: "warning", sentAt: new Date(now.getTime() - 60_000), detail: obs(type, "a1").item }],
+    );
+    const { resolved } = await notifyObservations("org1", ["app.anomaly", "app.new-process", "app.new-port"], [], now);
+    expect(mocks.clear).toHaveBeenCalledTimes(3);
+    expect(resolved).toEqual([]);
+    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(mocks.hold).not.toHaveBeenCalled();
+  });
+
   it("keeps a holding subject in the margin from clearing without sending it", async () => {
     const margin = { ...obs("host.cpu", "host"), fires: false };
     await notifyObservations("org1", ["host.cpu"], [margin], now);
