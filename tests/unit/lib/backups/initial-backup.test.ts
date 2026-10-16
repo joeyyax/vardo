@@ -14,6 +14,8 @@ const m = vi.hoisted(() => ({
   acquireLock: vi.fn(),
   importRunning: vi.fn(),
   switchState: vi.fn(),
+  /** Job claims held now, by job. */
+  claims: new Map<string, string>(),
   updates: [] as Record<string, unknown>[],
   inserts: [] as { values: Record<string, unknown>; set?: Record<string, unknown> }[],
 }));
@@ -50,6 +52,15 @@ vi.mock("@/lib/backups/engine", () => ({
   STALE_RUN_MS: 3_600_000,
 }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: m.acquireLock }));
+vi.mock("@/lib/backups/job-claim", () => ({
+  claimJob: async (jobId: string, by: string) => {
+    if (m.claims.has(jobId)) return null;
+    m.claims.set(jobId, by);
+    return async () => {
+      m.claims.delete(jobId);
+    };
+  },
+}));
 vi.mock("@/lib/metrics/bulk-write", () => ({ isBulkWriteRunning: m.importRunning }));
 vi.mock("@/lib/backups/switch", () => ({ resolveAppBackupSwitch: m.switchState }));
 vi.mock("@/lib/logger", () => ({
@@ -106,6 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   m.updates.length = 0;
   m.inserts.length = 0;
+  m.claims.clear();
   m.appsFindFirst.mockResolvedValue({ id: "app1", organizationId: "org1", status: "active" });
   m.initialFindFirst.mockResolvedValue(undefined);
   m.jobAppsFindMany.mockResolvedValue([JOB]);
@@ -276,6 +288,29 @@ describe("startDueInitialBackups", () => {
     m.initialFindMany.mockResolvedValue([pending()]);
     expect(await start(new Set(["job1"]))).toHaveLength(0);
     expect(m.updates).toHaveLength(0);
+  });
+
+  it("holds the job's claim until the snapshot finishes", async () => {
+    m.initialFindMany.mockResolvedValue([pending()]);
+    let finish!: () => void;
+    m.runBackup.mockReturnValue(new Promise((r) => (finish = () => r([{ outcome: "success" }]))));
+
+    const runs = await start();
+    await vi.waitFor(() => expect(m.runBackup).toHaveBeenCalledOnce());
+    expect(m.claims.get("job1")).toBe("initial");
+    finish();
+    await Promise.all(runs);
+    expect(m.claims.size).toBe(0);
+  });
+
+  it("leaves a row due for the next tick while another run holds the job", async () => {
+    m.initialFindMany.mockResolvedValue([pending()]);
+    m.claims.set("job1", "manual");
+
+    expect(await start()).toHaveLength(0);
+    expect(m.runBackup).not.toHaveBeenCalled();
+    expect(m.updates).toHaveLength(0);
+    expect(m.claims.get("job1")).toBe("manual");
   });
 
   it("skips a row another instance holds this minute", async () => {

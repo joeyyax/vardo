@@ -14,7 +14,7 @@ import { createGunzip, createGzip } from "zlib";
 import { nanoid } from "nanoid";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, volumes } from "@/lib/db/schema";
 import { withBulkWrite } from "@/lib/metrics/bulk-write";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isSelfApp } from "@/lib/docker/self-env";
@@ -25,6 +25,7 @@ import { buildRestoreArgv, defaultDatabase } from "./dump-spec";
 import type { DatabaseKind } from "./durability";
 import { resolveDbContainer } from "./resolve-db-container";
 import { trackBackupWork } from "./in-flight";
+import { claimJob, type ReleaseClaim } from "./job-claim";
 import { createMissingDumpRoles, replacePostgresDatabase } from "./pg-cluster";
 import {
   BACKUPS_DIR,
@@ -438,13 +439,35 @@ async function batchImport(
   ]);
 }
 
+/** Holds the claim of every job covering the app for the import. Throws when a run of one holds it. */
+async function claimAppJobs(appId: string): Promise<ReleaseClaim> {
+  const links = await db.query.backupJobApps.findMany({
+    where: eq(backupJobApps.appId, appId),
+    columns: { backupJobId: true },
+  });
+  const held: ReleaseClaim[] = [];
+  const release = async () => {
+    await Promise.all(held.map((r) => r()));
+  };
+  for (const { backupJobId } of links) {
+    const claim = await claimJob(backupJobId, "import");
+    if (!claim) {
+      await release();
+      throw new ImportError("A backup of this app is running. Import once it finishes", 409);
+    }
+    held.push(claim);
+  }
+  return release;
+}
+
 export async function importIntoApp(
   opts: Parameters<typeof importIntoAppUnmarked>[0],
 ): ReturnType<typeof importIntoAppUnmarked> {
   const startedAt = Date.now();
+  const release = await claimAppJobs(opts.appId);
   const result = await trackBackupWork("import", `into app ${opts.appId}`, () =>
     withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts)),
-  );
+  ).finally(release);
   await batchImport(opts, result, Date.now() - startedAt).catch(() => {});
   if (result.success) {
     await import("./initial-backup")

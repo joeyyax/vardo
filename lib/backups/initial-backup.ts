@@ -16,6 +16,7 @@ import { logger } from "@/lib/logger";
 import { runBackup, runSucceeded, STALE_RUN_MS } from "./engine";
 import { resolveAppBackupSwitch } from "./switch";
 import { withBackupSlot } from "./run-limit";
+import { claimJob } from "./job-claim";
 
 const log = logger.child("initial-backup");
 
@@ -246,7 +247,7 @@ async function attempt(row: PendingRow, jobId: string): Promise<void> {
   log.warn(`First snapshot of ${row.appId} failed (attempt ${attempts}), retrying: ${error}`);
 }
 
-/** Start the first snapshots now due. Shares the scheduler's slots and its per-job queue. */
+/** Start the first snapshots now due. Shares the scheduler's slots, its per-job queue and the job claim. */
 export async function startDueInitialBackups(opts: {
   now: Date;
   limit: number;
@@ -278,14 +279,27 @@ export async function startDueInitialBackups(opts: {
         continue;
       }
       if (queued.has(step.jobId)) continue;
+      // Another run of the job holds it; the next tick tries again.
+      const claim = await claimJob(step.jobId, "initial");
+      if (!claim) continue;
 
       // Claimed before the run, so a restart mid-run retries it later rather than never.
-      await db
-        .update(initialBackups)
-        .set({ dueAt: new Date(now.getTime() + retryDelayMs(row.attempts + 1)) })
-        .where(eq(initialBackups.appId, row.appId));
+      try {
+        await db
+          .update(initialBackups)
+          .set({ dueAt: new Date(now.getTime() + retryDelayMs(row.attempts + 1)) })
+          .where(eq(initialBackups.appId, row.appId));
+      } catch (err) {
+        await claim();
+        throw err;
+      }
       queued.add(step.jobId);
-      runs.push(withBackupSlot(limit, () => attempt(row, step.jobId)).finally(() => queued.delete(step.jobId)));
+      runs.push(
+        withBackupSlot(limit, () => attempt(row, step.jobId)).finally(() => {
+          queued.delete(step.jobId);
+          return claim();
+        }),
+      );
     } catch (err) {
       log.error(`First snapshot of ${row.appId} error:`, err);
     }

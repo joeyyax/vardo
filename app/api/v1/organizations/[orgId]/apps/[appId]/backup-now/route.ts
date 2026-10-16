@@ -24,7 +24,7 @@ type RouteParams = {
 
 const bodySchema = z
   .object({
-    // Ignore the in-flight guard when a previous run is wedged.
+    // Start past a wedged in-flight row, never past a live run of the job.
     force: z.boolean().default(false),
   })
   .strict();

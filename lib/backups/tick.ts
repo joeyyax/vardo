@@ -158,7 +158,18 @@ export async function tickBackupJobs(now = new Date(), opts: { claimPollMs?: num
   await Promise.all(runs);
 }
 
-/** Runs an interrupted job again under the slot cap once no other run holds it, then reports it to its run. False when the job is already queued. */
+/** Takes a manual backup from the window before a nightly run's time as the job's result there. False for another kind of run or none to take. */
+async function adoptIntoNightly(runId: string | null, jobId: string): Promise<boolean> {
+  if (!runId) return false;
+  const { adoptManualRun, nightlyRunStart } = await import("./runs");
+  const due = await nightlyRunStart(runId);
+  return due !== null && adoptManualRun(runId, jobId, new Date(due.getTime() - NIGHTLY_REUSE_WINDOW_MS));
+}
+
+/**
+ * Runs an interrupted job again under the slot cap once no other run holds it, then reports it to its run.
+ * A nightly run takes a manual backup from its window instead. False when the job is already queued.
+ */
 export function runRequeuedJob(
   job: { id: string; name: string },
   opts: { runId: string | null; trigger: string },
@@ -168,10 +179,17 @@ export function runRequeuedJob(
   const lease = opts.runId ? holdRunJobLease(opts.runId, job.id) : null;
   const claim = claimJobWhenFree(job.id, "scheduled");
   return Promise.all([backupSlotLimit(), claim])
-    .then(([limit]) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
+    .then(async ([limit]) => {
+      if (await adoptIntoNightly(opts.runId, job.id)) {
+        log.info(`Requeued job "${job.name}" uses its manual backup as the nightly result`);
+        return true;
+      }
+      await withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger));
+      return false;
+    })
     .finally(() => queued.delete(job.id))
-    .then(async () => {
-      if (!opts.runId) return;
+    .then(async (adopted) => {
+      if (!opts.runId || adopted) return;
       const { markJobDone } = await import("./runs");
       await markJobDone(opts.runId, job.id);
     })

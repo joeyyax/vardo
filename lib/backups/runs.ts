@@ -305,6 +305,15 @@ export async function nightlyRunStartedSince(jobId: string, since: Date): Promis
   return run?.startedAt ?? null;
 }
 
+/** When a nightly run started, the time its jobs are due. Null for a run of another kind. */
+export async function nightlyRunStart(runId: string): Promise<Date | null> {
+  const run = await db.query.backupRuns.findFirst({
+    where: and(eq(backupRuns.id, runId), eq(backupRuns.kind, "nightly")),
+    columns: { startedAt: true },
+  });
+  return run?.startedAt ?? null;
+}
+
 /**
  * Takes the latest whole-job manual run of the job started at or after `since` that finished with results
  * as the job's result in a nightly run, marking it done there once. False when there's none to take.
