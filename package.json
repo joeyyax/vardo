@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "dev:worker": "tsx watch --env-file=.env worker/index.ts",
+    "dev:worker": "NODE_ENV=development tsx watch --env-file=.env worker/index.ts",
     "build": "next build && node scripts/build-worker.mjs",
     "build:worker": "node scripts/build-worker.mjs",
     "start": "node scripts/migrate.mjs && next start",

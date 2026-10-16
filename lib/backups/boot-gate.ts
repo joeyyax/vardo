@@ -13,7 +13,9 @@ const KEEP_MS = 90 * 24 * 60 * 60_000;
 
 export type CredentialStep = "encrypted" | "skipped" | "failed";
 
-export const backupBootKey = (sha: string = getBuildSha()) => `${PREFIX}${sha.trim() || "dev"}`;
+/** Keyed by build SHA; development shares one key. */
+export const backupBootKey = (sha: string = getBuildSha(), env: NodeJS.ProcessEnv = process.env) =>
+  `${PREFIX}${env.NODE_ENV === "development" ? "dev" : sha.trim() || "dev"}`;
 
 /** Records that web ran credential encryption, the interrupted-backup reap and the backup target for this release. */
 export async function recordBackupBoot(credentials: CredentialStep, sha: string = getBuildSha(), now = new Date()): Promise<void> {

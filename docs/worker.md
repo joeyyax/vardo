@@ -13,7 +13,7 @@ A deploy is a row in the `deployment` table. Whatever asks for one (the deploy b
 | Worker | Every deploy except Vardo's own |
 | Console | Vardo's own deploys |
 | Console with `VARDO_DEPLOY_EXECUTOR=web` | Every deploy; the worker claims none |
-| Console with `VARDO_WORKER=embedded` (`pnpm dev`) | Every deploy |
+| Console with `VARDO_WORKER=embedded` (`pnpm dev` with `VARDO_DEV_WORKERS=1`) | Every deploy |
 
 - **One per app environment.** A second deploy of the same environment waits for the first. A push or poll replaces an older push still queued, and stops a running push during clone, compose or build. A deploy from the button or the API never stops a running one; it runs next.
 - **Capacity.** Running deploys across the host stay at or under the deploy concurrency setting. Bumped deploys are claimed first, then explicit deploys, then pushes.
@@ -158,14 +158,15 @@ Set these in `/opt/vardo/.env` and redeploy.
 | `VARDO_WORKER_STOP_GRACE` | `10m` |
 | `VARDO_WORKER_DRAIN_SECONDS` | `540` |
 | `VARDO_LOOPS_IN_WEB` | `auto`. `always` keeps every loop in the console; `never` leaves them to the worker. |
-| `VARDO_WORKER` | `external` in production, `embedded` in dev, where `pnpm dev` runs every loop. |
+| `VARDO_WORKER` | `external` in production, `embedded` in dev, where `pnpm dev` runs every loop when `VARDO_DEV_WORKERS=1`. |
+| `VARDO_DEV_WORKERS` | Unset: `pnpm dev` starts no background loops. `1` starts them. |
 | `VARDO_DEPLOY_EXECUTOR` | Unset. `web` makes the console run every deploy and the worker none. For this release only. |
 | `VARDO_MAX_CONCURRENT_BUILDS` | Unset: the [build gate](#builds) formula. |
 | `VARDO_BUILDKIT_MEM` | A quarter of RAM, between 4g and 16g. `install.sh` writes it. Another value pins BuildKit's size. |
 
 ## Development
 
-`pnpm dev` runs every loop itself. For the production split, set `VARDO_WORKER=external` in `.env` and run `pnpm dev:worker` next to `pnpm dev`.
+`pnpm dev` starts no background loops; `VARDO_DEV_WORKERS=1` runs every loop in it. For the production split, set `VARDO_WORKER=external` in `.env` and run `pnpm dev:worker` next to `pnpm dev`.
 
 ## What web still needs from the loops
 

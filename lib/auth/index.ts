@@ -120,7 +120,7 @@ function buildAuth() {
     usePlural: false,
   }),
   logger: {
-    level: "debug",
+    level: process.env.NODE_ENV === "development" ? "debug" : "warn",
   },
 
   emailAndPassword: {

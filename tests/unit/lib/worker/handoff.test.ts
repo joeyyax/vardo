@@ -122,6 +122,19 @@ describe("web loops with a worker coming and going", () => {
     expect(running("backup-tick")).toBe(0);
   });
 
+  it("starts no loops under pnpm dev unless VARDO_DEV_WORKERS=1", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    await handoff.startWebLoops();
+    expect(running("backup-tick")).toBe(0);
+    expect(running("config-sync")).toBe(0);
+    expect(running("deploy-request")).toBe(0);
+
+    vi.stubEnv("VARDO_DEV_WORKERS", "1");
+    await handoff.startWebLoops();
+    expect(running("backup-tick")).toBe(1);
+    expect(running("deploy-request")).toBe(1);
+  });
+
   it("keeps loops in web under VARDO_LOOPS_IN_WEB=always even with a worker", async () => {
     vi.stubEnv("VARDO_LOOPS_IN_WEB", "always");
     rows.value = presentWorker();

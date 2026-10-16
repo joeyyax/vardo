@@ -23,6 +23,11 @@ export function workerMode(env: NodeJS.ProcessEnv = process.env): WorkerMode {
   return env.NODE_ENV === "production" ? "external" : "embedded";
 }
 
+/** Whether web starts its background loops. Under `pnpm dev` only with VARDO_DEV_WORKERS=1. */
+export function webLoopsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV !== "development" || env.VARDO_DEV_WORKERS === "1";
+}
+
 /** VARDO_LOOPS_IN_WEB wins; otherwise embedded runs loops in web always and external hands them off. */
 export function loopsInWeb(env: NodeJS.ProcessEnv = process.env): LoopsInWeb {
   const set = env.VARDO_LOOPS_IN_WEB;
