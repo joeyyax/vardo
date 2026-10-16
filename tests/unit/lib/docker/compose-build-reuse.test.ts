@@ -206,6 +206,52 @@ describe("planComposeReuse", () => {
     expect(calls).toEqual([]);
   });
 
+  it("pulls a key the host lacks from the build registry, re-labels it and drops the pulled tag", async () => {
+    const webKey = await keyOf(config.services.web.build);
+    const dir = await mkdtemp(join(tmpdir(), "reuse-"));
+    const pulled: string[] = [];
+    const untagged: string[] = [];
+    const calls: string[][] = [];
+    try {
+      const result = await planComposeReuse({
+        ...opts(),
+        services: ["web", "api"],
+        config,
+        project: "shop-production-green",
+        workDir: dir,
+        rebuild: false,
+        docker: async (_c, args) => {
+          calls.push(args);
+          return { stdout: "" };
+        },
+        log: () => {},
+        registry: {
+          appName: "shop",
+          ops: {
+            ref: (repo, key) => `localhost:5001/${repo}:${key}`,
+            pull: async (ref) => {
+              pulled.push(ref);
+              return ref.endsWith(webKey);
+            },
+            push: async () => true,
+            untag: async (ref) => {
+              untagged.push(ref);
+            },
+          },
+        },
+      });
+      const ref = `localhost:5001/shop-web:${webKey}`;
+      expect(result.build).toEqual(["api"]);
+      expect(result.reused.web).toContain("from the build registry");
+      expect(pulled).toHaveLength(2);
+      expect(await readFile(join(dir, "vardo-reuse", "Dockerfile"), "utf-8")).toBe(`FROM ${ref}\n`);
+      expect(calls.find((a) => a[0] === "build")).toEqual(expect.arrayContaining(["-t", "shop-production-green-web"]));
+      expect(untagged).toEqual([ref]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("builds when the re-label fails", async () => {
     const webKey = await keyOf(config.services.web.build);
     const dir = await mkdtemp(join(tmpdir(), "reuse-"));

@@ -33,7 +33,7 @@ import { SHARED_DEFINITIONS_FILE } from "./shared-definitions";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
-import { registryAuthHint, withRegistryAuth } from "../registry-auth";
+import { buildRegistryOps, registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { partitionBySlot, sharedProjectName, slotBoundServices, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, holdSlot, NO_HOLD, type CutoverGuard } from "../traefik-cutover";
@@ -493,6 +493,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
         const bounded = await boundedBuild(log, ctx.signal);
+        const registry = ctx.gitSha ? await buildRegistryOps(log, ctx.signal) : null;
         const buildBegan = Date.now();
         const waitedBefore = ctx.timer.waited();
         // Admitted after any wait for the builder.
@@ -515,6 +516,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           signal: ctx.signal,
           deploymentId: ctx.deploymentId,
           wait: ctx.wait,
+          registry: registry ? { ops: registry, appName: app.name } : null,
+          pushes: (ctx.registryPushes ??= []),
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);

@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 import { AutoDeploySettings } from "./auto-deploy-settings";
+import { BuildRegistrySettings } from "./build-registry-settings";
 import { TimeZoneSelect } from "@/components/time-zone-select";
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { formatBytes, formatUptime } from "@/lib/metrics/format";
@@ -114,6 +115,8 @@ export function GeneralSettings() {
       </Card>
 
       <AutoDeploySettings />
+
+      <BuildRegistrySettings />
 
       {runtime && (
         <Card>

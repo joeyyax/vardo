@@ -141,6 +141,48 @@ describe("composeBuild", () => {
     expect(calls.find((c) => c.args.includes("--print"))!.args).toContain("--no-cache");
   });
 
+  it("pushes each built keyed service to the build registry and nothing without one", async () => {
+    const pushed: [string, string][] = [];
+    const pushes: Promise<boolean>[] = [];
+    const registry = {
+      appName: "shop",
+      ops: {
+        ref: (repo: string, key: string) => `localhost:5001/${repo}:${key}`,
+        pull: async () => false,
+        push: async (local: string, ref: string) => {
+          pushed.push([local, ref]);
+          return true;
+        },
+        untag: async () => {},
+      },
+    };
+    await composeBuild(options({ registry, pushes }));
+    await Promise.all(pushes);
+
+    expect(pushes).toHaveLength(2);
+    expect(pushed.map(([local]) => local)).toEqual(["shop-production-green-web", "shop-production-green-api"]);
+    expect(pushed[0][1]).toMatch(/^localhost:5001\/shop-web:[0-9a-f]{64}$/);
+
+    calls = [];
+    await composeBuild(options());
+    expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
+  });
+
+  it("pushes only the services it built", async () => {
+    let n = 0;
+    const partial: ComposeBuildOpts["exec"] = async (cmd, args, opts) => {
+      if (args[0] === "image" && args[1] === "ls") return { stdout: n++ === 0 ? "shop-production-blue-web:latest\n" : "" };
+      return exec!(cmd, args, opts);
+    };
+    const pushed: string[] = [];
+    const registry = {
+      appName: "shop",
+      ops: { ref: (r: string, k: string) => `${r}:${k}`, pull: async () => false, push: async (l: string) => (pushed.push(l), true), untag: async () => {} },
+    };
+    await composeBuild(options({ exec: partial, registry, pushes: [] }));
+    expect(pushed).toEqual(["shop-production-green-api"]);
+  });
+
   it("builds everything, without keys, from a checkout with no commit", async () => {
     await composeBuild(options({ gitSha: undefined }));
     expect(calls.some((c) => c.args.includes("config"))).toBe(false);

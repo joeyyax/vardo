@@ -6,7 +6,8 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
 import { COMPOSE_BUILD_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT, GIT_METADATA_TIMEOUT } from "./constants";
 import { engineVersion } from "./engine-version";
-import { planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
+import { composeImageName, planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
+import { serviceRepo, type RegistryOps } from "./build-registry";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot } from "./build-gate";
@@ -45,6 +46,10 @@ export type ComposeBuildOpts = {
   wait?: WaitWriter;
   /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
   gate?: <T>(run: () => Promise<T>) => Promise<T>;
+  /** Build registry: keyed images are pulled from it for reuse and pushed to it once built. */
+  registry?: { ops: RegistryOps; appName: string } | null;
+  /** Collects the pushes, which run on after the build returns. */
+  pushes?: Promise<boolean>[];
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -68,6 +73,8 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
 
   let services = opts.services;
   let keyFileArgs: string[] = [];
+  let keys: Record<string, string> = {};
+  const images: Record<string, string> = {};
   if (opts.sourceDir && opts.repoDir && opts.gitSha) {
     try {
       const { stdout } = await exec(
@@ -76,6 +83,8 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
         { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT * 3, maxBuffer: MAX_BUFFER },
       );
       const repoDir = opts.repoDir;
+      const config = JSON.parse(String(stdout)) as { services?: Record<string, { image?: string }> };
+      for (const name of services) images[name] = composeImageName(project, name, config.services?.[name]?.image);
       const plan = await planComposeReuse({
         appId: opts.appId,
         sourceDir: opts.sourceDir,
@@ -86,25 +95,36 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
         git: async (args) =>
           String((await exec("git", ["-C", repoDir, ...args], { timeout: GIT_METADATA_TIMEOUT })).stdout),
         services,
-        config: JSON.parse(String(stdout)),
+        config,
         project,
         workDir: slotDir,
         rebuild: opts.rebuild,
         docker: (cmd, args) => exec(cmd, args, { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT * 6 }),
         log,
+        registry: opts.registry,
       });
       for (const line of Object.values(plan.reused)) log(line);
       services = plan.build;
+      keys = plan.keys;
       keyFileArgs = await writeBuildKeysFile(slotDir, plan.keys);
     } catch (err) {
       log(`[build] Couldn't check for reusable images, building every service: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
       services = opts.services;
+      keys = {};
       keyFileArgs = [];
     }
   }
   if (services.length === 0) return null;
   const gate = opts.gate ?? ((run) => withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal }, opts.bounded, run));
-  return gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
+  const output = await gate(() => runComposeBuild(opts, exec, services, keyFileArgs));
+  if (opts.registry) {
+    const { ops, appName } = opts.registry;
+    for (const name of services) {
+      if (!keys[name] || !images[name]) continue;
+      opts.pushes?.push(ops.push(images[name], ops.ref(serviceRepo(appName, name), keys[name])));
+    }
+  }
+  return output;
 }
 
 async function runComposeBuild(opts: ComposeBuildOpts, exec: Exec, services: string[], keyFileArgs: string[]): Promise<Output> {

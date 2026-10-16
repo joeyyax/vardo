@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { isAbsolute, join, relative, resolve } from "path";
 import { stringify } from "yaml";
 import { BUILD_CONFIG_VERSION, BUILD_KEY_LABEL, GIT_SHA_ARG, buildArgsHash } from "./build-key";
+import { serviceRepo, type RegistryOps } from "./build-registry";
 
 /** Compose file that labels each built image with its key; passed to `compose build` only. */
 export const BUILD_KEYS_FILE = "vardo-build-keys.yml";
@@ -178,6 +179,8 @@ export async function planComposeReuse(opts: ServiceKeyOpts & {
   rebuild: boolean;
   docker: Exec;
   log: (line: string) => void;
+  /** Build registry checked when the host has no image for a key. */
+  registry?: { ops: RegistryOps; appName: string } | null;
 }): Promise<ComposeReusePlan> {
   const plan: ComposeReusePlan = { build: [], reused: {}, keys: {} };
   for (const name of opts.services) {
@@ -197,19 +200,35 @@ export async function planComposeReuse(opts: ServiceKeyOpts & {
       plan.build.push(name);
       continue;
     }
-    const image = await findImageByKey(opts.docker, keyed.key);
+    const local = await findImageByKey(opts.docker, keyed.key);
+    const image = local ?? (await pullByKey(opts.registry, name, keyed.key));
     if (!image) {
       plan.build.push(name);
       continue;
     }
     try {
       await relabel(opts, image, composeImageName(opts.project, name, svc.image), name);
-      plan.reused[name] = `[build] ${name}: reused ${image}, nothing build-relevant changed`;
+      plan.reused[name] = local
+        ? `[build] ${name}: reused ${image}, nothing build-relevant changed`
+        : `[build] ${name}: reused ${image} from the build registry, nothing build-relevant changed`;
     } catch {
       plan.build.push(name);
+    } finally {
+      if (!local) await opts.registry?.ops.untag(image);
     }
   }
   return plan;
+}
+
+/** Pulls a service's image for `key` from the build registry; its ref, or null. */
+async function pullByKey(
+  registry: { ops: RegistryOps; appName: string } | null | undefined,
+  service: string,
+  key: string,
+): Promise<string | null> {
+  if (!registry) return null;
+  const ref = registry.ops.ref(serviceRepo(registry.appName, service), key);
+  return (await registry.ops.pull(ref)) ? ref : null;
 }
 
 /** Newest tagged local image labeled with the key. */

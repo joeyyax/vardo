@@ -8,6 +8,7 @@ import { join } from "path";
 import { dockerEnv } from "./docker-env";
 import { parseImageRef } from "./image-updates/image-ref";
 import { getRegistryCredentials, type RegistryCredential } from "./image-updates/registry";
+import { getBuildRegistry, registryOps, type RegistryOps } from "./build-registry";
 
 /** Docker Hub's auth entry is keyed by the v1 endpoint, not by the registry host. */
 const DOCKER_HUB_KEY = "https://index.docker.io/v1/";
@@ -53,11 +54,19 @@ export function buildDockerConfig(
   return JSON.stringify({ auths });
 }
 
+/** Configured logins, with the build registry's winning for its host. */
+async function configuredCredentials(): Promise<Record<string, RegistryCredential>> {
+  const credentials = { ...(await getRegistryCredentials()) };
+  const build = await getBuildRegistry().catch(() => null);
+  if (build?.credential) credentials[build.host] = build.credential;
+  return credentials;
+}
+
 /** Runs `run` against a temporary Docker config carrying the configured registry logins. */
 export async function withRegistryAuth<T>(
   run: (env: NodeJS.ProcessEnv) => Promise<T>,
 ): Promise<T> {
-  const credentials = await getRegistryCredentials();
+  const credentials = await configuredCredentials();
   if (Object.keys(credentials).length === 0) return run(dockerEnv());
 
   const dir = await mkdtemp(join(tmpdir(), "vardo-docker-config-"));
@@ -77,7 +86,7 @@ export async function registryAuthHint(
 ): Promise<string | null> {
   if (!AUTH_FAILURE.test(message)) return null;
 
-  const configured = new Set(Object.keys(await getRegistryCredentials()));
+  const configured = new Set(Object.keys(await configuredCredentials()));
   const missing = new Set<string>();
   for (const image of images) {
     const ref = image ? parseImageRef(image) : null;
@@ -86,4 +95,10 @@ export async function registryAuthHint(
   if (missing.size === 0) return null;
 
   return `No registry credentials are configured for ${[...missing].sort().join(", ")} — set VARDO_REGISTRY_CREDENTIALS so the pull can authenticate.`;
+}
+
+/** Push and pull for the build registry under the configured logins, or null when none is set. */
+export async function buildRegistryOps(log: (line: string) => void, signal?: AbortSignal): Promise<RegistryOps | null> {
+  const registry = await getBuildRegistry().catch(() => null);
+  return registry ? registryOps(registry, { log, signal, withAuth: withRegistryAuth }) : null;
 }
