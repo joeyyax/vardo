@@ -75,4 +75,11 @@ describe("health gate across ticks", () => {
     }
     expect(await probe()).toMatchObject({ state: "blocked", reason: "Unhealthy: Redis" });
   });
+
+  it("starts over when the last probe was long ago", async () => {
+    h.unhealthy = ["Redis"];
+    await probe();
+    vi.advanceTimersByTime(2 * 24 * 60 * 60_000);
+    expect((await probe()).state).toBe("busy");
+  });
 });

@@ -14,7 +14,7 @@ import { getBuildSha, type ChannelUpdate } from "@/lib/version";
 import { formatVersion } from "@/lib/lifecycle/self-deploy";
 import { sameCommit } from "./commit";
 import { DEPLOY_TIMEOUT_MS, isRunActive, verifyStep } from "./decide";
-import type { GateInputs } from "./gates";
+import { HEALTH_GRACE_MS, type GateInputs } from "./gates";
 import { updateFailed } from "./lifecycle";
 import { setLocalVardoStatus } from "./peer-status";
 import { getUpdateRun, getUpdateState, setUpdateRun, updateState, type UpdateRun, type UpdateState } from "./store";
@@ -64,6 +64,7 @@ async function unhealthyServices(fresh = false): Promise<string[]> {
 // Gates
 
 let unhealthySince: number | null = null;
+let lastHealthProbeAt: number | null = null;
 
 async function runningDrills(): Promise<number> {
   try {
@@ -92,7 +93,10 @@ export async function collectGateInputs(targetSha: string, state: UpdateState): 
     runningDrills(),
     unhealthyServices(true),
   ]);
-  unhealthySince = unhealthy.length === 0 ? null : (unhealthySince ?? now.getTime());
+  // A gap longer than the grace means the streak wasn't watched; start it over.
+  const stale = lastHealthProbeAt === null || now.getTime() - lastHealthProbeAt > HEALTH_GRACE_MS;
+  lastHealthProbeAt = now.getTime();
+  unhealthySince = unhealthy.length === 0 ? null : stale ? now.getTime() : (unhealthySince ?? now.getTime());
   const { readDiskSpace } = await import("@/lib/docker/disk-guard");
   return {
     activeDeploys: active.length,
