@@ -440,6 +440,27 @@ describe("attentionLines", () => {
     expect(lines[0].label).toBe("app-down in Acme");
   });
 
+  it("names the orgs a merged row came from when only some orgs have it", () => {
+    const target = () => row("backup-coverage", "warning", { label: "No backup target", items: [{ id: "t", name: "Backup storage", href: "/backups" }] });
+    const other = (name: string) => ({ name, rows: [row("app-down", "error", { items: [{ id: name, name, href: `/apps/${name}` }] })] });
+
+    const two = attentionLines([
+      { name: "Homelab", rows: [target()] },
+      { name: "Vardo", rows: [target()] },
+      other("Joey"),
+    ]);
+    expect(two[0]).toEqual({ check: "attention", status: "warn", label: "No backup target in Homelab and Vardo", detail: "Backup storage", fix: "/backups" });
+
+    const four = attentionLines([
+      { name: "Homelab", rows: [target()] },
+      { name: "Vardo", rows: [target()] },
+      { name: "Acme", rows: [target()] },
+      { name: "Beta", rows: [target()] },
+      other("Joey"),
+    ]);
+    expect(four[0].label).toBe("No backup target in Homelab, Vardo and 2 more");
+  });
+
   it("shows a row every org repeats once, without an org", () => {
     const github = (): AttentionRow =>
       row("integration-permissions", "warning", {
@@ -456,6 +477,7 @@ describe("attentionLines", () => {
     const lines = attentionLines([
       { name: "Homelab", rows: [github(), row("app-down", "error")] },
       { name: "Vardo", rows: [github(), row("app-down", "error", { items: [{ id: "other", name: "api", href: "/apps/api" }] })] },
+      { name: "Quiet", rows: [row("deploying", "activity")] },
     ]);
     expect(lines).toEqual([
       {

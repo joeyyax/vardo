@@ -336,11 +336,14 @@ export function attentionRowLines(check: string, rows: AttentionRow[]): DoctorLi
   return reportedRows(rows).map((row) => attentionRowLine(check, row));
 }
 
-/** One line per row, merged across orgs when the key and line match. Only a row seen in one of several orgs names it. */
+/** One line per row, merged across orgs when the key and line match. Names its orgs unless every org with rows has it. */
 export function attentionLines(orgs: { name: string; rows: AttentionRow[] }[]): DoctorLine[] {
   const merged = new Map<string, { line: DoctorLine; orgs: string[] }>();
+  let withRows = 0;
   for (const o of orgs) {
-    for (const row of reportedRows(o.rows)) {
+    const rows = reportedRows(o.rows);
+    if (rows.length > 0) withRows++;
+    for (const row of rows) {
       const l = attentionRowLine("attention", row);
       const id = JSON.stringify([row.key, l.status, l.label, l.detail, l.fix]);
       const seen = merged.get(id);
@@ -349,7 +352,7 @@ export function attentionLines(orgs: { name: string; rows: AttentionRow[] }[]): 
     }
   }
   const lines = [...merged.values()].map(({ line: l, orgs: seenIn }) =>
-    orgs.length > 1 && seenIn.length === 1 ? { ...l, label: `${l.label} in ${seenIn[0]}` } : l,
+    orgs.length > 1 && (seenIn.length === 1 || seenIn.length < withRows) ? { ...l, label: `${l.label} in ${names(seenIn, 2)}` } : l,
   );
   return lines.length > 0 ? lines : [line("attention", "pass", "Nothing needs attention")];
 }
