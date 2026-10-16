@@ -117,7 +117,7 @@ export function judgeTwoStep(members: MemberAuth[]): Judgement {
   const covered = members.filter((m) => m.twoFactor || m.passkeys > 0).length;
   return {
     state: tally(covered, members.length),
-    evidence: `${covered} of ${count(members.length, "member")} use a passkey or authenticator app. Sign-in with a password alone isn't blocked.`,
+    evidence: `${covered} of ${count(members.length, "member")} ${members.length === 1 ? "uses" : "use"} a passkey or authenticator app. Sign-in with a password alone isn't blocked.`,
   };
 }
 
