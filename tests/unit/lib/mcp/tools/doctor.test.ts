@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   heartbeats: vi.fn(),
   health: vi.fn(),
   snapshot: vi.fn(async () => ({})),
+  infraRows: vi.fn(() => []),
   waiting: vi.fn(async () => 0),
   lapsed: [] as unknown[],
   systemJob: vi.fn(),
@@ -36,7 +37,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/config/health", () => ({ getSystemHealth: h.health, sanitizeError: (s: string) => s.replace(/\d+\.\d+\.\d+\.\d+/, "[host]") }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: h.backupsOn }));
 vi.mock("@/lib/attention/infrastructure", () => ({ getInfrastructureSnapshot: h.snapshot }));
-vi.mock("@/lib/attention/infrastructure-rows", () => ({ infrastructureRows: () => [] }));
+vi.mock("@/lib/attention/infrastructure-rows", () => ({ infrastructureRows: h.infraRows }));
 vi.mock("@/lib/attention/rows", () => ({ buildAttentionRows: h.attentionRows }));
 vi.mock("@/lib/alerts/oom", () => ({ sharedOomKills: h.oom }));
 vi.mock("@/lib/backups/engine", () => ({ STALE_RUN_MS: 3_600_000 }));
@@ -159,6 +160,34 @@ describe("vardo_doctor", () => {
       label: "2 deploys past their lease",
       detail: "oldest lapsed 2m ago",
     });
+  });
+
+  it("links each overdue job to its card", async () => {
+    const old = new Date(NOW.getTime() - 70 * 86_400_000);
+    h.jobs.mockResolvedValue([
+      { id: "j1", name: "Auto: fabric", schedule: "0 3 * * *", enabled: true, lastRunAt: old, createdAt: old, backups: [] },
+      { id: "j2", name: "loki", schedule: "0 3 * * *", enabled: true, lastRunAt: null, createdAt: old, backups: [] },
+    ]);
+    const report = (await run()).structuredContent;
+    expect(report.lines.filter((l) => l.label.endsWith("backup overdue"))).toEqual([
+      { check: "backups", status: "warn", label: "fabric backup overdue", detail: "last ran 2mo ago", fix: "/backups#job-j1" },
+      { check: "backups", status: "warn", label: "loki backup overdue", detail: "never ran", fix: "/backups#job-j2" },
+    ]);
+  });
+
+  it("leaves out a core service row the failed probe already reported", async () => {
+    h.health.mockResolvedValue({
+      services: [{ name: "Loki", status: "unhealthy", error: "HTTP 503", logsHref: "/apps/loki/logs" }],
+      resources: [],
+    });
+    h.snapshot.mockResolvedValue({ apps: [{ id: "app-loki", name: "loki", parentAppId: null }] });
+    h.infraRows.mockReturnValue([
+      { key: "core-service-down", label: "Core service down", tone: "error", items: [{ id: "app-loki", name: "Loki" }] },
+    ] as never);
+    const report = (await run()).structuredContent;
+    expect(report.lines.filter((l) => l.check === "services")).toEqual([
+      { check: "services", status: "fail", label: "Loki down", detail: "HTTP 503", fix: "/apps/loki/logs" },
+    ]);
   });
 
   it("warns once when backups are off", async () => {

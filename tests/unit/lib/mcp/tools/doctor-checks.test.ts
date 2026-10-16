@@ -149,6 +149,39 @@ describe("serviceLines", () => {
     ]);
   });
 
+  it("drops core service items a failed probe already reported", () => {
+    const rows: AttentionRow[] = [
+      {
+        key: "core-service-down",
+        label: "Core service down",
+        tone: "error",
+        items: [
+          { id: "app-collector", name: "Collector" },
+          { id: "app-loki-child", name: "Loki · loki" },
+        ],
+        action: { label: "Open", href: "/admin/settings/core-services" },
+      },
+      { key: "vardo-stack-degraded", label: "Vardo degraded", tone: "error", items: [{ id: "alert-1", name: "Traefik" }] },
+    ];
+    const apps = [
+      { id: "app-collector", name: "collector", parentAppId: null },
+      { id: "app-loki", name: "loki", parentAppId: null },
+      { id: "app-loki-child", name: "loki-loki", parentAppId: "app-loki" },
+    ];
+    const down = (name: string) => ({ name, status: "unhealthy" as const, error: "fetch failed" });
+
+    expect(serviceLines([down("Collector"), down("Loki"), down("Traefik")], rows, apps).map((l) => l.label)).toEqual([
+      "Collector down",
+      "Loki down",
+      "Traefik down",
+    ]);
+    expect(serviceLines([down("Loki")], rows, apps)).toEqual([
+      { check: "services", status: "fail", label: "Loki down", detail: "fetch failed" },
+      { check: "services", status: "fail", label: "Core service down", detail: "Collector", fix: "/admin/settings/core-services" },
+      { check: "services", status: "fail", label: "Vardo degraded", detail: "Traefik" },
+    ]);
+  });
+
   it("adds the core service rows", () => {
     const rows: AttentionRow[] = [
       { key: "core-service-down", label: "Core service down", tone: "error", items: [{ id: "c", name: "Collector" }], action: { label: "Open", href: "/admin/settings/core-services" } },
@@ -198,19 +231,25 @@ describe("backupJobLines", () => {
     expect(statuses(backupJobLines({ enabledJobs: 0, failing: [], overdue: [], now: NOW }))).toEqual(["warn"]);
   });
 
-  it("fails failing jobs and warns overdue ones from the oldest", () => {
+  it("fails failing jobs and warns each overdue job with its own last run, oldest first", () => {
     const lines = backupJobLines({
-      enabledJobs: 3,
+      enabledJobs: 6,
       failing: ["Nightly"],
       overdue: [
-        { name: "Hourly", since: ago(3 * 3_600_000), neverRan: false },
-        { name: "Weekly", since: ago(20 * 86_400_000), neverRan: false },
+        { id: "j-hourly", name: "Hourly", since: ago(3 * 3_600_000), neverRan: false },
+        { id: "j-weekly", name: "Weekly", since: ago(20 * 86_400_000), neverRan: false },
+        { id: "j-new", name: "Fresh", since: ago(2 * 86_400_000), neverRan: true },
+        { id: "j-4", name: "Fourth", since: ago(5 * 3_600_000), neverRan: false },
       ],
       now: NOW,
     });
-    expect(statuses(lines)).toEqual(["fail", "warn"]);
-    expect(lines[0]).toMatchObject({ label: "1 backup job failing", detail: "Nightly" });
-    expect(lines[1]).toMatchObject({ label: "2 backup jobs overdue", detail: "Hourly and Weekly; last ran 2w ago" });
+    expect(lines[0]).toMatchObject({ status: "fail", label: "1 backup job failing", detail: "Nightly" });
+    expect(lines.slice(1)).toEqual([
+      { check: "backups", status: "warn", label: "Weekly backup overdue", detail: "last ran 2w ago", fix: "/backups#job-j-weekly" },
+      { check: "backups", status: "warn", label: "Fresh backup overdue", detail: "never ran", fix: "/backups#job-j-new" },
+      { check: "backups", status: "warn", label: "Fourth backup overdue", detail: "last ran 5h ago", fix: "/backups#job-j-4" },
+      { check: "backups", status: "warn", label: "Hourly backup overdue", detail: "last ran 3h ago", fix: "/backups#job-j-hourly" },
+    ]);
   });
 });
 
@@ -399,6 +438,36 @@ describe("attentionLines", () => {
       { name: "Beta", rows: [] },
     ]);
     expect(lines[0].label).toBe("app-down in Acme");
+  });
+
+  it("shows a row every org repeats once, without an org", () => {
+    const github = (): AttentionRow =>
+      row("integration-permissions", "warning", {
+        label: "Integrations",
+        action: { label: "Check again", post: "/api/v1/organizations/x/integrations/check" },
+        items: [
+          {
+            id: "integration:github:app",
+            name: "GitHub App needs more permissions",
+            fix: { label: "Add permissions on GitHub", href: "https://github.com/settings/apps/vardo-app/permissions", external: true },
+          },
+        ],
+      });
+    const lines = attentionLines([
+      { name: "Homelab", rows: [github(), row("app-down", "error")] },
+      { name: "Vardo", rows: [github(), row("app-down", "error", { items: [{ id: "other", name: "api", href: "/apps/api" }] })] },
+    ]);
+    expect(lines).toEqual([
+      {
+        check: "attention",
+        status: "warn",
+        label: "Integrations",
+        detail: "GitHub App needs more permissions",
+        fix: "https://github.com/settings/apps/vardo-app/permissions",
+      },
+      { check: "attention", status: "fail", label: "app-down in Homelab", detail: "app-down-item", fix: "/apps/app-down" },
+      { check: "attention", status: "fail", label: "app-down in Vardo", detail: "api", fix: "/apps/api" },
+    ]);
   });
 });
 

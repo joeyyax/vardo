@@ -5,6 +5,8 @@ import { plural } from "@/lib/email/format";
 import { formatDuration } from "@/lib/metrics/format";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
 import { UPDATES_HREF } from "@/lib/attention/vardo-update-row";
+import { probeAppName } from "@/lib/infra/instance-apps";
+import { jobAnchor } from "@/components/backups/job-anchor";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 
@@ -126,14 +128,26 @@ export function workerLines(r: WorkerReading): DoctorLine[] {
 
 export type ServiceReading = { name: string; status: "healthy" | "unhealthy" | "unconfigured"; error?: string; logsHref?: string };
 
-/** Probed services, then the core service rows the console already raises. */
-export function serviceLines(services: ServiceReading[], coreRows: AttentionRow[]): DoctorLine[] {
+export type ProbedApp = { id: string; name: string; parentAppId: string | null };
+
+/** Ids and names behind the failed probes, compose children included. */
+function failedProbeSubjects(failed: ServiceReading[], apps: ProbedApp[]): Set<string> {
+  const subjects = new Set(failed.map((s) => s.name));
+  const appNames = new Set(failed.map((s) => probeAppName(s.name)).filter((n): n is string => n !== null));
+  const ids = new Set(apps.filter((a) => appNames.has(a.name)).map((a) => a.id));
+  for (const a of apps) if (ids.has(a.id) || (a.parentAppId && ids.has(a.parentAppId))) subjects.add(a.id);
+  return subjects;
+}
+
+/** Probed services, then the core service rows the console already raises, minus items a failed probe already reported. */
+export function serviceLines(services: ServiceReading[], coreRows: AttentionRow[], apps: ProbedApp[] = []): DoctorLine[] {
   const lines: DoctorLine[] = [];
   const healthy = services.filter((s) => s.status === "healthy").map((s) => s.name);
-  for (const s of services) {
-    if (s.status === "unhealthy") lines.push(line("services", "fail", `${s.name} down`, { detail: s.error, fix: s.logsHref }));
-  }
-  lines.push(...attentionRowLines("services", coreRows));
+  const failed = services.filter((s) => s.status === "unhealthy");
+  for (const s of failed) lines.push(line("services", "fail", `${s.name} down`, { detail: s.error, fix: s.logsHref }));
+  const probed = failedProbeSubjects(failed, apps);
+  const rows = coreRows.map((row) => ({ ...row, items: row.items.filter((i) => !probed.has(i.id) && !probed.has(i.name)) }));
+  lines.push(...attentionRowLines("services", rows));
   if (healthy.length > 0) lines.unshift(line("services", "pass", `${plural(healthy.length, "service")} healthy`, { detail: healthy.join(", ") }));
   return lines;
 }
@@ -176,7 +190,7 @@ export function backupStorageLines(r: SystemBackupReading): DoctorLine[] {
 export type BackupJobsReading = {
   enabledJobs: number;
   failing: string[];
-  overdue: { name: string; since: Date; neverRan: boolean }[];
+  overdue: { id: string; name: string; since: Date; neverRan: boolean }[];
   now: Date;
 };
 
@@ -185,12 +199,11 @@ export function backupJobLines(r: BackupJobsReading): DoctorLine[] {
   if (r.failing.length > 0) {
     lines.push(line("backups", "fail", `${plural(r.failing.length, "backup job")} failing`, { detail: names(r.failing), fix: BACKUPS_HREF }));
   }
-  if (r.overdue.length > 0) {
-    const oldest = r.overdue.reduce((a, b) => (a.since < b.since ? a : b));
+  for (const o of [...r.overdue].sort((a, b) => a.since.getTime() - b.since.getTime())) {
     lines.push(
-      line("backups", "warn", `${plural(r.overdue.length, "backup job")} overdue`, {
-        detail: `${names(r.overdue.map((o) => o.name))}; ${oldest.neverRan ? "never ran" : `last ran ${ago(r.now.getTime() - oldest.since.getTime())}`}`,
-        fix: BACKUPS_HREF,
+      line("backups", "warn", `${o.name} backup overdue`, {
+        detail: o.neverRan ? "never ran" : `last ran ${ago(r.now.getTime() - o.since.getTime())}`,
+        fix: `${BACKUPS_HREF}#${jobAnchor(o.id)}`,
       }),
     );
   }
@@ -311,20 +324,33 @@ function rowFix(row: AttentionRow): string | null {
   return row.items.find((i) => i.href && !i.external)?.href ?? null;
 }
 
-/** Error rows fail and warning rows warn. Everything else is left out. */
-export function attentionRowLines(check: string, rows: AttentionRow[], where?: string): DoctorLine[] {
-  return rows
-    .filter((row) => (row.tone === "error" || row.tone === "warning") && row.items.length > 0 && !COVERED_ATTENTION_KEYS.has(row.key))
-    .map((row) =>
-      line(check, row.tone === "error" ? "fail" : "warn", where ? `${row.label} in ${where}` : row.label, {
-        detail: names(row.items.map((i) => i.name)),
-        fix: rowFix(row),
-      }),
-    );
+const reportedRows = (rows: AttentionRow[]) =>
+  rows.filter((row) => (row.tone === "error" || row.tone === "warning") && row.items.length > 0 && !COVERED_ATTENTION_KEYS.has(row.key));
+
+function attentionRowLine(check: string, row: AttentionRow): DoctorLine {
+  return line(check, row.tone === "error" ? "fail" : "warn", row.label, { detail: names(row.items.map((i) => i.name)), fix: rowFix(row) });
 }
 
+/** Error rows fail and warning rows warn. Everything else is left out. */
+export function attentionRowLines(check: string, rows: AttentionRow[]): DoctorLine[] {
+  return reportedRows(rows).map((row) => attentionRowLine(check, row));
+}
+
+/** One line per row, merged across orgs when the key and line match. Only a row seen in one of several orgs names it. */
 export function attentionLines(orgs: { name: string; rows: AttentionRow[] }[]): DoctorLine[] {
-  const lines = orgs.flatMap((o) => attentionRowLines("attention", o.rows, orgs.length > 1 ? o.name : undefined));
+  const merged = new Map<string, { line: DoctorLine; orgs: string[] }>();
+  for (const o of orgs) {
+    for (const row of reportedRows(o.rows)) {
+      const l = attentionRowLine("attention", row);
+      const id = JSON.stringify([row.key, l.status, l.label, l.detail, l.fix]);
+      const seen = merged.get(id);
+      if (seen) seen.orgs.push(o.name);
+      else merged.set(id, { line: l, orgs: [o.name] });
+    }
+  }
+  const lines = [...merged.values()].map(({ line: l, orgs: seenIn }) =>
+    orgs.length > 1 && seenIn.length === 1 ? { ...l, label: `${l.label} in ${seenIn[0]}` } : l,
+  );
   return lines.length > 0 ? lines : [line("attention", "pass", "Nothing needs attention")];
 }
 
