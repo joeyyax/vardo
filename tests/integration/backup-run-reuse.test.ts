@@ -211,6 +211,42 @@ describe.skipIf(!conn || !client)("nightly and manual runs of one job on Postgre
     expect((await nightlyRun())?.items.map((i) => i.backupId)).toEqual(["bk-nightly"]);
   });
 
+  /** A nightly run that opened `ago` ms before now and still waits on the job, as a console that died mid-wait leaves it. */
+  const seedOrphanedNightly = async (ago: number) => {
+    const at = new Date(now.getTime() - ago);
+    await sql`insert into backup_run (id, organization_id, kind, run_key, label, started_at, deadline_at, plan, jobs_done)
+      values (${`n-${n++}`}, 'o1', 'nightly', 'nightly:orphaned', 'Nightly backups', ${at}, ${new Date(at.getTime() + 60 * MIN)},
+        ${sql.json({ jobs: [{ jobId, jobName: "Auto: Shop" }], apps: [], target: null, jobLeases: true })}, ${sql.json([])})`;
+    return at;
+  };
+
+  const requeueOrphans = async () => {
+    const { requeueOrphanedRunJobs } = await import("@/lib/backups/requeue");
+    expect(await requeueOrphanedRunJobs(now)).toEqual([jobId]);
+    await vi.waitFor(async () => expect((await nightlyRun())?.jobs_done).toEqual([jobId]));
+    await vi.waitFor(async () => expect(await client!.exists(claimKey(jobId))).toBe(0));
+  };
+
+  it("records the manual backup a requeued nightly job waited on instead of running it again", async () => {
+    await seedOrphanedNightly(10 * MIN);
+    await seedManualRun(11 * MIN, [item("bk-manual")]);
+
+    await requeueOrphans();
+
+    expect(h.runBackup).not.toHaveBeenCalled();
+    expect((await nightlyRun())?.items.map((i) => i.backupId)).toEqual(["bk-manual"]);
+  });
+
+  it("runs a requeued nightly job when the manual backup started before the nightly window", async () => {
+    await seedOrphanedNightly(10 * MIN);
+    await seedManualRun(16 * MIN, [item("bk-manual")]);
+
+    await requeueOrphans();
+
+    expect(h.runBackup).toHaveBeenCalledTimes(1);
+    expect((await nightlyRun())?.items.map((i) => i.backupId)).toEqual(["bk-nightly"]);
+  });
+
   it("starts a manual run once the nightly run is more than 5 minutes old", async () => {
     const at = new Date(now.getTime() - 6 * MIN);
     await sql`insert into backup_run (id, organization_id, kind, run_key, label, started_at, deadline_at, plan, jobs_done)

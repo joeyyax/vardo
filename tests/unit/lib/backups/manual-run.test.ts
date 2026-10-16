@@ -93,13 +93,26 @@ describe("startManualBackup", () => {
     expect(h.held.size).toBe(0);
   });
 
-  it("starts anyway with force", async () => {
-    h.held.set("j1", { by: "scheduled", startedAt: new Date() });
+  it("starts past a wedged backup row and a recent nightly run with force", async () => {
+    dbMock.query.backups.findFirst.mockResolvedValue({ startedAt: new Date(Date.now() - 30 * 60_000) });
+    h.nightlyRunStartedSince.mockResolvedValue(new Date());
     h.runBackup.mockResolvedValue([]);
     const start = await startManualBackup("j1", { appIds: ["a1"], force: true });
     expect(start.started).toBe(true);
     await vi.waitFor(() => expect(h.runBackup).toHaveBeenCalledWith("j1", { appIds: ["a1"], trigger: "manual", runId: "run_m" }));
     expect(h.startManualRun).toHaveBeenCalledWith(expect.objectContaining({ id: "j1" }), expect.any(Date), ["a1"]);
+    await (start.started && start.done);
+    expect(h.held.size).toBe(0);
+  });
+
+  it("never starts past a run that holds the job, even with force", async () => {
+    const startedAt = new Date("2026-10-15T02:00:00Z");
+    h.held.set("j1", { by: "scheduled", startedAt });
+    expect(await startManualBackup("j1", { appIds: ["a1"], force: true })).toEqual({ started: false, startedAt });
+    await settle();
+    expect(h.runBackup).not.toHaveBeenCalled();
+    expect(h.startManualRun).not.toHaveBeenCalled();
+    expect(h.held.get("j1")).toEqual({ by: "scheduled", startedAt });
   });
 
   it("opens its run and holds the job before waiting for a slot, and reports when done", async () => {

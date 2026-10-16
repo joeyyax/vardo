@@ -93,6 +93,7 @@ vi.mock("@/lib/backups/job-claim", () => {
 });
 vi.mock("@/lib/backups/runs", () => ({
   adoptManualRun: adoptMock,
+  nightlyRunStart: async () => null,
   startNightlyRuns: async () => nightly.value,
   startJobRun: async () => null,
   markJobDone: async (runId: string, jobId: string) => {

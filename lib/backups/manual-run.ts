@@ -16,7 +16,7 @@ export type ManualStart =
 
 /**
  * Starts a job by hand unless a run of it is in progress or its nightly run started in the last few minutes,
- * which it uses instead. `force` skips the check. Waits for a free slot.
+ * which it uses instead. `force` skips the backup row and nightly checks, never a run that holds the job. Waits for a free slot.
  */
 export async function startManualBackup(
   jobId: string,
@@ -24,8 +24,8 @@ export async function startManualBackup(
 ): Promise<ManualStart> {
   const startedAt = new Date();
   const release = await claimJob(jobId, "manual", startedAt);
+  if (!release) return { started: false, startedAt: (await jobClaimHolder(jobId))?.startedAt ?? null };
   if (!opts.force) {
-    if (!release) return { started: false, startedAt: (await jobClaimHolder(jobId))?.startedAt ?? null };
     try {
       const inProgress = await runInProgress(jobId, startedAt);
       if (inProgress) {
@@ -38,7 +38,7 @@ export async function startManualBackup(
     }
   }
 
-  const done = runManual(jobId, startedAt, opts.appIds).finally(() => release?.());
+  const done = runManual(jobId, startedAt, opts.appIds).finally(release);
   return { started: true, done };
 }
 
