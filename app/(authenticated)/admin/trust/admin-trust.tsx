@@ -48,13 +48,13 @@ function checkedAt(iso: string | null): string {
 function CheckRow({ state, title, evidence, aside }: { state: CheckState; title: string; evidence: string; aside?: React.ReactNode }) {
   const mark = STATE_MARK[state];
   return (
-    <li className="flex items-start gap-3 py-3">
+    <li className="flex flex-wrap items-start gap-x-3 gap-y-2 py-3 sm:flex-nowrap">
       <span className="mt-1.5"><StatusMark tone={mark.tone} pending={mark.pending} /></span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-[calc(100%-1.5rem)] sm:basis-auto">
         <div className="text-sm font-medium"><span className="sr-only">{mark.label}: </span>{title}</div>
         <div className="text-sm text-muted-foreground">{evidence}</div>
       </div>
-      {aside && <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{aside}</div>}
+      {aside && <div className="flex shrink-0 flex-wrap items-center gap-2 pl-6 text-xs text-muted-foreground sm:pl-0">{aside}</div>}
     </li>
   );
 }

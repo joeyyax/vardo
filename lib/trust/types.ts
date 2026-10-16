@@ -6,8 +6,7 @@ export type Level = (typeof LEVELS)[number];
 
 export const LEVEL_LABELS: Record<Level, string> = { basic: "Basic", good: "Good", better: "Better", great: "Great" };
 
-export const CHECK_STATES = ["passing", "partial", "failing", "unknown"] as const;
-export type CheckState = (typeof CHECK_STATES)[number];
+export type CheckState = "passing" | "partial" | "failing" | "unknown";
 
 export const CHECK_IDS = [
   "security-contact",
