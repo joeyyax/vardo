@@ -32,6 +32,7 @@ import {
 import { judgeProviderCert } from "./hosting";
 import { computeScore } from "./score";
 import { effectiveHosting, getTrustSettings, recordRun, saveDetectedHosting, writeResults } from "./store";
+import { syncSubprocessors } from "./subprocessor-store";
 import { CHECK_IDS, type CheckId, type Judgement } from "./types";
 
 const log = logger.child("trust");
@@ -236,4 +237,5 @@ export async function runChecks(now = new Date()): Promise<void> {
   const judged = Object.fromEntries(entries) as Record<CheckId, Judgement>;
   await writeResults(judged, now);
   await recordRun(computeScore(CHECK_IDS.map((id) => ({ id, ...judged[id], checkedAt: now }))), now);
+  await syncSubprocessors(now).catch((err) => log.error("Subprocessor detection failed:", err));
 }

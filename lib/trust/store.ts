@@ -1,6 +1,7 @@
 import { asc, eq, gte, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trustChecks, trustRuns, trustSettings } from "@/lib/db/schema";
+import type { StoredCommitment, StoredCommitments, CommitmentId } from "./commitments";
 import { findProvider, manualHosting, type Hosting } from "./hosting";
 import { weightsOf, type HistoryRun, type Score } from "./score";
 import { CHECK_IDS, VISIBILITIES, type CheckId, type CheckResult, type CheckState, type Judgement, type Visibility } from "./types";
@@ -9,6 +10,9 @@ const ROW_ID = "instance";
 
 export type TrustSettings = {
   visibility: Visibility;
+  domain: string | null;
+  name: string | null;
+  commitments: StoredCommitments;
   hostingOverride: { provider: string; region: string } | null;
   hostingDetected: { provider: string; region: string | null; location: string | null } | null;
 };
@@ -21,17 +25,30 @@ export async function getTrustSettings(): Promise<TrustSettings> {
   const row = await db.query.trustSettings.findFirst({ where: eq(trustSettings.id, ROW_ID) });
   return {
     visibility: parseVisibility(row?.visibility),
+    domain: row?.domain ?? null,
+    name: row?.name ?? null,
+    commitments: (row?.commitments ?? {}) as StoredCommitments,
     hostingOverride: row?.hostingOverride ?? null,
     hostingDetected: row?.hostingDetected ?? null,
   };
 }
 
-export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "hostingOverride">>;
+export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "hostingOverride" | "domain" | "name">>;
 
 export async function updateTrustSettings(patch: TrustSettingsPatch): Promise<TrustSettings> {
   const set = { ...patch, updatedAt: new Date() };
   await db.insert(trustSettings).values({ id: ROW_ID, ...set }).onConflictDoUpdate({ target: trustSettings.id, set });
   return getTrustSettings();
+}
+
+/** Merges one commitment's switch or value into the stored set. */
+export async function setCommitment(id: CommitmentId, patch: StoredCommitment): Promise<void> {
+  const current = (await getTrustSettings()).commitments;
+  const commitments = { ...current, [id]: { ...current[id], ...patch } };
+  await db.insert(trustSettings).values({ id: ROW_ID, commitments }).onConflictDoUpdate({
+    target: trustSettings.id,
+    set: { commitments, updatedAt: new Date() },
+  });
 }
 
 export async function saveDetectedHosting(detected: TrustSettings["hostingDetected"]): Promise<void> {

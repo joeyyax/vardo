@@ -38,8 +38,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Default security headers for all routes
-        source: "/(.*)",
+        // Default security headers for all routes. The public trust routes set their own, stricter ones.
+        source: "/((?!api/public/trust).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },

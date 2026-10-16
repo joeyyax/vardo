@@ -2,11 +2,31 @@
 
 import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
+import { loadPublicInput } from "./public-load";
+import { exposureOf, toPublic, type Exposure } from "./public";
+import { policyReviews, readDocuments, type DpaView, type PolicyView } from "./documents";
+import { readSubprocessors } from "./subprocessor-store";
+import { subprocessorReviews } from "./subprocessors";
+import { readCommitments } from "./commitment-facts";
+import type { ResolvedCommitment } from "./commitments";
+import { listTrustDomains } from "./domains";
 import { effectiveHosting, getTrustSettings, providerLabel, readHistory, readResults } from "./store";
-import { BANDS, CHECKS, type Band, type CheckState } from "./types";
+import { BANDS, CHECKS, type Band, type CheckState, type Visibility } from "./types";
 
 export type TrustView = {
-  visibility: "off" | "private";
+  visibility: Visibility;
+  domain: string | null;
+  /** Instance domains the page can live on. */
+  domains: string[];
+  /** The name the public page and policies use. Required before the page can go public. */
+  name: string | null;
+  commitments: ResolvedCommitment[];
+  subprocessors: { id: string; name: string; purpose: string; region: string | null; status: "suggested" | "confirmed"; manual: boolean; gone: boolean }[];
+  documents: { policies: PolicyView[]; dpa: DpaView };
+  /** What the public page would show, for the confirmation. */
+  exposure: Exposure;
+  /** Changes waiting on the operator before they can reach the public page. */
+  reviews: { id: string; title: string; detail: string; href: string; action: string }[];
   hostingOverride: { provider: string; region: string } | null;
   hosting: {
     provider: string;
@@ -25,7 +45,16 @@ export type TrustView = {
 const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
 
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results, runs] = await Promise.all([getTrustSettings(), readResults(), readHistory()]);
+  const [settings, results, runs, domains, commitments, subprocessorRows, documents, publicInput] = await Promise.all([
+    getTrustSettings(),
+    readResults(),
+    readHistory(),
+    listTrustDomains(),
+    readCommitments(),
+    readSubprocessors(),
+    readDocuments(),
+    loadPublicInput(),
+  ]);
   const score = computeScore(results);
   const hosting = effectiveHosting(settings);
   const provider = hosting ? findProvider(hosting.provider) : null;
@@ -34,6 +63,16 @@ export async function buildTrustView(): Promise<TrustView> {
 
   return {
     visibility: settings.visibility,
+    domain: settings.domain,
+    domains,
+    name: settings.name,
+    commitments,
+    subprocessors: subprocessorRows.flatMap((r) =>
+      r.status === "dismissed" ? [] : [{ id: r.id, name: r.name, purpose: r.purpose, region: r.region, status: r.status, manual: !r.key, gone: !!r.key && !r.detected }],
+    ),
+    documents,
+    exposure: exposureOf(toPublic(publicInput)),
+    reviews: [...subprocessorReviews(subprocessorRows), ...policyReviews(documents.policies)],
     hostingOverride: settings.hostingOverride,
     hosting: hosting
       ? {

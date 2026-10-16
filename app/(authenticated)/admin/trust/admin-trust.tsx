@@ -12,14 +12,15 @@ import { toast } from "@/lib/messenger";
 import { cn } from "@/lib/utils";
 import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
+import { CommitmentsCard } from "./commitments-card";
+import { DocumentsCard } from "./documents-card";
+import { SubprocessorsCard } from "./subprocessors-card";
+import { VisibilityCard, type TrustPatch } from "./visibility-card";
 
 const ENDPOINT = "/api/v1/admin/trust";
 const PROBE_GUARD_ENDPOINT = "/api/v1/admin/probe-guard";
 
-type Patch = {
-  visibility?: TrustView["visibility"];
-  hostingOverride?: { provider: string; region: string } | null;
-};
+type Patch = TrustPatch;
 
 const STATE_MARK: Record<CheckState, { tone: StatusDotTone; pending?: boolean; label: string }> = {
   passing: { tone: "good", label: "Passing" },
@@ -27,11 +28,6 @@ const STATE_MARK: Record<CheckState, { tone: StatusDotTone; pending?: boolean; l
   failing: { tone: "issue", label: "Failing" },
   unknown: { tone: "neutral", pending: true, label: "Unknown" },
 };
-
-const VISIBILITY_OPTIONS = [
-  { value: "off", label: "Off", hint: "No checks run." },
-  { value: "private", label: "Private", hint: "Vardo runs the checks. Only admins see the results." },
-] as const;
 
 function checkedAt(iso: string | null): string {
   if (!iso) return "Not checked";
@@ -80,7 +76,7 @@ function Sparkline({ days }: { days: TrustView["history"]["days"] }) {
 export function AdminTrust() {
   const [view, setView] = useState<TrustView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendingVisibility, setPendingVisibility] = useState<TrustView["visibility"] | null>(null);
+  const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [savedContact, setSavedContact] = useState("");
   const [provider, setProvider] = useState("");
@@ -88,6 +84,7 @@ export function AdminTrust() {
 
   const apply = useCallback((next: TrustView) => {
     setView(next);
+    setName(next.name ?? "");
     setProvider(next.hostingOverride?.provider ?? "");
     setRegion(next.hostingOverride?.region ?? "");
   }, []);
@@ -106,13 +103,14 @@ export function AdminTrust() {
       .catch(() => toast.error("Couldn't load the security contact"));
   }, [apply]);
 
-  const request = useCallback(async (method: "PATCH" | "POST", url: string, body?: Patch): Promise<TrustView | null> => {
+  const request = useCallback(async (method: "PATCH" | "POST" | "PUT" | "DELETE", url: string, body?: unknown): Promise<TrustView | null> => {
     setBusy(true);
     try {
+      const form = body instanceof FormData;
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
+        headers: form ? undefined : { "Content-Type": "application/json" },
+        body: body ? (form ? body : JSON.stringify(body)) : undefined,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Couldn't save");
@@ -147,57 +145,25 @@ export function AdminTrust() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-72 space-y-1">
           <h2 className="type-h2">Trust center</h2>
-          <p className="text-sm text-muted-foreground">Scores this instance on weighted checks and lists what&apos;s missing. Admins only.</p>
+          <p className="text-sm text-muted-foreground">A page for your clients on how this instance is hosted, backed up and secured. Your score and what&apos;s missing stay with admins.</p>
         </div>
         {on && (
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            Run checks
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href="/api/public/trust?preview=1" target="_blank" rel="noreferrer">Preview<ExternalLink className="size-3.5" /></a>
+            </Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Run checks
+            </Button>
+          </div>
         )}
       </div>
 
-      <Card variant="surface" className="space-y-3 p-4">
-        <div role="radiogroup" aria-label="Trust center visibility" className="grid gap-2 sm:grid-cols-2">
-          {VISIBILITY_OPTIONS.map((opt) => {
-            const selected = (pendingVisibility ?? view.visibility) === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={busy}
-                onClick={() => {
-                  if (selected) return;
-                  const previous = view.visibility;
-                  setPendingVisibility(opt.value);
-                  void save({ visibility: opt.value }, { visibility: previous }, `Trust center ${opt.label.toLowerCase()}`).finally(() =>
-                    setPendingVisibility(null),
-                  );
-                }}
-                className={cn(
-                  "squircle rounded-md border p-3 text-left transition-colors disabled:opacity-60",
-                  selected ? "border-primary bg-accent" : "hover:bg-muted",
-                )}
-              >
-                <span className="block text-sm font-semibold">{opt.label}</span>
-                <span className="block text-sm text-muted-foreground">{opt.hint}</span>
-              </button>
-            );
-          })}
-        </div>
-        {pendingVisibility && pendingVisibility !== "off" ? (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-            <Loader2 className="size-3 animate-spin" /> Running checks
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">Not hosting work for others? Leave it off, or use Private to audit this instance.</p>
-        )}
-      </Card>
+      <VisibilityCard view={view} busy={busy} save={save} />
 
       {on && (
         <>
@@ -228,8 +194,24 @@ export function AdminTrust() {
           <Card variant="surface" className="p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="type-h3">Next steps</h3>
-              <p className="text-xs text-muted-foreground">{view.steps.length ? "Most points first" : "Nothing is failing."}</p>
+              <p className="text-xs text-muted-foreground">{view.steps.length ? "Most points first" : view.reviews.length ? "" : "Nothing is failing."}</p>
             </div>
+            {view.reviews.length > 0 && (
+              <div className="mt-2">
+                <div className="text-xs font-medium text-muted-foreground">To review before it&apos;s public</div>
+                <ul className="divide-y">
+                  {view.reviews.map((r) => (
+                    <CheckRow
+                      key={r.id}
+                      state="unknown"
+                      title={r.title}
+                      evidence={r.detail}
+                      aside={<Button asChild variant="outline" size="xs"><a href={r.href}>{r.action}</a></Button>}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
             {view.steps.length > 0 && (
               <ul className="mt-2 divide-y">
                 {view.steps.map((s) => (
@@ -255,8 +237,20 @@ export function AdminTrust() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card id="about" variant="surface" className="space-y-4 py-5">
-              <CardHeader><CardTitle>Contact</CardTitle></CardHeader>
-              <CardContent className="max-w-md space-y-2">
+              <CardHeader><CardTitle>About you</CardTitle></CardHeader>
+              <CardContent className="max-w-md space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="trust-name">Name</Label>
+                  <Input
+                    id="trust-name"
+                    value={name}
+                    placeholder="You or your business"
+                    onChange={(e) => setName(e.target.value)}
+                    onBlur={() => saveName()}
+                  />
+                  <p className="text-xs text-muted-foreground">Shown at the top of the page and used in the policies. Required to go public.</p>
+                </div>
+                <div className="space-y-2">
                 <Label htmlFor="trust-contact">Security contact</Label>
                 <Input
                   id="trust-contact"
@@ -267,6 +261,7 @@ export function AdminTrust() {
                   onBlur={() => void saveContact()}
                 />
                 <p className="text-xs text-muted-foreground">Where people report problems. Published at /.well-known/security.txt.</p>
+                </div>
               </CardContent>
             </Card>
 
@@ -312,6 +307,12 @@ export function AdminTrust() {
               </CardContent>
             </Card>
           </div>
+
+          <CommitmentsCard commitments={view.commitments} busy={busy} call={request} />
+
+          <SubprocessorsCard rows={view.subprocessors} busy={busy} call={request} />
+
+          <DocumentsCard documents={view.documents} busy={busy} call={request} />
 
           <Card variant="surface" className="space-y-3 p-5">
             <div className="flex items-baseline justify-between gap-3">
@@ -379,6 +380,18 @@ export function AdminTrust() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function saveName() {
+    if (!view) return;
+    const next = name.trim() || null;
+    if (next === view.name) return;
+    if (!next && view.visibility === "public") {
+      toast.error("The public page needs a name");
+      setName(view.name ?? "");
+      return;
+    }
+    void save({ name: next }, { name: view.name });
   }
 
   function saveHosting() {
