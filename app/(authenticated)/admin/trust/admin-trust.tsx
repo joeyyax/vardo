@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
 import { CommitmentsCard } from "./commitments-card";
+import { DocumentsCard } from "./documents-card";
 import { SubprocessorsCard } from "./subprocessors-card";
 import { VisibilityCard, type TrustPatch } from "./visibility-card";
 
@@ -103,10 +104,11 @@ export function AdminTrust() {
   const request = useCallback(async (method: "PATCH" | "POST" | "PUT" | "DELETE", url: string, body?: unknown): Promise<TrustView | null> => {
     setBusy(true);
     try {
+      const form = body instanceof FormData;
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
+        headers: form ? undefined : { "Content-Type": "application/json" },
+        body: body ? (form ? body : JSON.stringify(body)) : undefined,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Couldn't save");
@@ -294,6 +296,8 @@ export function AdminTrust() {
           <CommitmentsCard commitments={view.commitments} busy={busy} call={request} />
 
           <SubprocessorsCard rows={view.subprocessors} busy={busy} call={request} />
+
+          <DocumentsCard documents={view.documents} busy={busy} call={request} />
 
           <Card variant="surface" className="space-y-3 p-5">
             <div className="flex items-baseline justify-between gap-3">

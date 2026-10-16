@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, customType, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Text columns: adding a visibility or check state needs no migration.
 
@@ -43,6 +43,24 @@ export const trustRuns = pgTable("trust_run", {
   max: integer("max").notNull(),
   /** Check id to weight, for every check that ran. */
   weights: jsonb("weights").$type<Record<string, number>>().notNull(),
+});
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/** Published documents: a reviewed policy text, or the uploaded agreement. Stored in the database, so system backups carry them. */
+export const trustDocuments = pgTable("trust_document", {
+  /** "backup", "access", "incident" or "dpa". */
+  id: text("id").primaryKey(),
+  /** The text the public page shows. Stays until the operator reviews a newer draft or unpublishes it. */
+  reviewedBody: text("reviewed_body"),
+  /** Set when the operator publishes. Null keeps the document off the public page. */
+  reviewedAt: timestamp("reviewed_at"),
+  /** Hash of the settings behind the reviewed text. A different hash now means the policy needs review. */
+  basisHash: text("basis_hash"),
+  /** The uploaded PDF. Only the agreement has one. */
+  file: bytea("file"),
+  fileSize: integer("file_size"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 /** A third party that can handle client data. Only confirmed rows reach the public page. */

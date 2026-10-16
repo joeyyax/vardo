@@ -17,6 +17,9 @@ vi.mock("@/lib/trust/store", () => ({
 vi.mock("@/lib/system-settings", () => ({ getInstanceDisplayName: async () => "Acme", getInstanceConfig: async () => ({}) }));
 vi.mock("@/lib/probe-guard/instance", () => ({ getProbeGuardSettings: async () => ({ securityContact: "security@acme.example" }) }));
 vi.mock("@/lib/db", () => ({ db: {} }));
+vi.mock("@/lib/trust/commitment-facts", () => ({ readCommitments: async () => [] }));
+vi.mock("@/lib/trust/subprocessor-store", () => ({ readSubprocessors: async () => [] }));
+vi.mock("@/lib/trust/documents", () => ({ readPublicDocuments: async () => ({ policies: [], dpa: null }) }));
 
 import { GET } from "@/app/api/public/trust/route";
 import { invalidatePublicTrust } from "@/lib/trust/public-load";

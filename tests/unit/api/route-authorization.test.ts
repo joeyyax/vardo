@@ -38,6 +38,7 @@ const ALLOWLIST: Record<string, string> = {
   "mcp/route.ts DELETE": "static 204; stateless transport has no session to end",
   "setup/status/route.ts GET": "one boolean the root redirect already shows",
   "status/cron/[token]/route.ts GET": "opt-in public cron status behind an unguessable token; aggregates only",
+  "public/trust/dpa/route.ts GET": "the published agreement, served only on the trust domain",
   "setup/token/route.ts POST": "trades the setup token for its cookie; closed once setup latches",
   "v1/email/pouch/webhook/route.ts POST": "HMAC signature checked against the Pouch webhook secret",
   "v1/github/webhook/route.ts POST": "HMAC signature checked against the webhook secret",

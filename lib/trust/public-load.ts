@@ -3,6 +3,7 @@
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { getProbeGuardSettings } from "@/lib/probe-guard/instance";
 import { readCommitments } from "./commitment-facts";
+import { readPublicDocuments } from "./documents";
 import { isTrustHost } from "./domains";
 import { renderTrustPage } from "./page";
 import { readSubprocessors } from "./subprocessor-store";
@@ -14,12 +15,13 @@ const TTL_MS = 60_000;
 /** Everything the page may show, before the approval filter. */
 export async function loadPublicInput(): Promise<PublicInput> {
   const settings = await getTrustSettings();
-  const [results, instanceName, guard, commitments, subprocessors] = await Promise.all([
+  const [results, instanceName, guard, commitments, subprocessors, documents] = await Promise.all([
     readResults(),
     getInstanceDisplayName().catch(() => null),
     getProbeGuardSettings().catch(() => null),
     readCommitments(),
     readSubprocessors(),
+    readPublicDocuments(),
   ]);
   return {
     name: settings.name ?? instanceName ?? "This operator",
@@ -29,8 +31,8 @@ export async function loadPublicInput(): Promise<PublicInput> {
     results,
     commitments: commitments.map((c) => ({ label: c.label, value: c.value, enabled: c.enabled })),
     subprocessors: subprocessors.map(({ name, purpose, region, status }) => ({ name, purpose, region, status })),
-    policies: [],
-    dpa: null,
+    policies: documents.policies,
+    dpa: documents.dpa,
   };
 }
 
@@ -49,6 +51,12 @@ async function snapshot(now: Date): Promise<Cached> {
   const html = live ? renderTrustPage(toPublic(await loadPublicInput()), now) : null;
   cached = { at: now.getTime(), domain: settings.domain, html };
   return cached;
+}
+
+/** True when the page is public and `host` is its domain. */
+export async function isPublicOn(host: string | null, now = new Date()): Promise<boolean> {
+  const snap = await snapshot(now);
+  return !!snap.html && isTrustHost(host, snap.domain);
 }
 
 /** The page for a request to `host`, or null unless the page is public and `host` is its domain. */
