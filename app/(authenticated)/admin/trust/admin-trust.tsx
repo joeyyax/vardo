@@ -12,14 +12,12 @@ import { toast } from "@/lib/messenger";
 import { cn } from "@/lib/utils";
 import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
+import { VisibilityCard, type TrustPatch } from "./visibility-card";
 
 const ENDPOINT = "/api/v1/admin/trust";
 const PROBE_GUARD_ENDPOINT = "/api/v1/admin/probe-guard";
 
-type Patch = {
-  visibility?: TrustView["visibility"];
-  hostingOverride?: { provider: string; region: string } | null;
-};
+type Patch = TrustPatch;
 
 const STATE_MARK: Record<CheckState, { tone: StatusDotTone; pending?: boolean; label: string }> = {
   passing: { tone: "good", label: "Passing" },
@@ -27,11 +25,6 @@ const STATE_MARK: Record<CheckState, { tone: StatusDotTone; pending?: boolean; l
   failing: { tone: "issue", label: "Failing" },
   unknown: { tone: "neutral", pending: true, label: "Unknown" },
 };
-
-const VISIBILITY_OPTIONS = [
-  { value: "off", label: "Off", hint: "No checks run." },
-  { value: "private", label: "Private", hint: "Vardo runs the checks. Only admins see the results." },
-] as const;
 
 function checkedAt(iso: string | null): string {
   if (!iso) return "Not checked";
@@ -80,7 +73,6 @@ function Sparkline({ days }: { days: TrustView["history"]["days"] }) {
 export function AdminTrust() {
   const [view, setView] = useState<TrustView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendingVisibility, setPendingVisibility] = useState<TrustView["visibility"] | null>(null);
   const [contact, setContact] = useState("");
   const [savedContact, setSavedContact] = useState("");
   const [provider, setProvider] = useState("");
@@ -150,7 +142,7 @@ export function AdminTrust() {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="type-h2">Trust center</h2>
-          <p className="text-sm text-muted-foreground">Scores this instance on weighted checks and lists what&apos;s missing. Admins only.</p>
+          <p className="text-sm text-muted-foreground">A page for your clients on how this instance is hosted, backed up and secured. Your score and what&apos;s missing stay with admins.</p>
         </div>
         {on && (
           <Button variant="outline" size="sm" disabled={busy} onClick={() => void request("POST", `${ENDPOINT}/run`)}>
@@ -160,44 +152,7 @@ export function AdminTrust() {
         )}
       </div>
 
-      <Card variant="surface" className="space-y-3 p-4">
-        <div role="radiogroup" aria-label="Trust center visibility" className="grid gap-2 sm:grid-cols-2">
-          {VISIBILITY_OPTIONS.map((opt) => {
-            const selected = (pendingVisibility ?? view.visibility) === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={busy}
-                onClick={() => {
-                  if (selected) return;
-                  const previous = view.visibility;
-                  setPendingVisibility(opt.value);
-                  void save({ visibility: opt.value }, { visibility: previous }, `Trust center ${opt.label.toLowerCase()}`).finally(() =>
-                    setPendingVisibility(null),
-                  );
-                }}
-                className={cn(
-                  "squircle rounded-md border p-3 text-left transition-colors disabled:opacity-60",
-                  selected ? "border-primary bg-accent" : "hover:bg-muted",
-                )}
-              >
-                <span className="block text-sm font-semibold">{opt.label}</span>
-                <span className="block text-sm text-muted-foreground">{opt.hint}</span>
-              </button>
-            );
-          })}
-        </div>
-        {pendingVisibility && pendingVisibility !== "off" ? (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-            <Loader2 className="size-3 animate-spin" /> Running checks
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">Not hosting work for others? Leave it off, or use Private to audit this instance.</p>
-        )}
-      </Card>
+      <VisibilityCard view={view} busy={busy} save={save} />
 
       {on && (
         <>

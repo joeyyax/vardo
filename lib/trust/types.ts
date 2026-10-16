@@ -1,4 +1,4 @@
-export const VISIBILITIES = ["off", "private"] as const;
+export const VISIBILITIES = ["off", "private", "public"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 
 export const BANDS = [

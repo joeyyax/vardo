@@ -2,11 +2,20 @@
 
 import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
+import { getInstanceDisplayName } from "@/lib/system-settings";
+import { listTrustDomains } from "./domains";
 import { effectiveHosting, getTrustSettings, providerLabel, readHistory, readResults } from "./store";
-import { BANDS, CHECKS, type Band, type CheckState } from "./types";
+import { BANDS, CHECKS, type Band, type CheckState, type Visibility } from "./types";
 
 export type TrustView = {
-  visibility: "off" | "private";
+  visibility: Visibility;
+  domain: string | null;
+  /** Instance domains the page can live on. */
+  domains: string[];
+  /** The name set for the page. Null uses the instance name. */
+  name: string | null;
+  /** The name the public page shows. */
+  operatorName: string;
   hostingOverride: { provider: string; region: string } | null;
   hosting: {
     provider: string;
@@ -25,7 +34,13 @@ export type TrustView = {
 const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
 
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results, runs] = await Promise.all([getTrustSettings(), readResults(), readHistory()]);
+  const [settings, results, runs, domains, instanceName] = await Promise.all([
+    getTrustSettings(),
+    readResults(),
+    readHistory(),
+    listTrustDomains(),
+    getInstanceDisplayName().catch(() => null),
+  ]);
   const score = computeScore(results);
   const hosting = effectiveHosting(settings);
   const provider = hosting ? findProvider(hosting.provider) : null;
@@ -34,6 +49,10 @@ export async function buildTrustView(): Promise<TrustView> {
 
   return {
     visibility: settings.visibility,
+    domain: settings.domain,
+    domains,
+    name: settings.name,
+    operatorName: settings.name ?? instanceName ?? "This operator",
     hostingOverride: settings.hostingOverride,
     hosting: hosting
       ? {

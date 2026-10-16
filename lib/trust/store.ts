@@ -9,6 +9,8 @@ const ROW_ID = "instance";
 
 export type TrustSettings = {
   visibility: Visibility;
+  domain: string | null;
+  name: string | null;
   hostingOverride: { provider: string; region: string } | null;
   hostingDetected: { provider: string; region: string | null; location: string | null } | null;
 };
@@ -21,12 +23,14 @@ export async function getTrustSettings(): Promise<TrustSettings> {
   const row = await db.query.trustSettings.findFirst({ where: eq(trustSettings.id, ROW_ID) });
   return {
     visibility: parseVisibility(row?.visibility),
+    domain: row?.domain ?? null,
+    name: row?.name ?? null,
     hostingOverride: row?.hostingOverride ?? null,
     hostingDetected: row?.hostingDetected ?? null,
   };
 }
 
-export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "hostingOverride">>;
+export type TrustSettingsPatch = Partial<Pick<TrustSettings, "visibility" | "hostingOverride" | "domain" | "name">>;
 
 export async function updateTrustSettings(patch: TrustSettingsPatch): Promise<TrustSettings> {
   const set = { ...patch, updatedAt: new Date() };

@@ -5,12 +5,16 @@ import { integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-or
 /** The instance's single trust center settings row. */
 export const trustSettings = pgTable("trust_settings", {
   id: text("id").primaryKey().default("instance"),
-  /** "off" or "private". */
+  /** "off", "private" or "public". */
   visibility: text("visibility").notNull().default("off"),
   /** Provider and region the operator set by hand. Wins over detection. */
   hostingOverride: jsonb("hosting_override").$type<{ provider: string; region: string }>(),
   /** What the last run read from cloud metadata. */
   hostingDetected: jsonb("hosting_detected").$type<{ provider: string; region: string | null; location: string | null }>(),
+  /** The instance domain that serves /trust. Set before the page can go public. */
+  domain: text("domain"),
+  /** The name the public page uses. Null falls back to the instance name. */
+  name: text("name"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
