@@ -27,7 +27,7 @@ pnpm lint               # ESLint
 pnpm test               # Full suite: typecheck + lint + vitest
 pnpm test:e2e           # Playwright end-to-end tests
 
-# CLI (packages/cli, the `@vardo/cli` npm package; not in the console image)
+# CLI (packages/cli, the `@joeyyax/vardo` npm package; not in the console image)
 pnpm --filter ./packages/cli build    # Bundle to packages/cli/dist/vardo.mjs
 
 # Infrastructure
