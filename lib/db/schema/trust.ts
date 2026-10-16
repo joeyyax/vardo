@@ -15,6 +15,8 @@ export const trustSettings = pgTable("trust_settings", {
   domain: text("domain"),
   /** The name the public page uses. Null falls back to the instance name. */
   name: text("name"),
+  /** The operator's switch and value per commitment id. */
+  commitments: jsonb("commitments").$type<Record<string, { enabled?: boolean; amount?: number | null }>>().notNull().default({}),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

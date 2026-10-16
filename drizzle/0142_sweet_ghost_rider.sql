@@ -1,0 +1,1 @@
+ALTER TABLE "trust_settings" ADD COLUMN "commitments" jsonb DEFAULT '{}'::jsonb NOT NULL;

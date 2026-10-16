@@ -995,6 +995,13 @@
       "when": 1792187616166,
       "tag": "0141_curvy_the_professor",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1792187995889,
+      "tag": "0142_sweet_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

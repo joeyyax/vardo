@@ -12,6 +12,7 @@ import { toast } from "@/lib/messenger";
 import { cn } from "@/lib/utils";
 import type { CheckState } from "@/lib/trust/types";
 import type { TrustView } from "@/lib/trust/view";
+import { CommitmentsCard } from "./commitments-card";
 import { VisibilityCard, type TrustPatch } from "./visibility-card";
 
 const ENDPOINT = "/api/v1/admin/trust";
@@ -98,7 +99,7 @@ export function AdminTrust() {
       .catch(() => toast.error("Couldn't load the security contact"));
   }, [apply]);
 
-  const request = useCallback(async (method: "PATCH" | "POST", url: string, body?: Patch): Promise<TrustView | null> => {
+  const request = useCallback(async (method: "PATCH" | "POST" | "PUT" | "DELETE", url: string, body?: unknown): Promise<TrustView | null> => {
     setBusy(true);
     try {
       const res = await fetch(url, {
@@ -272,6 +273,8 @@ export function AdminTrust() {
               </CardContent>
             </Card>
           </div>
+
+          <CommitmentsCard commitments={view.commitments} busy={busy} call={request} />
 
           <Card variant="surface" className="space-y-3 p-5">
             <div className="flex items-baseline justify-between gap-3">

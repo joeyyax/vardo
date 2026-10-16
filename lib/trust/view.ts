@@ -3,6 +3,8 @@
 import { computeScore, countStates, dailyLast, historyChanges, nextSteps } from "./score";
 import { findProvider, judgeProviderCert, locationLabel } from "./hosting";
 import { getInstanceDisplayName } from "@/lib/system-settings";
+import { readCommitments } from "./commitment-facts";
+import type { ResolvedCommitment } from "./commitments";
 import { listTrustDomains } from "./domains";
 import { effectiveHosting, getTrustSettings, providerLabel, readHistory, readResults } from "./store";
 import { BANDS, CHECKS, type Band, type CheckState, type Visibility } from "./types";
@@ -16,6 +18,7 @@ export type TrustView = {
   name: string | null;
   /** The name the public page shows. */
   operatorName: string;
+  commitments: ResolvedCommitment[];
   hostingOverride: { provider: string; region: string } | null;
   hosting: {
     provider: string;
@@ -34,12 +37,13 @@ export type TrustView = {
 const titleOf = (id: string) => CHECKS.find((c) => c.id === id)?.title ?? id;
 
 export async function buildTrustView(): Promise<TrustView> {
-  const [settings, results, runs, domains, instanceName] = await Promise.all([
+  const [settings, results, runs, domains, instanceName, commitments] = await Promise.all([
     getTrustSettings(),
     readResults(),
     readHistory(),
     listTrustDomains(),
     getInstanceDisplayName().catch(() => null),
+    readCommitments(),
   ]);
   const score = computeScore(results);
   const hosting = effectiveHosting(settings);
@@ -53,6 +57,7 @@ export async function buildTrustView(): Promise<TrustView> {
     domains,
     name: settings.name,
     operatorName: settings.name ?? instanceName ?? "This operator",
+    commitments,
     hostingOverride: settings.hostingOverride,
     hosting: hosting
       ? {

@@ -2,6 +2,7 @@
 
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { getProbeGuardSettings } from "@/lib/probe-guard/instance";
+import { readCommitments } from "./commitment-facts";
 import { isTrustHost } from "./domains";
 import { renderTrustPage } from "./page";
 import { toPublic, type PublicInput } from "./public";
@@ -12,10 +13,11 @@ const TTL_MS = 60_000;
 /** Everything the page may show, before the approval filter. */
 export async function loadPublicInput(): Promise<PublicInput> {
   const settings = await getTrustSettings();
-  const [results, instanceName, guard] = await Promise.all([
+  const [results, instanceName, guard, commitments] = await Promise.all([
     readResults(),
     getInstanceDisplayName().catch(() => null),
     getProbeGuardSettings().catch(() => null),
+    readCommitments(),
   ]);
   return {
     name: settings.name ?? instanceName ?? "This operator",
@@ -23,7 +25,7 @@ export async function loadPublicInput(): Promise<PublicInput> {
     securityContact: guard?.securityContact?.trim() || null,
     hosting: effectiveHosting(settings),
     results,
-    commitments: [],
+    commitments: commitments.map((c) => ({ label: c.label, value: c.value, enabled: c.enabled })),
     subprocessors: [],
     policies: [],
     dpa: null,
