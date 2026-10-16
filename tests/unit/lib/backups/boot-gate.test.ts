@@ -65,6 +65,13 @@ describe("recordBackupBoot", () => {
   it("names a build without a SHA", () => {
     expect(backupBootKey("")).toBe("backup_boot:dev");
   });
+
+  it("keys production by build SHA and development by one shared key", () => {
+    const env = (NODE_ENV: string) => ({ NODE_ENV }) as unknown as NodeJS.ProcessEnv;
+    expect(backupBootKey("abc1234", env("production"))).toBe("backup_boot:abc1234");
+    expect(backupBootKey("abc1234", env("development"))).toBe("backup_boot:dev");
+    expect(backupBootKey("", env("development"))).toBe("backup_boot:dev");
+  });
 });
 
 describe("waitForBackupBoot", () => {
@@ -88,6 +95,17 @@ describe("waitForBackupBoot", () => {
     store.failReads = false;
     await recordBackupBoot("encrypted");
     await waiting;
+  });
+
+  it("resolves in development when the console and worker see different SHAs", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      await recordBackupBoot("encrypted", "abc1234");
+      await waitForBackupBoot({ stopped: () => false, pollMs: 5, sha: "def5678" });
+      await waitForBackupBoot({ stopped: () => false, pollMs: 5, sha: "" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("rejects when the worker stops first", async () => {
