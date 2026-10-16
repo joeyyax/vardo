@@ -976,15 +976,15 @@ describe("runBackup — volumes the app no longer declares", () => {
 });
 
 describe("runBackup — reporting", () => {
-  it("gives a run started by hand its own run, so its summary always reports", async () => {
+  it("reports a run started by hand to the run it was given", async () => {
     backupJobsFindFirst.mockResolvedValue(job());
     volumesPerApp([volume({ name: "a-data" })]);
 
-    await runBackup("job-1", { trigger: MANUAL_TRIGGER });
+    await runBackup("job-1", { trigger: MANUAL_TRIGGER, runId: "run_manual" });
 
-    expect(manualRunMock).toHaveBeenCalledWith(expect.objectContaining({ id: "job-1", organizationId: "org-1" }), expect.any(Date));
+    expect(manualRunMock).not.toHaveBeenCalled();
     expect(recordMock.mock.calls[0][2]).toEqual({ runId: "run_manual" });
-    expect(jobDoneMock).toHaveBeenCalledWith("run_manual", "job-1");
+    expect(jobDoneMock).not.toHaveBeenCalled();
   });
 
   it("leaves a scheduled run's results to its nightly run", async () => {
