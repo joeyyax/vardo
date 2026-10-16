@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   canAccessOrg: vi.fn(),
   backupFindFirst: vi.fn(),
   drillable: vi.fn(),
-  runRestoreDrill: vi.fn(),
+  runManualDrill: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: h.instanceAdmin }));
@@ -23,7 +23,7 @@ vi.mock("@/lib/backups/org-backup", async (orig) => ({
   ...(await orig<typeof import("@/lib/backups/org-backup")>()),
   findDrillableBackup: h.drillable,
 }));
-vi.mock("@/lib/backups/drill", () => ({ runRestoreDrill: h.runRestoreDrill }));
+vi.mock("@/lib/backups/manual-run", () => ({ runManualDrill: h.runManualDrill }));
 
 import { registerDrillBackup } from "@/lib/mcp/tools/drill-backup";
 
@@ -38,7 +38,7 @@ beforeEach(() => {
   h.canAccessOrg.mockResolvedValue(true);
   h.backupFindFirst.mockResolvedValue(appBackup);
   h.drillable.mockResolvedValue({ ok: true, backup: appBackup });
-  h.runRestoreDrill.mockReturnValue(new Promise(() => {}));
+  h.runManualDrill.mockReturnValue(new Promise(() => {}));
 });
 
 describe("vardo_drill_backup", () => {
@@ -47,7 +47,7 @@ describe("vardo_drill_backup", () => {
     const res = await drill()({ backupId: "b1" });
     expect(res.isError).toBe(true);
     expect(h.canAccessOrg).toHaveBeenCalledWith(plainContext, "org-1", "backup.run");
-    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+    expect(h.runManualDrill).not.toHaveBeenCalled();
   });
 
   it("checks the app's org, not the row's stale one", async () => {
@@ -59,7 +59,7 @@ describe("vardo_drill_backup", () => {
   it("refuses a missing backup", async () => {
     h.backupFindFirst.mockResolvedValue(undefined);
     expect((await drill()({ backupId: "nope" })).isError).toBe(true);
-    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+    expect(h.runManualDrill).not.toHaveBeenCalled();
   });
 
   it("refuses a backup that didn't succeed", async () => {
@@ -67,7 +67,7 @@ describe("vardo_drill_backup", () => {
     const res = await drill()({ backupId: "b1" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("successful");
-    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+    expect(h.runManualDrill).not.toHaveBeenCalled();
   });
 
   it("refuses a system backup with a clear message for an admin and as not found otherwise", async () => {
@@ -77,24 +77,24 @@ describe("vardo_drill_backup", () => {
     const res = await drill(adminContext)({ backupId: "s1" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("system database");
-    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+    expect(h.runManualDrill).not.toHaveBeenCalled();
   });
 
   it("fails while the backups feature is off", async () => {
     h.featureOn.mockResolvedValue(false);
     expect((await drill()({ backupId: "b1" })).isError).toBe(true);
-    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+    expect(h.runManualDrill).not.toHaveBeenCalled();
   });
 
   it("starts the drill without waiting for it", async () => {
-    h.runRestoreDrill.mockReturnValue(new Promise(() => {}));
+    h.runManualDrill.mockReturnValue(new Promise(() => {}));
     const body = toolBody(await drill()({ backupId: "b1" }));
-    expect(h.runRestoreDrill).toHaveBeenCalledWith("b1");
+    expect(h.runManualDrill).toHaveBeenCalledWith("b1");
     expect(body).toEqual({ status: "started", backupId: "b1" });
   });
 
   it("swallows a drill rejection after returning", async () => {
-    h.runRestoreDrill.mockRejectedValue(new Error("boom"));
+    h.runManualDrill.mockRejectedValue(new Error("boom"));
     expect(toolBody(await drill()({ backupId: "b1" })).status).toBe("started");
     await new Promise((r) => setTimeout(r, 0));
   });

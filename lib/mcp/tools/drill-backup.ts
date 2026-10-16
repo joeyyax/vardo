@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { runRestoreDrill } from "@/lib/backups/drill";
+import { runManualDrill } from "@/lib/backups/manual-run";
 import { backupOwnerOrgId, findDrillableBackup } from "@/lib/backups/org-backup";
 import { logger } from "@/lib/logger";
 import type { McpAuthContext } from "../auth";
@@ -18,7 +18,7 @@ const SYSTEM_BACKUP_UNSUPPORTED = "Restore drills don't cover the system databas
 export function registerDrillBackup(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_drill_backup",
-    "Start a restore drill on one successful app backup, as the backups page's drill button does. Restores into scratch and never touches live data. Returns once it starts; the verdict lands on the backup as verifiedAt and verifyOutcome in vardo_list_backups. Get backup IDs from vardo_list_backups.",
+    "Start a restore drill on one successful app backup, as the backups page's drill button does. Restores into scratch and never touches live data. Returns at once and runs when a backup slot is free; the verdict lands on the backup as verifiedAt and verifyOutcome in vardo_list_backups. Get backup IDs from vardo_list_backups.",
     {
       backupId: z.string().describe("The backup ID"),
     },
@@ -46,7 +46,7 @@ export function registerDrillBackup(server: McpServer, context: McpAuthContext) 
           : failure("Only a successful backup can be drilled");
       }
 
-      void runRestoreDrill(backupId).catch((err) => {
+      void runManualDrill(backupId).catch((err) => {
         log.error(`Restore drill failed for backup ${backupId}:`, err);
       });
 

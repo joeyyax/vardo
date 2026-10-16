@@ -19,12 +19,11 @@ import {
   AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
 import {
-  LARGE_PART_QUEUE,
-  LARGE_PART_SIZE,
   MAX_PART_SIZE,
   PART_QUEUE,
   PART_SIZE,
   S3BackupStorage,
+  SLOT_BUFFER_BYTES,
   choosePartSize,
   partQueueFor,
   readParts,
@@ -170,8 +169,16 @@ describe("S3 uploadStream", () => {
     expect(await peakPartBuffers(64 * 1024, 12)).toBe(PART_QUEUE);
   });
 
-  it("holds at most LARGE_PART_QUEUE buffers for parts over LARGE_PART_SIZE", async () => {
-    expect(await peakPartBuffers(LARGE_PART_SIZE + 1024 * 1024, 4)).toBe(LARGE_PART_QUEUE);
+  it("keeps an upload's part buffers within one slot's up to 32 MiB parts", async () => {
+    for (const mib of [17, 32]) {
+      send.mockClear();
+      const partSize = mib * 1024 * 1024;
+      expect((await peakPartBuffers(partSize, 5)) * partSize).toBeLessThanOrEqual(SLOT_BUFFER_BYTES);
+    }
+  });
+
+  it("holds two part buffers for parts too big to fit a slot", async () => {
+    expect(await peakPartBuffers(33 * 1024 * 1024, 4)).toBe(2);
   });
 
   it("retries a part that fails transiently", async () => {
@@ -306,9 +313,20 @@ describe("part size", () => {
     expect(choosePartSize(100_000 * GB)).toBe(MAX_PART_SIZE);
   });
 
-  it("halves the queue once parts pass 64 MiB", () => {
-    expect(partQueueFor(64 * MiB)).toBe(PART_QUEUE);
-    expect(partQueueFor(65 * MiB)).toBe(LARGE_PART_QUEUE);
+  it("fits the queue to a slot's buffers, never under two", () => {
+    expect(partQueueFor(16 * MiB)).toBe(4);
+    expect(partQueueFor(21 * MiB)).toBe(3);
+    expect(partQueueFor(32 * MiB)).toBe(2);
+    expect(partQueueFor(159 * MiB)).toBe(2);
+  });
+
+  it("weighs an upload by the slots its part buffers fill", () => {
+    const s3 = new S3BackupStorage({ bucket: "b", region: "auto", accessKeyId: "k", secretAccessKey: "s" });
+    expect(s3.slotWeight(null)).toBe(1);
+    // 32 MiB parts.
+    expect(s3.slotWeight(200 * GB)).toBe(1);
+    // 2 × 159 MiB is 254 MiB past one slot's 64: two more slots of 144 MiB.
+    expect(s3.slotWeight(1000 * GB)).toBe(3);
   });
 
   it("logs the part size it chose from the expected size", async () => {

@@ -16,7 +16,7 @@ export function registerRunSystemBackup(server: McpServer, context: McpAuthConte
 
   server.tool(
     "vardo_run_system_backup",
-    "Start a backup of Vardo's own database now, as the System backup page's run button does. Returns once it starts; the last run shows as systemDatabaseJob in vardo_list_backup_jobs. Needs a token with the admin scope.",
+    "Start a backup of Vardo's own database now, as the System backup page's run button does. Returns at once and runs when a backup slot is free; the last run shows as systemDatabaseJob in vardo_list_backup_jobs. Needs a token with the admin scope.",
     {},
     async () => {
       if (!(await canAdminInstance(context))) return failure(ADMIN_FORBIDDEN_MESSAGE);

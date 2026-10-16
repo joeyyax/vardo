@@ -7,22 +7,14 @@ import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { needsSetup } from "@/lib/setup";
 import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
-import { withBackupSlot } from "./run-limit";
+import { backupSlotLimit, withBackupSlot } from "./run-limit";
 import { holdRunJobLease } from "./run-lease";
 import { backupsDraining } from "./in-flight";
-import { loadResourceSettings, maxBackupConcurrency } from "@/lib/resources/host";
 
 const log = logger.child("backup");
 
 /** Jobs waiting for or holding a slot, so an every-minute schedule can't stack runs behind a slow one. */
 const queued = new Set<string>();
-
-
-/** Concurrent backups and drills: the deploy concurrency, capped by what fits in this process's memory. */
-async function backupConcurrency(): Promise<number> {
-  await loadResourceSettings();
-  return maxBackupConcurrency();
-}
 
 /** Run any enabled backup jobs that are due, at most the backup concurrency at once. Call every minute. */
 export async function tickBackupJobs(): Promise<void> {
@@ -37,7 +29,7 @@ export async function tickBackupJobs(): Promise<void> {
     where: eq(backupJobs.enabled, true),
   });
 
-  const limit = await backupConcurrency();
+  const limit = await backupSlotLimit();
   const runs: Promise<void>[] = [];
   const { markJobDone, startJobRun, startNightlyRuns } = await import("./runs");
   const nightlyRun = await startNightlyRuns(now).catch((err) => {
@@ -133,7 +125,7 @@ export function runRequeuedJob(
   if (queued.has(job.id)) return false;
   queued.add(job.id);
   const lease = opts.runId ? holdRunJobLease(opts.runId, job.id) : null;
-  return backupConcurrency()
+  return backupSlotLimit()
     .then((limit) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
     .finally(() => queued.delete(job.id))
     .then(async () => {
@@ -198,7 +190,7 @@ export async function tickRestoreDrills(now = new Date()): Promise<void> {
   if (due.length === 0) return;
 
   const { runRestoreDrill } = await import("./drill");
-  const limit = await backupConcurrency();
+  const limit = await backupSlotLimit();
   for (const candidate of due) {
     try {
       const result = await withBackupSlot(limit, () => runRestoreDrill(candidate.backupId));

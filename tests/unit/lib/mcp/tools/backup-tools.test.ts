@@ -34,6 +34,7 @@ vi.mock("@/lib/mcp/scope", async (orig) => ({
 vi.mock("@/lib/time-zone-settings", () => ({ getOrgTimeZone: async () => "UTC" }));
 vi.mock("@/lib/backups/org-backup", () => ({ orgBackupScope: () => undefined }));
 vi.mock("@/lib/backups/system-storage", () => ({ readSystemBackupJob: h.systemJob }));
+vi.mock("@/lib/backups/run-limit", () => ({ withSizedBackupSlot: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", STALE_RUN_MS: 3_600_000, runBackup: h.runBackup }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: h.acquireLock, releaseLock: async () => true }));
 

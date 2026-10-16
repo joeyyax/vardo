@@ -15,7 +15,7 @@ const log = logger.child("mcp:run-backup");
 export function registerRunBackup(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_run_backup",
-    "Start a backup job now, as the backups page's run button does. Returns once it starts; follow it with vardo_list_backups. Get job IDs from vardo_list_backup_jobs.",
+    "Start a backup job now, as the backups page's run button does. Returns at once and runs when a backup slot is free; follow it with vardo_list_backups. Get job IDs from vardo_list_backup_jobs.",
     {
       jobId: z.string().describe("The backup job ID"),
     },

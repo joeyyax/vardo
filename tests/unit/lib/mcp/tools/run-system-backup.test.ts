@@ -14,6 +14,7 @@ vi.mock("@/lib/auth/system-org", () => ({ isInstanceAdminUser: h.instanceAdmin }
 vi.mock("@/lib/db", () => ({ db: { query: { backups: { findFirst: async () => undefined } } } }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: async () => "token", releaseLock: async () => true }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: h.featureOn }));
+vi.mock("@/lib/backups/run-limit", () => ({ withSizedBackupSlot: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", STALE_RUN_MS: 3_600_000, runBackup: h.runBackup }));
 vi.mock("@/lib/backups/system-storage", () => ({ findSystemJob: h.findSystemJob }));
 
