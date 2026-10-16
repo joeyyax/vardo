@@ -220,6 +220,8 @@ export async function sweepExpiredLeases(): Promise<void> {
       cancelRequestedAt: deployments.cancelRequestedAt,
       startedAt: deployments.startedAt,
       claimedAt: deployments.claimedAt,
+      trigger: deployments.trigger,
+      request: deployments.request,
     })
     .from(deployments)
     .where(
@@ -243,6 +245,13 @@ export async function sweepExpiredLeases(): Promise<void> {
       }
 
       const stillExpired = and(eq(deployments.id, deploy.id), eq(deployments.status, "running"), lt(deployments.leaseExpiresAt, sql`now()`));
+
+      // An instant or auto-rollback runs in its own process with no target on the row; a claimer would deploy the branch head.
+      if (deploy.trigger === "rollback" && !deploy.request?.rollback) {
+        await failDeadDeploy(deploy, "The process running this rollback stopped", stillExpired);
+        continue;
+      }
+
       const stage = deploy.stage ?? "queued";
       // Nothing ran before the first stage, so that requeue doesn't use up the rerun.
       const unstarted = !deploy.stage && !deploy.cancelRequestedAt;

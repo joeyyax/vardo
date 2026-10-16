@@ -395,6 +395,21 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect(await row(id)).toMatchObject({ status: "failed", attempts: 0 });
     });
 
+    it("fails an in-process rollback whose process died instead of requeuing it, and requeues a queued one", async () => {
+      // As an instant or auto-rollback writes it: running, claimed, no stage and no target.
+      await sql`insert into deployment (id, app_id, trigger, status, scope_key, claimed_by, lease_expires_at, log)
+                values ('instant', 'a1', 'rollback', 'running', 'a1', 'gone', now() - interval '1 second', '[rollback] Instant rollback in progress')`;
+      const queued = await enqueue("a2", "rollback", { rollback: { targetDeploymentId: "earlier" } });
+      await sql`update deployment set status = 'running', claimed_by = 'gone', lease_expires_at = now() - interval '1 second' where id = ${queued}`;
+
+      await sweeper.sweepExpiredLeases();
+      const instant = await row("instant");
+      expect(instant.status).toBe("failed");
+      expect(instant.log).toMatch(/ERROR: The process running this rollback stopped/);
+      expect(await row(queued)).toMatchObject({ status: "queued", request: { rollback: { targetDeploymentId: "earlier" } } });
+      expect(await claimAll()).toEqual([queued]);
+    });
+
     it("leaves a deploy whose lease is current", async () => {
       const id = await enqueue("a1", "manual");
       await claimAll();
