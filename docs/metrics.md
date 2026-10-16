@@ -6,7 +6,7 @@ Vardo reads container and GPU metrics from the collector (`joeyyax/collector`). 
 |---|---|
 | `VARDO_COLLECTOR_URL` | Read an existing collector at this URL, such as `http://collector:9273`. Vardo doesn't provision one. Wins over `VARDO_COLLECTOR_IMAGE`. |
 | `VARDO_COLLECTOR_TOKEN` or `VARDO_COLLECTOR_TOKEN_FILE` | Bearer token for `VARDO_COLLECTOR_URL`, when that collector sets `api.token_file`. Unset sends none. |
-| `VARDO_COLLECTOR_IMAGE` | The image Vardo provisions its collector core service from. Unset means `ghcr.io/joeyyax/collector:0.3.0`. The collector gets a generated token, no published port and joins `vardo-monitoring`, where Vardo reads it at `http://collector:9273`. `off` means no container or GPU metrics, so no disk-write alerts either; disk usage from `docker system df` and business metrics keep running. |
+| `VARDO_COLLECTOR_IMAGE` | The image Vardo provisions its collector core service from. Unset means `ghcr.io/joeyyax/collector:0.3.1`. The collector gets a generated token, no published port and joins `vardo-monitoring`, where Vardo reads it at `http://collector:9273`. `off` means no container or GPU metrics, so no disk-write alerts either; disk usage from `docker system df` and business metrics keep running. |
 
 ## When the collector is down
 
