@@ -26,6 +26,7 @@ vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: mockRequirePlugin }));
 vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 // Only runBackup is stubbed — the route shares STALE_RUN_MS with the scheduler.
+vi.mock("@/lib/backups/run-limit", () => ({ withSizedBackupSlot: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/backups/engine", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/backups/engine")>()),
   runBackup: mockRunBackup,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { runRestoreDrill } from "@/lib/backups/drill";
+import { runManualDrill } from "@/lib/backups/manual-run";
 import { findDrillableBackup } from "@/lib/backups/org-backup";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -25,7 +25,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Only a successful backup can be drilled" }, { status: 400 });
     }
 
-    return NextResponse.json(await runRestoreDrill(backupId));
+    return NextResponse.json(await runManualDrill(backupId));
   } catch (error) {
     return handleRouteError(error, "Error running restore drill");
   }

@@ -1,10 +1,12 @@
-// Backups started by hand: one run per job at a time, across consoles.
+// Backups and drills started by hand: one run per job at a time across consoles, each in a backup slot.
 
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { MANUAL_TRIGGER, runBackup, STALE_RUN_MS, type BackupResult } from "./engine";
+import type { DrillResult } from "./drill";
+import { withSizedBackupSlot } from "./run-limit";
 
 export type ManualStart =
   | { started: true; done: Promise<BackupResult[]> }
@@ -13,12 +15,13 @@ export type ManualStart =
 
 const lockKey = (jobId: string) => `lock:backup:manual:${jobId}`;
 
-/** Starts a job by hand unless it's already running. `force` skips the check. */
+/** Starts a job by hand unless it's already running. `force` skips the check. Waits for a free slot. */
 export async function startManualBackup(
   jobId: string,
   opts: { appIds?: string[]; force?: boolean } = {},
 ): Promise<ManualStart> {
-  const run = () => runBackup(jobId, { ...(opts.appIds ? { appIds: opts.appIds } : {}), trigger: MANUAL_TRIGGER });
+  const run = () =>
+    withSizedBackupSlot(() => runBackup(jobId, { ...(opts.appIds ? { appIds: opts.appIds } : {}), trigger: MANUAL_TRIGGER }));
   if (opts.force) return { started: true, done: run() };
 
   const token = await acquireLock(lockKey(jobId), STALE_RUN_MS);
@@ -45,4 +48,9 @@ export async function startManualBackup(
 
   const done = run().finally(release);
   return { started: true, done };
+}
+
+/** A restore drill started by hand. Waits for a free slot. */
+export function runManualDrill(backupId: string): Promise<DrillResult> {
+  return withSizedBackupSlot(async () => (await import("./drill")).runRestoreDrill(backupId));
 }

@@ -11,6 +11,7 @@ import { fireAlert, settleAlerts } from "@/lib/notifications/observations";
 import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
 import { backupLeaseHeld } from "./run-lease";
+import { backupSlotLimit } from "./run-limit";
 import { backupFailureItem } from "./failure-alert";
 import { EMPTY_BIND_SKIP_LOG, isUncapturedSource, volumeCoverage, type VolumeCoverage } from "./coverage";
 import type { BackupSummaryEvent } from "@/lib/bus/events";
@@ -63,12 +64,6 @@ export function describeTarget(target: { name: string; type: string; config: Rec
   const named = target.name.toUpperCase().includes(type);
   const detail = [named ? "" : type, where].filter(Boolean).join(" ");
   return detail ? `${target.name} · ${detail}` : target.name;
-}
-
-async function backupConcurrency(): Promise<number> {
-  const { loadResourceSettings, maxBackupConcurrency } = await import("@/lib/resources/host");
-  await loadResourceSettings();
-  return maxBackupConcurrency();
 }
 
 /** Each volume's average duration over its last few successful backups and its last size, by `appId:volume`. */
@@ -165,7 +160,7 @@ async function estimatePlan(organizationId: string | null, plan: BackupRunPlan, 
   const jobs = plan.jobs.map((j) =>
     (j.appIds ?? []).flatMap((id) => (appKeys.get(id) ?? []).map((k) => history.get(k)?.durationMs ?? null)),
   );
-  return estimateRunMs(jobs, await backupConcurrency());
+  return estimateRunMs(jobs, await backupSlotLimit());
 }
 
 /** Opens a run once per key and sends its start notice. Null when another process opened it. */

@@ -5,6 +5,7 @@ const h = vi.hoisted(() => {
   return {
     held,
     runBackup: vi.fn(),
+    runRestoreDrill: vi.fn(),
     acquireLock: vi.fn(async (key: string) => (held.has(key) ? null : (held.set(key, "t"), "t"))),
     releaseLock: vi.fn(async (key: string) => held.delete(key)),
   };
@@ -13,9 +14,25 @@ const h = vi.hoisted(() => {
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: h.acquireLock, releaseLock: h.releaseLock }));
 vi.mock("@/lib/backups/engine", () => ({ MANUAL_TRIGGER: "manual", STALE_RUN_MS: 3_600_000, runBackup: h.runBackup }));
+vi.mock("@/lib/backups/drill", () => ({ runRestoreDrill: h.runRestoreDrill }));
+vi.mock("@/lib/resources/host", () => ({ loadResourceSettings: async () => ({}), maxBackupConcurrency: async () => 1 }));
 
 import { dbMock } from "@/tests/helpers/db";
-const { startManualBackup } = await import("@/lib/backups/manual-run");
+import { backupSlotsBusy, withBackupSlot } from "@/lib/backups/run-limit";
+const { runManualDrill, startManualBackup } = await import("@/lib/backups/manual-run");
+
+/** Holds the only backup slot, as a nightly run would, until released. */
+async function fillSlot() {
+  let release!: () => void;
+  const running = withBackupSlot(1, () => new Promise<void>((r) => (release = r)));
+  await vi.waitFor(() => expect(release).toBeDefined());
+  return async () => {
+    release();
+    await running;
+  };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 20));
 
 describe("startManualBackup", () => {
   beforeEach(() => {
@@ -30,7 +47,7 @@ describe("startManualBackup", () => {
     h.runBackup.mockReturnValue(new Promise<never[]>((r) => (finish = () => r([]))));
     const [a, b] = await Promise.all([startManualBackup("j1"), startManualBackup("j1")]);
     expect([a.started, b.started].sort()).toEqual([false, true]);
-    expect(h.runBackup).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(h.runBackup).toHaveBeenCalledTimes(1));
     expect(h.runBackup).toHaveBeenCalledWith("j1", { trigger: "manual" });
 
     finish();
@@ -51,6 +68,39 @@ describe("startManualBackup", () => {
     h.runBackup.mockResolvedValue([]);
     const start = await startManualBackup("j1", { appIds: ["a1"], force: true });
     expect(start.started).toBe(true);
-    expect(h.runBackup).toHaveBeenCalledWith("j1", { appIds: ["a1"], trigger: "manual" });
+    await vi.waitFor(() => expect(h.runBackup).toHaveBeenCalledWith("j1", { appIds: ["a1"], trigger: "manual" }));
+  });
+
+  it("waits for a backup slot while every one is busy", async () => {
+    h.runBackup.mockResolvedValue([]);
+    const free = await fillSlot();
+    const start = await startManualBackup("j1");
+    expect(start.started).toBe(true);
+
+    await settle();
+    expect(h.runBackup).not.toHaveBeenCalled();
+    expect(backupSlotsBusy()).toBe(true);
+
+    await free();
+    await (start.started && start.done);
+    expect(h.runBackup).toHaveBeenCalledTimes(1);
+    expect(backupSlotsBusy()).toBe(false);
+  });
+});
+
+describe("runManualDrill", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("waits for a backup slot while every one is busy", async () => {
+    h.runRestoreDrill.mockResolvedValue({ outcome: "verified" });
+    const free = await fillSlot();
+    const drill = runManualDrill("b1");
+
+    await settle();
+    expect(h.runRestoreDrill).not.toHaveBeenCalled();
+
+    await free();
+    expect(await drill).toEqual({ outcome: "verified" });
+    expect(h.runRestoreDrill).toHaveBeenCalledWith("b1");
   });
 });
