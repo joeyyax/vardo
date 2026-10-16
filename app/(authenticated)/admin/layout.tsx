@@ -76,6 +76,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       { label: "Organizations", href: "/admin/organizations" },
       { label: "Users", href: "/admin/users" },
       { label: "Security", href: "/admin/security" },
+      { label: "Trust center", href: "/admin/trust" },
     ],
   },
     ...settingsGroups,
