@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -30,7 +29,6 @@ export function UptimeMonitors({
   vantages: VantageView[];
   canManage: boolean;
 }) {
-  const router = useRouter();
   const apiBase = `/api/v1/organizations/${orgId}/uptime/monitors`;
   const [monitors, setMonitors] = useState(initialMonitors);
   const [filter, setFilter] = useState<Filter>("all");
@@ -141,12 +139,12 @@ export function UptimeMonitors({
             </thead>
             <tbody>
               {shown.map((m) => (
-                <tr key={m.id} onClick={() => router.push(`/uptime/${m.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-row-hover">
+                <tr key={m.id} className="relative border-b last:border-0 hover:bg-row-hover">
                   <td className="py-3 pl-4">
                     <StateMark state={m.enabled ? m.state : "unknown"} />
                   </td>
                   <td className="max-w-[18rem] py-3 pr-3">
-                    <Link href={`/uptime/${m.id}`} className="flex items-center gap-2 font-medium hover:underline">
+                    <Link href={`/uptime/${m.id}`} className="flex items-center gap-2 font-medium before:absolute before:inset-0 hover:underline">
                       <span className="truncate">{m.name}</span>
                       {m.preview && <Chip tone="info" caps={false}>Preview</Chip>}
                       {m.muted && <Chip tone="neutral" caps={false}>Muted</Chip>}

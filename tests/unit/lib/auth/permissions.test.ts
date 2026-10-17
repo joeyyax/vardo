@@ -21,6 +21,7 @@ const ADMIN_ONLY: Capability[] = [
   "backup.delete",
   "backup.targets.manage",
   "backup.jobs.manage",
+  "uptime.manage",
 ];
 
 const OWNER_ONLY: Capability[] = ["org.delete", "org.ownership.transfer"];

@@ -10,7 +10,7 @@ type RouteParams = { params: Promise<{ orgId: string; appId: string }> };
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId, "uptime.view");
+    const app = await verifyAppAccess(orgId, appId, "app.view");
     if (!app) return apiError.notFound("app");
     return NextResponse.json(await getAppUptime(orgId, appId));
   } catch (error) {
