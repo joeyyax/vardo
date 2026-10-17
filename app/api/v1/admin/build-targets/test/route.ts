@@ -43,9 +43,8 @@ async function handlePost(request: NextRequest) {
     }
 
     let pinned = false;
-    // A linked instance's host key comes only from the signed key exchange.
-    if (!target.hostKey && target.kind === "mesh") {
-      return NextResponse.json({ ok: false, error: target.waiting ?? "it hasn't sent its host key yet" });
+    if (target.kind === "mesh") {
+      return NextResponse.json({ ok: false, error: target.waiting ?? "it hasn't offered its isolated builder yet" });
     }
     if (!target.hostKey) {
       try {

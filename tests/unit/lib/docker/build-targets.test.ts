@@ -15,7 +15,7 @@ vi.mock("@/lib/mesh/build-peers", () => ({ meshBuildPeers: async () => mesh }));
 
 const {
   builderFailureReason, BuilderError, configuredTargets, describeTarget, getBuildTargets, isTargetReady, onTarget, openSshSession,
-  remoteEnv, resetTargetHealth, setBuildTargets, targetDockerHost,
+  openTargetSession, remoteEnv, resetTargetHealth, setBuildTargets, targetDockerHost,
 } = await import("@/lib/docker/build-targets");
 
 const run = promisify(execFile);
@@ -25,10 +25,9 @@ const target = {
   privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----", hostKey: "[10.99.0.2]:2222 ssh-ed25519 AAAAC3", maxConcurrent: 2,
 };
 
-const MESH_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nmesh\n-----END OPENSSH PRIVATE KEY-----\n";
+const ACCESS = { host: "10.99.0.2", port: 1234, serverName: "vardo-mesh-builder", ca: "ca", cert: "cert", key: "key" };
 const linked = (over: Record<string, unknown> = {}) => ({
-  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: MESH_KEY,
-  hostKey: "10.99.0.2 ssh-ed25519 AAAAC3", waiting: null, accepts: true, ...over,
+  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 1234, builder: ACCESS, waiting: null, accepts: true, ...over,
 });
 
 beforeEach(() => {
@@ -53,11 +52,11 @@ describe("stored targets", () => {
 describe("linked instances", () => {
   it("join at the end once they accept builds, one at a time, over the mesh", async () => {
     await setBuildTargets([target]);
-    mesh.push(linked(), linked({ peerId: "other", name: "Edge", accepts: false, hostKey: null, waiting: "Edge doesn't accept builds from here" }));
+    mesh.push(linked(), linked({ peerId: "other", name: "Edge", accepts: false, builder: null, waiting: "Edge doesn't accept builds from here" }));
     const targets = await getBuildTargets();
     expect(targets.map((t) => [t.id, t.kind])).toEqual([["lh", "ssh"], ["mesh-lhpeer", "mesh"]]);
-    expect(targets[1]).toMatchObject({ host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hostKey: "10.99.0.2 ssh-ed25519 AAAAC3" });
-    expect(describeTarget(targets[1])).toBe("Long House (vardo@10.99.0.2:22)");
+    expect(targets[1]).toMatchObject({ host: "10.99.0.2", port: 1234, user: "", privateKey: "", hostKey: null, maxConcurrent: 1, builder: ACCESS });
+    expect(describeTarget(targets[1])).toBe("Long House (isolated builder at 10.99.0.2:1234)");
   });
 
   it("keep their place and limit but never store the link's key or host key", async () => {
@@ -75,23 +74,18 @@ describe("linked instances", () => {
     await setBuildTargets(await getBuildTargets());
     mesh.length = 0;
     expect(await getBuildTargets()).toEqual([]);
-    mesh.push(linked({ accepts: true, hostKey: null, waiting: "Long House hasn't sent its mesh SSH host key yet" }));
-    expect((await getBuildTargets())[0]).toMatchObject({ kind: "mesh", hostKey: null, waiting: expect.stringContaining("host key") });
+    mesh.push(linked({ accepts: true, builder: null, waiting: "Long House hasn't offered its isolated builder yet" }));
+    expect((await getBuildTargets())[0]).toMatchObject({ kind: "mesh", builder: null, waiting: expect.stringContaining("isolated builder") });
     expect(await configuredTargets()).toEqual([]);
   });
 
-  it("run through the same SSH session as a hand-added target", async () => {
-    mesh.push(linked());
-    const [lh] = await getBuildTargets();
-    const session = await openSshSession(lh);
-    try {
-      expect(session.env.DOCKER_HOST).toBe("ssh://vardo@10.99.0.2:22");
-      const dir = join(session.env.PATH.split(":")[0], "..");
-      expect(await readFile(join(dir, "known_hosts"), "utf8")).toBe("10.99.0.2 ssh-ed25519 AAAAC3\n");
-      expect(await readFile(join(dir, "id"), "utf8")).toBe(MESH_KEY);
-    } finally {
-      await session.close();
-    }
+  it("open no SSH session, and one without a builder fails as the builder's fault", async () => {
+    mesh.push(linked(), linked({ peerId: "other", name: "Edge", builder: null, waiting: "Edge hasn't offered its isolated builder yet" }));
+    const [lh, edge] = await getBuildTargets();
+    expect((await openTargetSession(lh)).env).toEqual({});
+    const err = await openTargetSession(edge).catch((e) => e);
+    expect(err).toBeInstanceOf(BuilderError);
+    expect(err.reason).toBe("Edge hasn't offered its isolated builder yet");
   });
 });
 

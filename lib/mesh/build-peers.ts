@@ -1,11 +1,10 @@
-// Linked instances as build targets: the peer's isolated builder when it offers one, else mesh SSH to its Docker.
+// Linked instances as build targets: each builds in the peer's isolated builder, or waits until it offers one.
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
-import { MESH_BUILDER_SERVER_NAME, MESH_SSH_PORT, MESH_SSH_USER } from "./constants";
+import { MESH_BUILDER_PORT, MESH_BUILDER_SERVER_NAME } from "./constants";
 import { ownMeshAddress } from "./heartbeat";
-import { meshClientKey, normalizeEd25519 } from "./ssh-endpoint";
 import { builderClientKey } from "./builder-tls";
 import { certInfo, issuedBy, normalizeEd25519Spki } from "./x509";
 
@@ -23,23 +22,15 @@ export type MeshBuildPeer = {
   peerId: string;
   name: string;
   host: string;
+  /** The builder's port, or the default one until the peer offers it. */
   port: number;
-  user: string;
-  privateKey: string;
-  /** known_hosts line from the key exchange; null while the peer can't take builds over SSH. */
-  hostKey: string | null;
-  /** The peer's isolated builder; null for an older peer, which builds over SSH. */
+  /** The peer's isolated builder; null until it offers one. */
   builder: MeshBuilderAccess | null;
   /** Why it can't take builds yet. */
   waiting: string | null;
   /** The peer says it runs builds from here. */
   accepts: boolean;
 };
-
-/** known_hosts line for a host key at `host:port`. */
-export function knownHostsLine(host: string, port: number, key: string): string {
-  return `${port === 22 ? host : `[${host}]:${port}`} ${key}`;
-}
 
 type BuilderColumns = { peerBuilderPort: number | null; peerBuilderCa: string | null; peerBuilderCert: string | null };
 
@@ -55,40 +46,27 @@ export function builderAccess(host: string, r: BuilderColumns, client: { private
 export async function meshBuildPeers(): Promise<MeshBuildPeer[]> {
   const rows = await db.query.meshPeers.findMany({
     where: eq(meshPeers.connectionType, "direct"),
-    columns: {
-      id: true, name: true, internalIp: true, peerAcceptsBuilds: true, peerSshHostKey: true, peerSshPort: true,
-      peerBuilderPort: true, peerBuilderCa: true, peerBuilderCert: true,
-    },
+    columns: { id: true, name: true, internalIp: true, peerAcceptsBuilds: true, peerBuilderPort: true, peerBuilderCa: true, peerBuilderCert: true },
   });
   const linked = rows.filter((r) => ownMeshAddress(r.internalIp));
-  const accepting = linked.filter((r) => r.peerAcceptsBuilds);
-  const builderKey = accepting.some((r) => r.peerBuilderCert) ? await builderClientKey().catch(() => null) : null;
-  const sshKey = accepting.some((r) => !r.peerBuilderCert) ? await meshClientKey().catch(() => null) : null;
-  const fallbackPort = Number(MESH_SSH_PORT) || 22;
+  const builderKey = linked.some((r) => r.peerAcceptsBuilds && r.peerBuilderCert) ? await builderClientKey().catch(() => null) : null;
   return linked.map((r) => {
     const host = ownMeshAddress(r.internalIp)!;
-    const port = r.peerSshPort ?? fallbackPort;
     const builder = r.peerAcceptsBuilds ? builderAccess(host, r, builderKey) : null;
-    const key = normalizeEd25519(r.peerSshHostKey);
     const waiting = !r.peerAcceptsBuilds
       ? `${r.name} doesn't accept builds from here`
       : builder
         ? null
-        : r.peerBuilderCert
-          ? `${r.name}'s builder certificate for this instance has expired or doesn't match its key`
-          : !key
-            ? `${r.name} hasn't sent its mesh SSH host key yet`
-            : !sshKey
-              ? "this instance has no mesh SSH key yet"
-              : null;
+        : !r.peerBuilderCert
+          ? `${r.name} hasn't offered its isolated builder yet`
+          : !builderKey
+            ? "this instance has no builder client key yet"
+            : `${r.name}'s builder certificate for this instance has expired or doesn't match its key`;
     return {
       peerId: r.id,
       name: r.name,
       host,
-      port,
-      user: MESH_SSH_USER,
-      privateKey: builder ? "" : sshKey?.privateKey ?? "",
-      hostKey: !builder && waiting === null ? knownHostsLine(host, port, key!) : null,
+      port: r.peerBuilderPort ?? (Number(MESH_BUILDER_PORT) || 1234),
       builder,
       waiting,
       accepts: r.peerAcceptsBuilds,
