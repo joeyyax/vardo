@@ -109,6 +109,8 @@ clamped to at least `min(4 GiB, 70% of RAM)` and at most 50% of RAM, in 64 MiB s
 
 `VARDO_BUILDKIT_MEM` pins the size only when it differs from what `install.sh` writes for the host, a quarter of RAM between 4 and 16 GiB. Recreating the container resets it to `VARDO_BUILDKIT_MEM` until the next build into an empty builder.
 
+`vardo-mesh-builder`, where linked instances' builds run, gets the same size when the console starts and when a peer claims a slot, less what `vardo-buildkit`'s running builds can still grow into. It only grows while a peer's build runs in it, since lowering a limit below what a build holds OOM-kills it. `VARDO_MESH_BUILDER_MEM` pins it; unset, it follows a pinned `VARDO_BUILDKIT_MEM`.
+
 ## How the console hands off
 
 The worker writes a heartbeat to the `worker` table every 10 seconds. Every 30 seconds the console checks it:
