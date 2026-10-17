@@ -248,6 +248,7 @@ export class IntervalLoop<T = unknown> {
   /** The lease for this pass: null when none is needed, false while another process holds it. */
   private async ensureLease(): Promise<Lease | null | false> {
     if (!this.singleton || !leasesEnabled()) return null;
+    if (this.stopping) return false;
     try {
       const lease = await acquireLease(this.name, this.leaseTtlMs, this.holder || instanceId());
       if (!lease) {
@@ -260,7 +261,8 @@ export class IntervalLoop<T = unknown> {
       this.standby = false;
       this.lastRenewOk = Date.now();
       this.startKeepalive();
-      return lease;
+      // Stopped while the claim was in flight: stop() releases it, no pass runs.
+      return this.stopping ? false : lease;
     } catch (err) {
       this.log.warn(`Couldn't take the ${this.name} lease, skipping this pass:`, err);
       if (this.lease && Date.now() - this.lastRenewOk >= this.leaseTtlMs) this.dropLease();
