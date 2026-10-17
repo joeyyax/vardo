@@ -121,23 +121,30 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
           firstRunMs: 0,
           run: async (ctx) => void ran.push(ctx.lease!.holder),
         });
+      const until = async (done: () => boolean) => {
+        for (let i = 0; i < 400 && !done(); i++) await sleep(25);
+        expect(done()).toBe(true);
+      };
       // instanceId() is read at start, so each loop keeps the holder it started with.
       holderRef.current = "proc-a";
       const a = make();
-      a.start({ singleton: true, leaseTtlMs: 2_000 });
-      await sleep(50);
+      const startedAt = Date.now();
+      a.start({ singleton: true, leaseTtlMs: 30_000 });
+      await until(() => ran.length >= 1);
       holderRef.current = "proc-b";
       const b = make();
-      b.start({ singleton: true, leaseTtlMs: 2_000 });
-      await sleep(700);
+      b.start({ singleton: true, leaseTtlMs: 30_000 });
+      // Waits on passes, not wall time: a starved process runs fewer slots per second.
+      await until(() => ran.length >= 4);
+      const elapsed = Date.now() - startedAt;
       await Promise.all([a.stop(), b.stop()]);
 
       const [row] = await sql`select holder, epoch::int from leader_lease where name = 't4'`;
       expect(row).toMatchObject({ holder: "proc-a", epoch: 1 });
       // Every pass ran in proc-a; proc-b stayed on standby.
       expect(new Set(ran)).toEqual(new Set(["proc-a"]));
-      expect(ran.length).toBeGreaterThanOrEqual(3);
-      expect(ran.length).toBeLessThanOrEqual(10);
+      // One pass per slot at most: a second holder running the same slots would overshoot.
+      expect(ran.length).toBeLessThanOrEqual(Math.floor(elapsed / 100) + 2);
     });
   });
 
