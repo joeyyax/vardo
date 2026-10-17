@@ -61,6 +61,13 @@ describe("safeFetch", () => {
     await expect(safeFetch("https://example.com/")).rejects.toThrow(/private/);
   });
 
+  it("hands the redirect back when the caller asks for manual", async () => {
+    fetchMock.mockResolvedValueOnce(redirect(307, "https://other.example.com/login"));
+    const res = await safeFetch("https://example.com/healthz", { redirect: "manual" });
+    expect(res.status).toBe(307);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("follows a permitted redirect", async () => {
     fetchMock
       .mockResolvedValueOnce(redirect(302, "https://elsewhere.example.com/x"))

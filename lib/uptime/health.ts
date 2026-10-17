@@ -60,15 +60,33 @@ export async function spaced(gapMs = probeSpacing.gapMs, sleep: (ms: number) => 
 
 type Fetched = { sample: Sample; finalPath: string };
 
-async function fetchSample(doFetch: typeof fetch, url: string, headers: Record<string, string>, method: HttpMethod = "GET"): Promise<Fetched | null> {
+/** Redirects a probe follows, on its own host only. */
+const MAX_PROBE_REDIRECTS = 5;
+
+/**
+ * One request and what it answered. A probe follows redirects on the same host only, such as `/healthz` to a basePath's `/docs/healthz`;
+ * a redirect to another host is the answer. The homepage follows any, as its check does.
+ */
+async function fetchSample(doFetch: typeof fetch, url: string, headers: Record<string, string>, method: HttpMethod = "GET", sameHostOnly = false): Promise<Fetched | null> {
   await spaced();
   try {
-    const res = await doFetch(url, {
-      method,
-      redirect: "follow",
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      headers: { ...headers, "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
-    });
+    let current = new URL(url);
+    let res!: Response;
+    for (let hop = 0; ; hop++) {
+      res = await doFetch(current.toString(), {
+        method,
+        redirect: sameHostOnly ? "manual" : "follow",
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        headers: { ...headers, "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
+      });
+      const location = sameHostOnly && res.status >= 300 && res.status <= 399 ? res.headers.get("location") : null;
+      if (!location || hop >= MAX_PROBE_REDIRECTS) break;
+      const next = new URL(location, current);
+      if (next.host !== current.host || next.protocol !== current.protocol) break;
+      await res.body?.cancel().catch(() => {});
+      current = next;
+    }
+    url = current.toString();
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     const reader = res.body?.getReader();
@@ -122,14 +140,19 @@ export async function detectHealth(input: { base: string; healthcheckPath?: stri
   for (const p of input.imagePaths ?? []) add({ path: p.path, source: "image", status: p.status });
   for (const path of HEALTH_PATHS) add({ path, source: "probe" });
 
+  // A same-host redirect is followed once here, and the check goes straight to where it ends when that's under the base.
+  const basePath = new URL(input.base).pathname.replace(/\/+$/, "");
+  const landed = (requested: string, finalPath: string) => (finalPath !== join(basePath, requested) && finalPath.startsWith(basePath + "/") ? finalPath.slice(basePath.length) : requested);
+
   let cached: Candidate | null = null;
   for (const c of candidates) {
-    const probe = await fetchSample(input.fetch, join(input.base, c.path), headers);
+    const probe = await fetchSample(input.fetch, join(input.base, c.path), headers, "GET", true);
     if (!probe) continue;
     const ok = c.status ? qualifiesAsImageHealth(probe.sample, home.sample, c.status) : qualifiesAsHealth(probe.sample, home.sample);
     if (!ok) continue;
-    if (!probe.sample.cache) return { outcome: "decided", path: c.path, source: c.source, review: null };
-    cached ??= c;
+    const found = { ...c, path: landed(c.path, probe.finalPath) };
+    if (!probe.sample.cache) return { outcome: "decided", path: found.path, source: found.source, review: null };
+    cached ??= found;
   }
   if (cached) return { outcome: "decided", path: cached.path, source: cached.source, review: null };
   if (verdict.kind === "unreachable") return { outcome: "unreachable" };
@@ -407,7 +430,7 @@ export async function answerReview(scope: Scope, id: string, input: ReviewInput,
     if (input.status !== undefined && !validStatus(input.status)) throw new UptimeInputError("Enter a status from 100 to 499.");
     const method = methodOf(input.method);
     const level = levelOf(row);
-    const probe = await fetchSample(deps?.fetch ?? (await checkDeps(level)).fetch, join(base, input.path), openHeaders(row.headersEncrypted, row), method);
+    const probe = await fetchSample(deps?.fetch ?? (await checkDeps(level)).fetch, join(base, input.path), openHeaders(row.headersEncrypted, row), method, true);
     const want = input.status;
     const answered = probe && !probe.sample.noRoute && (want !== undefined ? probe.sample.status === want : probe.sample.status >= 200 && probe.sample.status <= 299);
     if (!answered) throw new UptimeInputError(`${method ?? "GET"} ${input.path} didn't answer ${want ?? "2xx"}. Run Detect or try another path.`);

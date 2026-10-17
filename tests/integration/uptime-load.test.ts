@@ -95,8 +95,10 @@ describe.skipIf(!conn)("uptime load and detection on Postgres", { timeout: MIGRA
       await detect();
       expect(await mon()).toMatchObject({ health_source: "homepage", interval_sec: 300 });
       seen.length = 0;
-      await minutes(10);
-      expect(checksOf("shop.example.com")).toBe(2);
+      await minutes(30);
+      // Six five-minute slots, give or take where the monitor's phase falls.
+      expect(checksOf("shop.example.com")).toBeGreaterThanOrEqual(6);
+      expect(checksOf("shop.example.com")).toBeLessThanOrEqual(7);
 
       respond = (path) => (path === "/healthz" ? Response.json({ ok: true }) : html());
       await dueNow();
@@ -146,7 +148,27 @@ describe.skipIf(!conn)("uptime load and detection on Postgres", { timeout: MIGRA
       await dueNow();
       seen.length = 0;
       await detect();
-      expect(seen).toHaveLength(1 + 9);
+      expect(seen).toHaveLength(1 + 10);
+    });
+  });
+
+  describe("redirects", () => {
+    it("follows a same-host redirect to a basePath's health path and checks where it lands", async () => {
+      respond = (path) =>
+        path === "/healthz" ? new Response(null, { status: 307, headers: { location: "/docs/healthz" } }) : path === "/docs/healthz" ? Response.json({ ok: true }) : html();
+      await dueNow();
+      await detect();
+      expect(await mon()).toMatchObject({ health_path: "/docs/healthz", health_source: "probe" });
+      expect((await mon()).check.url).toBe("https://shop.example.com/docs/healthz");
+    });
+
+    it("doesn't follow a probe to another host", async () => {
+      respond = (path) => (path === "/healthz" ? new Response(null, { status: 302, headers: { location: "https://auth.example.com/login" } }) : path === "/api/healthz" ? Response.json({ ok: true }) : html());
+      await dueNow();
+      seen.length = 0;
+      await detect();
+      expect(seen.some((s) => s.url.includes("auth.example.com"))).toBe(false);
+      expect((await mon()).health_path).toBe("/api/healthz");
     });
   });
 
@@ -274,6 +296,7 @@ describe.skipIf(!conn)("uptime load and detection on Postgres", { timeout: MIGRA
       const id = (await mon()).id;
       await client.uptimeClient.updateMonitor(org, id, { path: "" });
       await sql`update uptime_monitor set interval_sec = 60 where id = ${id}`;
+      await sql`delete from uptime_result where monitor_id = ${id}`;
       respond = () => html("x".repeat(412 * 1024), { headers: { "content-length": String(412 * 1024) } });
       await minutes(4);
       const detail = await client.uptimeClient.getMonitor(org, id);

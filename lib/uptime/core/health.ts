@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 
 /** Paths tried, in order, when the app's own healthcheck names none. */
-export const HEALTH_PATHS = ["/healthz", "/health", "/api/health", "/up", "/livez", "/readyz", "/ping", "/status", "/_health"] as const;
+export const HEALTH_PATHS = ["/healthz", "/health", "/api/health", "/api/healthz", "/up", "/livez", "/readyz", "/ping", "/status", "/_health"] as const;
 
 /** A path a known image serves when up, and the statuses it answers then. */
 export type ImageHealthPath = { path: string; status: number[] };
