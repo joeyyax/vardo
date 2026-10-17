@@ -41,6 +41,8 @@ export type AppSettingsFields = {
   /** Post deploy status to GitHub. */
   githubFeedback: boolean;
   autoRollback: boolean;
+  /** Blue/green or stop-first. */
+  deployStrategy: boolean;
   gpu: boolean;
   project: boolean;
 };
@@ -80,6 +82,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     autoDeploy: ownsBuild,
     githubFeedback: ownsBuild && ctx.source === "git",
     autoRollback: ownsBuild,
+    deployStrategy: ownsBuild,
     gpu: true,
     project: true,
   };
@@ -112,6 +115,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   autoDeploy: "build",
   githubFeedback: "build",
   autoRollback: "build",
+  deployStrategy: "build",
   restartPolicy: "resources",
   resourceLimits: "resources",
   priority: "resources",

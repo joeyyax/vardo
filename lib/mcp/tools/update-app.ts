@@ -13,6 +13,7 @@ import { readableApp } from "@/lib/api/readable-app";
 import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask";
 import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 import { gitUrlUpdateColumns } from "@/lib/api/git-credentials";
+import { DEPLOY_STRATEGIES } from "@/lib/docker/deploy-strategy";
 
 // 10 updates per 5 minutes per user/org pair.
 const UPDATE_RATE_LIMIT = 10;
@@ -40,6 +41,10 @@ const updateSchema = z.object({
   priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
+  deployStrategy: z
+    .enum(DEPLOY_STRATEGIES)
+    .describe("blue-green runs the new version next to the old one until it is healthy; stop-first stops the old one first, for apps whose data only one process can open")
+    .optional(),
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -51,7 +56,7 @@ export function registerUpdateApp(
 ) {
   server.tool(
     "vardo_update_app",
-    "Update configuration for a specific app. Pass any subset of fields to update: displayName, description, projectId, containerPort, gitBranch, deployType, resource limits, etc. Does not trigger a deploy — use vardo_deploy_app after updating if needed.",
+    "Update configuration for a specific app. Pass any subset of fields to update: displayName, description, projectId, containerPort, gitBranch, deployType, deployStrategy, resource limits, etc. Does not trigger a deploy — use vardo_deploy_app after updating if needed.",
     {
       appId: z.string().describe("The app ID to update"),
       config: updateSchema.describe("Partial config object with fields to update"),

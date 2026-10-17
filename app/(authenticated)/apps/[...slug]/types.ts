@@ -166,6 +166,7 @@ export type App = {
   startCommand: string | null;
   buildProvider: "railpack" | "nixpacks" | null;
   buildCache: "use" | "skip-reuse" | "never";
+  deployStrategy: "blue-green" | "stop-first";
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
   autoDeploy: boolean | null;
