@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { access, writeFile } from "fs/promises";
 import { dirname } from "path";
-import { bringDirect, registryOutput, resetDirectExport } from "@/lib/docker/direct-export";
+import { bringDirect, pushedName, registryOutput, resetDirectExport } from "@/lib/docker/direct-export";
 import { MIN_CEILING_BYTES, resetPushCeilings } from "@/lib/docker/remote-build";
 import { BuilderError } from "@/lib/docker/build-targets";
 import type { Transfer } from "@/lib/docker/build-placement";
@@ -65,7 +65,27 @@ describe("registryOutput", () => {
   });
 });
 
+describe("pushedName", () => {
+  it("names the ref a pushing output sends, and nothing for other outputs", () => {
+    expect(pushedName(registryOutput(REF, "zstd"))).toBe(REF);
+    expect(pushedName(`${FILE},dest=/tmp/x.tar`)).toBeNull();
+    expect(pushedName(`type=image,name=${REF}`)).toBeNull();
+  });
+});
+
 describe("bringDirect", () => {
+  it("reruns to a tarball when a push fails without naming the registry", async () => {
+    const r = recorder();
+    const denied = Object.assign(new Error("docker failed (exit 1)"), {
+      stderr: "ERROR: failed to push host/shop:d: push access denied, repository does not exist or may require authorization\n",
+    });
+    const b = builder((_o, n) => (n === 1 ? denied : null));
+    const { done, transfers } = run([{ image: "shop:d", ref: REF }], r.exec, b.build);
+    await done;
+    expect(transfers.map((t) => t.via)).toEqual(["ssh"]);
+    expect(b.runs.map((o) => o[0].split(",")[0])).toEqual(["type=image", "type=docker"]);
+  });
+
   it("pushes from BuildKit to the registry and pulls here, leaving nothing on the target's daemon", async () => {
     const r = recorder();
     const b = builder();
