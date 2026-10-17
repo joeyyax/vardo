@@ -107,6 +107,13 @@ describe("boundedBuild", () => {
     expect(lines.join("\n")).toMatch(/no memory limit/);
   });
 
+  it("holds its lines in notes when given no log", async () => {
+    const build = await boundedBuild();
+
+    expect(lines).toEqual([]);
+    expect(build.notes?.join("\n")).toContain("memory limit 12 GiB");
+  });
+
   it("honors an explicit opt-out", async () => {
     process.env.VARDO_BUILD_BUILDER = "daemon";
 

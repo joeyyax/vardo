@@ -430,7 +430,8 @@ services:
       WIREGUARD_GATEWAY: 10.88.0.2
       VARDO_MESH_SSH_PORT: ${VARDO_MESH_SSH_PORT:-22}
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 $${VARDO_MESH_SSH_PORT:-22}"]
+      # Not a connection: sshd penalizes ones that never authenticate.
+      test: ["CMD-SHELL", "netstat -ltn | grep -q \":$${VARDO_MESH_SSH_PORT:-22} \""]
       interval: 30s
       timeout: 5s
       retries: 3

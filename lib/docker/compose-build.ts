@@ -132,7 +132,10 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets, deploySlot: opts.deploySlot }, opts.bounded, run));
   return gate(async (placement) => {
     const target = placement?.target;
-    if (!target || !remote) return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
+    if (!target || !remote) {
+      for (const line of opts.bounded.notes ?? []) log(line);
+      return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
+    }
     return onTarget(target, async (session) => {
       const built = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
       await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, signal: opts.signal, exec });

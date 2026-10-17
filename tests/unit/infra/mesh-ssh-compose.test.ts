@@ -14,6 +14,7 @@ type Service = {
   entrypoint?: string[];
   "x-vardo-shared"?: boolean;
   volumes?: string[];
+  healthcheck?: { test: string[] };
 };
 const compose = YAML.parse(readFileSync(join(process.cwd(), "docker-compose.yml"), "utf8")) as {
   services: Record<string, Service>;
@@ -38,6 +39,11 @@ describe("mesh-ssh service", () => {
     expect(svc.configs).toEqual([{ source: "mesh_ssh_entrypoint", target: "/usr/local/bin/vardo-mesh-ssh" }]);
     expect(svc.entrypoint).toEqual(["sh", "/usr/local/bin/vardo-mesh-ssh"]);
     expect(svc.volumes?.some((v) => v.startsWith("./"))).toBe(false);
+  });
+
+  it("checks health without connecting to sshd", () => {
+    expect(svc.healthcheck?.test.join(" ")).toMatch(/netstat -ltn/);
+    expect(svc.healthcheck?.test.join(" ")).not.toMatch(/\bnc\b/);
   });
 
   it("forces dial-stdio and allows nothing else", () => {
