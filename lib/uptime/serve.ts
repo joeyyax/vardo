@@ -1,6 +1,5 @@
 // The owning side of a link: serves a peer our watch list and stores the signed results it sends back, as received.
 
-import { createPublicKey } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, meshPeers, uptimeMonitors, uptimeRecords, uptimeResults, uptimeVantages, type UptimeVantageRow } from "@/lib/db/schema";
@@ -9,7 +8,7 @@ import { HOUR_MS, phaseOf, signRecord, staggerOf, verifyRecord, watchList, type 
 import { checkWatchedBatch } from "./batch";
 import { syncAlertsFor } from "./engine";
 import { localIdentity } from "./identity";
-import { resultsRequestSchema, watchRequestSchema, type VantageIdentity } from "./link";
+import { resultsRequestSchema, validKey, watchRequestSchema, type LinkReply, type VantageIdentity } from "./link";
 import { publicEntries, type Resolver } from "./net";
 import { openHeaders } from "./secrets";
 import { externalWatchers, sharing } from "./watchers";
@@ -17,10 +16,9 @@ import { localSigningKey } from "./vantage";
 
 const log = logger.child("uptime-link");
 
-export type LinkReply = { status: number; json: unknown };
+export type { LinkReply };
 
 const reply = (status: number, json: unknown): LinkReply => ({ status, json });
-
 
 export const externalVantageId = (peerId: string) => `ext_${peerId}`;
 
@@ -41,14 +39,6 @@ export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[
     .filter((m) => m.headerNames.length === 0 || m.shareHeaders);
   const shared = new Map(live.filter((m) => m.headersEncrypted && m.shareHeaders).map((m) => [m.id, openHeaders(m.headersEncrypted, m)]));
   return (await publicEntries(live, resolve)).map((e) => (shared.has(e.monitorId) ? { ...e, headers: shared.get(e.monitorId) } : e));
-}
-
-function validKey(pem: string): boolean {
-  try {
-    return createPublicKey(pem).asymmetricKeyType === "ed25519";
-  } catch {
-    return false;
-  }
 }
 
 async function vantageFor(peerId: string): Promise<UptimeVantageRow | null> {

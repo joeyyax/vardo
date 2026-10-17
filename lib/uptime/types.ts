@@ -86,8 +86,8 @@ export type MonitorSummary = {
   state: DisplayState;
   /** Why the vantage points disagree, when they do. */
   reading: Reading | null;
-  /** Linked instances checking this monitor over the mesh. */
-  meshBy: string[];
+  /** For a monitor peers don't check: this instance's name and the linked instances that took its last report. Null while none do. */
+  report: { by: string; to: string[] } | null;
   /** The target is a site that opens in a browser. */
   openable: boolean;
   /** Only the local vantage point decided. */

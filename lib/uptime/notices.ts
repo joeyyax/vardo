@@ -43,7 +43,7 @@ export async function flushNotices(now = Date.now()): Promise<number> {
           })),
         });
       } else {
-        emit(orgId, { type: "system.service-down", title, message, service: group.length === 1 ? group[0].name : instance, description: title, subject });
+        emit(orgId, { type: "system.service-down", title, message, service: group.length === 1 ? group[0].name : (group[0].instance ?? instance), description: title, subject });
       }
     }
   }

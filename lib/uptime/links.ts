@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { meshPeers, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
+import { meshPeers, uptimePeerReports, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
 import type { LinkPatch } from "./link";
 import type { VantageLinkView } from "./types";
 
@@ -38,7 +38,7 @@ export async function listVantageLinks(): Promise<VantageLinkView[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Applies the switches. Turning one off takes effect now: the peer's results stop counting, or our probing of it stops. */
+/** Applies the switches. Turning one off takes effect now: the peer's results stop counting, or our probing of it and its reports stop. */
 export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<VantageLinkView | null> {
   const [peer] = await db
     .update(meshPeers)
@@ -50,7 +50,12 @@ export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<
     .where(eq(meshPeers.id, peerId))
     .returning({ id: meshPeers.id });
   if (!peer) return null;
-  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
-  if (patch.thisInstanceChecks === false) await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
+  if (patch.checksThisInstance === false) {
+    await db.update(uptimeVantages).set({ watching: [], reporting: [], reportedAt: null }).where(eq(uptimeVantages.meshPeerId, peerId));
+  }
+  if (patch.thisInstanceChecks === false) {
+    await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
+    await db.delete(uptimePeerReports).where(eq(uptimePeerReports.peerId, peerId));
+  }
   return viewOf(peerId);
 }

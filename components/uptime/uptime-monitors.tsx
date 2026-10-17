@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageToolbar } from "@/components/page-toolbar";
 import { RangePicker } from "@/components/range-picker";
-import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, meshNote, readingLabel, vantageNames } from "@/lib/uptime/format";
+import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, reportNote, readingLabel, vantageNames } from "@/lib/uptime/format";
 import { sinceLabel } from "@/lib/uptime/core/range";
 import type { MonitorSummary, UptimeRange, VantageView } from "@/lib/uptime/types";
 import { CheckNote } from "./health-parts";
@@ -180,8 +180,8 @@ export function UptimeMonitors({
                       )}
                     </p>
                     <CheckNote monitor={m} />
-                    {(m.reading || m.meshBy.length > 0) && (
-                      <p className="truncate text-xs text-muted-foreground">{[m.reading && readingLabel(m.reading), meshNote(m.meshBy)].filter(Boolean).join(" · ")}</p>
+                    {(m.reading || m.report) && (
+                      <p className="truncate text-xs text-muted-foreground">{[m.reading && readingLabel(m.reading), reportNote(m.report)].filter(Boolean).join(" · ")}</p>
                     )}
                   </td>
                   <td className="hidden py-3 pr-3 lg:table-cell">

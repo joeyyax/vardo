@@ -14,7 +14,7 @@ import {
   figureWithSince,
   formatMs,
   intervalLabel,
-  meshNote,
+  reportNote,
   pathLabel,
   readingDetail,
   readingLabel,
@@ -98,7 +98,7 @@ export function MonitorDetail({
             </span>
           </p>
           <CheckNote monitor={m} />
-          {(m.appName || meshNote(m.meshBy)) && (
+          {(m.appName || reportNote(m.report)) && (
             <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
               {m.appName && (
                 <span>
@@ -110,7 +110,7 @@ export function MonitorDetail({
                   Domain settings
                 </EntityLink>
               )}
-              {meshNote(m.meshBy)}
+              {reportNote(m.report)}
             </p>
           )}
         </div>
@@ -193,7 +193,7 @@ export function MonitorDetail({
           </table>
         </div>
         <p className="p-5 pt-3 text-xs text-muted-foreground">
-          Public results from outside decide first, then mesh results, then this instance. Mesh and local results never count as public uptime.
+          Public results from outside decide first, then this instance. Only public results count as public uptime.
           {m.localOnly && " Only the local vantage point is reporting, so this state is local only."}
         </p>
       </Card>

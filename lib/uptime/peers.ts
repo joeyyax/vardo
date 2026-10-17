@@ -1,4 +1,4 @@
-// Instance monitors for linked peers: the peer's console over the tunnel and its public URL, read with the mesh heartbeat into one verdict.
+// Instance monitors for linked peers: the peer's console over the tunnel and its public URL, read with the mesh heartbeat and its reports into one verdict.
 
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -21,6 +21,7 @@ import {
   type Signal,
 } from "./core";
 import { tunnelAddress } from "./mesh-path";
+import { reportSignals } from "./reports";
 import { toResult } from "./service";
 import { listVantagePoints } from "./vantage";
 
@@ -33,7 +34,7 @@ const announcedKind = new Map<string, PeerVerdictKind>();
 /** A heartbeat older than this is stale. */
 const HEARTBEAT_FRESH_MS = 5 * 60_000;
 const RECENT_MS = 15 * 60_000;
-const KINDS: PeerVerdictKind[] = ["link-down", "peer-down", "unreachable", "public-down"];
+const KINDS: PeerVerdictKind[] = ["link-down", "peer-down", "unreachable", "public-down", "silent"];
 
 export const linkMonitorId = (peerId: string) => `mon_peer_link_${peerId}`;
 export const publicMonitorId = (peerId: string) => `mon_peer_pub_${peerId}`;
@@ -110,11 +111,12 @@ export async function peerVerdicts(peerIds: string[], now: number): Promise<Map<
   if (peerIds.length === 0) return out;
   const peers = (await livePeers()).filter((p) => peerIds.includes(p.id));
   const ids = peers.flatMap((p) => [linkMonitorId(p.id), publicMonitorId(p.id)]);
-  const [monitors, rows, vantages, self] = await Promise.all([
+  const [monitors, rows, vantages, self, reports] = await Promise.all([
     db.select().from(uptimeMonitors).where(inArray(uptimeMonitors.id, ids)),
     db.select().from(uptimeResults).where(and(inArray(uptimeResults.monitorId, ids), gte(uptimeResults.at, new Date(now - RECENT_MS)))),
     listVantagePoints(),
     getInstanceDisplayName().catch(() => null),
+    reportSignals(peers.map((p) => p.id), now),
   ]);
   const results = rows.map(toResult);
   const stateOf = (id: string): Signal | "none" => {
@@ -124,16 +126,23 @@ export async function peerVerdicts(peerIds: string[], now: number): Promise<Map<
     return signal(evaluate({ vantages, results: own, now, intervalSec: m.intervalSec }).state);
   };
   for (const p of peers) {
-    const tunnel = stateOf(linkMonitorId(p.id));
-    if (tunnel === "none") continue;
+    const watched = stateOf(linkMonitorId(p.id));
+    const report = reports.get(p.id) ?? "none";
+    // Without the tunnel monitor, reports alone decide whether there's a verdict; the heartbeat and public URL only word it.
+    if (watched === "none" && report === "none") continue;
+    if (watched === "none" && report === "fresh") {
+      out.set(p.id, { kind: "ok", state: "up", title: "", detail: "" });
+      continue;
+    }
     out.set(
       p.id,
       judgePeerLink({
         peer: p.name,
         self: self || "this instance",
-        tunnel,
+        tunnel: watched === "none" ? "unknown" : watched,
         publicUrl: stateOf(publicMonitorId(p.id)),
         heartbeatFresh: p.lastSeenAt ? now - p.lastSeenAt.getTime() < HEARTBEAT_FRESH_MS : null,
+        reports: report,
       }),
     );
   }
@@ -151,7 +160,7 @@ export async function syncPeerAlerts(peerIds: string[], now: number, silent: (m:
       const about = (kind: string) => `${monitorId}#${kind}`;
       if (verdict.state === "unknown") continue;
       const monitor = await db.query.uptimeMonitors.findFirst({ where: eq(uptimeMonitors.id, monitorId) });
-      if (!monitor || silent(monitor)) continue;
+      if (monitor && silent(monitor)) continue;
 
       // A verdict is announced once it has held, like a monitor's state.
       const state = verdict.kind === "ok" ? "up" : verdict.state === "down" ? "down" : "degraded";

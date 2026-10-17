@@ -3,7 +3,7 @@
 import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { db } from "@/lib/db";
-import { apps, domains, environments, meshPeers, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
+import { apps, domains, environments, meshPeers, uptimeDaily, uptimeHourly, uptimeMonitors, uptimePeerReports, uptimeRecords, uptimeResults } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { consoleBaseUrl } from "@/lib/incidents/key";
 import { openUptimeIncident, resolveUptimeIncident } from "@/lib/incidents/uptime";
@@ -45,6 +45,7 @@ import { runHealthDetection } from "./health";
 import { openHeaders } from "./secrets";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
 import { pruneProbes, tickProber } from "./prober";
+import { pushReports, syncReportAlerts } from "./reports";
 import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
 
@@ -263,8 +264,8 @@ export async function syncAlertsFor(ids: string[], now = Date.now()): Promise<vo
   await syncAlerts(await db.select().from(uptimeMonitors).where(and(eq(uptimeMonitors.enabled, true), inArray(uptimeMonitors.id, ids))), now);
 }
 
-async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now: number): Promise<void> {
-  if (monitors.length === 0) return;
+async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now: number, reportingPeers: string[] = []): Promise<void> {
+  if (monitors.length === 0 && reportingPeers.length === 0) return;
   const vantages = await listVantagePoints();
   const recent = await db
     .select()
@@ -275,7 +276,7 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   const watchers = await externalWatchers();
 
   // A peer's monitors are read together, so one verdict raises one alert.
-  const peerIds = [...new Set(monitors.map((m) => m.meshPeerId).filter((id): id is string => !!id))];
+  const peerIds = [...new Set([...monitors.map((m) => m.meshPeerId).filter((id): id is string => !!id), ...reportingPeers])];
   if (peerIds.length > 0) {
     const silent = (row: typeof uptimeMonitors.$inferSelect) => row.muted || inMaintenance({ maintenance: row.maintenance }, now);
     await syncPeerAlerts(peerIds, now, silent).catch((err) => log.error("Peer alert sync failed:", err));
@@ -428,7 +429,9 @@ export async function prune(now = Date.now()): Promise<void> {
 
 /** Re-evaluates every enabled monitor, so a vantage point that went quiet stops counting. */
 export async function syncAllAlerts(now = Date.now()): Promise<void> {
-  await syncAlerts(await db.select().from(uptimeMonitors).where(eq(uptimeMonitors.enabled, true)), now).catch((err) => log.error("Alert re-evaluation failed:", err));
+  // Peers that report to us are judged even when no monitor of ours watches them.
+  const reporting = (await db.select({ peerId: uptimePeerReports.peerId }).from(uptimePeerReports)).map((r) => r.peerId);
+  await syncAlerts(await db.select().from(uptimeMonitors).where(eq(uptimeMonitors.enabled, true)), now, reporting).catch((err) => log.error("Alert re-evaluation failed:", err));
 }
 
 /** One pass of the worker loop. */
@@ -438,8 +441,11 @@ export async function tickUptime(now = Date.now()): Promise<void> {
   // In the background, so spaced-out probing never delays the checks.
   void runHealthDetection(now).catch((err) => log.error("Health detection failed:", err));
   await tickProber(now).catch((err) => log.error("Probing linked instances failed:", err));
+  await pushReports(now).catch((err) => log.error("Reporting to linked instances failed:", err));
   if (now - lastReeval >= 30_000) {
     lastReeval = now;
+    // Reports first: a peer that no longer lets us watch it is dropped before its silence reads as an outage.
+    await syncReportAlerts(now).catch((err) => log.error("Report alert sync failed:", err));
     await syncAllAlerts(now);
   }
   await flushNotices(now).catch((err) => log.error("Sending uptime notices failed:", err));

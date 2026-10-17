@@ -14,7 +14,7 @@ import {
   type VantagePoint,
 } from "@/lib/uptime/core";
 import { checkWatchedBatch } from "@/lib/uptime/batch";
-import { incidentTitle, meshNote, pathLabel, readingDetail, readingLabel } from "@/lib/uptime/format";
+import { incidentTitle, pathLabel, readingDetail, readingLabel, reportNote } from "@/lib/uptime/format";
 import { tunnelAddress, tunnelDeps } from "@/lib/uptime/mesh-path";
 import { isNeverPublic } from "@/lib/uptime/core";
 import { publicEntries } from "@/lib/uptime/net";
@@ -135,12 +135,14 @@ describe("copy", () => {
     expect(incidentTitle("shop.example.com", "degraded", { kind: "vantage-failing", vantages: ["Oregon"] })).toBe("shop.example.com is failing from Oregon");
   });
 
-  it("labels the path of each vantage row and the mesh note", () => {
+  it("labels the path of each vantage row and the report note", () => {
     expect(pathLabel("external", "public")).toBe("External · public");
     expect(pathLabel("external", "mesh")).toBe("External · mesh");
     expect(pathLabel("local", "local")).toBe("Local");
-    expect(meshNote(["jy0"])).toBe("Checked over the mesh by jy0");
-    expect(meshNote([])).toBeNull();
+    expect(reportNote({ by: "Long House", to: ["jy0"] })).toBe("Reported by Long House · watched by jy0");
+    expect(reportNote({ by: "Long House", to: ["jy0", "Frankfurt"] })).toBe("Reported by Long House · watched by jy0 and Frankfurt");
+    expect(reportNote({ by: "Long House", to: [] })).toBeNull();
+    expect(reportNote(null)).toBeNull();
   });
 });
 
@@ -189,6 +191,21 @@ describe("peer link verdicts", () => {
 
   it("warns when only the public URL is failing", () => {
     expect(judge({ publicUrl: "down" })).toMatchObject({ kind: "public-down", state: "degraded" });
+  });
+
+  it("says the peer stopped reporting when its reports stop while it still answers", () => {
+    expect(judge({ reports: "stale" })).toMatchObject({ kind: "silent", state: "down", title: "jy0 stopped reporting" });
+    expect(judge({ reports: "stale", tunnel: "unknown", publicUrl: "none" })).toMatchObject({ kind: "silent" });
+    expect(judge({ reports: "fresh" })).toMatchObject({ kind: "ok" });
+    expect(judge({ reports: "none" })).toMatchObject({ kind: "ok" });
+  });
+
+  it("keeps the link-down and instance-down wording when reports stop with the tunnel down", () => {
+    const link = judge({ reports: "stale", tunnel: "down" });
+    expect(link).toMatchObject({ kind: "link-down", title: "Link to jy0 is down" });
+    expect(link.detail).toMatch(/private monitors go unwatched/);
+    expect(judge({ reports: "stale", tunnel: "down", publicUrl: "down" })).toMatchObject({ kind: "peer-down", title: "jy0 is down" });
+    expect(judge({ reports: "stale", tunnel: "unknown", heartbeatFresh: false })).toMatchObject({ kind: "link-down" });
   });
 
   it("reads a stale heartbeat as a dead tunnel while the tunnel check has no data", () => {

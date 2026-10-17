@@ -119,9 +119,9 @@ export function pathLabel(kind: VantageView["kind"], path: CheckPath): string {
   return path === "mesh" ? "External · mesh" : "External · public";
 }
 
-/** "Checked over the mesh by jy0". */
-export function meshNote(by: string[]): string | null {
-  return by.length > 0 ? `Checked over the mesh by ${joinNames(by)}` : null;
+/** "Reported by Long House · watched by jy0". */
+export function reportNote(report: { by: string; to: string[] } | null): string | null {
+  return report && report.to.length > 0 ? `Reported by ${report.by} · watched by ${joinNames(report.to)}` : null;
 }
 
 export type TickTone = "up" | "partial" | "down" | "none";

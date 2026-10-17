@@ -1,6 +1,7 @@
 // Signed records: Ed25519 over the exact payload bytes. See FORMAT.md.
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto";
+import type { ReportedMonitor } from "./report";
 import type { Bucket, CheckResult, WatchEntry } from "./types";
 
 export const RECORD_VERSION = 1;
@@ -32,7 +33,18 @@ export type WatchList = {
   monitors: WatchEntry[];
 };
 
-export type RecordPayload = ResultBatch | HourlySummary | WatchList;
+/** What an owner tells a watching peer about the monitors that peer doesn't check. */
+export type MonitorReport = {
+  v: typeof RECORD_VERSION;
+  kind: "report";
+  vantageId: string;
+  issuedAt: number;
+  monitors: ReportedMonitor[];
+};
+
+export type RecordPayload = ResultBatch | HourlySummary | WatchList | MonitorReport;
+
+const KINDS = new Set<RecordPayload["kind"]>(["results", "hourly", "watch", "report"]);
 
 /** The wire form: the payload as JSON text, and the signature over that text. */
 export type SignedRecord = {
@@ -61,6 +73,10 @@ export function watchList(vantageId: string, monitors: WatchEntry[], issuedAt: n
   return { v: RECORD_VERSION, kind: "watch", vantageId, issuedAt, monitors };
 }
 
+export function monitorReport(vantageId: string, monitors: ReportedMonitor[], issuedAt: number): MonitorReport {
+  return { v: RECORD_VERSION, kind: "report", vantageId, issuedAt, monitors };
+}
+
 export function signRecord(payload: RecordPayload, privateKeyPem: string): SignedRecord {
   const text = JSON.stringify(payload);
   const sig = sign(null, Buffer.from(DOMAIN + text), createPrivateKey(privateKeyPem));
@@ -73,7 +89,7 @@ export function verifyRecord(record: SignedRecord, publicKeyPem: string): Record
     const ok = verify(null, Buffer.from(DOMAIN + record.payload), createPublicKey(publicKeyPem), Buffer.from(record.sig, "base64"));
     if (!ok) return null;
     const parsed = JSON.parse(record.payload) as RecordPayload;
-    if (parsed.v !== RECORD_VERSION || (parsed.kind !== "results" && parsed.kind !== "hourly" && parsed.kind !== "watch")) return null;
+    if (parsed.v !== RECORD_VERSION || !KINDS.has(parsed.kind)) return null;
     return parsed;
   } catch {
     return null;
