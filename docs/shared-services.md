@@ -14,7 +14,7 @@ With `COMPOSE_PROFILES` in the app's environment, a deploy skips services whose 
 
 ## Commit variables
 
-Vardo sets two variables for compose interpolation in every slot. Containers don't see them unless the compose file passes them in.
+Vardo sets two variables for compose interpolation in every slot. Rotating containers get `VARDO_GIT_SHA` in their environment too (see [Deploy variables](deploy-variables.md)); shared ones don't unless the compose file passes it in.
 
 | Variable | Value |
 | --- | --- |
