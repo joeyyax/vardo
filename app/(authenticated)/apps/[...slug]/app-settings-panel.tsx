@@ -27,6 +27,7 @@ import {
 import type { App } from "./types";
 import { AutoDeployTriggers } from "./auto-deploy-triggers";
 import { can } from "@/lib/auth/permissions";
+import { AppHealthSection } from "@/components/uptime/app-health-section";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 import { MemoryProfileFields, type MemoryProfileValues } from "./memory-profile-fields";
 import { SecurityHeadersFields } from "./security-headers-fields";
@@ -648,6 +649,10 @@ export function AppSettingsPanel({
             How long to wait for all containers to be healthy after deploy. Increase for services with slow startup like VPN tunnels.
           </p>
         </div>
+      )}
+
+      {fields.healthCheckTimeout && !isChildService && (
+        <AppHealthSection orgId={orgId} appId={app.id} canManage={can(userRole, "uptime.manage") && can(userRole, "app.config")} />
       )}
 
       {/* Toggles */}

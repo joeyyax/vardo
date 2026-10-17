@@ -12,6 +12,7 @@ import { localIdentity } from "./identity";
 import { resultsRequestSchema, watchRequestSchema, type VantageIdentity } from "./link";
 import { privateEntries, publicEntries, type Resolver } from "./net";
 import { traefikForwardEnabled } from "@/lib/mesh/traefik-forward";
+import { openHeaders } from "./secrets";
 import { externalWatchers, sharing } from "./watchers";
 import { localSigningKey } from "./vantage";
 
@@ -27,6 +28,7 @@ export const externalVantageId = (peerId: string) => `ext_${peerId}`;
 /**
  * Every enabled monitor with a public address, as a public-path check, and every one whose host resolves only to private addresses,
  * as a mesh-path check. Monitors of stopped apps stay out, as they do from local checks. Monitors of the peers themselves stay out.
+ * A monitor with private headers stays out unless the owner shares them; shared headers travel with the entry.
  */
 export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[]> {
   const rows = await db
@@ -35,11 +37,13 @@ export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .where(eq(uptimeMonitors.enabled, true));
   const live = rows
-    .filter(({ monitor, appStatus }) => !(monitor.source === "auto" && appStatus === "stopped") && !monitor.meshPeerId)
-    .map((r) => r.monitor);
+    .filter(({ monitor, appStatus }) => !(monitor.appId && appStatus === "stopped") && !monitor.meshPeerId)
+    .map((r) => r.monitor)
+    .filter((m) => m.headerNames.length === 0 || m.shareHeaders);
+  const shared = new Map(live.filter((m) => m.headersEncrypted && m.shareHeaders).map((m) => [m.id, openHeaders(m.headersEncrypted, m)]));
   // Private monitors go out as mesh checks only where the tunnel reaches Traefik; otherwise they stay local, without an error.
   const [open, closed] = await Promise.all([publicEntries(live, resolve), traefikForwardEnabled() ? privateEntries(live, resolve) : []]);
-  return [...open, ...closed];
+  return [...open, ...closed].map((e) => (shared.has(e.monitorId) ? { ...e, headers: shared.get(e.monitorId) } : e));
 }
 
 function validKey(pem: string): boolean {

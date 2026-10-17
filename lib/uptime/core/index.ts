@@ -9,3 +9,6 @@ export * from "./peer-link";
 export * from "./damping";
 export * from "./notices";
 export * from "./impaired";
+export * from "./health";
+export * from "./range";
+export * from "./headers";

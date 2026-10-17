@@ -467,6 +467,22 @@ export async function buildAttentionRows(
     });
   }
 
+  if (fleet.monitorReviews.length > 0) {
+    rows.push({
+      key: "uptime-review",
+      label: "Needs review",
+      tone: "warning",
+      group: "domains",
+      items: fleet.monitorReviews.map((r) => ({
+        id: r.monitorId,
+        name: r.name,
+        href: `/uptime/${r.monitorId}`,
+        detail: `${r.reason === "login" ? "Redirects to a login page" : `Answers ${r.status}`}. What should count as up?`,
+      })),
+      footer: "Uptime waits for your answer before alerting or counting these.",
+    });
+  }
+
   // Informational, unless a recent host kill makes it a problem.
   const unlimited = appRows.filter(
     (a) => a.status === "active" && a.containerMemoryLimit === 0,

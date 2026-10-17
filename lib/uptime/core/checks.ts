@@ -2,6 +2,7 @@
 
 import net from "node:net";
 import tls from "node:tls";
+import { sendableHeaders } from "./headers";
 import type { CheckPath, CheckResult, ErrorKind, HttpCheck, TcpCheck, TlsCheck } from "./types";
 
 /** Resolves to a reason when the host must not be connected to, else null. */
@@ -81,7 +82,7 @@ export async function runHttpCheck(check: HttpCheck, ctx: HttpContext): Promise<
       method: "GET",
       redirect: "follow",
       signal: AbortSignal.timeout(check.timeoutMs),
-      headers: { "user-agent": "Vardo-Uptime/1" },
+      headers: { ...sendableHeaders(check.headers), "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
     });
     const status = res.status;
     if (status < check.expectedStatus.min || status > check.expectedStatus.max) {

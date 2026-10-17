@@ -111,7 +111,7 @@ Guard: `lib/security/ssrf.ts` blocks loopback, RFC 1918, CGNAT, link-local and m
 | DNS rebinding between check and connect | fixed | `guardedLookup` in `lib/security/pinned-fetch.ts` vets addresses inside the socket's `lookup` |
 | Notification webhooks and Slack | fixed | `lib/notifications/webhook-channel.ts` |
 | URL cron jobs, app and org-level (4 KB of body, redacted) | fixed | `lib/cron/http.ts`; a trusted org may reach the job's own host on a private address, never a redirect target, `lib/cron/http.ts` |
-| Domain monitor, post-deploy health check | fixed | followed redirects with plain fetch; now `safeFetch` with the allowlist plus `.<baseDomain>`, `lib/domain-monitoring/monitor.ts`, the post-deploy check in `lib/docker/deploy.ts` |
+| Domain monitor, post-deploy health check | fixed | followed redirects with plain fetch; now `safeFetch` with the allowlist plus `.<baseDomain>`, `lib/uptime/outbound.ts`, the post-deploy check in `lib/docker/deploy.ts` |
 | Security scanner (headers, file exposure, TLS) | fixed | weaker regex list replaced by `ssrf.ts`; requests through `safeFetch` and the guarded lookup, `lib/security/headers.ts`, `file-exposure.ts`, `tls.ts` |
 | `/api/v1/dns-check` `.localhost` branch | fixed | any signed-in user could fetch `http://169.254.169.254/x?.localhost`; hostnames only now (`isHostname`), `app/api/v1/dns-check/route.ts` |
 | Registry token realm from `WWW-Authenticate` | fixed | https only, address check and allowlist, fetched through `safeFetch`, `lib/docker/image-updates/registry.ts` |

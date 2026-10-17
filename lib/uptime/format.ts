@@ -1,6 +1,24 @@
 // Display helpers for uptime. Pure, so client components can import them.
 
-import type { Check, CheckPath, DayTick, MonitorState, Reading, VantageView } from "./types";
+import { coverage, sinceLabel } from "./core/range";
+import type { Check, CheckPath, DayTick, DisplayState, ErrorKind, MonitorState, Reading, VantageView } from "./types";
+
+/** Why a check failed, in words. */
+export const ERROR_TEXT: Record<ErrorKind, string> = {
+  timeout: "timed out",
+  dns: "DNS lookup failed",
+  refused: "connection refused",
+  reset: "connection reset",
+  tls: "TLS error",
+  "cert-expired": "certificate expired",
+  "cert-expiring": "certificate expiring",
+  status: "unexpected status",
+  keyword: "keyword missing",
+  invalid: "invalid target",
+  "private-address": "private address, not checked",
+  blocked: "address not allowed",
+  unknown: "check failed",
+};
 
 export function intervalLabel(sec: number): string {
   return sec === 30 ? "30 seconds" : sec === 300 ? "5 minutes" : "1 minute";
@@ -42,9 +60,9 @@ export function formatDuration(ms: number): string {
   return `${days} days`;
 }
 
-export function stateLabel(state: MonitorState, downSince: number | null, now = Date.now()): string {
+export function stateLabel(state: DisplayState, downSince: number | null, now = Date.now()): string {
   if (state === "down") return downSince ? `Down for ${formatDuration(now - downSince)}` : "Down";
-  return state === "up" ? "Up" : state === "degraded" ? "Degraded" : "No data";
+  return state === "up" ? "Up" : state === "degraded" ? "Degraded" : state === "review" ? "Needs review" : "No data";
 }
 
 /** The disagreement in a few words, such as "Unreachable from outside". */
@@ -117,11 +135,42 @@ export function tickTone(day: Pick<DayTick, "minutesUp" | "minutesDown" | "uptim
 
 const dayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
-export function tickTitle(day: DayTick): string {
-  const date = dayFormat.format(day.start);
+const timeFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+
+/** A bar's hover text: the day for daily bars, the time (UTC) for narrower ones. */
+export function tickTitle(day: DayTick, barMs = 86_400_000): string {
+  const date = barMs < 86_400_000 ? `${timeFormat.format(day.start)} UTC` : dayFormat.format(day.start);
   const tone = tickTone(day);
   if (tone === "none") return `${date}: no data`;
   return `${date}: ${formatPct(day.uptimePct)}`;
+}
+
+/** "30 days", or "Since Oct 16" when the monitor is younger than that. */
+export function figureLabel(spanMs: number, spanLabel: string, createdAt: number | null, now = Date.now()): string {
+  const { label, since } = coverage(spanMs, createdAt, now, spanLabel);
+  return since ? `S${label.slice(1)}` : label;
+}
+
+/**
+ * The 24 hour, 30 day and 90 day figures as tiles. Tiles the history doesn't fill collapse into one "Since …" tile,
+ * so a young monitor doesn't show the same number three times.
+ */
+export function figureTiles(createdAt: number | null, now: number, v: { h24: number | null; d30: number | null; d90: number | null }): { label: string; value: string }[] {
+  const spans = [
+    { ms: 86_400_000, label: "24 hours", pct: v.h24 },
+    { ms: 30 * 86_400_000, label: "30 days", pct: v.d30 },
+    { ms: 90 * 86_400_000, label: "90 days", pct: v.d90 },
+  ];
+  const full = spans.filter((s) => !coverage(s.ms, createdAt, now, s.label).since);
+  const short = spans.find((s) => coverage(s.ms, createdAt, now, s.label).since);
+  const tiles = full.map((s) => ({ label: s.label, value: formatPct(s.pct) }));
+  if (short) tiles.push({ label: figureLabel(short.ms, short.label, createdAt, now), value: formatPct(short.pct) });
+  return tiles;
+}
+
+/** "99.98%", with "since Oct 16" after it when the history is shorter than the range. */
+export function figureWithSince(pct: number | null, since: number | null, now = Date.now()): string {
+  return since === null ? formatPct(pct) : `${formatPct(pct)} since ${sinceLabel(since, now)}`;
 }
 
 /** "this instance", "Frankfurt", "this instance and Frankfurt". */

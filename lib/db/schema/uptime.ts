@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { bigint, bigserial, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import type { Check, MaintenanceWindow } from "@/lib/uptime/core/types";
+import type { AutoOverrides, Check, MaintenanceWindow, ReviewAnswer } from "@/lib/uptime/core/types";
 import { apps } from "./apps";
 import { domains } from "./domains";
 import { environments } from "./environments";
@@ -33,6 +33,30 @@ export const uptimeMonitors = pgTable(
     peerRole: text("peer_role"),
     /** Windows that mute alerts. Downtime inside them still counts. */
     maintenance: jsonb("maintenance").$type<MaintenanceWindow[]>().notNull().default([]),
+    /** The path an automatic monitor checks, such as `/healthz`. Null checks the homepage. */
+    healthPath: text("health_path"),
+    /** "healthcheck", "probe" or "homepage". Null before detection has run. */
+    healthSource: text("health_source"),
+    /** When detection runs next. Null runs it on the next pass. */
+    healthDueAt: timestamp("health_due_at", { withTimezone: true }),
+    /** Set while the best answer is a non-2xx below 500 and the operator hasn't said what counts as up. */
+    reviewStatus: integer("review_status"),
+    /** "status" or "login". */
+    reviewReason: text("review_reason"),
+    /** What the operator said counts as up. Detection and sync leave it alone. */
+    reviewAnswer: jsonb("review_answer").$type<ReviewAnswer>(),
+    /** What the operator changed on an automatic monitor. Null when it runs as detected. */
+    overrides: jsonb("overrides").$type<AutoOverrides>(),
+    /** A manual check linked to an app's domain. Not a foreign key: removing the domain leaves the check, flagged. */
+    linkDomainId: text("link_domain_id"),
+    /** The domain's host when the check was linked. */
+    linkDomain: text("link_domain"),
+    /** Request headers as encrypted JSON. Never returned. */
+    headersEncrypted: text("headers_encrypted"),
+    /** Names of the encrypted headers, for display. */
+    headerNames: jsonb("header_names").$type<string[]>().notNull().default([]),
+    /** Linked instances get the headers and check this monitor too. */
+    shareHeaders: boolean("share_headers").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -161,6 +185,8 @@ export const uptimeWatchEntries = pgTable(
     /** How often to run it and the offset into that period. Null before the peer sent a schedule. */
     periodSec: integer("period_sec"),
     offsetMs: bigint("offset_ms", { mode: "number" }),
+    /** Headers the owner shares, encrypted with the system key. */
+    headersEncrypted: text("headers_encrypted"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.peerId, t.monitorId] })],

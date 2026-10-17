@@ -1,7 +1,7 @@
 // "While you were away" collection: turns operational rows into facts with each subject's prior history.
 // A source that throws is reported, never silently dropped.
 
-import { and, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -13,10 +13,9 @@ import {
   cronJobRuns,
   cronJobs,
   deployments,
-  domainChecks,
-  domains,
 } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
+import { uptimeClient } from "@/lib/uptime/client";
 
 import { deriveAppStateFacts, type AwayAppRow } from "./app-state";
 import { baselineKey } from "./classify";
@@ -308,47 +307,19 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       unavailable,
       async () => {
         if (appIds.length === 0) return;
-        const appDomains = and(inArray(domains.appId, appIds), gte(domainChecks.checkedAt, baselineFrom));
-
-        // Baseline as counts; raw checks only go back a week.
-        const prior = await db
-          .select({
-            domainId: domainChecks.domainId,
-            reachable: domainChecks.reachable,
-            n: sql<number>`count(*)::int`,
-          })
-          .from(domainChecks)
-          .innerJoin(domains, eq(domainChecks.domainId, domains.id))
-          .where(and(appDomains, lt(domainChecks.checkedAt, since)))
-          .groupBy(domainChecks.domainId, domainChecks.reachable);
+        const { prior, failures } = await uptimeClient.domainCheckHistory(appIds, baselineFrom.getTime(), since.getTime());
         for (const row of prior) {
           bump(counts, "domain", row.domainId, row.reachable ? "successes" : "failures", row.n);
         }
 
         // Successful probes only feed the baseline.
-        const failures = await db
-          .select({
-            domainId: domainChecks.domainId,
-            domain: domains.domain,
-            appId: domains.appId,
-            checkedAt: domainChecks.checkedAt,
-          })
-          .from(domainChecks)
-          .innerJoin(domains, eq(domainChecks.domainId, domains.id))
-          .where(
-            and(
-              inArray(domains.appId, appIds),
-              gte(domainChecks.checkedAt, since),
-              eq(domainChecks.reachable, false),
-            ),
-          );
         for (const row of failures) {
           facts.push({
             kind: "domain.unreachable",
             family: "domain",
             subjectId: row.domainId,
             subjectName: row.domain,
-            at: row.checkedAt,
+            at: new Date(row.at),
             outcome: "failure",
             href: `/apps/${appSlug.get(row.appId) ?? ""}`,
           });

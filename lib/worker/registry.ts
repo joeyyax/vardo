@@ -96,7 +96,6 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   // Not gated on metrics: domain checks roll up without it.
   { name: "metrics-rollup", roles: BOTH, singleton: true, load: async () => (await import("@/lib/metrics/rollup")).metricsRollupLoop },
   { name: "error-rate", roles: BOTH, singleton: true, feature: "logging", load: async () => (await import("@/lib/logging/register")).errorRateLoop },
-  { name: "domain-monitoring", roles: BOTH, singleton: true, feature: "domain-monitoring", load: async () => (await import("@/lib/domain-monitoring/scheduler")).domainMonitoringLoop },
   { name: "domain-verification", roles: BOTH, singleton: true, load: async () => (await import("@/lib/domains/scheduler")).domainVerificationLoop },
   // Repairs the tunnel forward to this console and reports this console's version.
   { name: "mesh-heartbeat", roles: WEB, singleton: true, load: async () => (await import("@/lib/mesh/scheduler")).meshHeartbeatLoop },

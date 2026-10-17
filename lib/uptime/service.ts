@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import {
   apps,
+  domains,
   notificationChannels,
   uptimeDaily,
   uptimeHourly,
@@ -23,10 +24,17 @@ import {
   DEFAULT_TLS_PORT,
   DEFAULT_TLS_WARN_DAYS,
   HOUR_MS,
+  RANGE_SPECS,
+  bucketStarts,
   combine,
+  defaultRange,
   effectiveIntervalSec,
   evaluate,
+  fillBuckets,
   fillDays,
+  summarize,
+  trimToHistory,
+  type UptimeRange,
   markImpaired,
   findOutages,
   median,
@@ -50,15 +58,18 @@ import type {
   UpdateMonitorInput,
   VantageStateView,
 } from "./types";
+import { UptimeInputError } from "./errors";
 import { vantageNames } from "./format";
 import { targetRefusal, type PolicyLevel } from "./outbound";
+import { autoCheckFor, autoEdit, baseUrlOf, editsAuto } from "./auto";
+import { applyHeaderPatch } from "./secrets";
 import { listVantagePoints } from "./vantage";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
 
 const MINUTE_MS = 60_000;
 const RESULT_RETENTION_DAYS = 14;
 
-export class UptimeInputError extends Error {}
+export { UptimeInputError };
 
 export function scopeWhere(scope: Scope) {
   return scope.kind === "org" ? eq(uptimeMonitors.organizationId, scope.orgId) : isNull(uptimeMonitors.organizationId);
@@ -126,14 +137,19 @@ export async function ownedRow(scope: Scope, id: string): Promise<UptimeMonitorR
   return row ?? null;
 }
 
-type Loaded = {
+export type Loaded = {
   rows: UptimeMonitorRow[];
   watchers: Map<string, string[]>;
   impaired: Set<string>;
   appNames: Map<string, string>;
+  /** Domains that still exist among those manual checks link to. */
+  liveDomains: Set<string>;
   vantages: VantagePoint[];
   recent: Map<string, CheckResult[]>;
   daily: Map<string, Bucket[]>;
+  range: UptimeRange;
+  /** Bars for the range, from where each monitor's history starts. */
+  bars: Map<string, { buckets: Bucket[]; since: number | null }>;
 };
 
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
@@ -186,10 +202,42 @@ const tick = (b: Bucket): DayTick => ({
   uptimePct: b.uptimePct,
 });
 
-async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
+/** Bars for each monitor over a range: raw results for an hour, hourly rollups for a day or a week, daily rollups beyond. */
+async function rangeBars(rows: UptimeMonitorRow[], range: UptimeRange, now: number, ctx: Pick<Loaded, "vantages" | "impaired" | "watchers" | "daily">): Promise<Map<string, { buckets: Bucket[]; since: number | null }>> {
+  const { bucketMs } = RANGE_SPECS[range];
+  const starts = bucketStarts(range, now);
+  const ids = rows.map((r) => r.id);
+  const out = new Map<string, { buckets: Bucket[]; since: number | null }>();
+  const finish = (row: UptimeMonitorRow, buckets: Bucket[]) => out.set(row.id, trimToHistory(fillBuckets(buckets, starts, bucketMs), bucketMs, row.createdAt.getTime()));
+  if (ids.length === 0) return out;
+
+  if (range === "1h") {
+    const raw = await db.select().from(uptimeResults).where(and(inArray(uptimeResults.monitorId, ids), gte(uptimeResults.at, new Date(starts[0] - 10 * MINUTE_MS))));
+    const by = groupBy(raw.map(toResult), (r) => r.monitorId);
+    for (const row of rows) {
+      const results = markImpaired(by.get(row.id) ?? [], ctx.impaired);
+      finish(row, summarize({ results, vantages: ctx.vantages, intervalSec: periodOf(row, ctx), from: starts[0], to: now, bucketMs }));
+    }
+  } else if (range === "24h" || range === "7d") {
+    const hourly = await db.select().from(uptimeHourly).where(and(inArray(uptimeHourly.monitorId, ids), gte(uptimeHourly.start, new Date(starts[0]))));
+    const by = groupBy(hourly, (h) => h.monitorId);
+    for (const row of rows) {
+      const groups = groupBy((by.get(row.id) ?? []).map(bucketOf), (b) => String(Math.floor(b.start / bucketMs) * bucketMs));
+      finish(row, [...groups].map(([start, list]) => combine(list, Number(start))));
+    }
+  } else {
+    const days = await dailyBuckets(ids, range === "30d" ? 30 : 90, now);
+    for (const row of rows) finish(row, days.get(row.id) ?? []);
+  }
+  return out;
+}
+
+export async function load(rows: UptimeMonitorRow[], now: number, range?: UptimeRange): Promise<Loaded> {
+  const effective = range ?? defaultRange(rows.length ? now - Math.min(...rows.map((r) => r.createdAt.getTime())) : 0);
   const ids = rows.map((r) => r.id);
   const appIds = [...new Set(rows.map((r) => r.appId).filter((id): id is string => !!id))];
-  const [vantages, resultRows, daily, appRows, watchers, impaired] = await Promise.all([
+  const linkedIds = [...new Set(rows.map((r) => r.linkDomainId).filter((id): id is string => !!id))];
+  const [vantages, resultRows, daily, appRows, watchers, impaired, domainRows] = await Promise.all([
     listVantagePoints(),
     ids.length
       ? db
@@ -201,19 +249,23 @@ async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
     appIds.length ? db.select({ id: apps.id, name: apps.name }).from(apps).where(inArray(apps.id, appIds)) : Promise.resolve([]),
     externalWatchers(),
     loadImpaired(now),
+    linkedIds.length ? db.select({ id: domains.id }).from(domains).where(inArray(domains.id, linkedIds)) : Promise.resolve([]),
   ]);
-  return { rows, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
+  const partial = { vantages, impaired, watchers, daily };
+  const bars = await rangeBars(rows, effective, now, partial);
+  return { rows, range: effective, bars, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), liveDomains: new Set(domainRows.map((d) => d.id)), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
 }
 
 /** How often each vantage point checks the monitor, counting those that share it. */
 const periodOf = (row: UptimeMonitorRow, ctx: Pick<Loaded, "watchers">) => effectiveIntervalSec(row.intervalSec, sharing(ctx.watchers, row.id).length);
 
-function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorSummary {
+export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorSummary {
   const results = ctx.recent.get(row.id) ?? [];
   const evaluation: Evaluation = evaluate({ vantages: ctx.vantages, results, now, intervalSec: periodOf(row, ctx), impaired: ctx.impaired });
   const daily = ctx.daily.get(row.id) ?? [];
   const last = results.reduce<CheckResult | null>((best, r) => (!best || r.at > best.at ? r : best), null);
   const check = row.check;
+  const reviewing = row.enabled && row.reviewStatus !== null && row.reviewAnswer === null;
   return {
     id: row.id,
     name: row.name,
@@ -226,24 +278,39 @@ function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorS
     preview: row.preview,
     appId: row.appId,
     appName: row.appId ? (ctx.appNames.get(row.appId) ?? null) : null,
-    domainId: row.domainId,
+    domainId: row.domainId ?? row.linkDomainId,
+    domainRemoved: !!row.linkDomainId && !ctx.liveDomains.has(row.linkDomainId),
+    createdAt: row.createdAt.getTime(),
+    overrides: row.overrides,
+    healthPath: row.healthPath,
+    healthSource: (row.healthSource as MonitorSummary["healthSource"]) ?? null,
+    review: reviewing ? { status: row.reviewStatus!, reason: row.reviewReason === "login" ? "login" : "status" } : null,
+    reviewAnswer: row.reviewAnswer,
+    headers: row.headerNames,
+    shareHeaders: row.shareHeaders,
+    privateHeader: row.headerNames.length > 0 && !row.shareHeaders,
     maintenance: row.maintenance,
-    state: row.enabled ? evaluation.state : "unknown",
+    state: !row.enabled ? "unknown" : reviewing ? "review" : evaluation.state,
     openable: check.type === "http" && row.peerRole !== "link",
-    reading: row.enabled ? (evaluation.reading ?? null) : null,
+    reading: row.enabled && !reviewing ? (evaluation.reading ?? null) : null,
     meshBy: [...new Set(evaluation.vantages.filter((s) => s.path === "mesh" && s.state !== "unknown").map((s) => s.vantage.name))],
     localOnly: evaluation.localOnly,
     downSince: evaluation.downSince ?? null,
     uptime30: rangeUptime(daily),
     daily: daily.map(tick),
+    range: ctx.range,
+    bars: (ctx.bars.get(row.id)?.buckets ?? []).map(tick),
+    barMs: RANGE_SPECS[ctx.range].bucketMs,
+    since: ctx.bars.get(row.id)?.since ?? null,
+    rangeUptime: rangeUptime(ctx.bars.get(row.id)?.buckets ?? []),
     latencyMs: last?.ok ? last.latencyMs : null,
     lastCheckedAt: last?.at ?? null,
   };
 }
 
-export async function listMonitors(scope: Scope, now = Date.now()): Promise<MonitorSummary[]> {
+export async function listMonitors(scope: Scope, now = Date.now(), range?: UptimeRange): Promise<MonitorSummary[]> {
   const rows = await db.select().from(uptimeMonitors).where(scopeWhere(scope)).orderBy(asc(uptimeMonitors.name));
-  const ctx = await load(rows, now);
+  const ctx = await load(rows, now, range);
   return rows.map((r) => summarizeRow(r, ctx, now));
 }
 
@@ -292,12 +359,12 @@ async function outagesFor(scope: Scope, row: UptimeMonitorRow, results: CheckRes
     .reverse();
 }
 
-export async function getMonitor(scope: Scope, id: string, now = Date.now()): Promise<MonitorDetail | null> {
+export async function getMonitor(scope: Scope, id: string, now = Date.now(), range?: UptimeRange): Promise<MonitorDetail | null> {
   const row = await ownedRow(scope, id);
   if (!row) return null;
   const since24 = new Date(now - DAY_MS);
   const [ctx, daily90, hourly, rawRows, channels] = await Promise.all([
-    load([row], now),
+    load([row], now, range),
     dailyBuckets([id], 90, now),
     db
       .select()
@@ -359,9 +426,30 @@ export async function createMonitor(scope: Scope, input: CreateMonitorInput): Pr
   const check = buildCheck(input);
   await assertTargetAllowed(scope, check);
   const id = `mon_${nanoid(16)}`;
+  const organizationId = scope.kind === "org" ? scope.orgId : null;
+  const link: Partial<typeof uptimeMonitors.$inferInsert> = {};
+  if (input.appId) {
+    if (scope.kind !== "org") throw new UptimeInputError("Only an org's monitors link to an app.");
+    const app = await db.query.apps.findFirst({ where: and(eq(apps.id, input.appId), eq(apps.organizationId, scope.orgId)), columns: { id: true } });
+    if (!app) throw new UptimeInputError("That app doesn't exist.");
+    link.appId = app.id;
+    if (input.domainId) {
+      const domain = await db.query.domains.findFirst({ where: and(eq(domains.id, input.domainId), eq(domains.appId, app.id)), columns: { id: true, domain: true } });
+      if (!domain) throw new UptimeInputError("That domain isn't on the app.");
+      link.linkDomainId = domain.id;
+      link.linkDomain = domain.domain;
+    }
+  } else if (input.domainId) {
+    throw new UptimeInputError("Choose the app the domain belongs to.");
+  }
+  const wantsHeaders = !!(input.headers?.length || input.basicAuth);
+  if (wantsHeaders && check.type !== "http") throw new UptimeInputError("Headers apply to HTTP checks only.");
+  const headers = wantsHeaders ? applyHeaderPatch(null, { organizationId }, input) : null;
   await db.insert(uptimeMonitors).values({
     id,
-    organizationId: scope.kind === "org" ? scope.orgId : null,
+    organizationId,
+    ...link,
+    ...(headers ? { headersEncrypted: headers.sealed, headerNames: headers.names, shareHeaders: input.shareHeaders ?? false } : {}),
     name: input.name || defaultName(check),
     check,
     intervalSec: input.intervalSec ?? DEFAULT_INTERVAL,
@@ -386,9 +474,31 @@ export async function updateMonitor(scope: Scope, id: string, patch: UpdateMonit
   if (patch.enabled !== undefined) set.enabled = patch.enabled;
   if (patch.maintenance !== undefined) set.maintenance = patch.maintenance;
 
-  const editsCheck = ["type", "name", "url", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays", "intervalSec"].some((k) => k in patch);
+  if (patch.headers !== undefined || patch.basicAuth !== undefined || patch.shareHeaders !== undefined) {
+    if (row.check.type !== "http") throw new UptimeInputError("Headers apply to HTTP checks only.");
+    if (patch.headers !== undefined || patch.basicAuth !== undefined) {
+      const next = applyHeaderPatch(row.headersEncrypted, row, patch);
+      set.headersEncrypted = next.sealed;
+      set.headerNames = next.names;
+      // New headers can change what an automatic monitor sees.
+      if (row.source === "auto") set.healthDueAt = null;
+    }
+    if (patch.shareHeaders !== undefined) set.shareHeaders = patch.shareHeaders;
+  }
+
+  if (row.source === "auto" && editsAuto(patch)) {
+    const changes = autoEdit(row, patch);
+    Object.assign(set, changes);
+    const base = baseUrlOf(row);
+    if (base && row.check.type === "http") {
+      const next = autoCheckFor({ healthPath: changes.healthPath === undefined ? row.healthPath : changes.healthPath, reviewAnswer: "reviewAnswer" in changes ? (changes.reviewAnswer ?? null) : row.reviewAnswer, overrides: "overrides" in changes ? (changes.overrides ?? null) : row.overrides }, base);
+      set.check = { ...row.check, url: next.url, expectedStatus: next.expectedStatus, timeoutMs: next.timeoutMs, keyword: next.keyword };
+    }
+  }
+
+  const editsCheck = row.source !== "auto" ? ["type", "name", "url", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays", "intervalSec"].some((k) => k in patch) : ["type", "url", "host", "port", "warnDays"].some((k) => k in patch);
   if (editsCheck) {
-    if (row.source === "auto") throw new UptimeInputError("Automatic monitors can only be turned off, muted or put in maintenance.");
+    if (row.source === "auto") throw new UptimeInputError("An automatic monitor's address follows its domain. Change the path instead.");
     if (patch.name !== undefined) set.name = patch.name || defaultName(row.check);
     if (patch.intervalSec !== undefined) set.intervalSec = patch.intervalSec;
     const touched = ["type", "url", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays"].some((k) => k in patch);
@@ -415,7 +525,7 @@ export async function deleteMonitor(scope: Scope, id: string): Promise<"deleted"
   return "deleted";
 }
 
-export async function getAppUptime(orgId: string, appId: string, now = Date.now()): Promise<AppUptime> {
+export async function getAppUptime(orgId: string, appId: string, now = Date.now(), range?: UptimeRange): Promise<AppUptime> {
   const scope: Scope = { kind: "org", orgId };
   // A compose stack's services carry the domains.
   const stack = await db.select({ id: apps.id }).from(apps).where(and(eq(apps.organizationId, orgId), or(eq(apps.id, appId), eq(apps.parentAppId, appId))));
@@ -424,9 +534,21 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
     .from(uptimeMonitors)
     .where(and(scopeWhere(scope), inArray(uptimeMonitors.appId, stack.map((a) => a.id))))
     .orderBy(asc(uptimeMonitors.preview), asc(uptimeMonitors.name));
-  const ctx = await load(rows, now);
+  const ctx = await load(rows, now, range);
   const monitors = rows.map((r) => summarizeRow(r, ctx, now));
   const active = monitors.filter((m) => m.enabled);
+
+  // The app's bars combine its monitors', from where the oldest one's history starts.
+  const { bucketMs } = RANGE_SPECS[ctx.range];
+  const starts = bucketStarts(ctx.range, now);
+  const historyStart = active.length ? Math.min(...active.map((m) => m.createdAt)) : null;
+  const barsOf = (id: string) => new Map((ctx.bars.get(id)?.buckets ?? []).map((b) => [b.start, b]));
+  const monitorBars = active.map((m) => barsOf(m.id));
+  const combined = starts.map((start) => {
+    const parts = monitorBars.map((m) => m.get(start)).filter((b): b is Bucket => !!b);
+    return parts.length ? combine(parts, start) : null;
+  });
+  const appBars = trimToHistory(fillBuckets(combined.filter((b): b is Bucket => !!b), starts, bucketMs), bucketMs, historyStart);
 
   const ids = active.map((m) => m.id);
   const [daily90, hourly, raw] = await Promise.all([
@@ -465,11 +587,19 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
   const lastOutage = outages.sort((a, b) => b.start - a.start)[0] ?? null;
   const downs = active.filter((m) => m.state === "down");
   const degraded = active.filter((m) => m.state === "degraded");
-  const known = active.filter((m) => m.state !== "unknown");
+  const reviews = active.filter((m) => m.state === "review");
+  const known = active.filter((m) => m.state === "up" || m.state === "degraded" || m.state === "down");
   const lastCheckedAt = active.reduce<number | null>((best, m) => (m.lastCheckedAt && (!best || m.lastCheckedAt > best) ? m.lastCheckedAt : best), null);
 
   return {
     monitors,
+    range: ctx.range,
+    bars: appBars.buckets.map(tick),
+    barMs: bucketMs,
+    since: appBars.since,
+    rangeUptime: rangeUptime(appBars.buckets),
+    historyStart,
+    reviews,
     state: downs.length ? "down" : degraded.length ? "degraded" : known.length ? "up" : "unknown",
     localOnly: active.every((m) => m.localOnly),
     downSince: downs.length ? Math.min(...downs.map((m) => m.downSince ?? now)) : null,

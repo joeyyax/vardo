@@ -184,10 +184,47 @@ describe.skipIf(!conn)("uptime engine on Postgres", { timeout: MIGRATE_TIMEOUT }
     expect(signed[0].sig).toBeTruthy();
   });
 
+  it("reports domain reachability through the client, confirmed after two failures", async () => {
+    const reach = async () => (await client.uptimeClient.domainReachability("org1", ["dom1"]))[0];
+    status = 200;
+    await pass(2);
+    expect(await reach()).toMatchObject({ domainId: "dom1", reachable: true, confirmedUnreachable: false, statusCode: 200, error: null });
+
+    status = 503;
+    await pass(1);
+    expect(await reach()).toMatchObject({ reachable: false, confirmedUnreachable: false });
+    await pass(1);
+    expect(await reach()).toMatchObject({ reachable: false, confirmedUnreachable: true, statusCode: 503, error: "unexpected status" });
+    status = 200;
+    await pass(1);
+    expect(await reach()).toMatchObject({ reachable: true, confirmedUnreachable: false });
+
+    expect(await client.uptimeClient.domainReachability("org1", [])).toEqual([]);
+    expect(await client.uptimeClient.domainReachability("other", ["dom1"])).toEqual([]);
+  });
+
+  it("covers system-managed apps' domains, and pauses domain monitors when the domain-monitoring flag is off", async () => {
+    await sql`insert into app (id, organization_id, project_id, name, display_name, status, is_system_managed) values ('sys', 'org1', 'proj1', 'sys', 'Sys', 'active', true)`;
+    await sql`insert into domain (id, app_id, domain, is_primary) values ('dom-sys', 'sys', 'tools.example.com', true)`;
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 1, removed: 0 });
+    expect((await client.uptimeClient.domainReachability("org1", ["dom-sys"])).length).toBe(1);
+
+    process.env.VARDO_FEATURE_DOMAIN_MONITORING = "0";
+    try {
+      expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
+      expect((await client.uptimeClient.listMonitors(org)).length).toBe(3);
+    } finally {
+      delete process.env.VARDO_FEATURE_DOMAIN_MONITORING;
+    }
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
+    await sql`delete from app where id = 'sys'`;
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
+  });
+
   it("removes an auto monitor with its domain and refuses to delete it by hand", async () => {
     const web = (await client.uptimeClient.listMonitors(org)).find((m) => !m.preview)!;
     expect(await client.uptimeClient.deleteMonitor(org, web.id)).toBe("auto");
-    await expect(client.uptimeClient.updateMonitor(org, web.id, { name: "Renamed" })).rejects.toThrow();
+    await expect(client.uptimeClient.updateMonitor(org, web.id, { url: "https://elsewhere.example.com" })).rejects.toThrow();
     await sql`delete from environment where id = 'env1'`;
     await sql`delete from domain where id = 'dom1'`;
     expect(await client.uptimeClient.listMonitors(org)).toEqual([]);

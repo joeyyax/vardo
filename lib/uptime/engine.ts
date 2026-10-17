@@ -1,6 +1,7 @@
 // What the worker runs: due checks from the local vantage point, rollups, alerts, retention and auto monitors.
 
 import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { db } from "@/lib/db";
 import { apps, domains, environments, meshPeers, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -39,6 +40,9 @@ import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
 import { syncPeerAlerts, syncPeerMonitors } from "./peers";
 import { queueNotice, flushNotices } from "./notices";
+import { autoCheckFor } from "./auto";
+import { runHealthDetection } from "./health";
+import { openHeaders } from "./secrets";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
 import { pruneProbes, tickProber } from "./prober";
 import { toResult } from "./service";
@@ -77,7 +81,9 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
   let added = 0;
   let removed = 0;
 
-  const domainRows = await db
+  // With the domain-monitoring flag off, domain monitors pause: none are added, checked or removed.
+  const domainsOn = isFeatureEnabled("domain-monitoring");
+  const domainRows = !domainsOn ? [] : await db
     .select({
       id: domains.id,
       domain: domains.domain,
@@ -88,7 +94,7 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
     })
     .from(domains)
     .innerJoin(apps, eq(apps.id, domains.appId))
-    .where(and(eq(domains.enabled, true), eq(apps.isSystemManaged, false)));
+    .where(eq(domains.enabled, true));
 
   const previewRows = await db
     .select({ id: environments.id, domain: environments.domain, appId: environments.appId, orgId: apps.organizationId })
@@ -117,6 +123,7 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
   }
 
   const keep = new Set<string>();
+  if (!domainsOn) for (const m of byDomain.values()) keep.add(m.id);
   for (const w of wanted) {
     const current = w.key.startsWith("d:") ? byDomain.get(w.row.domainId!) : byEnv.get(w.row.environmentId!);
     if (!current) {
@@ -125,12 +132,15 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
       continue;
     }
     keep.add(current.id);
-    const check = w.row.check as HttpCheck;
-    const stale = current.check.type === "http" && !sameStatus(current.check.expectedStatus, check.expectedStatus);
-    if (current.check.type !== "http" || stale || current.check.url !== check.url || current.name !== w.row.name || current.organizationId !== w.row.organizationId) {
+    // The base address follows the domain; the detected path, the operator's answer and their edits stay.
+    const check = autoCheckFor(current, (w.row.check as HttpCheck).url);
+    const name = current.overrides?.name ?? (w.row.name as string);
+    const prev = current.check.type === "http" ? current.check : null;
+    const same = prev && prev.url === check.url && sameStatus(prev.expectedStatus, check.expectedStatus) && prev.timeoutMs === check.timeoutMs && prev.keyword === check.keyword;
+    if (!same || current.name !== name || current.organizationId !== w.row.organizationId) {
       await db
         .update(uptimeMonitors)
-        .set({ check: current.check.type === "http" ? { ...current.check, url: check.url, expectedStatus: check.expectedStatus } : check, name: w.row.name as string, organizationId: w.row.organizationId, updatedAt: new Date() })
+        .set({ check: prev ? { ...prev, url: check.url, expectedStatus: check.expectedStatus, timeoutMs: check.timeoutMs, keyword: check.keyword } : check, name, organizationId: w.row.organizationId, updatedAt: new Date() })
         .where(eq(uptimeMonitors.id, current.id));
     }
   }
@@ -199,8 +209,10 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
 
   // A stopped app is expected to be down. Vantage points sharing a monitor take turns, so this one runs it every interval x N.
   const watchers = await externalWatchers();
+  const domainsOn = isFeatureEnabled("domain-monitoring");
   const due = rows.filter(({ monitor, appStatus }) => {
-    if (monitor.source === "auto" && appStatus === "stopped") return false;
+    if (monitor.appId && appStatus === "stopped") return false;
+    if (!domainsOn && monitor.source === "auto" && monitor.domainId) return false;
     const slot = staggerOf(monitor.id, monitor.intervalSec, sharing(watchers, monitor.id), LOCAL_VANTAGE_ID);
     return isDueAt(slot.periodSec * 1000, slot.offsetMs, lastRun.get(monitor.id), now);
   });
@@ -219,7 +231,8 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
         return;
       }
       const { fetch, guard } = deps[monitor.peerRole === "public" ? "strict" : levelOf(monitor)];
-      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, "local", { now: clock, fetch, guard }));
+      const check = monitor.check.type === "http" && monitor.headersEncrypted ? { ...monitor.check, headers: openHeaders(monitor.headersEncrypted, monitor) } : monitor.check;
+      fresh.push(await runCheck({ id: monitor.id, check }, local.id, "local", { now: clock, fetch, guard }));
     } catch (err) {
       log.warn(`Check for ${monitor.id} threw:`, err);
     }
@@ -271,6 +284,8 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   const impaired = await loadImpaired(now);
   for (const m of monitors) {
     if (m.meshPeerId) continue;
+    // Waiting on an answer: no alerts, and none opened from the checks that ran meanwhile.
+    if (m.reviewStatus !== null && m.reviewAnswer === null) continue;
     try {
       const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
       if (silent) continue;
@@ -338,7 +353,9 @@ const toRow = (monitorId: string, b: Bucket): BucketRow => ({
 
 /** Recomputes the current and previous hour for each monitor, signs them, and folds the hours into their days. */
 export async function rollup(now = Date.now()): Promise<void> {
-  const monitors = await db.select({ id: uptimeMonitors.id, intervalSec: uptimeMonitors.intervalSec }).from(uptimeMonitors);
+  const monitors = await db
+    .select({ id: uptimeMonitors.id, intervalSec: uptimeMonitors.intervalSec, reviewStatus: uptimeMonitors.reviewStatus, reviewAnswer: uptimeMonitors.reviewAnswer })
+    .from(uptimeMonitors);
   if (monitors.length === 0) return;
   const thisHour = Math.floor(now / HOUR_MS) * HOUR_MS;
   const from = thisHour - HOUR_MS;
@@ -361,7 +378,7 @@ export async function rollup(now = Date.now()): Promise<void> {
 
   const signedAt = new Date(now);
   for (const m of monitors) {
-    const buckets = summarize({ results: markImpaired(byMonitor.get(m.id) ?? [], impaired), vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
+    const buckets = summarize({ results: m.reviewStatus !== null && m.reviewAnswer === null ? [] : markImpaired(byMonitor.get(m.id) ?? [], impaired), vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
     for (const b of buckets) {
       if (b.minutesUp + b.minutesDown === 0 && b.minutesUnknown === 0) continue;
       const signed = signRecord(hourlySummary(LOCAL_VANTAGE_ID, m.id, b, now), key);
@@ -418,6 +435,8 @@ export async function syncAllAlerts(now = Date.now()): Promise<void> {
 export async function tickUptime(now = Date.now()): Promise<void> {
   await syncIfDue(now);
   await runDueChecks(now);
+  // In the background, so spaced-out probing never delays the checks.
+  void runHealthDetection(now).catch((err) => log.error("Health detection failed:", err));
   await tickProber(now).catch((err) => log.error("Probing linked instances failed:", err));
   if (now - lastReeval >= 30_000) {
     lastReeval = now;
