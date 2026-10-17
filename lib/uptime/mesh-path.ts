@@ -72,7 +72,7 @@ function requestOnce(address: string, url: URL, init: RequestInit): Promise<Resp
   });
 }
 
-function pinnedUrl(raw: string, ports: readonly number[]): URL {
+function pinnedUrl(raw: string, ports: readonly number[], address: string): URL {
   let url: URL;
   try {
     url = new URL(raw);
@@ -81,7 +81,7 @@ function pinnedUrl(raw: string, ports: readonly number[]): URL {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw blocked("Not an http URL");
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (net.isIP(host) !== 0) throw blocked("The mesh path takes host names, not addresses");
+  if (net.isIP(host) !== 0 && host !== address) throw blocked("The mesh path takes host names or the peer's own address");
   if (!ports.includes(urlPort(url))) throw blocked(`Port ${urlPort(url)} isn't reachable over the mesh`);
   return url;
 }
@@ -94,7 +94,7 @@ export function tunnelDeps(address: string, ports: readonly number[] = MESH_PORT
   if (!tunnelAddress(address)) throw new Error(`Not a mesh address: ${address}`);
 
   const fetchPinned = (async (input: string | URL | Request, init: RequestInit = {}) => {
-    let url = pinnedUrl(String(input instanceof Request ? input.url : input), ports);
+    let url = pinnedUrl(String(input instanceof Request ? input.url : input), ports, address);
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       const res = await requestOnce(address, url, init);
       const location = res.headers.get("location");
@@ -106,7 +106,7 @@ export function tunnelDeps(address: string, ports: readonly number[] = MESH_PORT
       } catch {
         throw blocked("Redirect to an unreadable location");
       }
-      url = pinnedUrl(next, ports);
+      url = pinnedUrl(next, ports, address);
     }
     throw blocked("Too many redirects");
   }) as typeof fetch;

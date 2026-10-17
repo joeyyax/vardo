@@ -292,6 +292,15 @@ describe("mesh path allowance", () => {
   const entry = (check: unknown, path = "mesh") => ({ monitorId: "m", check: check as never, path });
   const page = { type: "http", url: "http://app.lan/health", expectedStatus: { min: 200, max: 399 }, timeoutMs: 2000 };
 
+  it("lets a link check name the peer's own address, and no other", async () => {
+    const calls = fakeHttp(200);
+    const { fetch } = tunnelDeps(PEER, [3000]);
+    const res = await fetch(`http://${PEER}:3000/api/health`);
+    expect(res.status).toBe(200);
+    expect(calls[0]).toMatchObject({ host: PEER, port: 3000 });
+    await expect(fetch("http://10.99.0.8:3000/api/health")).rejects.toThrow(/host names or the peer/);
+  });
+
   it("accepts only a mesh address as a tunnel address", () => {
     expect(tunnelAddress("10.99.0.7")).toBe("10.99.0.7");
     expect(tunnelAddress("10.99.0.7/32")).toBe("10.99.0.7");
