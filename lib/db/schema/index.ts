@@ -26,6 +26,7 @@ export * from "./external-routes";
 export * from "./security";
 export * from "./probe-guard";
 export * from "./trust";
+export * from "./uptime";
 export * from "./user-notifications";
 export * from "./user-preferences";
 export * from "./image-checks";

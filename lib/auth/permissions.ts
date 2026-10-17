@@ -34,6 +34,8 @@ export const CAPABILITIES = {
   "org.domains.manage": MEMBERS,
   "org.tags.manage": MEMBERS,
   "org.transfers.manage": ADMINS,
+  "uptime.view": EVERYONE,
+  "uptime.manage": ADMINS,
   // Mesh peers are instance-wide.
   "mesh.peers.view": ADMINS,
 

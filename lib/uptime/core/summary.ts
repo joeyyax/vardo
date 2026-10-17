@@ -47,7 +47,7 @@ function vantageMinutes(results: CheckResult[], intervalSec: number, fromMin: nu
 }
 
 /**
- * Buckets of `bucketMs` covering [from, to). A minute is down when most of the vantage points with data
+ * Buckets of `bucketMs` covering [from, to), counting only minutes that have elapsed. A minute is down when most of the vantage points with data
  * for it are failing; external ones decide when any has data, else the local one.
  */
 export function summarize(args: {
@@ -92,7 +92,7 @@ export function summarize(args: {
     let down = 0;
     let unknown = 0;
     const base = start / MINUTE_MS;
-    for (let m = base; m < base + perBucket; m++) {
+    for (let m = base; m < Math.min(base + perBucket, toMin); m++) {
       const present = minutes.filter((v) => v.map.has(m));
       const external = present.filter((v) => v.kind === "external");
       const deciding = external.length > 0 ? external : present.filter((v) => v.kind === "local");
@@ -133,4 +133,37 @@ export function fillDays(buckets: Bucket[], fromDay: number, days: number): Buck
     const start = fromDay + i * DAY_MS;
     return byStart.get(start) ?? makeBucket(start, 0, 0, DAY_MS / MINUTE_MS, null);
   });
+}
+
+export type Outage = { start: number; end: number | null };
+
+/** Runs of down minutes, joined across a one-minute gap. `end` is null while the latest minute is still down. */
+export function findOutages(args: {
+  results: CheckResult[];
+  vantages: VantagePoint[];
+  intervalSec: number;
+  from: number;
+  to: number;
+}): Outage[] {
+  const minutes = summarize({ ...args, bucketMs: MINUTE_MS });
+  const out: Outage[] = [];
+  let open: Outage | null = null;
+  let lastDown = 0;
+  for (const m of minutes) {
+    if (m.minutesDown > 0) {
+      if (open && m.start - lastDown > 2 * MINUTE_MS) {
+        open.end = lastDown + MINUTE_MS;
+        out.push(open);
+        open = null;
+      }
+      open ??= { start: m.start, end: null };
+      lastDown = m.start;
+    }
+  }
+  if (open) {
+    const ongoing = lastDown + MINUTE_MS >= minutes[minutes.length - 1].start;
+    open.end = ongoing ? null : lastDown + MINUTE_MS;
+    out.push(open);
+  }
+  return out;
 }
