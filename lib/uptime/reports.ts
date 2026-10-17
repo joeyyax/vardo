@@ -32,6 +32,7 @@ import {
   type Outage,
   type ReportedMonitor,
 } from "./core";
+import { appNotRunning, runStateColumns } from "./auto";
 import { localIdentity } from "./identity";
 import { REPORTS_PATH, reportRequestSchema, validKey, type LinkReply } from "./link";
 import { publicEntries, type Resolver } from "./net";
@@ -96,11 +97,11 @@ async function outagesFor(ids: string[], now: number, ctx: { intervalOf: (id: st
 /** This instance's report: every enabled monitor peers don't check, by host, with its state as this instance sees it. */
 export async function buildReport(now = Date.now(), resolve?: Resolver): Promise<ReportedMonitor[]> {
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status, conditions: apps.conditions })
+    .select({ monitor: uptimeMonitors, app: runStateColumns, conditions: apps.conditions })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .where(eq(uptimeMonitors.enabled, true));
-  const live = rows.filter(({ monitor, appStatus }) => !(monitor.appId && appStatus === "stopped") && !monitor.meshPeerId);
+  const live = rows.filter(({ monitor, app }) => !(monitor.appId && appNotRunning(app)) && !monitor.meshPeerId);
   const ids = await unwatchedIds(live.map((r) => r.monitor), now, resolve);
   const reported = live.filter((r) => ids.has(r.monitor.id));
   if (reported.length === 0) return [];
