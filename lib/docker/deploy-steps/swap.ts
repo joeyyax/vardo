@@ -459,16 +459,16 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Clear a pin left by a deploy killed mid-cutover.
   await clearCutoverPin(app.name, ctx.envName).catch(() => {});
 
-  // Remove leftovers from a previous failed deploy in the new slot.
-  try {
-    await execFileAsync(
+  // Best effort.
+  const tearDownNewSlot = () =>
+    execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
       { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-    );
-  } catch {
-    // Nothing to clean up.
-  }
+    ).then(() => {}, () => {});
+
+  // Remove leftovers from a previous failed deploy in the new slot.
+  await tearDownNewSlot();
 
   // Step 6a: build and pull new-slot images while the old slot keeps serving.
   const stillServing = activeSlot ? " (old slot still serving)" : "";
@@ -959,11 +959,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log(`[deploy] Tearing down half-started ${newSlot} slot`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
+      await tearDownNewSlot();
       const restored = await restoreOldSlot("compose up failure");
       throw new Error(
         [`docker compose up (${newSlot}) failed: ${message}`, restoreNote(restored), overlapDiagnosis()]
@@ -977,11 +973,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ctx.checkAbort();
     } catch (err) {
       log(`[deploy] Cancelled after ${newSlot} started; tearing it down`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
+      await tearDownNewSlot();
       await restoreOldSlot("the deploy being cancelled");
       throw err;
     }
@@ -1041,11 +1033,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       } catch { /* no logs */ }
 
       log(`[deploy] Tearing down ${newSlot}`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
+      await tearDownNewSlot();
       const lockHint = lockConflictHint({
         logs: tail,
         compose,
@@ -1066,11 +1054,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const status = await deploymentStatus(ctx.deploymentId);
     if (status !== null && status !== "running") {
       log(`[deploy] The deployment was closed as ${status} while ${newSlot} warmed up; tearing it down`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
+      await tearDownNewSlot();
       await restoreOldSlot("the deployment closing elsewhere");
       throw new DeployClosedElsewhereError(status);
     }
