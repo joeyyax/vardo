@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
+import { reconcileSshForward } from "./ssh-forward";
+import { syncAuthorizedKeys } from "./ssh-endpoint";
+import { exchangeSshKeys } from "./ssh-exchange";
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 
@@ -14,6 +17,19 @@ async function reconcileForward(): Promise<void> {
   } catch (err) {
     log.error("Mesh console forward check failed:", err);
   }
+  try {
+    await reconcileSshForward();
+    await syncAuthorizedKeys();
+  } catch (err) {
+    log.error("Mesh SSH endpoint check failed:", err);
+  }
+}
+
+/** Heartbeat, then trade SSH keys with a peer that answered. */
+async function heartbeatAndKeys(peerId: string): Promise<boolean> {
+  const ok = await sendHeartbeatToPeer(peerId);
+  if (ok) await exchangeSshKeys(peerId).catch(() => {});
+  return ok;
 }
 
 async function heartbeatPass(): Promise<void> {
@@ -26,7 +42,7 @@ async function heartbeatPass(): Promise<void> {
   await reconcileForward();
 
   const results = await Promise.allSettled(
-    peers.map((peer) => sendHeartbeatToPeer(peer.id))
+    peers.map((peer) => heartbeatAndKeys(peer.id))
   );
 
   const online = results.filter(

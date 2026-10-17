@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -46,6 +47,14 @@ export const meshPeers = pgTable("mesh_peer", {
   acceptInstanceBrowse: boolean("accept_instance_browse").default(false).notNull(),
   // The peer answers our browse requests, as its last heartbeat said.
   peerAcceptsInstanceBrowse: boolean("peer_accepts_instance_browse").default(false).notNull(),
+  // Install this peer's SSH key so it can run builds on this host's Docker over the mesh.
+  acceptBuilds: boolean("accept_builds").default(false).notNull(),
+  // The peer runs our builds, as it last said.
+  peerAcceptsBuilds: boolean("peer_accepts_builds").default(false).notNull(),
+  // The peer's SSH client key, its mesh SSH host key and port, from the signed key exchange.
+  peerSshKey: text("peer_ssh_key"),
+  peerSshHostKey: text("peer_ssh_host_key"),
+  peerSshPort: integer("peer_ssh_port"),
   lastRelaySentAt: timestamp("last_relay_sent_at"),
   lastRelaySentStatus: text("last_relay_sent_status"),
   lastRelayReceivedAt: timestamp("last_relay_received_at"),

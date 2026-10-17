@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ArrowUp, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -13,6 +14,7 @@ import { useSystemSetting } from "./use-system-setting";
 
 type Target = {
   id: string;
+  kind: "ssh" | "mesh";
   name: string;
   host: string;
   port: number;
@@ -21,17 +23,19 @@ type Target = {
   hasKey: boolean;
   /** Pinned host key fingerprints, null until the first test. */
   hostKey: string[] | null;
+  /** Linked instance only: why it can't take builds yet. */
+  waiting?: string | null;
 };
 
 type Data = { registry: boolean; targets: Target[] };
 
-type Draft = { id?: string; name: string; host: string; port: string; user: string; privateKey: string; maxConcurrent: string };
+type Draft = { id?: string; mesh?: boolean; name: string; host: string; port: string; user: string; privateKey: string; maxConcurrent: string };
 
 const EMPTY: Draft = { name: "", host: "", port: "22", user: "root", privateKey: "", maxConcurrent: "1" };
 
 const ENDPOINT = "/api/v1/admin/build-targets";
 
-/** Docker hosts over SSH that builds overflow to when this server's builder is busy. */
+/** Docker hosts over SSH and linked instances that builds overflow to when this server's builder is busy. */
 export function BuildTargetsSettings() {
   const [data, setData] = useState<Data>({ registry: false, targets: [] });
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -76,7 +80,8 @@ export function BuildTargetsSettings() {
         <CardTitle>Build targets</CardTitle>
         <CardDescription>
           When this server&apos;s builder is full, builds run on these Docker hosts in order and come back through the build registry.
-          Dockerfile, Nixpacks and compose builds can run there; Railpack builds stay here.
+          Dockerfile, Nixpacks and compose builds can run there; Railpack builds stay here. A linked instance that accepts builds
+          from here joins the list on its own.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -89,14 +94,19 @@ export function BuildTargetsSettings() {
             {data.targets.map((t, i) => (
               <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
                 <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
-                  <p className="text-sm font-medium">{t.name}</p>
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    {t.name}
+                    {t.kind === "mesh" && <Badge variant="outline">Linked instance</Badge>}
+                  </p>
                   <p className="truncate font-mono text-xs text-muted-foreground">
                     {t.user}@{t.host}:{t.port} · {t.maxConcurrent} at a time
                   </p>
                   <p className="[overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:truncate" title={t.hostKey?.join("\n")}>
                     {t.hostKey
-                      ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}`
-                      : "Host key not pinned yet; Test pins it"}
+                      ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}${t.kind === "mesh" ? " from the mesh link" : ""}`
+                      : t.kind === "mesh"
+                        ? `Not ready: ${t.waiting ?? "waiting for the key exchange"}`
+                        : "Host key not pinned yet; Test pins it"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -109,12 +119,21 @@ export function BuildTargetsSettings() {
                     variant="outline"
                     disabled={busy}
                     onClick={() =>
-                      setDraft({ id: t.id, name: t.name, host: t.host, port: String(t.port), user: t.user, privateKey: "", maxConcurrent: String(t.maxConcurrent) })
+                      setDraft({
+                        id: t.id,
+                        mesh: t.kind === "mesh",
+                        name: t.name,
+                        host: t.host,
+                        port: String(t.port),
+                        user: t.user,
+                        privateKey: "",
+                        maxConcurrent: String(t.maxConcurrent),
+                      })
                     }
                   >
                     Edit
                   </Button>
-                  {t.hostKey && (
+                  {t.hostKey && t.kind !== "mesh" && (
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => save({ action: "forget-host-key", id: t.id })}>
                       Forget host key
                     </Button>
@@ -124,16 +143,41 @@ export function BuildTargetsSettings() {
                       <ArrowUp className="size-4" />
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => setRemoving(t)}>
-                    Remove
-                  </Button>
+                  {t.kind !== "mesh" && (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => setRemoving(t)}>
+                      Remove
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
         )}
 
-        {draft ? (
+        {draft?.mesh ? (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save({ action: "limit", id: draft.id, maxConcurrent: draft.maxConcurrent });
+            }}
+          >
+            <div className="max-w-xs space-y-2">
+              <Label htmlFor="build-target-max">Builds at a time on {draft.name}</Label>
+              <Input id="build-target-max" type="number" min={0} max={16} value={draft.maxConcurrent} onChange={set("maxConcurrent")} />
+              <p className="text-xs text-muted-foreground">0 sends it no builds. Its address and keys come from the mesh link.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={busy}>
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                Save
+              </Button>
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setDraft(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : draft ? (
           <form
             className="space-y-4"
             onSubmit={(e) => {

@@ -33,6 +33,10 @@ async function handlePost(request: NextRequest) {
     let target = targets[index];
 
     let pinned = false;
+    // A linked instance's host key comes only from the signed key exchange.
+    if (!target.hostKey && target.kind === "mesh") {
+      return NextResponse.json({ ok: false, error: target.waiting ?? "it hasn't sent its host key yet" });
+    }
     if (!target.hostKey) {
       try {
         target = { ...target, hostKey: await scanHostKey(target.host, target.port) };

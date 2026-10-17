@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 // Build target settings: the private key is write-only, a moved host is pinned again, and order is overflow order.
 
-const { store, scans } = vi.hoisted(() => ({ store: new Map<string, string>(), scans: [] as string[] }));
+const { store, scans, mesh } = vi.hoisted(() => ({ store: new Map<string, string>(), scans: [] as string[], mesh: [] as unknown[] }));
 
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
@@ -13,6 +13,7 @@ vi.mock("@/lib/system-settings", () => ({
   getSystemSettingRaw: async (key: string) => store.get(key) || null,
   setSystemSetting: async (key: string, value: string) => void store.set(key, value),
 }));
+vi.mock("@/lib/mesh/build-peers", () => ({ meshBuildPeers: async () => mesh }));
 vi.mock("@/lib/docker/build-targets", async (original) => ({
   ...(await original<typeof import("@/lib/docker/build-targets")>()),
   hostKeyFingerprints: async () => ["SHA256:abc (ED25519)"],
@@ -35,9 +36,16 @@ const stored = () => JSON.parse(store.get("build_targets") || '{"targets":[]}').
 const KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
 const lh = { action: "save", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: KEY, maxConcurrent: 2 };
 
+const MESH_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nmeshkey\n-----END OPENSSH PRIVATE KEY-----\n";
+const linked = (over: Record<string, unknown> = {}) => ({
+  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: MESH_KEY,
+  hostKey: "10.99.0.2 ssh-ed25519 AAAAC3", waiting: null, accepts: true, ...over,
+});
+
 beforeEach(() => {
   store.clear();
   scans.length = 0;
+  mesh.length = 0;
 });
 
 describe("/api/v1/admin/build-targets", () => {
@@ -50,7 +58,7 @@ describe("/api/v1/admin/build-targets", () => {
     expect(stored()[0]).toMatchObject({ host: "10.99.0.2", privateKey: `${KEY}\n`, hostKey: null, maxConcurrent: 2 });
     const body = await get();
     expect(body.targets).toEqual([
-      { id: expect.any(String), name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 2, hasKey: true, hostKey: null },
+      { id: expect.any(String), kind: "ssh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 2, hasKey: true, hostKey: null },
     ]);
     expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
   });
@@ -101,5 +109,36 @@ describe("/api/v1/admin/build-targets", () => {
     await post({ action: "remove", id: b });
     expect(stored().map((t: { id: string }) => t.id)).toEqual([a]);
     expect((await post({ action: "remove", id: "nope" })).status).toBe(404);
+  });
+
+  it("lists a linked instance that accepts builds, without its key", async () => {
+    mesh.push(linked());
+    const body = await get();
+    expect(body.targets).toEqual([
+      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null },
+    ]);
+    expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
+  });
+
+  it("changes a linked instance's limit and place, but not its host, key or listing", async () => {
+    mesh.push(linked());
+    await post(lh);
+    expect((await post({ action: "limit", id: "mesh-lhpeer", maxConcurrent: 0 })).status).toBe(200);
+    expect(stored().find((t: { id: string }) => t.id === "mesh-lhpeer")).toEqual({ id: "mesh-lhpeer", kind: "mesh", peerId: "lhpeer", maxConcurrent: 0 });
+    await post({ action: "move", id: "mesh-lhpeer", direction: "up" });
+    expect(stored().map((t: { kind: string }) => t.kind)).toEqual(["mesh", "ssh"]);
+    expect((await post({ action: "remove", id: "mesh-lhpeer" })).status).toBe(400);
+    expect((await post({ action: "forget-host-key", id: "mesh-lhpeer" })).status).toBe(400);
+    expect((await post({ ...lh, id: "mesh-lhpeer", host: "evil.example.com" })).status).toBe(400);
+    expect(JSON.stringify(stored())).not.toContain("meshkey");
+  });
+
+  it("never scans a linked instance's host key, which only the key exchange sets", async () => {
+    mesh.push(linked({ hostKey: null, waiting: "Long House hasn't sent its mesh SSH host key yet" }));
+    expect(await test("mesh-lhpeer")).toEqual({ ok: false, error: "Long House hasn't sent its mesh SSH host key yet" });
+    expect(scans).toEqual([]);
+    mesh[0] = linked();
+    expect(await test("mesh-lhpeer")).toMatchObject({ ok: true, pinned: false, dockerVersion: "29.4.0" });
+    expect(scans).toEqual([]);
   });
 });

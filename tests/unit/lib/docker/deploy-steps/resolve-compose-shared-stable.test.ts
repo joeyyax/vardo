@@ -115,7 +115,7 @@ describe("resolveCompose — shared services across deploys", () => {
     const first = await render("deploy-aaaa", "green");
     const second = await render("deploy-bbbb", "blue");
 
-    expect(first.shared).toEqual(["postgres", "redis", "buildkit", "traefik", "wireguard", "watchdog"]);
+    expect(first.shared).toEqual(["postgres", "redis", "buildkit", "traefik", "wireguard", "mesh-ssh", "watchdog"]);
     expect(second.base).toEqual(first.base);
     expect(second.overlay).toEqual(first.overlay);
   });

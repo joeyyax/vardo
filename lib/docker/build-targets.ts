@@ -4,6 +4,7 @@ import { access, chmod, constants, mkdir, mkdtemp, rm, writeFile } from "fs/prom
 import { tmpdir } from "os";
 import { delimiter, join } from "path";
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
+import { meshBuildPeers, type MeshBuildPeer } from "@/lib/mesh/build-peers";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
 
@@ -11,19 +12,31 @@ export const BUILD_TARGETS_SETTING = "build_targets";
 
 export const MAX_TARGET_BUILDS = 16;
 
-/** A Docker daemon reached over SSH. `kind` leaves room for targets started on demand. */
+/** A Docker daemon reached over SSH: added by hand, or a linked instance over the mesh. */
 export type BuildTarget = {
   id: string;
-  kind: "ssh";
+  kind: "ssh" | "mesh";
   name: string;
   host: string;
   port: number;
   user: string;
   privateKey: string;
-  /** known_hosts lines pinned on the first test; null until then. */
+  /** known_hosts lines: pinned on the first test, or for a mesh target from the key exchange. Null until then. */
   hostKey: string | null;
   maxConcurrent: number;
+  /** Mesh only: the linked peer. */
+  peerId?: string;
+  /** Mesh only: why it can't take builds yet. */
+  waiting?: string | null;
 };
+
+/** How a mesh target is stored: its place and limit. The rest comes from the link. */
+type StoredMeshTarget = { id: string; kind: "mesh"; peerId: string; maxConcurrent: number };
+
+/** The id of a linked instance's target. */
+export function meshTargetId(peerId: string): string {
+  return `mesh-${peerId}`;
+}
 
 const HOSTNAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i;
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
@@ -38,9 +51,37 @@ export function isValidTargetUser(user: string): boolean {
   return USER.test(user);
 }
 
+function parseMeshRef(raw: unknown): StoredMeshTarget | null {
+  const t = raw as Partial<StoredMeshTarget> | null;
+  if (!t || t.kind !== "mesh" || typeof t.peerId !== "string" || !t.peerId) return null;
+  const max = Number(t.maxConcurrent ?? 1);
+  return {
+    id: meshTargetId(t.peerId),
+    kind: "mesh",
+    peerId: t.peerId,
+    maxConcurrent: Number.isInteger(max) ? Math.min(Math.max(max, 0), MAX_TARGET_BUILDS) : 1,
+  };
+}
+
+function meshTarget(peer: MeshBuildPeer, maxConcurrent: number): BuildTarget {
+  return {
+    id: meshTargetId(peer.peerId),
+    kind: "mesh",
+    name: peer.name,
+    host: peer.host,
+    port: peer.port,
+    user: peer.user,
+    privateKey: peer.privateKey,
+    hostKey: peer.hostKey,
+    maxConcurrent,
+    peerId: peer.peerId,
+    waiting: peer.waiting,
+  };
+}
+
 function parseTarget(raw: unknown): BuildTarget | null {
   const t = raw as Partial<BuildTarget> | null;
-  if (!t || typeof t.id !== "string" || typeof t.host !== "string" || typeof t.user !== "string") return null;
+  if (!t || t.kind === "mesh" || typeof t.id !== "string" || typeof t.host !== "string" || typeof t.user !== "string") return null;
   if (!isValidTargetHost(t.host) || !isValidTargetUser(t.user) || typeof t.privateKey !== "string") return null;
   const port = Number(t.port ?? 22);
   const max = Number(t.maxConcurrent ?? 1);
@@ -57,21 +98,48 @@ function parseTarget(raw: unknown): BuildTarget | null {
   };
 }
 
-/** Targets in overflow order, decrypted. */
-export async function getBuildTargets(): Promise<BuildTarget[]> {
+async function storedEntries(): Promise<unknown[]> {
   const raw = await getSystemSettingRaw(BUILD_TARGETS_SETTING);
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as { targets?: unknown[] };
-    return (parsed.targets ?? []).map(parseTarget).filter((t): t is BuildTarget => t !== null);
+    return (JSON.parse(raw) as { targets?: unknown[] }).targets ?? [];
   } catch {
     return [];
   }
 }
 
-/** Saves the targets encrypted, private keys included. */
+/** Targets in overflow order, decrypted. A linked instance that accepts builds joins at the end; an unlinked one drops out. */
+export async function getBuildTargets(): Promise<BuildTarget[]> {
+  const entries = await storedEntries();
+  const peers = await meshBuildPeers().catch(() => [] as MeshBuildPeer[]);
+  const byPeer = new Map(peers.map((p) => [p.peerId, p]));
+  const listed = new Set<string>();
+  const targets: BuildTarget[] = [];
+  for (const entry of entries) {
+    const ref = parseMeshRef(entry);
+    if (ref) {
+      const peer = byPeer.get(ref.peerId);
+      if (!peer || listed.has(ref.peerId)) continue;
+      listed.add(ref.peerId);
+      targets.push(meshTarget(peer, ref.maxConcurrent));
+      continue;
+    }
+    const target = parseTarget(entry);
+    if (target) targets.push(target);
+  }
+  for (const peer of peers) {
+    if (!listed.has(peer.peerId) && peer.accepts) targets.push(meshTarget(peer, 1));
+  }
+  return targets;
+}
+
+/** Saves the targets encrypted. A mesh target keeps only its place and limit. */
 export async function setBuildTargets(targets: BuildTarget[]): Promise<void> {
-  await setSystemSetting(BUILD_TARGETS_SETTING, targets.length > 0 ? JSON.stringify({ targets }) : "");
+  const stored = targets.map((t): BuildTarget | StoredMeshTarget => {
+    if (t.kind !== "mesh" || !t.peerId) return { ...t, kind: "ssh", peerId: undefined, waiting: undefined };
+    return { id: meshTargetId(t.peerId), kind: "mesh", peerId: t.peerId, maxConcurrent: t.maxConcurrent };
+  });
+  await setSystemSetting(BUILD_TARGETS_SETTING, stored.length > 0 ? JSON.stringify({ targets: stored }) : "");
 }
 
 /** `ssh://user@host:port` for DOCKER_HOST. */

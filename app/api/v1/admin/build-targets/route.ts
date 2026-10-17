@@ -19,6 +19,7 @@ import {
 async function publicTarget(t: BuildTarget) {
   return {
     id: t.id,
+    kind: t.kind,
     name: t.name,
     host: t.host,
     port: t.port,
@@ -26,6 +27,7 @@ async function publicTarget(t: BuildTarget) {
     maxConcurrent: t.maxConcurrent,
     hasKey: Boolean(t.privateKey),
     hostKey: t.hostKey ? await hostKeyFingerprints(t.hostKey).catch(() => ["(unreadable)"]) : null,
+    ...(t.kind === "mesh" && { waiting: t.waiting ?? null }),
   };
 }
 
@@ -61,6 +63,7 @@ const schema = z.discriminatedUnion("action", [
       maxConcurrent: z.coerce.number().int().min(0).max(MAX_TARGET_BUILDS).default(1),
     })
     .strict(),
+  z.object({ action: z.literal("limit"), id, maxConcurrent: z.coerce.number().int().min(0).max(MAX_TARGET_BUILDS) }).strict(),
   z.object({ action: z.literal("remove"), id }).strict(),
   z.object({ action: z.literal("move"), id, direction: z.enum(["up", "down"]) }).strict(),
   z.object({ action: z.literal("forget-host-key"), id }).strict(),
@@ -79,7 +82,17 @@ async function handlePost(request: NextRequest) {
     const index = "id" in body && body.id ? targets.findIndex((t) => t.id === body.id) : -1;
     if ("id" in body && body.id && index === -1) return NextResponse.json({ error: "No such build target" }, { status: 404 });
 
-    if (body.action === "remove") {
+    const mesh = index !== -1 && targets[index].kind === "mesh";
+    if (mesh && (body.action === "remove" || body.action === "forget-host-key" || body.action === "save")) {
+      return NextResponse.json(
+        { error: "A linked instance's target comes from the link. Set builds at a time to 0 to stop sending it builds" },
+        { status: 400 },
+      );
+    }
+
+    if (body.action === "limit") {
+      targets[index] = { ...targets[index], maxConcurrent: body.maxConcurrent };
+    } else if (body.action === "remove") {
       targets.splice(index, 1);
     } else if (body.action === "move") {
       const to = body.direction === "up" ? index - 1 : index + 1;
