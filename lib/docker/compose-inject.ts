@@ -719,6 +719,17 @@ export function getTraefikRoutedServices(compose: ComposeFile): Set<string> {
   return routed;
 }
 
+/** A self-routed service whose `traefik.docker.network` label names another network, as the console does. */
+export function routesOverOwnNetwork(svc: ComposeService, networkName: string = "vardo-network"): boolean {
+  const net = svc.labels?.["traefik.docker.network"];
+  return isTraefikSelfRouted(svc) && typeof net === "string" && net !== "" && net !== networkName;
+}
+
+/** Routed services that join vardo-network: all but those Traefik reaches on their own network. */
+export function vardoNetworkServices(compose: ComposeFile, networkName: string = "vardo-network"): Set<string> {
+  return new Set([...getTraefikRoutedServices(compose)].filter((name) => !routesOverOwnNetwork(compose.services[name], networkName)));
+}
+
 export function injectResourceLimits(
   compose: ComposeFile,
   opts: { cpuLimit?: number | null; memoryLimit?: number | null },
@@ -955,7 +966,7 @@ export function applyDeployTransforms(
 
   // Only routed services join vardo-network; an empty set attaches nothing.
   // Attaching everything causes DNS alias collisions across apps.
-  const routed = getTraefikRoutedServices(result);
+  const routed = vardoNetworkServices(result, opts.networkName);
   result = injectNetwork(result, opts.networkName, { attachTo: routed });
 
   return result;

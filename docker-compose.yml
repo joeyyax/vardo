@@ -92,6 +92,8 @@ services:
       # Console lock (docs/console-lock.md). Empty means none; /api/health and the GitHub webhook bypass it.
       - "traefik.http.routers.vardo.middlewares=${VARDO_CONSOLE_MIDDLEWARES:-}"
       - "traefik.http.services.vardo.loadbalancer.server.port=3000"
+      # Traefik reaches the console on vardo_console, a network apps aren't on (docs/console-lock.md).
+      - "traefik.docker.network=vardo_console"
       # HTTP→HTTPS redirect for the domain (not for IP)
       - "traefik.http.routers.vardo-http.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
       - "traefik.http.routers.vardo-http.entrypoints=web"
@@ -137,14 +139,16 @@ services:
       - "traefik.http.routers.vardo-unknown-host-http.priority=2"
       - "traefik.http.routers.vardo-unknown-host-http.service=vardo"
       - "traefik.http.routers.vardo-unknown-host-http.middlewares=vardo-unknown-host-path"
+    # Not vardo-network: apps there would reach port 3000 without Traefik's middlewares.
     networks:
+      console:
       internal:
       mesh:
         ipv4_address: 10.88.0.3
-      vardo-network:
 
   # Background loops (worker/index.ts), from the frontend's image. Rotates with the console's slot.
-  # Env, mounts and networks match frontend; tests/unit/infra/worker-compose.test.ts keeps them in step.
+  # Env and mounts match frontend; tests/unit/infra/worker-compose.test.ts keeps them in step.
+  # Networks differ: deploys probe apps on vardo-network, and the worker serves nothing but /healthz on loopback.
   worker:
     image: ${COMPOSE_PROJECT_NAME}-frontend
     pull_policy: never
@@ -379,6 +383,7 @@ services:
       - traefik_dynamic:/etc/traefik/dynamic
     networks:
       - vardo-network
+      - console
 
 
   wireguard:
@@ -518,6 +523,8 @@ volumes:
   mesh_builder:
 
 networks:
+  # Only Traefik and the console.
+  console:
   internal:
   builds:
   mesh:

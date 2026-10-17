@@ -29,6 +29,10 @@ export async function register() {
       );
     }
 
+    // Before the first request: off vardo-network once Traefik reaches the console on vardo_console.
+    const { isolateConsoleSafely } = await import("./lib/docker/console-network");
+    await isolateConsoleSafely();
+
     // Traefik serves its API only through this router.
     const { writeTraefikApiConfig } = await import("./lib/docker/traefik-api-access");
     await writeTraefikApiConfig().catch((err) => log.warn("Failed to write the Traefik API router:", err));

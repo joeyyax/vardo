@@ -6,7 +6,7 @@ import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-// The worker runs the same code against the same host as the frontend: env, mounts, groups and networks must match.
+// The worker runs the same code against the same host as the frontend: env, mounts and groups must match. Networks differ by design (#1136).
 
 type Service = {
   image?: string;
@@ -52,8 +52,9 @@ describe("worker compose parity", () => {
     expect(worker.depends_on).toEqual(frontend.depends_on);
   });
 
-  it("joins the frontend's networks, mesh without the console's fixed address", () => {
-    expect(Object.keys(worker.networks ?? {}).sort()).toEqual(Object.keys(frontend.networks ?? {}).sort());
+  it("joins internal and mesh like the frontend, vardo-network for deploy probes and never the console's network", () => {
+    expect(Object.keys(worker.networks ?? {}).sort()).toEqual(["internal", "mesh", "vardo-network"]);
+    expect(Object.keys(frontend.networks ?? {}).sort()).toEqual(["console", "internal", "mesh"]);
     expect(worker.networks?.mesh?.ipv4_address).toBeUndefined();
   });
 

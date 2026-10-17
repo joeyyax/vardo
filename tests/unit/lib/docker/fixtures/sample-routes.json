@@ -4,6 +4,7 @@
   "VARDO_DOMAIN": "vardo.example.com"
  },
  "console": {
+  "traefik.docker.network": "vardo_console",
   "traefik.enable": "true",
   "traefik.http.middlewares.vardo-https-redirect.redirectscheme.permanent": "true",
   "traefik.http.middlewares.vardo-https-redirect.redirectscheme.scheme": "https",

@@ -67,6 +67,7 @@ export {
   defaultMemoryLimitMb,
   injectNetwork,
   getTraefikRoutedServices,
+  vardoNetworkServices,
   isTraefikOptedOut,
   isTraefikSelfRouted,
   TRAEFIK_MANUAL_LABEL,

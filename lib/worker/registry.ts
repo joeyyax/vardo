@@ -62,6 +62,8 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "trust-checks", roles: BOTH, singleton: true, load: async () => (await import("@/lib/trust/loop")).trustLoop },
   // Per process: each console joins the metadata network itself.
   { name: "metadata-proxy", roles: WEB, singleton: false, perProcess: true, load: async () => (await import("@/lib/metadata/proxy")).metadataProxyLoop },
+  // Per process: each console keeps itself off vardo-network.
+  { name: "console-network", roles: WEB, singleton: false, perProcess: true, load: async () => (await import("@/lib/docker/console-network")).consoleNetworkLoop },
   { name: "uptime", roles: BOTH, singleton: true, load: async () => (await import("@/lib/uptime/loop")).uptimeLoop },
   { name: "cert-export", roles: BOTH, singleton: true, load: async () => (await import("@/lib/ssl/cert-export")).certExportLoop },
   { name: "image-update-sweep", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdateSweepLoop },
