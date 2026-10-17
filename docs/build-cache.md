@@ -119,7 +119,7 @@ There's no setting to push builds from this server too. The key includes the app
 A build target doesn't need a registry. Each built image comes back by the first path that works:
 
 1. **Build registry**, when one is set and the image has a build key: push there, pull here. Only changed layers move.
-2. **Over SSH**: `docker save` on the target streams into `docker load` here through the same SSH session, with no temp file on either side. The whole image moves. Used when there's no registry, the image has no key, or the push or pull fails. After one registry failure the rest of that build's images skip it.
+2. **Over SSH**: `docker save` on the target streams into `docker load` here through the same SSH session, with no temp file on either side. The whole image moves. Used when there's no registry, the image has no key, or the push or pull fails. After one registry failure the rest of that build's images skip it. A push cut off mid-layer instead sets a ceiling for that target: for 7 days, or until the console restarts, an image whose largest uncompressed layer is at least that size goes straight over SSH. Smaller images keep using the registry.
 3. **Build here**: only when the target itself fails (unreachable, refused key, out of disk) or both paths fail. The target is marked down and the build runs on this server.
 
 The copy fails after 2 minutes without data or 60 minutes in all, and stops when the deploy is cancelled. A failure on either end stops the other. The image is removed from the target afterwards. The deploy log names the path:
