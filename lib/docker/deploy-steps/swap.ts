@@ -972,8 +972,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       );
     }
 
-    // Step 8: health check.
-    ctx.checkAbort();
+    // Step 8: health check. A cancel here drops the new slot and restarts an old slot that already stopped.
+    try {
+      ctx.checkAbort();
+    } catch (err) {
+      log(`[deploy] Cancelled after ${newSlot} started; tearing it down`);
+      await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      ).catch(() => {});
+      await restoreOldSlot("the deploy being cancelled");
+      throw err;
+    }
     ctx.stage("deploy", "success");
     ctx.stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);

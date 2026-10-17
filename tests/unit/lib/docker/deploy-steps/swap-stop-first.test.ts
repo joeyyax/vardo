@@ -192,6 +192,19 @@ describe("swap — stop-first", () => {
     );
   });
 
+  it("drops the new slot and restarts the old one when cancelled after the new slot started", async () => {
+    const { ctx } = context({ deployStrategy: "stop-first" });
+    let checks = 0;
+    ctx.checkAbort = () => {
+      if (++checks > 1) throw new Error("Deployment aborted");
+    };
+    await expect(swap(ctx)).rejects.toThrow("Deployment aborted");
+    const up = indexOf(isNewUp);
+    const down = calls().findLastIndex(isNewDown);
+    expect(down).toBeGreaterThan(up);
+    expect(indexOf(isOldRestore)).toBeGreaterThan(down);
+  });
+
   it("never applies to Vardo deploying itself", async () => {
     const { ctx } = context({ appName: "vardo", deployStrategy: "stop-first" });
     await swap(ctx);
