@@ -4,9 +4,10 @@ import { access, chmod, constants, mkdir, mkdtemp, rm, writeFile } from "fs/prom
 import { tmpdir } from "os";
 import { delimiter, join } from "path";
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
-import { meshBuildPeers, type MeshBuildPeer } from "@/lib/mesh/build-peers";
+import { meshBuildPeers, type MeshBuildPeer, type MeshBuilderAccess } from "@/lib/mesh/build-peers";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
+import { probeMeshBuilder } from "./mesh-builder";
 
 export const BUILD_TARGETS_SETTING = "build_targets";
 
@@ -28,6 +29,8 @@ export type BuildTarget = {
   peerId?: string;
   /** Mesh only: why it can't take builds yet. */
   waiting?: string | null;
+  /** Mesh only: the peer's isolated builder. Builds go there and never over SSH. */
+  builder?: MeshBuilderAccess | null;
 };
 
 /** How a mesh target is stored: its place and limit. The rest comes from the link. */
@@ -76,6 +79,7 @@ function meshTarget(peer: MeshBuildPeer, maxConcurrent: number): BuildTarget {
     maxConcurrent,
     peerId: peer.peerId,
     waiting: peer.waiting,
+    builder: peer.builder,
   };
 }
 
@@ -136,7 +140,7 @@ export async function getBuildTargets(): Promise<BuildTarget[]> {
 /** Saves the targets encrypted. A mesh target keeps only its place and limit. */
 export async function setBuildTargets(targets: BuildTarget[]): Promise<void> {
   const stored = targets.map((t): BuildTarget | StoredMeshTarget => {
-    if (t.kind !== "mesh" || !t.peerId) return { ...t, kind: "ssh", peerId: undefined, waiting: undefined };
+    if (t.kind !== "mesh" || !t.peerId) return { ...t, kind: "ssh", peerId: undefined, waiting: undefined, builder: undefined };
     return { id: meshTargetId(t.peerId), kind: "mesh", peerId: t.peerId, maxConcurrent: t.maxConcurrent };
   });
   await setSystemSetting(BUILD_TARGETS_SETTING, stored.length > 0 ? JSON.stringify({ targets: stored }) : "");
@@ -149,8 +153,14 @@ export function targetDockerHost(target: Pick<BuildTarget, "user" | "host" | "po
 }
 
 /** How the deploy log names a target. */
-export function describeTarget(target: Pick<BuildTarget, "name" | "user" | "host" | "port">): string {
+export function describeTarget(target: Pick<BuildTarget, "name" | "user" | "host" | "port" | "builder">): string {
+  if (target.builder) return `${target.name} (isolated builder at ${target.builder.host}:${target.builder.port})`;
   return `${target.name} (${targetDockerHost(target).slice("ssh://".length)})`;
+}
+
+/** Whether a target has what it needs to connect: a pinned host key, or a peer's builder certificate. */
+export function canConnect(target: Pick<BuildTarget, "hostKey" | "builder">): boolean {
+  return Boolean(target.builder || target.hostKey);
 }
 
 /** ssh_config for a session: this key and pinned host key only, never a prompt. */
@@ -243,6 +253,7 @@ const BUILDER_FAILURES: [RegExp, string][] = [
   [/ssh: connect to host|Connection (?:refused|timed out)|Operation timed out|No route to host|Network is unreachable|kex_exchange_identification/i, "it's unreachable"],
   [/Connection (?:reset|closed)|Broken pipe|error during connect|commandconn|dial-stdio|transport is closing|rpc error: code = Unavailable|error reading from server: EOF/i, "the connection to it dropped"],
   [/Cannot connect to the Docker daemon|docker: (?:command )?not found|docker: No such file/i, "its Docker daemon isn't answering"],
+  [/tls: (?:certificate required|bad certificate|unknown certificate authority|expired certificate)/i, "its builder refused this instance's certificate"],
   [/no space left on device|disk quota exceeded/i, "it's out of disk"],
 ];
 
@@ -257,11 +268,16 @@ function errorText(err: unknown): string {
   return [typeof e?.message === "string" ? e.message : String(err), typeof e?.stderr === "string" ? e.stderr : ""].join("\n");
 }
 
+/** A target's session: SSH to its daemon, or nothing for a peer's isolated builder, which buildx reaches itself. */
+export async function openTargetSession(target: BuildTarget): Promise<DockerSession> {
+  return target.builder ? { env: {}, close: async () => {} } : openSshSession(target);
+}
+
 /** Runs `run` against the target's daemon; a builder-caused failure comes out as a BuilderError. */
 export async function onTarget<T>(
   target: BuildTarget,
   run: (session: DockerSession) => Promise<T>,
-  open: (target: BuildTarget) => Promise<DockerSession> = openSshSession,
+  open: (target: BuildTarget) => Promise<DockerSession> = openTargetSession,
 ): Promise<T> {
   const session = await open(target).catch((err) => {
     throw err instanceof BuilderError ? err : new BuilderError(`couldn't set up SSH: ${errorText(err).split("\n")[0]}`, err);
@@ -278,10 +294,15 @@ export async function onTarget<T>(
 }
 
 const HEALTH_TIMEOUT = 8_000;
+const BUILDER_PROBE_TIMEOUT = 15_000;
 const HEALTH_TTL_MS = 30_000;
 
-/** The target's Docker server version; throws when it can't be reached. */
+/** The target's Docker server version, or for a peer's isolated builder its answer to a bootstrap; throws when it can't be reached. */
 export async function targetDockerVersion(target: BuildTarget, timeout = HEALTH_TIMEOUT): Promise<string> {
+  if (target.builder) {
+    await probeMeshBuilder(target.builder, { timeout: BUILDER_PROBE_TIMEOUT });
+    return "buildkit";
+  }
   return onTarget(target, async (session) => {
     const { stdout } = await execFileAsync("docker", ["version", "--format", "{{.Server.Version}}"], {
       env: remoteEnv(dockerEnv(), session),
@@ -295,6 +316,7 @@ const health = new Map<string, { at: number; ok: boolean }>();
 const inflight = new Map<string, Promise<boolean>>();
 
 function healthKey(t: BuildTarget): string {
+  if (t.builder) return `${t.id}|builder|${t.builder.host}:${t.builder.port}|${t.builder.cert.length}|${t.builder.cert.slice(-80)}`;
   return `${t.id}|${targetDockerHost(t)}|${t.hostKey ?? ""}`;
 }
 
@@ -304,7 +326,7 @@ export async function isTargetReady(
   check: (t: BuildTarget) => Promise<unknown> = targetDockerVersion,
   { wait = true }: { wait?: boolean } = {},
 ): Promise<boolean> {
-  if (!target.hostKey || target.maxConcurrent < 1) return false;
+  if (!canConnect(target) || target.maxConcurrent < 1) return false;
   const key = healthKey(target);
   const entry = health.get(key);
   if (entry && Date.now() - entry.at < HEALTH_TTL_MS) return entry.ok;
@@ -358,5 +380,5 @@ export async function hostKeyFingerprints(hostKey: string): Promise<string[]> {
 
 /** Configured targets that can take a build, in order. */
 export async function configuredTargets(): Promise<BuildTarget[]> {
-  return (await getBuildTargets().catch(() => [])).filter((t) => t.hostKey && t.maxConcurrent > 0);
+  return (await getBuildTargets().catch(() => [])).filter((t) => canConnect(t) && t.maxConcurrent > 0);
 }

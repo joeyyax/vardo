@@ -199,3 +199,33 @@ describe("isTargetReady", () => {
     expect(await isTargetReady(target, async () => Promise.reject(new Error("timeout")))).toBe(false);
   });
 });
+
+describe("a linked instance's isolated builder", () => {
+  const BUILDER = { host: "10.99.0.2", port: 1234, serverName: "vardo-mesh-builder", ca: "ca", cert: "cert", key: "key" };
+
+  it("joins the targets without an SSH host key and is named by its builder", async () => {
+    mesh.push(linked({ hostKey: null, privateKey: "", builder: BUILDER }));
+    const [t] = await configuredTargets();
+    expect(t).toMatchObject({ kind: "mesh", hostKey: null, builder: BUILDER });
+    expect(describeTarget(t)).toBe("Long House (isolated builder at 10.99.0.2:1234)");
+  });
+
+  it("runs without opening SSH, so the docker CLI stays pointed here", async () => {
+    mesh.push(linked({ hostKey: null, privateKey: "", builder: BUILDER }));
+    const [t] = await configuredTargets();
+    const env = await onTarget(t, async (session) => remoteEnv({ DOCKER_HOST: "unix:///var/run/docker.sock", BUILDX_BUILDER: "x" } as unknown as NodeJS.ProcessEnv, session));
+    expect(env).toEqual({ DOCKER_HOST: "unix:///var/run/docker.sock" });
+  });
+
+  it("is ready when its builder answers", async () => {
+    mesh.push(linked({ hostKey: null, privateKey: "", builder: BUILDER }));
+    const [t] = await configuredTargets();
+    const check = vi.fn().mockResolvedValue("buildkit");
+    expect(await isTargetReady(t, check)).toBe(true);
+    expect(check).toHaveBeenCalledWith(t);
+  });
+
+  it("calls a refused certificate the builder's fault", () => {
+    expect(builderFailureReason("remote error: tls: certificate required")).toBe("its builder refused this instance's certificate");
+  });
+});

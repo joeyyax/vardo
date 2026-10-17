@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { MeshClientError, meshSignedPost } from "./client";
 import { MESH_SSH_PORT } from "./constants";
 import { meshClientKey, meshSshHostKey, normalizeEd25519, syncAuthorizedKeys } from "./ssh-endpoint";
+import { FORGET_BUILDER, localBuilderPayload, peerBuilderColumns, type BuilderPayload, type BuilderPeer, type PeerBuilderColumns } from "./builder-exchange";
 
 const log = logger.child("mesh-ssh");
 
@@ -19,29 +20,30 @@ export const UNLINKED_STATUS = 410;
 /** Resent this often even when nothing changed. */
 const RESEND_MS = 10 * 60_000;
 
-export type SshKeysPayload = {
+export type SshKeysPayload = BuilderPayload & {
   sshKey: string | null;
   sshHostKey: string | null;
   sshPort: number | null;
   acceptsBuilds: boolean;
 };
 
-export type PeerSshColumns = Partial<{
+export type PeerSshColumns = PeerBuilderColumns & Partial<{
   peerSshKey: string | null;
   peerSshHostKey: string | null;
   peerSshPort: number | null;
   peerAcceptsBuilds: boolean;
 }>;
 
-/** What this side sends a peer: keys always, whether it runs that peer's builds per the link. */
-export async function localSshKeys(peer: { acceptBuilds: boolean }): Promise<SshKeysPayload> {
-  const [client, hostKey] = await Promise.all([meshClientKey().catch(() => null), meshSshHostKey()]);
+/** What this side sends a peer: keys always, whether it runs that peer's builds per the link, and its builder when it does. */
+export async function localSshKeys(peer: BuilderPeer): Promise<SshKeysPayload> {
+  const [client, hostKey, builder] = await Promise.all([meshClientKey().catch(() => null), meshSshHostKey(), localBuilderPayload(peer)]);
   const port = Number(MESH_SSH_PORT);
   return {
     sshKey: client?.publicKey ?? null,
     sshHostKey: hostKey,
     sshPort: hostKey && Number.isInteger(port) && port > 0 && port < 65536 ? port : null,
     acceptsBuilds: peer.acceptBuilds,
+    ...builder,
   };
 }
 
@@ -55,10 +57,10 @@ export function peerSshColumns(sent: unknown): PeerSshColumns {
   if (s.sshPort === null) out.peerSshPort = null;
   else if (Number.isInteger(s.sshPort) && (s.sshPort as number) > 0 && (s.sshPort as number) < 65536) out.peerSshPort = s.sshPort as number;
   if (typeof s.acceptsBuilds === "boolean") out.peerAcceptsBuilds = s.acceptsBuilds;
-  return out;
+  return { ...out, ...peerBuilderColumns(s) };
 }
 
-type StoredPeer = { id: string; acceptBuilds: boolean; peerSshKey: string | null };
+type StoredPeer = BuilderPeer & { peerSshKey: string | null };
 
 /** Stores what a peer sent; rewrites authorized_keys when its key changed and this side runs its builds. */
 export async function storePeerSsh(peer: StoredPeer, sent: unknown): Promise<PeerSshColumns> {
@@ -85,7 +87,7 @@ export type ExchangeResult = "sent" | "skipped" | "unsupported" | "forgotten" | 
 export async function exchangeSshKeys(peerId: string, { force = false }: { force?: boolean } = {}): Promise<ExchangeResult> {
   const peer = await db.query.meshPeers.findFirst({
     where: eq(meshPeers.id, peerId),
-    columns: { id: true, name: true, connectionType: true, acceptBuilds: true, peerSshKey: true, peerSshHostKey: true },
+    columns: { id: true, name: true, connectionType: true, acceptBuilds: true, peerSshKey: true, peerSshHostKey: true, peerBuilderKey: true, builderCert: true },
   });
   if (!peer || peer.connectionType !== "direct") return "skipped";
 
@@ -98,7 +100,9 @@ export async function exchangeSshKeys(peerId: string, { force = false }: { force
   try {
     const { data } = await meshSignedPost<unknown>(peerId, SSH_KEYS_PATH, payload, { timeoutMs: 15_000 });
     sent.set(peerId, { digest, at: Date.now() });
-    await storePeerSsh(peer, data);
+    const stored = await storePeerSsh(peer, data);
+    // A new key from the peer gets its certificate on the next exchange rather than in ten minutes.
+    if (stored.peerBuilderKey !== undefined && stored.peerBuilderKey !== peer.peerBuilderKey) sent.delete(peerId);
     return "sent";
   } catch (err) {
     if (err instanceof MeshClientError && err.statusCode === 404) {
@@ -107,7 +111,7 @@ export async function exchangeSshKeys(peerId: string, { force = false }: { force
     }
     // The peer no longer knows our token: the link is gone on its side, so its key stops working here.
     if (err instanceof MeshClientError && err.statusCode === UNLINKED_STATUS) {
-      await storePeerSsh(peer, { sshKey: null, sshHostKey: null, sshPort: null, acceptsBuilds: false });
+      await storePeerSsh(peer, { sshKey: null, sshHostKey: null, sshPort: null, acceptsBuilds: false, ...FORGET_BUILDER });
       sent.delete(peerId);
       return "forgotten";
     }

@@ -29,6 +29,13 @@ vi.mock("@/lib/mesh/ssh-endpoint", async (orig) => ({
   meshSshHostKey: async () => KEY_B,
   syncAuthorizedKeys: state.sync,
 }));
+vi.mock("@/lib/mesh/builder-exchange", async (orig) => ({
+  ...(await orig<typeof import("@/lib/mesh/builder-exchange")>()),
+  localBuilderPayload: async () => ({ builderKey: null, builder: null }),
+}));
+
+const NO_BUILDER = { builderKey: null, builder: null };
+const BUILDER_PEER = { peerBuilderKey: null, builderCert: null };
 
 const { exchangeSshKeys, localSshKeys, peerSshColumns, resetSshExchange, storePeerSsh } = await import("@/lib/mesh/ssh-exchange");
 
@@ -37,7 +44,7 @@ beforeEach(() => {
   state.updates.length = 0;
   state.post.mockReset();
   state.sync.mockReset().mockResolvedValue("written");
-  state.peer = { id: "p1", name: "Long House", connectionType: "direct", acceptBuilds: false, peerSshKey: null, peerSshHostKey: null };
+  state.peer = { id: "p1", name: "Long House", connectionType: "direct", acceptBuilds: false, peerSshKey: null, peerSshHostKey: null, ...BUILDER_PEER };
 });
 
 describe("peerSshColumns", () => {
@@ -55,18 +62,18 @@ describe("peerSshColumns", () => {
 
 describe("localSshKeys", () => {
   it("sends this side's client key, host key, port and whether it runs the peer's builds", async () => {
-    expect(await localSshKeys({ acceptBuilds: true })).toEqual({ sshKey: KEY_A, sshHostKey: KEY_B, sshPort: 22, acceptsBuilds: true });
+    expect(await localSshKeys({ id: "p1", acceptBuilds: true, ...BUILDER_PEER })).toEqual({ sshKey: KEY_A, sshHostKey: KEY_B, sshPort: 22, acceptsBuilds: true, ...NO_BUILDER });
   });
 });
 
 describe("storePeerSsh", () => {
   it("rewrites authorized_keys when an accepted peer's key changes", async () => {
-    await storePeerSsh({ id: "p1", acceptBuilds: true, peerSshKey: KEY_B }, { sshKey: KEY_A });
+    await storePeerSsh({ id: "p1", acceptBuilds: true, peerSshKey: KEY_B, ...BUILDER_PEER }, { sshKey: KEY_A });
     expect(state.sync).toHaveBeenCalledTimes(1);
   });
 
   it("leaves authorized_keys alone for a peer it doesn't run builds for", async () => {
-    await storePeerSsh({ id: "p1", acceptBuilds: false, peerSshKey: null }, { sshKey: KEY_A });
+    await storePeerSsh({ id: "p1", acceptBuilds: false, peerSshKey: null, ...BUILDER_PEER }, { sshKey: KEY_A });
     expect(state.updates[0]).toMatchObject({ peerSshKey: KEY_A });
     expect(state.sync).not.toHaveBeenCalled();
   });
@@ -76,7 +83,7 @@ describe("exchangeSshKeys", () => {
   it("sends over the signed channel and stores the answer", async () => {
     state.post.mockResolvedValue({ data: { sshKey: KEY_B, sshHostKey: KEY_A, sshPort: 22, acceptsBuilds: true }, transport: "tunnel" });
     expect(await exchangeSshKeys("p1")).toBe("sent");
-    expect(state.post).toHaveBeenCalledWith("p1", "/api/v1/mesh/ssh-keys", { sshKey: KEY_A, sshHostKey: KEY_B, sshPort: 22, acceptsBuilds: false }, expect.anything());
+    expect(state.post).toHaveBeenCalledWith("p1", "/api/v1/mesh/ssh-keys", { sshKey: KEY_A, sshHostKey: KEY_B, sshPort: 22, acceptsBuilds: false, ...NO_BUILDER }, expect.anything());
     expect(state.updates[0]).toMatchObject({ peerSshKey: KEY_B, peerSshHostKey: KEY_A, peerAcceptsBuilds: true });
   });
 
@@ -99,7 +106,7 @@ describe("exchangeSshKeys", () => {
     state.peer = { ...state.peer!, acceptBuilds: true, peerSshKey: KEY_B, peerSshHostKey: KEY_A };
     state.post.mockRejectedValue(new MeshClientError("No link with the calling instance", "PEER_ERROR", 410));
     expect(await exchangeSshKeys("p1")).toBe("forgotten");
-    expect(state.updates[0]).toMatchObject({ peerSshKey: null, peerSshHostKey: null, peerSshPort: null, peerAcceptsBuilds: false });
+    expect(state.updates[0]).toMatchObject({ peerSshKey: null, peerSshHostKey: null, peerSshPort: null, peerAcceptsBuilds: false, peerBuilderKey: null, peerBuilderPort: null, peerBuilderCa: null, peerBuilderCert: null });
     expect(state.sync).toHaveBeenCalledTimes(1);
   });
 

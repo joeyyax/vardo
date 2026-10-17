@@ -136,7 +136,7 @@ describe("/api/v1/admin/build-targets", () => {
     mesh.push(linked());
     const body = await get();
     expect(body.targets).toEqual([
-      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null, stats: null },
+      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null, isolated: false, builderPort: null, stats: null },
     ]);
     expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
   });

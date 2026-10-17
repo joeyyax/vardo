@@ -1,19 +1,19 @@
-// Where a build on a target runs: a linked instance's vardo-buildkit when it has one, else the target's daemon.
+// Where a build on a target runs: a linked instance's isolated builder, else its vardo-buildkit over SSH, else the target's daemon.
 
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execFileAsync } from "@/lib/utils/exec";
 import { buildKitContainerName, DEFAULT_BUILDKIT_HOST } from "./buildkit";
-import { EXPORT_ENV, exportArgs, exportOutput, parseImageStore, type ImageStore } from "./build-export";
+import { EXPORT_ENV, exportArgs, exportOutput, exportStore, parseImageStore, type ImageStore } from "./build-export";
 import { formatGiB, type BoundedBuild } from "./build-memory";
-import type { BuildTarget } from "./build-targets";
+import { BuilderError, type BuildTarget } from "./build-targets";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { TARGET_BUILD } from "./remote-build";
 import type { PushCompression } from "./direct-export";
+import { openMeshBuilder, TARGET_BUILDER } from "./mesh-builder";
 
-/** The buildx builder registered per session against the peer's BuildKit. */
-export const TARGET_BUILDER = "vardo-target";
+export { TARGET_BUILDER };
 
 const BOOTSTRAP_TIMEOUT = 60_000;
 
@@ -24,21 +24,40 @@ function firstLine(err: unknown): string {
   return (String(e?.stderr ?? "").trim() || e?.message || String(err)).split("\n")[0];
 }
 
-/** A target's builder. `compression` is set when it's the peer's BuildKit, which then exports straight here. */
-export type TargetBuilder = { build: BoundedBuild; close: () => Promise<void>; compression: PushCompression | null };
+/**
+ * A target's builder. `compression` is set when it's the peer's BuildKit, which then exports straight here.
+ * `channel` is how a docker tarball comes back: over SSH, or over the BuildKit session from an isolated builder.
+ */
+export type TargetBuilder = { build: BoundedBuild; close: () => Promise<void>; compression: PushCompression | null; channel: "ssh" | "session" };
 
 /**
  * The builder for a build on `target`, whose daemon `there` reaches. A mesh target's runs in its vardo-buildkit
  * under a session-private buildx config; anything else, or a peer without one, builds on the daemon.
  */
 export async function targetBuilder(
-  target: Pick<BuildTarget, "kind" | "name">,
+  target: Pick<BuildTarget, "kind" | "name" | "builder">,
   there: NodeJS.ProcessEnv,
   log: (line: string) => void,
-  { exec = execFileAsync as unknown as Exec, signal }: { exec?: Exec; signal?: AbortSignal } = {},
+  { exec = execFileAsync as unknown as Exec, signal, localStore = exportStore }: { exec?: Exec; signal?: AbortSignal; localStore?: (signal?: AbortSignal) => Promise<ImageStore> } = {},
 ): Promise<TargetBuilder> {
-  const daemon: TargetBuilder = { build: TARGET_BUILD, close: async () => {}, compression: null };
+  const daemon: TargetBuilder = { build: TARGET_BUILD, close: async () => {}, compression: null, channel: "ssh" };
   if (target.kind !== "mesh") return daemon;
+  if (target.builder) {
+    const session = await openMeshBuilder(target.builder, { exec, signal, env: there }).catch((err) => {
+      if (signal?.aborted) throw err;
+      throw new BuilderError(`couldn't reach ${target.name}'s isolated builder: ${firstLine(err)}`, err);
+    });
+    // Images come back here, so this host's image store picks the format.
+    const store = await localStore(signal).catch(() => "unknown" as const);
+    log(`[build] Building in ${target.name}'s isolated builder over the mesh`);
+    return {
+      build: { env: session.env, loadArgs: [], output: exportOutput(store), limitBytes: 0 },
+      close: session.close,
+      compression: store === "containerd" ? "zstd" : "gzip",
+      channel: "session",
+    };
+  }
+  log(`[build] ${target.name} runs a Vardo without the isolated builder, so this build reaches it over mesh SSH`);
 
   const container = buildKitContainerName(DEFAULT_BUILDKIT_HOST)!;
   const run = (args: string[], env: NodeJS.ProcessEnv = there, timeout = COMPOSE_QUERY_TIMEOUT) =>
@@ -81,16 +100,17 @@ export async function targetBuilder(
     build: { env: { BUILDX_CONFIG: dir, BUILDX_BUILDER: TARGET_BUILDER }, loadArgs: exportArgs(store), output: exportOutput(store), limitBytes },
     close,
     compression: store === "containerd" ? "zstd" : "gzip",
+    channel: "ssh",
   };
 }
 
 /** Runs `run` with the target's builder and removes its config after. */
 export async function withTargetBuilder<T>(
-  target: Pick<BuildTarget, "kind" | "name">,
+  target: Pick<BuildTarget, "kind" | "name" | "builder">,
   there: NodeJS.ProcessEnv,
   log: (line: string) => void,
   run: (builder: Omit<TargetBuilder, "close">) => Promise<T>,
-  opts: { exec?: Exec; signal?: AbortSignal } = {},
+  opts: { exec?: Exec; signal?: AbortSignal; localStore?: (signal?: AbortSignal) => Promise<ImageStore> } = {},
 ): Promise<T> {
   const builder = await targetBuilder(target, there, log, opts);
   try {

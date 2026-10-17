@@ -32,6 +32,16 @@ async function handlePost(request: NextRequest) {
     if (index === -1) return NextResponse.json({ error: "No such build target" }, { status: 404 });
     let target = targets[index];
 
+    if (target.builder) {
+      try {
+        await targetDockerVersion(target, 20_000);
+        resetTargetHealth();
+        return NextResponse.json({ ok: true, isolated: true });
+      } catch (err) {
+        return NextResponse.json({ ok: false, isolated: true, error: message(err) });
+      }
+    }
+
     let pinned = false;
     // A linked instance's host key comes only from the signed key exchange.
     if (!target.hostKey && target.kind === "mesh") {

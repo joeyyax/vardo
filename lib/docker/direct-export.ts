@@ -34,8 +34,9 @@ function repoKey(from: string, image: string): string {
 }
 
 /** BuildKit's output that pushes `ref` to the registry. */
-export function registryOutput(ref: string, compression: PushCompression): string {
-  return `type=image,name=${ref},push=true,compression=${compression}${compression === "zstd" ? ",oci-mediatypes=true" : ""}`;
+export function registryOutput(ref: string, compression: PushCompression, annotations: Record<string, string> = {}): string {
+  const notes = Object.entries(annotations).map(([k, v]) => `,annotation.${k}=${v}`).join("");
+  return `type=image,name=${ref},push=true,compression=${compression}${compression === "zstd" ? ",oci-mediatypes=true" : ""}${notes}`;
 }
 
 /** The ref an output pushes, or null when it doesn't push. */
@@ -84,6 +85,10 @@ export async function bringDirect(
     exec?: Exec;
     /** The docker exporter's options for this host's image store; read from it when unset. */
     fileOutput?: string;
+    /** How a tarball comes back: over SSH, or over the BuildKit session from an isolated builder. */
+    channel?: "ssh" | "session";
+    /** Manifest annotations for a pushed image. */
+    annotations?: Record<string, string>;
   },
 ): Promise<void> {
   const exec = opts.exec ?? (execFileAsync as unknown as Exec);
@@ -92,6 +97,8 @@ export async function bringDirect(
   const dir = await mkdtemp(join(tmpdir(), "vardo-export-"));
   const tar = (i: number) => join(dir, `${i}.tar`);
   const fileOutput = opts.fileOutput ?? exportOutput(await exportStore(opts.signal)) ?? "type=docker";
+  const channel = opts.channel ?? "ssh";
+  const over = channel === "session" ? "over the build session" : "over SSH";
 
   const skipped = images.map(() => false);
   const mode: Mode[] = images.map(({ image, ref }, i) => {
@@ -107,7 +114,7 @@ export async function bringDirect(
   });
   const tried = mode.map((m) => m === "registry");
   const outputs = () =>
-    images.map(({ ref }, i) => (mode[i] === "registry" ? registryOutput(ref!, opts.compression) : mode[i] === "file" ? `${fileOutput},dest=${tar(i)}` : "type=cacheonly"));
+    images.map(({ ref }, i) => (mode[i] === "registry" ? registryOutput(ref!, opts.compression, opts.annotations) : mode[i] === "file" ? `${fileOutput},dest=${tar(i)}` : "type=cacheonly"));
   let cutOff = false;
 
   try {
@@ -145,19 +152,19 @@ export async function bringDirect(
             await exec("docker", ["image", "rm", ref!], { env: here, timeout: TAG_TIMEOUT }).catch(() => {});
           }
         } else if (mode[i] === "file") {
-          log(`[build] ${ref && tried[i] ? "Registry unavailable; copying" : "Copying"} ${image} from ${from} over SSH`);
+          log(`[build] ${ref && tried[i] ? "Registry unavailable; copying" : "Copying"} ${image} from ${from} ${over}`);
           try {
             const bytes = (await stat(tar(i))).size;
             await exec("docker", ["load", "--quiet", "-i", tar(i)], { env: here, timeout: LOAD_TIMEOUT, signal: opts.signal });
-            log(`[build] Copied ${image} from ${from} over SSH (${formatBytes(bytes)}, ${seconds(began)})`);
-            opts.placement?.transferred({ via: skipped[i] ? "registry_skipped" : "ssh", ms: Date.now() - began, bytes });
+            log(`[build] Copied ${image} from ${from} ${over} (${formatBytes(bytes)}, ${seconds(began)})`);
+            opts.placement?.transferred({ via: skipped[i] ? "registry_skipped" : channel, ms: Date.now() - began, bytes });
             mode[i] = "done";
           } catch (err) {
             if (opts.signal?.aborted) throw err;
             const message = firstLine(err);
             const reason = builderFailureReason(message);
-            if (reason) log(`[build] Copying over SSH failed: ${message}`);
-            throw new BuilderError(`couldn't copy ${image} here over SSH: ${reason ?? message}`, err);
+            if (reason) log(`[build] Copying ${over} failed: ${message}`);
+            throw new BuilderError(`couldn't copy ${image} here ${over}: ${reason ?? message}`, err);
           } finally {
             await rm(tar(i), { force: true }).catch(() => {});
           }

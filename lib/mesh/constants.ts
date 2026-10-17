@@ -21,3 +21,15 @@ export const MESH_SSH_PORT = process.env.VARDO_MESH_SSH_PORT || "22";
 
 /** The only user the mesh SSH endpoint lets in. */
 export const MESH_SSH_USER = "vardo";
+
+/** Container running the isolated BuildKit that linked instances' builds run in. */
+export const MESH_BUILDER_CONTAINER = process.env.VARDO_MESH_BUILDER_CONTAINER || "vardo-mesh-builder";
+
+/** Port the mesh builder answers on, on the tunnel address and inside its container. */
+export const MESH_BUILDER_PORT = process.env.VARDO_MESH_BUILDER_PORT || "1234";
+
+/** The name the builder's server certificate carries and clients verify. */
+export const MESH_BUILDER_SERVER_NAME = "vardo-mesh-builder";
+
+/** The builder's TLS files, inside its cache volume. */
+export const MESH_BUILDER_TLS_DIR = "/home/user/.local/share/buildkit/vardo-tls";
