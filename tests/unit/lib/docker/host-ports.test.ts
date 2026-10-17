@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { describeHostPortHolders, hostPortHolders } from "@/lib/docker/host-ports";
+import { describeHostPortHolders, hostPortHolders, slotHostPortHolders } from "@/lib/docker/host-ports";
 
 const holds = (services: unknown) => hostPortHolders(services as never).map((h) => h.service);
 
@@ -44,6 +44,29 @@ describe("hostPortHolders", () => {
     expect(holds({})).toEqual([]);
     expect(holds(undefined)).toEqual([]);
     expect(holds({ web: { image: "nginx", ports: [] } })).toEqual([]);
+  });
+});
+
+describe("slotHostPortHolders", () => {
+  it("counts ports the overlay publishes for a rotating service", () => {
+    expect(
+      slotHostPortHolders({ web: { image: "nginx" } } as never, { web: { ports: ["8080:80"] } } as never),
+    ).toEqual([{ service: "web", via: "ports" }]);
+  });
+
+  it("ignores overlay ports on services outside the slot", () => {
+    expect(
+      slotHostPortHolders({ web: { image: "nginx" } } as never, { db: { ports: ["5432:5432"] } } as never),
+    ).toEqual([]);
+  });
+
+  it("names a service once, preferring the host network", () => {
+    expect(
+      slotHostPortHolders(
+        { web: { image: "nginx", network_mode: "host" } } as never,
+        { web: { ports: ["8080:80"] } } as never,
+      ),
+    ).toEqual([{ service: "web", via: "host-network" }]);
   });
 });
 

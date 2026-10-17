@@ -155,6 +155,16 @@ describe("swap — published host ports", () => {
   });
 });
 
+describe("swap — ports from the app's port settings", () => {
+  it("stops the old slot first when the overlay publishes a port", async () => {
+    const { ctx, logLines } = context({});
+    ctx.overlayCompose = { services: { scrypted: { ports: ["11080:11080"] } } } as unknown as ComposeFile;
+    await swap(ctx);
+    expect(indexOf(isOldStop)).toBeLessThan(indexOf(isNewUp));
+    expect(logLines.join("\n")).toContain("held by scrypted (published ports)");
+  });
+});
+
 describe("swap — no host ports", () => {
   it("keeps the old slot serving until the new one is healthy", async () => {
     const { ctx, logLines } = context({});

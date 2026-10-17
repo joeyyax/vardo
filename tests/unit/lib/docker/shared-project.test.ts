@@ -79,6 +79,26 @@ services:
     expect(await readSlotHostPorts(SLOT_DIR, reader(yaml))).toEqual([]);
   });
 
+  it("counts ports the slot's overlay publishes", async () => {
+    const read = vi.fn((path: string) =>
+      Promise.resolve(
+        path.endsWith("docker-compose.override.yml")
+          ? `services:\n  web:\n    ports:\n      - "8080:80"\n`
+          : `services:\n  web:\n    image: nginx\n`,
+      ),
+    );
+    expect(await readSlotHostPorts(SLOT_DIR, read)).toEqual([{ service: "web", via: "ports" }]);
+  });
+
+  it("reads the base compose alone when the slot has no overlay", async () => {
+    const read = vi.fn((path: string) =>
+      path.endsWith("docker-compose.yml")
+        ? Promise.resolve(`services:\n  web:\n    image: nginx\n    ports:\n      - "8080:80"\n`)
+        : Promise.reject(new Error("ENOENT")),
+    );
+    expect(await readSlotHostPorts(SLOT_DIR, read)).toEqual([{ service: "web", via: "ports" }]);
+  });
+
   it("is empty when the compose can't be read", async () => {
     expect(await readSlotHostPorts(SLOT_DIR, vi.fn(() => Promise.reject(new Error("ENOENT"))))).toEqual([]);
   });

@@ -31,7 +31,7 @@ import { sharedPullTargets } from "./shared-images";
 import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } from "./shared-drift";
 import { SHARED_DEFINITIONS_FILE } from "./shared-definitions";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
-import { describeHostPortHolders, hostPortHolders } from "../host-ports";
+import { describeHostPortHolders, slotHostPortHolders } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
 import { buildRegistryOps, registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { configuredTargets } from "../build-targets";
@@ -440,7 +440,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
   // Slots overlap only when no slotted service binds a host port; otherwise the second bind fails.
-  const hostPorts = hostPortHolders(slotted);
+  const hostPorts = slotHostPortHolders(slotted, ctx.overlayCompose?.services);
   const canOverlapSlots = mustStopOldSlot && hostPorts.length === 0;
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
