@@ -150,6 +150,9 @@ export type DeployContext = {
   /** The bare compose before Vardo injections (for docker-compose.yml). */
   bareCompose: ComposeFile;
 
+  /** The new slot's Vardo overlay (docker-compose.override.yml), once written. */
+  overlayCompose?: ComposeFile;
+
   /** The compose before Vardo removed the app's own Traefik labels. */
   declaredCompose?: ComposeFile;
 

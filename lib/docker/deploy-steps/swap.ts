@@ -31,7 +31,7 @@ import { sharedPullTargets } from "./shared-images";
 import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } from "./shared-drift";
 import { SHARED_DEFINITIONS_FILE } from "./shared-definitions";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
-import { publishesHostPorts } from "../host-ports";
+import { describeHostPortHolders, slotHostPortHolders } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
 import { buildRegistryOps, registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { configuredTargets } from "../build-targets";
@@ -439,8 +439,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
-  // Slots overlap only when no slotted service publishes a host port; otherwise the second bind fails.
-  const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(slotted);
+  // Slots overlap only when no slotted service binds a host port; otherwise the second bind fails.
+  const hostPorts = slotHostPortHolders(slotted, ctx.overlayCompose?.services);
+  const canOverlapSlots = mustStopOldSlot && hostPorts.length === 0;
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
   // The app's stop-first setting. Never for Vardo itself: its old slot runs this deploy.
@@ -748,6 +749,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   ) {
     if (stopFirst) {
       log(`[deploy] Stop-first deploy: stopping ${activeSlot} before ${newSlot} starts. The app is down until ${newSlot} is healthy`);
+    } else if (stopOldBeforeUp) {
+      log(`[deploy] Host ports held by ${describeHostPortHolders(hostPorts)} can't be bound twice — stopping ${activeSlot} before ${newSlot} starts. The app is down until ${newSlot} is healthy`);
     }
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
@@ -760,7 +763,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     ctx.oldStoppedAt = Date.now();
     noteStopFailure(await stopOldSlot());
   } else if (canOverlapSlots) {
-    log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
+    log(`[deploy] No host ports bound — ${activeSlot} keeps serving until ${newSlot} is healthy`);
   }
 
   // A pre-shared old slot uses its own project network; shared containers must rejoin it on restore.

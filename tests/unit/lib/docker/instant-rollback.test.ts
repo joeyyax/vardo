@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   demoteRestart: vi.fn(),
   readPartition: vi.fn(),
   readBound: vi.fn(),
+  readHostPorts: vi.fn(),
   addEvent: vi.fn(),
   recordActivity: vi.fn(),
   fs: { rm: vi.fn(), symlink: vi.fn(), rename: vi.fn() },
@@ -37,7 +38,11 @@ vi.mock("@/lib/docker/compose", () => ({
   slotComposeFiles: vi.fn(async (dir: string) => ["-f", `${dir}/docker-compose.yml`]),
 }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: h.detectActiveSlot }));
-vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: h.readPartition, readSlotBound: h.readBound }));
+vi.mock("@/lib/docker/shared-project", () => ({
+  readSlotPartition: h.readPartition,
+  readSlotBound: h.readBound,
+  readSlotHostPorts: h.readHostPorts,
+}));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: h.addEvent }));
 vi.mock("@/lib/activity", () => ({ recordActivity: h.recordActivity }));
 vi.mock("fs/promises", () => h.fs);
@@ -93,6 +98,7 @@ beforeEach(() => {
   h.clearPin.mockResolvedValue(undefined);
   h.readPartition.mockResolvedValue(null);
   h.readBound.mockResolvedValue([]);
+  h.readHostPorts.mockResolvedValue([]);
   h.addEvent.mockResolvedValue("evt");
   h.recordActivity.mockResolvedValue(undefined);
   dbMock.query.deployments.findFirst.mockResolvedValue({
@@ -364,6 +370,51 @@ describe("performInstantRollback — a database that can't run twice", () => {
 
     expect(result.success).toBe(false);
     expect(calls.indexOf("start:blog-production-blue")).toBeGreaterThan(calls.indexOf("stop:blog-production-green"));
+  });
+});
+
+describe.each([
+  ["published host ports", { service: "web", via: "ports" }],
+  ["the host network", { service: "web", via: "host-network" }],
+] as const)("performInstantRollback — a standby on %s", (_label, holder) => {
+  beforeEach(() => {
+    h.readHostPorts.mockResolvedValue([holder]);
+  });
+
+  it("stops the active slot before the standby starts", async () => {
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(true);
+    expect(calls.indexOf("stop:blog-production-blue")).toBeGreaterThan(-1);
+    expect(calls.indexOf("stop:blog-production-blue")).toBeLessThan(calls.indexOf("up:blog-production-green"));
+  });
+
+  it("brings the active slot back when the standby fails to start", async () => {
+    fakeDocker({ upFails: true });
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(false);
+    expect(calls.indexOf("start:blog-production-blue")).toBeGreaterThan(calls.indexOf("up:blog-production-green"));
+  });
+
+  it("names the service when the active slot won't stop", async () => {
+    h.exec.mockImplementation(async (_b: string, args: string[]) => {
+      if (args.includes("stop")) throw new Error("timeout");
+      return { stdout: `${RUNNING}\n`, stderr: "" };
+    });
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result).toMatchObject({ success: false, error: "Couldn't stop blue before starting web on the standby" });
+  });
+
+  it("leaves Vardo's own rollback overlapping", async () => {
+    const result = await performInstantRollback({ ...OPTS, appName: "vardo" });
+
+    expect(result.success).toBe(true);
+    expect(h.readHostPorts).not.toHaveBeenCalled();
+    expect(calls.indexOf("stop:vardo-production-blue")).toBeGreaterThan(calls.indexOf("up:vardo-production-green"));
   });
 });
 

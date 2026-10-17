@@ -401,6 +401,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
   await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
+  ctx.overlayCompose = overlayCompose;
 
   await writeSlotVars(slotDir, ctx.gitSha);
 

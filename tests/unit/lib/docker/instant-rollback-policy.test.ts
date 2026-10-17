@@ -32,6 +32,7 @@ vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn().mockResolvedVal
 vi.mock("@/lib/docker/shared-project", () => ({
   readSlotPartition: vi.fn().mockResolvedValue(null),
   readSlotBound: vi.fn().mockResolvedValue([]),
+  readSlotHostPorts: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn() }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));

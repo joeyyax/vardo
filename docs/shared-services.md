@@ -1,6 +1,6 @@
 # Shared services
 
-A compose service marked `x-vardo-shared: true` doesn't rotate with blue/green. It runs once, in the project `<app>-<env>-shared` (or the compose file's top-level `name`), and a deploy leaves it running. Use it for a service that can't run twice: one that publishes a host port, holds a lock or owns a data directory.
+A compose service marked `x-vardo-shared: true` doesn't rotate with blue/green. It runs once, in the project `<app>-<env>-shared` (or the compose file's top-level `name`), and a deploy leaves it running. Use it for a service that can't run twice: one that publishes a host port, runs on the host network, holds a lock or owns a data directory.
 
 A deploy recreates a shared service only when its definition changes. It compares the running container's `com.docker.compose.config-hash` label with `docker compose config --hash`, which hashes the interpolated definition. Data stores are held instead and the deploy logs the command to apply the change. Vardo keeps its per-deploy labels off shared services, so a deploy that changes nothing else leaves them alone.
 

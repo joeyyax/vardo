@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { readSlotBound, readSlotPartition, sharedScopeArgs } from "@/lib/docker/shared-project";
+import { readSlotBound, readSlotHostPorts, readSlotPartition, sharedScopeArgs } from "@/lib/docker/shared-project";
 import { slotScopeArgs } from "@/lib/docker/slot-partition";
 
 const SLOT_DIR = "/opt/vardo/apps/paperless/production/blue";
@@ -51,6 +51,56 @@ volumes:
 
   it("is empty when the compose can't be read", async () => {
     expect(await readSlotBound(SLOT_DIR, vi.fn(() => Promise.reject(new Error("ENOENT"))))).toEqual([]);
+  });
+});
+
+describe("readSlotHostPorts", () => {
+  it("names a rotating service on the host network", async () => {
+    const yaml = `
+services:
+  scrypted:
+    image: koush/scrypted
+    network_mode: host
+`;
+    expect(await readSlotHostPorts(SLOT_DIR, reader(yaml))).toEqual([{ service: "scrypted", via: "host-network" }]);
+  });
+
+  it("leaves out a shared service that publishes a port", async () => {
+    const yaml = `
+services:
+  web:
+    image: nginx
+  db:
+    image: postgres:17
+    x-vardo-shared: true
+    ports:
+      - "5432:5432"
+`;
+    expect(await readSlotHostPorts(SLOT_DIR, reader(yaml))).toEqual([]);
+  });
+
+  it("counts ports the slot's overlay publishes", async () => {
+    const read = vi.fn((path: string) =>
+      Promise.resolve(
+        path.endsWith("docker-compose.override.yml")
+          ? `services:\n  web:\n    ports:\n      - "8080:80"\n`
+          : `services:\n  web:\n    image: nginx\n`,
+      ),
+    );
+    expect(await readSlotHostPorts(SLOT_DIR, read)).toEqual([{ service: "web", via: "ports" }]);
+  });
+
+  it("reads the base compose alone when the slot has no overlay", async () => {
+    const read = vi.fn((path: string) =>
+      path.endsWith("docker-compose.yml")
+        ? Promise.resolve(`services:\n  web:\n    image: nginx\n    ports:\n      - "8080:80"\n`)
+        : Promise.reject(new Error("ENOENT")),
+    );
+    expect(await readSlotHostPorts(SLOT_DIR, read)).toEqual([{ service: "web", via: "ports" }]);
+  });
+
+  it("is empty when the compose can't be read", async () => {
+    expect(await readSlotHostPorts(SLOT_DIR, vi.fn(() => Promise.reject(new Error("ENOENT"))))).toEqual([]);
   });
 });
 

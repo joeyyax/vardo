@@ -25,6 +25,7 @@ vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn(async () => "blue
 vi.mock("@/lib/docker/shared-project", () => ({
   readSlotPartition: vi.fn(async () => null),
   readSlotBound: vi.fn(async () => []),
+  readSlotHostPorts: vi.fn(async () => []),
 }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn(async () => "evt") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn(async () => {}) }));
