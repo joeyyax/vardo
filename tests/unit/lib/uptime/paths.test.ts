@@ -16,6 +16,7 @@ import {
 import { checkWatchedBatch } from "@/lib/uptime/batch";
 import { incidentTitle, meshNote, pathLabel, readingDetail, readingLabel } from "@/lib/uptime/format";
 import { tunnelAddress, tunnelDeps } from "@/lib/uptime/mesh-path";
+import { isNeverPublic } from "@/lib/uptime/core";
 import { meshCarries, privateEntries } from "@/lib/uptime/net";
 import { probeEntry } from "@/lib/uptime/probe-entry";
 
@@ -237,6 +238,13 @@ describe("watch list classification", () => {
     expect(meshCarries(http1("https://localhost/"))).toBe(false);
     expect(meshCarries({ type: "tls", host: "app.example.com", port: 443, warnDays: 14 })).toBe(true);
   });
+});
+
+describe("names that can't be public", () => {
+  it.each(["plextraktsync.localhost", "localhost", "files.lan", "printer.local", "api.internal", "app.test", "nas", "a.b.LAN"])("%s", (host) => expect(isNeverPublic(host)).toBe(true));
+  it.each(["example.com", "app.example.com", "test.example.com", "lan.example.com", "localhost.example.com", "10.0.0.5"])("%s is left alone", (host) =>
+    expect(isNeverPublic(host)).toBe(false),
+  );
 });
 
 describe("batch path check", () => {

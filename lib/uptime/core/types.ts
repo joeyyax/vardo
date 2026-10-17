@@ -19,6 +19,8 @@ export type TlsCheck = { type: "tls"; host: string; port: number; warnDays: numb
 export type Check = HttpCheck | TcpCheck | TlsCheck;
 
 export const DEFAULT_EXPECTED_STATUS = { min: 200, max: 399 } as const;
+/** Automatic monitors count any response below 500 as up: an API that answers 404 at / is still serving. */
+export const AUTO_EXPECTED_STATUS = { min: 100, max: 499 } as const;
 export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 export const DEFAULT_TLS_PORT = 443;
 export const DEFAULT_TLS_WARN_DAYS = 14;

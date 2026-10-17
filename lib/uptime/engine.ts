@@ -11,9 +11,10 @@ import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { nanoid } from "nanoid";
 import {
   DAY_MS,
-  DEFAULT_EXPECTED_STATUS,
+  AUTO_EXPECTED_STATUS,
   DEFAULT_HTTP_TIMEOUT_MS,
   HOUR_MS,
+  isNeverPublic,
   combine,
   evaluate,
   hourlySummary,
@@ -61,9 +62,11 @@ let lastPrune = 0;
 const httpCheck = (url: string): HttpCheck => ({
   type: "http",
   url,
-  expectedStatus: { ...DEFAULT_EXPECTED_STATUS },
+  expectedStatus: { ...AUTO_EXPECTED_STATUS },
   timeoutMs: DEFAULT_HTTP_TIMEOUT_MS,
 });
+
+const sameStatus = (a: { min: number; max: number }, b: { min: number; max: number }) => a.min === b.min && a.max === b.max;
 
 function domainUrl(d: { domain: string; pathPrefix: string | null; sslEnabled: boolean | null }): string {
   return `${d.sslEnabled === false ? "http" : "https"}://${d.domain}${d.pathPrefix ?? ""}`;
@@ -98,14 +101,15 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
   const byEnv = new Map(existing.filter((m) => m.environmentId).map((m) => [m.environmentId!, m]));
 
   const wanted: { key: string; row: typeof uptimeMonitors.$inferInsert }[] = [];
-  for (const d of domainRows) {
+  // Domains that can't be public get no monitor, and lose the one they had.
+  for (const d of domainRows.filter((r) => !isNeverPublic(r.domain))) {
     const url = domainUrl(d);
     wanted.push({
       key: `d:${d.id}`,
       row: { id: `mon_${nanoid(16)}`, organizationId: d.orgId, name: d.domain + (d.pathPrefix ?? ""), check: httpCheck(url), source: "auto", appId: d.appId, domainId: d.id },
     });
   }
-  for (const p of previewRows) {
+  for (const p of previewRows.filter((r) => !isNeverPublic(r.domain!))) {
     wanted.push({
       key: `e:${p.id}`,
       row: { id: `mon_${nanoid(16)}`, organizationId: p.orgId, name: p.domain!, check: httpCheck(`https://${p.domain}`), source: "auto", appId: p.appId, environmentId: p.id, preview: true },
@@ -122,10 +126,11 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
     }
     keep.add(current.id);
     const check = w.row.check as HttpCheck;
-    if (current.check.type !== "http" || current.check.url !== check.url || current.name !== w.row.name || current.organizationId !== w.row.organizationId) {
+    const stale = current.check.type === "http" && !sameStatus(current.check.expectedStatus, check.expectedStatus);
+    if (current.check.type !== "http" || stale || current.check.url !== check.url || current.name !== w.row.name || current.organizationId !== w.row.organizationId) {
       await db
         .update(uptimeMonitors)
-        .set({ check: current.check.type === "http" ? { ...current.check, url: check.url } : check, name: w.row.name as string, organizationId: w.row.organizationId, updatedAt: new Date() })
+        .set({ check: current.check.type === "http" ? { ...current.check, url: check.url, expectedStatus: check.expectedStatus } : check, name: w.row.name as string, organizationId: w.row.organizationId, updatedAt: new Date() })
         .where(eq(uptimeMonitors.id, current.id));
     }
   }
@@ -140,8 +145,8 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
       .values({ id: CONSOLE_MONITOR_ID, organizationId: null, name: "Vardo console", check: httpCheck(consoleUrl), source: "auto" })
       .onConflictDoNothing();
     added++;
-  } else if (consoleRow.check.type === "http" && consoleRow.check.url !== consoleUrl) {
-    await db.update(uptimeMonitors).set({ check: { ...consoleRow.check, url: consoleUrl }, updatedAt: new Date() }).where(eq(uptimeMonitors.id, CONSOLE_MONITOR_ID));
+  } else if (consoleRow.check.type === "http" && (consoleRow.check.url !== consoleUrl || !sameStatus(consoleRow.check.expectedStatus, AUTO_EXPECTED_STATUS))) {
+    await db.update(uptimeMonitors).set({ check: { ...consoleRow.check, url: consoleUrl, expectedStatus: { ...AUTO_EXPECTED_STATUS } }, updatedAt: new Date() }).where(eq(uptimeMonitors.id, CONSOLE_MONITOR_ID));
   }
 
   const peers = await syncPeerMonitors(existing);

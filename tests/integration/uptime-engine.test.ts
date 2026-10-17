@@ -80,6 +80,37 @@ describe.skipIf(!conn)("uptime engine on Postgres", { timeout: MIGRATE_TIMEOUT }
     expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
   });
 
+  it("counts any response below 500 as up for automatic monitors, and fixes the ones stored with the old range", async () => {
+    await sql`update uptime_monitor set "check" = jsonb_set("check", '{expectedStatus}', '{"min":200,"max":399}') where source = 'auto'`;
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
+    const stored = await sql`select "check"->'expectedStatus' as s from uptime_monitor where source = 'auto'`;
+    expect(stored.map((r) => r.s)).toEqual([{ min: 100, max: 499 }, { min: 100, max: 499 }, { min: 100, max: 499 }]);
+
+    status = 404;
+    await pass(2);
+    const states = await client.uptimeClient.listMonitors(org);
+    expect(states.every((m) => m.state === "up")).toBe(true);
+    status = 200;
+    await pass(1);
+
+    // A manual monitor keeps the range it was given.
+    const manual = await client.uptimeClient.createMonitor(org, { type: "http", url: "https://api.example.com/" });
+    expect(manual.check).toMatchObject({ expectedStatus: { min: 200, max: 399 } });
+    await sql`delete from uptime_monitor where id = ${manual.id}`;
+  });
+
+  it("makes no monitor for a domain that can't be public, and drops the one it had", async () => {
+    await sql`insert into domain (id, app_id, domain, is_primary) values ('d-local', 'app1', 'plextraktsync.localhost', false), ('d-bare', 'app1', 'nas', false), ('d-lan', 'app1', 'files.lan', false), ('d-test', 'app1', 'app.test', false)`;
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
+    const names = (await client.uptimeClient.listMonitors(org)).map((m) => m.name).sort();
+    expect(names).toEqual(["shop-pr-7.example.com", "shop.example.com"]);
+
+    // One that already exists goes in the same sync.
+    await sql`insert into uptime_monitor (id, organization_id, name, "check", source, app_id, domain_id) values ('mon_old', 'org1', 'plextraktsync.localhost', '{"type":"http","url":"https://plextraktsync.localhost","expectedStatus":{"min":200,"max":399},"timeoutMs":10000}', 'auto', 'app1', 'd-local')`;
+    expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 1 });
+    await sql`delete from domain where id in ('d-local', 'd-bare', 'd-lan', 'd-test')`;
+  });
+
   it("tells you about an outage once it has held, in one notice, with names", async () => {
     await pass(2);
     const up = await client.uptimeClient.listMonitors(org);
