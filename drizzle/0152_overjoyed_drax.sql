@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "deploy_strategy" text DEFAULT 'blue-green' NOT NULL;
