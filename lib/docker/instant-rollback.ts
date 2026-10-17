@@ -350,6 +350,8 @@ async function rollbackClaimed(
       eq(deployments.appId, appId),
       eq(deployments.status, "success"),
       eq(deployments.slot, standbySlot),
+      // Every environment has a blue and a green; only this one's counts.
+      ...(env.id ? [eq(deployments.environmentId, env.id)] : []),
     ),
     orderBy: [desc(deployments.startedAt)],
     columns: { id: true, gitSha: true, gitMessage: true, environmentId: true },
