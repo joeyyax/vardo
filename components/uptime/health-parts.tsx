@@ -22,7 +22,8 @@ const SOURCE_NOTE = {
 export const HOMEPAGE_HINT = "Checking the homepage. A health endpoint like /healthz is lighter and skips caches.";
 
 /** "Checking /healthz", or the homepage hint, for an automatic monitor. Manual monitors show their URL instead. */
-export function CheckNote({ monitor }: { monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check" | "cachedBy"> }) {
+export function CheckNote({ monitor }: { monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check" | "cachedBy" | "state"> }) {
+  if (monitor.state === "stopped") return <p className="text-xs text-muted-foreground">Not checked while the app is stopped.</p>;
   const note = [];
   if (monitor.cachedBy) note.push(<span key="cache" className="text-status-warning">{cacheNote(monitor.cachedBy)}</span>);
   if (monitor.source === "auto" && monitor.check.type === "http" && monitor.healthSource) {
@@ -38,7 +39,7 @@ export function CheckNote({ monitor }: { monitor: Pick<MonitorSummary, "source" 
   }
   if (monitor.privateHeader) note.push(<span key="private">Checked from this instance only: it uses a private header.</span>);
   if (note.length === 0) return null;
-  return <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">{note}</p>;
+  return <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground [&>span]:max-w-full">{note}</p>;
 }
 
 export type HeaderRow = { name: string; value: string; stored: boolean };
@@ -209,19 +210,34 @@ export function ReviewCard({ monitor, apiBase, canManage, onAnswered }: { monito
           </div>
         )}
         {mode === "path" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={method} onValueChange={(v) => setMethod(v as typeof method)}>
-              <SelectTrigger aria-label="Method" className="w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="GET">GET</SelectItem>
-                <SelectItem value="HEAD">HEAD</SelectItem>
-                <SelectItem value="POST">POST</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input aria-label="Health path" className="max-w-56 font-mono" value={path} onChange={(e) => setPath(e.target.value)} />
-            <Input aria-label="Status when up" className="w-28" inputMode="numeric" placeholder="Any 2xx" value={upStatus} onChange={(e) => setUpStatus(e.target.value.replace(/\D/g, ""))} />
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor={`review-${monitor.id}-method`} className="text-xs text-muted-foreground">
+                Method
+              </Label>
+              <Select value={method} onValueChange={(v) => setMethod(v as typeof method)}>
+                <SelectTrigger id={`review-${monitor.id}-method`} className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GET">GET</SelectItem>
+                  <SelectItem value="HEAD">HEAD</SelectItem>
+                  <SelectItem value="POST">POST</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid min-w-40 flex-1 gap-1.5 sm:max-w-56 sm:flex-none">
+              <Label htmlFor={`review-${monitor.id}-path`} className="text-xs text-muted-foreground">
+                Path
+              </Label>
+              <Input id={`review-${monitor.id}-path`} className="font-mono" value={path} onChange={(e) => setPath(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`review-${monitor.id}-status`} className="text-xs text-muted-foreground">
+                Up when it answers
+              </Label>
+              <Input id={`review-${monitor.id}-status`} className="w-28" inputMode="numeric" placeholder="Any 2xx" value={upStatus} onChange={(e) => setUpStatus(e.target.value.replace(/\D/g, "").slice(0, 3))} />
+            </div>
             <Button size="sm" variant="outline" disabled={busy} onClick={detect}>
               {busy && <Loader2 className="animate-spin" />} Detect
             </Button>
@@ -300,11 +316,11 @@ export function HeavyNoticeCard({ monitor, apiBase, canManage, onChanged }: { mo
         {canManage && (
           <div className="flex flex-wrap gap-2">
             {offer && (
-              <Button size="sm" variant="outline" disabled={busy} onClick={switchToOffer}>
+              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={busy} onClick={switchToOffer}>
                 Check {offer.path} instead
               </Button>
             )}
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => call(`${apiBase}/${monitor.id}`, "PATCH", { heavyNoticeDismissed: true }, "Notice dismissed")}>
+            <Button size="sm" variant="ghost" className="w-full sm:w-auto" disabled={busy} onClick={() => call(`${apiBase}/${monitor.id}`, "PATCH", { heavyNoticeDismissed: true }, "Notice dismissed")}>
               Keep checking this {page}
             </Button>
           </div>

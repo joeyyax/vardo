@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageToolbar } from "@/components/page-toolbar";
 import { RangePicker } from "@/components/range-picker";
-import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, reportNote, readingLabel, vantageNames } from "@/lib/uptime/format";
+import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalRangePhrase, reportNote, readingLabel, vantageNames } from "@/lib/uptime/format";
 import { sinceLabel } from "@/lib/uptime/core/range";
 import type { MonitorSummary, UptimeRange, VantageView } from "@/lib/uptime/types";
 import { CheckNote } from "./health-parts";
@@ -84,7 +84,8 @@ export function UptimeMonitors({
     });
   }, [monitors, filter, query]);
 
-  const interval = monitors.reduce((min, m) => Math.min(min, m.intervalSec), 60);
+  const interval = monitors.length ? Math.min(...monitors.map((m) => m.intervalSec)) : 60;
+  const slowest = monitors.length ? Math.max(...monitors.map((m) => m.intervalSec)) : 60;
   const hasExternal = vantages.some((v) => v.kind === "external");
 
   return (
@@ -101,7 +102,7 @@ export function UptimeMonitors({
         <div>
           <h1 className="type-h1">Uptime</h1>
           <p className="type-body-sm mt-1 text-muted-foreground">
-            Checked {intervalPhrase(interval)} from {vantageNames(vantages)}.
+            Checked {intervalRangePhrase(interval, slowest)} from {vantageNames(vantages)}.
           </p>
         </div>
       </PageToolbar>

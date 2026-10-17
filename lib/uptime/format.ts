@@ -44,6 +44,13 @@ export function intervalLabel(sec: number): string {
   return sec === 30 ? "30 seconds" : sec === 300 ? "5 minutes" : "1 minute";
 }
 
+/** "every minute", or "every 1 to 5 minutes" when monitors run on different intervals. */
+export function intervalRangePhrase(min: number, max: number): string {
+  if (min === max) return intervalPhrase(min);
+  if (min >= 60) return `every ${min / 60} to ${max / 60} minutes`;
+  return `every ${min} seconds to ${max === 60 ? "1 minute" : `${max / 60} minutes`}`;
+}
+
 export function intervalPhrase(sec: number): string {
   return sec === 30 ? "every 30 seconds" : sec === 300 ? "every 5 minutes" : "every minute";
 }
