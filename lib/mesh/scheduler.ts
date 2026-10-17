@@ -1,12 +1,11 @@
 import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
-import { reconcileSshForward } from "./ssh-forward";
 import { reconcileTraefikForward } from "./traefik-forward";
-import { syncAuthorizedKeys } from "./ssh-endpoint";
 import { syncBuilderTls } from "./builder-tls";
 import { reconcileBuilderForward } from "./builder-forward";
-import { exchangeSshKeys } from "./ssh-exchange";
+import { exchangeKeys } from "./key-exchange";
+import { retireMeshSsh } from "./retire-ssh";
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 
@@ -20,12 +19,7 @@ async function reconcileForward(): Promise<void> {
   } catch (err) {
     log.error("Mesh console forward check failed:", err);
   }
-  try {
-    await reconcileSshForward();
-    await syncAuthorizedKeys();
-  } catch (err) {
-    log.error("Mesh SSH endpoint check failed:", err);
-  }
+  await retireMeshSsh();
   try {
     await syncBuilderTls();
     await reconcileBuilderForward();
@@ -39,10 +33,10 @@ async function reconcileForward(): Promise<void> {
   }
 }
 
-/** Heartbeat, then trade SSH keys with a peer that answered. */
+/** Heartbeat, then trade keys with a peer that answered. */
 async function heartbeatAndKeys(peerId: string): Promise<boolean> {
   const ok = await sendHeartbeatToPeer(peerId);
-  if (ok) await exchangeSshKeys(peerId).catch(() => {});
+  if (ok) await exchangeKeys(peerId).catch(() => {});
   return ok;
 }
 
@@ -76,7 +70,8 @@ export const meshHeartbeatLoop = new IntervalLoop({
   // A restarted console can come back on a different mesh IP.
   prepare: async () => {
     setTimeout(() => {
-      db.query.meshPeers.findFirst({ columns: { id: true } })
+      retireMeshSsh()
+        .then(() => db.query.meshPeers.findFirst({ columns: { id: true } }))
         .then((peer) => (peer ? reconcileForward() : undefined))
         .catch(() => {});
     }, FIRST_FORWARD_CHECK_MS).unref?.();

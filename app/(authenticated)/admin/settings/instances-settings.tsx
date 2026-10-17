@@ -115,7 +115,7 @@ const ACCEPT_BROWSE_WARNING =
   "Users on this peer can then see the names, statuses, domains and last deploy times of projects they belong to here, read-only. No env values, secrets or logs leave this instance.";
 
 const ACCEPT_BUILDS_WARNING =
-  "This peer can then run builds in an isolated builder here: a rootless BuildKit with its own cache and memory and CPU limits, reached over the mesh with a certificate only this link gets. It can't reach this server's Docker, files or containers. A peer on an older Vardo builds over mesh SSH instead, which can run any container here, until it updates.";
+  "This peer can then run builds in an isolated builder here: a rootless BuildKit with its own cache and memory and CPU limits, reached over the mesh with a certificate only this link gets. It can't reach this server's Docker, files or containers.";
 
 /** Opt-ins that share the confirm-then-save flow. */
 type LinkToggle = "acceptInstanceSignin" | "acceptInstanceBrowse" | "acceptBuilds";

@@ -13,7 +13,7 @@ export const BUILD_TARGETS_SETTING = "build_targets";
 
 export const MAX_TARGET_BUILDS = 16;
 
-/** A Docker daemon reached over SSH: added by hand, or a linked instance over the mesh. */
+/** A Docker daemon reached over SSH, added by hand, or a linked instance's isolated builder over the mesh. */
 export type BuildTarget = {
   id: string;
   kind: "ssh" | "mesh";
@@ -22,14 +22,14 @@ export type BuildTarget = {
   port: number;
   user: string;
   privateKey: string;
-  /** known_hosts lines: pinned on the first test, or for a mesh target from the key exchange. Null until then. */
+  /** known_hosts lines, pinned on the first test. Null until then, and always for a mesh target. */
   hostKey: string | null;
   maxConcurrent: number;
   /** Mesh only: the linked peer. */
   peerId?: string;
   /** Mesh only: why it can't take builds yet. */
   waiting?: string | null;
-  /** Mesh only: the peer's isolated builder. Builds go there and never over SSH. */
+  /** Mesh only: the peer's isolated builder, where its builds run. */
   builder?: MeshBuilderAccess | null;
 };
 
@@ -73,9 +73,9 @@ function meshTarget(peer: MeshBuildPeer, maxConcurrent: number): BuildTarget {
     name: peer.name,
     host: peer.host,
     port: peer.port,
-    user: peer.user,
-    privateKey: peer.privateKey,
-    hostKey: peer.hostKey,
+    user: "",
+    privateKey: "",
+    hostKey: null,
     maxConcurrent,
     peerId: peer.peerId,
     waiting: peer.waiting,
@@ -270,7 +270,9 @@ function errorText(err: unknown): string {
 
 /** A target's session: SSH to its daemon, or nothing for a peer's isolated builder, which buildx reaches itself. */
 export async function openTargetSession(target: BuildTarget): Promise<DockerSession> {
-  return target.builder ? { env: {}, close: async () => {} } : openSshSession(target);
+  if (target.builder) return { env: {}, close: async () => {} };
+  if (target.kind === "mesh") throw new BuilderError(target.waiting ?? `${target.name} has no isolated builder for this instance`);
+  return openSshSession(target);
 }
 
 /** Runs `run` against the target's daemon; a builder-caused failure comes out as a BuilderError. */

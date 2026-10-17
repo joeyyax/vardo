@@ -1,4 +1,4 @@
-// Removing a peer takes its SSH key out of authorized_keys and its WireGuard peer out of wg0.
+// Removing a peer closes its builder forward and takes its WireGuard peer out of wg0.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({ order: [] as string[], running: true }));
 vi.mock("@/lib/auth/admin", () => ({ requireAppAdmin: async () => ({ user: { id: "admin-1" }, authMethod: "session" }) }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
-vi.mock("@/lib/mesh/ssh-endpoint", () => ({ syncAuthorizedKeys: async () => void state.order.push("authorized_keys") }));
+vi.mock("@/lib/mesh/builder-forward", () => ({ reconcileBuilderForward: async () => void state.order.push("builder") }));
 vi.mock("@/lib/mesh/wireguard", () => ({
   isWireguardRunning: async () => state.running,
   rebuildAndSync: async () => void state.order.push("wg0"),
@@ -32,14 +32,14 @@ beforeEach(() => {
 });
 
 describe("DELETE /api/v1/admin/mesh/peers/[peerId]", () => {
-  it("drops the peer's key and tunnel after the row", async () => {
+  it("drops the peer's builder forward and tunnel after the row", async () => {
     expect((await remove()).status).toBe(200);
-    expect(state.order).toEqual(["deleted", "deleted", "authorized_keys", "wg0"]);
+    expect(state.order).toEqual(["deleted", "deleted", "builder", "wg0"]);
   });
 
   it("skips WireGuard when it isn't running", async () => {
     state.running = false;
     await remove();
-    expect(state.order).toEqual(["deleted", "deleted", "authorized_keys"]);
+    expect(state.order).toEqual(["deleted", "deleted", "builder"]);
   });
 });

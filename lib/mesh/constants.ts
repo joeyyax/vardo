@@ -13,15 +13,6 @@ export const CONSOLE_SERVICE = "frontend";
 /** Port the Vardo console listens on, used for mesh peer API URLs and iptables forwarding. */
 export const CONSOLE_PORT = process.env.VARDO_CONSOLE_PORT || "3000";
 
-/** Container running the mesh SSH endpoint for linked instances' builds. */
-export const MESH_SSH_CONTAINER = process.env.VARDO_MESH_SSH_CONTAINER || "vardo-mesh-ssh";
-
-/** Port the mesh SSH endpoint answers on, on the tunnel address and inside its container. */
-export const MESH_SSH_PORT = process.env.VARDO_MESH_SSH_PORT || "22";
-
-/** The only user the mesh SSH endpoint lets in. */
-export const MESH_SSH_USER = "vardo";
-
 /** Container running the isolated BuildKit that linked instances' builds run in. */
 export const MESH_BUILDER_CONTAINER = process.env.VARDO_MESH_BUILDER_CONTAINER || "vardo-mesh-builder";
 

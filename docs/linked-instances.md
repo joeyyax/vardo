@@ -93,10 +93,6 @@ A linked instance can run another's builds when that one's builder is full. The 
 - Turning **Accept builds** off or removing the peer drops its forward right away, and its certificate isn't renewed. A build already running there finishes.
 - Every image built there carries labels for the requesting instance, the app and the commit: `dev.vardo.build.requester`, `dev.vardo.build.requester-id`, `dev.vardo.build.app` and `org.opencontainers.image.revision`. Pushed images carry them as annotations too.
 
-### Older instances
+### Peers without the isolated builder
 
-A peer on an older Vardo has no isolated builder, so its builds still go over mesh SSH for now:
-
-- Each instance runs `vardo-mesh-ssh`, an sshd with no published port. `vardo-wireguard` forwards TCP port 22 on the tunnel address to it.
-- **Accept builds** writes an older peer's key into the endpoint's `authorized_keys` as `from="<its tunnel address>",restrict,command="docker system dial-stdio"`. That's full access to this host's Docker, which can run any container.
-- A peer that gets a builder certificate drops out of `authorized_keys`, so two instances on this release never use mesh SSH.
+A peer that hasn't offered its isolated builder shows **Not ready** under **Build targets** and gets no builds until it does. Updating from a release with mesh SSH removes `vardo-mesh-ssh`, its volume and the port 22 forward in `vardo-wireguard`.

@@ -7,8 +7,6 @@ import { signMeshRequest } from "@/lib/mesh/signing";
 
 const TOKEN = "e".repeat(64);
 const PATH = "/api/v1/mesh/ssh-keys";
-const KEY_A = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGI6/QR1fwt33EFMygRHuBK82QAh42lFkI8Qzdfxv3Ts";
-const KEY_B = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK90j9wHyHnIT5iWOwJyQR0rHdrJmQ04c5uM5t7f56qU";
 
 const state = vi.hoisted(() => ({
   peer: null as Record<string, unknown> | null,
@@ -28,10 +26,10 @@ vi.mock("@/lib/redis", () => ({
 }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
-vi.mock("@/lib/mesh/ssh-exchange", async (orig) => ({
-  ...(await orig<typeof import("@/lib/mesh/ssh-exchange")>()),
-  storePeerSsh: async (_peer: unknown, sent: unknown) => void state.stored.push(sent),
-  localSshKeys: async (peer: { acceptBuilds: boolean }) => ({ sshKey: KEY_B, sshHostKey: KEY_A, sshPort: 22, acceptsBuilds: peer.acceptBuilds }),
+vi.mock("@/lib/mesh/key-exchange", async (orig) => ({
+  ...(await orig<typeof import("@/lib/mesh/key-exchange")>()),
+  storePeerKeys: async (_peer: unknown, sent: unknown) => void state.stored.push(sent),
+  localKeys: async (peer: { acceptBuilds: boolean }) => ({ sshKey: null, sshHostKey: null, sshPort: null, acceptsBuilds: peer.acceptBuilds, builderKey: null, builder: null }),
 }));
 
 const { POST } = await import("@/app/api/v1/mesh/ssh-keys/route");
@@ -45,19 +43,19 @@ function request(payload: unknown, headers?: Record<string, string>) {
   });
 }
 
-const PAYLOAD = { sshKey: KEY_A, sshHostKey: KEY_B, sshPort: 22, acceptsBuilds: false };
+const PAYLOAD = { acceptsBuilds: false, builderKey: null, builder: null };
 
 beforeEach(() => {
   state.keys.clear();
   state.stored.length = 0;
-  state.peer = { id: "peer-1", name: "jy0", tokenHash: hashMeshToken(TOKEN), acceptBuilds: true, peerSshKey: null };
+  state.peer = { id: "peer-1", name: "jy0", tokenHash: hashMeshToken(TOKEN), acceptBuilds: true };
 });
 
 describe("POST /api/v1/mesh/ssh-keys", () => {
   it("stores a signed caller's keys and answers with this side's", async () => {
     const res = await POST(request(PAYLOAD), {});
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ sshKey: KEY_B, sshHostKey: KEY_A, sshPort: 22, acceptsBuilds: true });
+    expect(await res.json()).toEqual({ sshKey: null, sshHostKey: null, sshPort: null, acceptsBuilds: true, builderKey: null, builder: null });
     expect(state.stored).toEqual([PAYLOAD]);
   });
 
@@ -67,7 +65,7 @@ describe("POST /api/v1/mesh/ssh-keys", () => {
   });
 
   it("refuses a body that doesn't match its signature", async () => {
-    const headers = signMeshRequest({ token: TOKEN, method: "POST", path: PATH, body: JSON.stringify({ ...PAYLOAD, sshKey: KEY_B }) });
+    const headers = signMeshRequest({ token: TOKEN, method: "POST", path: PATH, body: JSON.stringify({ ...PAYLOAD, acceptsBuilds: true }) });
     expect((await POST(request(PAYLOAD, headers), {})).status).toBe(401);
     expect(state.stored).toEqual([]);
   });

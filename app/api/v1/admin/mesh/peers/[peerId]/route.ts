@@ -37,8 +37,7 @@ async function handleDelete(
       await tx.delete(meshPeers).where(eq(meshPeers.id, peerId));
     });
 
-    // Its SSH key and builder port stop working here and its WireGuard peer goes.
-    await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
+    // Its builder port closes here and its WireGuard peer goes.
     await import("@/lib/mesh/builder-forward").then(({ reconcileBuilderForward }) => reconcileBuilderForward()).catch(() => {});
     await import("@/lib/mesh/wireguard")
       .then(async ({ isWireguardRunning, rebuildAndSync }) => (await isWireguardRunning()) && rebuildAndSync())
@@ -128,7 +127,6 @@ async function handlePatch(
     }
 
     if (acceptBuilds !== undefined) {
-      await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
       await import("@/lib/mesh/builder-forward").then(({ reconcileBuilderForward }) => reconcileBuilderForward()).catch(() => {});
     }
 
@@ -136,7 +134,7 @@ async function handlePatch(
     if (acceptWebhookRelay !== undefined || acceptInstanceSignin !== undefined || acceptInstanceBrowse !== undefined || acceptBuilds !== undefined) {
       import("@/lib/mesh/heartbeat")
         .then(({ sendHeartbeatToPeer }) => sendHeartbeatToPeer(peerId))
-        .then(() => (acceptBuilds !== undefined ? import("@/lib/mesh/ssh-exchange").then((m) => m.exchangeSshKeys(peerId, { force: true })) : undefined))
+        .then(() => (acceptBuilds !== undefined ? import("@/lib/mesh/key-exchange").then((m) => m.exchangeKeys(peerId, { force: true })) : undefined))
         .catch(() => {});
     }
 

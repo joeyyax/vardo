@@ -1,8 +1,7 @@
 import { HUB_IP } from "./ip-allocator";
-import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT, MESH_SSH_PORT } from "./constants";
+import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
 import { defaultForwardIp, forwardHooks } from "./console-forward";
 import { isRunningInContainer } from "./env";
-import { meshSshIp, sshForwardHooks } from "./ssh-forward";
 import { traefikForwardHooks, traefikForwardWanted, traefikIp } from "./traefik-forward";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
@@ -58,7 +57,6 @@ export function buildWgConfig(
   address: string,
   peers: WgPeer[],
   forwardIp: string = FRONTEND_MESH_IP,
-  sshForwardIp: string | null = null,
   traefikForwardIp: string | null = null
 ): string {
   if (!WG_KEY_RE.test(privateKey)) {
@@ -74,10 +72,6 @@ export function buildWgConfig(
     `PostUp = ${postUp}`,
     `PostDown = ${postDown}`,
   ];
-  if (sshForwardIp) {
-    const ssh = sshForwardHooks(sshForwardIp, MESH_SSH_PORT);
-    lines.push(`PostUp = ${ssh.postUp}`, `PostDown = ${ssh.postDown}`);
-  }
   if (traefikForwardIp) {
     const traefik = traefikForwardHooks(traefikForwardIp);
     lines.push(`PostUp = ${traefik.postUp}`, `PostDown = ${traefik.postDown}`);
@@ -97,11 +91,6 @@ export function buildWgConfig(
   }
 
   return lines.join("\n");
-}
-
-/** The SSH endpoint's mesh address for a freshly written wg0.conf, or null when it isn't running here. */
-async function defaultSshForwardIp(): Promise<string | null> {
-  return isRunningInContainer() ? meshSshIp() : null;
 }
 
 /** Traefik's address for a freshly written wg0.conf, or null when it isn't running here or no linked peer may check this instance. */
@@ -177,7 +166,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   }));
 
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp(), await defaultSshForwardIp(), await defaultTraefikForwardIp());
+  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp(), await defaultTraefikForwardIp());
   await writeWgConfig(config);
 
   if (overrideAddress) {
@@ -219,7 +208,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
 
   const { privateKey, publicKey } = await generateKeypair();
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp(), await defaultSshForwardIp(), await defaultTraefikForwardIp());
+  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp(), await defaultTraefikForwardIp());
   await writeWgConfig(config);
 
   // The image deletes the default route when it boots without a config, so boot it with one.

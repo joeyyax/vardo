@@ -28,7 +28,7 @@ async function publicTarget(t: BuildTarget) {
     maxConcurrent: t.maxConcurrent,
     hasKey: Boolean(t.privateKey),
     hostKey: t.hostKey ? await hostKeyFingerprints(t.hostKey).catch(() => ["(unreadable)"]) : null,
-    ...(t.kind === "mesh" && { waiting: t.waiting ?? null, isolated: Boolean(t.builder), builderPort: t.builder?.port ?? null }),
+    ...(t.kind === "mesh" && { waiting: t.waiting ?? null, isolated: Boolean(t.builder) }),
   };
 }
 

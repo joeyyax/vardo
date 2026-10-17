@@ -42,10 +42,9 @@ const stored = () => JSON.parse(store.get("build_targets") || '{"targets":[]}').
 const KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----";
 const lh = { action: "save", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: KEY, maxConcurrent: 2 };
 
-const MESH_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nmeshkey\n-----END OPENSSH PRIVATE KEY-----\n";
+const ACCESS = { host: "10.99.0.2", port: 1234, serverName: "vardo-mesh-builder", ca: "ca", cert: "cert", key: "-----BEGIN PRIVATE KEY-----\nmeshkey\n-----END PRIVATE KEY-----\n" };
 const linked = (over: Record<string, unknown> = {}) => ({
-  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: MESH_KEY,
-  hostKey: "10.99.0.2 ssh-ed25519 AAAAC3", waiting: null, accepts: true, ...over,
+  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 1234, builder: ACCESS, waiting: null, accepts: true, ...over,
 });
 
 beforeEach(() => {
@@ -136,7 +135,7 @@ describe("/api/v1/admin/build-targets", () => {
     mesh.push(linked());
     const body = await get();
     expect(body.targets).toEqual([
-      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null, isolated: false, builderPort: null, stats: null },
+      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 1234, user: "", maxConcurrent: 1, hasKey: false, hostKey: null, waiting: null, isolated: true, stats: null },
     ]);
     expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
   });
@@ -154,12 +153,12 @@ describe("/api/v1/admin/build-targets", () => {
     expect(JSON.stringify(stored())).not.toContain("meshkey");
   });
 
-  it("never scans a linked instance's host key, which only the key exchange sets", async () => {
-    mesh.push(linked({ hostKey: null, waiting: "Long House hasn't sent its mesh SSH host key yet" }));
-    expect(await test("mesh-lhpeer")).toEqual({ ok: false, error: "Long House hasn't sent its mesh SSH host key yet" });
+  it("never scans a linked instance's host key, and tests only its isolated builder", async () => {
+    mesh.push(linked({ builder: null, waiting: "Long House hasn't offered its isolated builder yet" }));
+    expect(await test("mesh-lhpeer")).toEqual({ ok: false, error: "Long House hasn't offered its isolated builder yet" });
     expect(scans).toEqual([]);
     mesh[0] = linked();
-    expect(await test("mesh-lhpeer")).toMatchObject({ ok: true, pinned: false, dockerVersion: "29.4.0" });
+    expect(await test("mesh-lhpeer")).toEqual({ ok: true, isolated: true });
     expect(scans).toEqual([]);
   });
 });

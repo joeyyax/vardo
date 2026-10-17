@@ -27,9 +27,8 @@ type Target = {
   hostKey: string[] | null;
   /** Linked instance only: why it can't take builds yet. */
   waiting?: string | null;
-  /** Linked instance only: it builds in its isolated builder on this port. */
+  /** Linked instance only: it builds in its isolated builder, on `port`. */
   isolated?: boolean;
-  builderPort?: number | null;
   /** Builds sent there over the stats window, null when none. */
   stats?: BuildStats | null;
 };
@@ -136,16 +135,16 @@ export function BuildTargetsSettings() {
                     {t.kind === "mesh" && <Badge variant="outline">Linked instance</Badge>}
                   </p>
                   <p className="truncate font-mono text-xs text-muted-foreground">
-                    {t.isolated ? `${t.host}:${t.builderPort}` : `${t.user}@${t.host}:${t.port}`} · {t.maxConcurrent} at a time
+                    {t.kind === "mesh" ? `${t.host}:${t.port}` : `${t.user}@${t.host}:${t.port}`} · {t.maxConcurrent} at a time
                   </p>
                   <p className="[overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:truncate" title={t.hostKey?.join("\n")}>
                     {t.isolated
                       ? "Isolated builder, certificate from the mesh link"
-                      : t.hostKey
-                      ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}${t.kind === "mesh" ? " from the mesh link" : ""}`
                       : t.kind === "mesh"
                         ? `Not ready: ${t.waiting ?? "waiting for the key exchange"}`
-                        : "Host key not pinned yet; Test pins it"}
+                        : t.hostKey
+                          ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}`
+                          : "Host key not pinned yet; Test pins it"}
                   </p>
                   <BuildStatsLine stats={t.stats} days={days} where="target" />
                 </div>
