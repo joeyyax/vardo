@@ -29,14 +29,14 @@ beforeEach(() => store.clear());
 
 describe("/api/v1/admin/build-registry", () => {
   it("is off until set", async () => {
-    expect(await get()).toEqual({ configured: true, enabled: false, url: "", username: "", hasPassword: false });
+    expect(await get()).toEqual({ configured: true, enabled: false, url: "", username: "", hasPassword: false, cleanup: null });
   });
 
   it("saves the registry and never returns the password", async () => {
     expect((await post({ enabled: true, url: "ghcr.io/joeyyax", username: "joey", password: "tok" })).status).toBe(200);
     expect(stored()).toEqual({ url: "ghcr.io/joeyyax", username: "joey", password: "tok" });
     const body = await get();
-    expect(body).toEqual({ configured: true, enabled: true, url: "ghcr.io/joeyyax", username: "joey", hasPassword: true });
+    expect(body).toEqual({ configured: true, enabled: true, url: "ghcr.io/joeyyax", username: "joey", hasPassword: true, cleanup: null });
   });
 
   it("keeps the stored password when left blank for the same user and host only", async () => {
@@ -50,6 +50,12 @@ describe("/api/v1/admin/build-registry", () => {
 
   it("refuses a URL Docker can't use as a prefix", async () => {
     expect((await post({ enabled: true, url: "joeyyax" })).status).toBe(400);
+  });
+
+  it("returns the last cleanup", async () => {
+    const status = { at: "2026-10-16T12:00:00.000Z", deleted: 2, kept: 9 };
+    store.set("build_registry_cleanup", JSON.stringify(status));
+    expect((await get()).cleanup).toEqual(status);
   });
 
   it("turns off", async () => {

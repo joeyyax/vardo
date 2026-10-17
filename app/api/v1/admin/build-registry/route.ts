@@ -4,18 +4,20 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getBuildRegistryConfig, parseRegistryUrl, setBuildRegistryConfig } from "@/lib/docker/build-registry";
+import { getCleanupStatus } from "@/lib/docker/build-registry-cleanup";
 
-/** GET /api/v1/admin/build-registry — the registry builds push to, without its password */
+/** GET /api/v1/admin/build-registry — the build registry, without its password, and its last cleanup */
 async function handleGet() {
   try {
     await requireAppAdmin();
-    const config = await getBuildRegistryConfig();
+    const [config, cleanup] = await Promise.all([getBuildRegistryConfig(), getCleanupStatus()]);
     return NextResponse.json({
       configured: true,
       enabled: config !== null,
       url: config?.url ?? "",
       username: config?.username ?? "",
       hasPassword: Boolean(config?.password),
+      cleanup,
     });
   } catch (error) {
     return handleRouteError(error, "Error reading build registry settings");
