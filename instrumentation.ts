@@ -15,6 +15,10 @@ export async function register() {
     const { installShutdownHandlers } = await import("./lib/shutdown");
     installShutdownHandlers();
 
+    // Fails startup on a DOCKER_HOST the API client can't use.
+    const { getConnectionOptions } = await import("./lib/docker/client");
+    getConnectionOptions();
+
     // Verifies data directories are writable.
     const { ensureDataDirs } = await import("./lib/paths");
     const badDirs = await ensureDataDirs();

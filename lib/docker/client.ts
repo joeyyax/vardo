@@ -92,14 +92,32 @@ export type ContainerInspect = {
   mounts: { name: string; source: string; destination: string; type: string }[];
 } & ContainerRuntimeOptions;
 
-export function getConnectionOptions(): { socketPath?: string; host?: string; port?: number } {
-  const dockerHost = process.env.DOCKER_HOST;
-  if (dockerHost) {
-    // tcp://host:port
+export type ConnectionOptions = { socketPath?: string; host?: string; port?: number };
+
+/** Maps a DOCKER_HOST value to http connection options. Throws on ssh:// and unknown schemes. */
+export function parseDockerHost(dockerHost: string | undefined): ConnectionOptions {
+  if (!dockerHost) return { socketPath: "/var/run/docker.sock" };
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(dockerHost)?.[1]?.toLowerCase();
+  if (scheme === "unix") {
+    const socketPath = dockerHost.slice("unix://".length);
+    if (!socketPath) throw new Error(`DOCKER_HOST "${dockerHost}" has no socket path`);
+    return { socketPath };
+  }
+  if (scheme === "tcp" || scheme === "http") {
     const url = new URL(dockerHost);
     return { host: url.hostname, port: Number(url.port) || 2375 };
   }
-  return { socketPath: "/var/run/docker.sock" };
+  if (scheme === "ssh") {
+    throw new Error(
+      `DOCKER_HOST "${dockerHost}" is not supported by the API client: ssh:// works for the docker CLI only. ` +
+        "Use unix:// or tcp:// for the deploying host.",
+    );
+  }
+  throw new Error(`DOCKER_HOST "${dockerHost}" must start with unix:// or tcp://`);
+}
+
+export function getConnectionOptions(): ConnectionOptions {
+  return parseDockerHost(process.env.DOCKER_HOST);
 }
 
 export async function dockerRequest<T = unknown>(
