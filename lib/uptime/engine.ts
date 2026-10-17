@@ -16,6 +16,7 @@ import {
   combine,
   evaluate,
   hourlySummary,
+  isDue,
   runCheck,
   signRecord,
   summarize,
@@ -34,7 +35,7 @@ const log = logger.child("uptime");
 const RAW_RETENTION_MS = 14 * DAY_MS;
 const HOURLY_RETENTION_MS = 365 * DAY_MS;
 const RECENT_MS = 15 * 60_000;
-const CONCURRENCY = 20;
+const CONCURRENCY = 4;
 const CONSOLE_MONITOR_ID = "mon_console";
 
 const lastRun = new Map<string, number>();
@@ -177,7 +178,7 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   // A stopped app is expected to be down.
   const due = rows.filter(({ monitor, appStatus }) => {
     if (monitor.source === "auto" && appStatus === "stopped") return false;
-    return now - (lastRun.get(monitor.id) ?? 0) >= monitor.intervalSec * 1000 - 1000;
+    return isDue(monitor.id, monitor.intervalSec, lastRun.get(monitor.id), now);
   });
   if (due.length === 0) return 0;
 
