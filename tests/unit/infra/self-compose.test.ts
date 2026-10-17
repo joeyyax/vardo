@@ -90,9 +90,9 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     expect(trusted({ VARDO_TRAEFIK_TRUSTED_IPS: "" })).toEqual({ web: "", websecure: "" });
   });
 
-  it("gives HTTPS requests 10 minutes to arrive, or VARDO_TRAEFIK_READ_TIMEOUT", () => {
+  it("gives HTTPS requests Traefik's 60s to arrive, or VARDO_TRAEFIK_READ_TIMEOUT", () => {
     const flag = "--entrypoints.websecure.transport.respondingtimeouts.readtimeout=";
-    expect(resolve({}).services.traefik.command).toContain(`${flag}10m`);
+    expect(resolve({}).services.traefik.command).toContain(`${flag}60s`);
     expect(resolve({ VARDO_TRAEFIK_READ_TIMEOUT: "30m" }).services.traefik.command).toContain(`${flag}30m`);
   });
 
