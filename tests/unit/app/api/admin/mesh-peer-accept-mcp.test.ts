@@ -3,12 +3,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const state = vi.hoisted(() => ({ authMethod: "session" as "session" | "token", set: null as unknown }));
+const state = vi.hoisted(() => ({ authMethod: "session" as "session" | "token", set: null as unknown, synced: 0 }));
 
 vi.mock("@/lib/auth/admin", () => ({
   requireAppAdmin: async () => ({ user: { id: "admin-1" }, authMethod: state.authMethod }),
 }));
 vi.mock("@/lib/mesh/heartbeat", () => ({ sendHeartbeatToPeer: vi.fn() }));
+vi.mock("@/lib/mesh/ssh-endpoint", () => ({ syncAuthorizedKeys: async () => void state.synced++ }));
+vi.mock("@/lib/mesh/ssh-exchange", () => ({ exchangeSshKeys: vi.fn() }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({
@@ -32,6 +34,7 @@ const patch = (body: unknown) =>
 beforeEach(() => {
   state.authMethod = "session";
   state.set = null;
+  state.synced = 0;
 });
 
 describe("PATCH /api/v1/admin/mesh/peers/[peerId] acceptMcp", () => {
@@ -63,5 +66,19 @@ describe("PATCH /api/v1/admin/mesh/peers/[peerId] acceptMcp", () => {
 
   it("rejects an empty change", async () => {
     expect((await patch({})).status).toBe(400);
+  });
+
+  it("lets an admin's session accept builds, which rewrites authorized_keys", async () => {
+    const res = await patch({ acceptBuilds: true });
+    expect(res.status).toBe(200);
+    expect(state.set).toMatchObject({ acceptBuilds: true });
+    expect(state.synced).toBe(1);
+  });
+
+  it("refuses builds to an admin-scoped token", async () => {
+    state.authMethod = "token";
+    expect((await patch({ acceptBuilds: true })).status).toBe(403);
+    expect(state.set).toBeNull();
+    expect(state.synced).toBe(0);
   });
 });

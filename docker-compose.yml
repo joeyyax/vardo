@@ -413,6 +413,39 @@ services:
       vardo-network:
     mem_limit: 64m
 
+  # SSH for linked instances' builds, reached only through vardo-wireguard's DNAT. Each key may only run `docker system dial-stdio`.
+  mesh-ssh:
+    container_name: vardo-mesh-ssh
+    x-vardo-shared: true
+    image: docker:28.5.1-cli
+    profiles:
+      - production
+    restart: unless-stopped
+    mem_limit: 128m
+    entrypoint: ["sh", "/usr/local/bin/vardo-mesh-ssh"]
+    cap_add:
+      # Routes replies to the tunnel through vardo-wireguard.
+      - NET_ADMIN
+    environment:
+      WIREGUARD_GATEWAY: 10.88.0.2
+      VARDO_MESH_SSH_PORT: ${VARDO_MESH_SSH_PORT:-22}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 $${VARDO_MESH_SSH_PORT:-22}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    volumes:
+      # Peers' builds run on this daemon; the forced command is their only use of it.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Host key and authorized_keys, which the console writes.
+      - mesh_ssh:/etc/ssh/vardo
+    configs:
+      - source: mesh_ssh_entrypoint
+        target: /usr/local/bin/vardo-mesh-ssh
+    networks:
+      - mesh
+
   # Restarts the console, Traefik, Postgres and Redis when Docker reports them unhealthy (docs/watchdog.md).
   watchdog:
     container_name: vardo-watchdog
@@ -456,6 +489,55 @@ configs:
           maxUsedSpace = "${VARDO_BUILDKIT_CACHE_MAX:-10737418240}"
           minFreeSpace = "5000000000"
 
+  # Inline so the definition stays the same across slots and an update doesn't recreate it.
+  mesh_ssh_entrypoint:
+    content: |
+      #!/bin/sh
+      set -eu
+      port="$${VARDO_MESH_SSH_PORT:-22}"
+      dir=/etc/ssh/vardo
+      command -v sshd >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null
+      if [ -n "$${WIREGUARD_GATEWAY:-}" ]; then ip route replace 10.99.0.0/24 via "$$WIREGUARD_GATEWAY"; fi
+      mkdir -p "$$dir" && chown root:root "$$dir" && chmod 755 "$$dir"
+      [ -f "$$dir/ssh_host_ed25519_key" ] || ssh-keygen -q -t ed25519 -N "" -C vardo-mesh -f "$$dir/ssh_host_ed25519_key"
+      [ -f "$$dir/authorized_keys" ] || : > "$$dir/authorized_keys"
+      chmod 644 "$$dir/authorized_keys"
+      if ! id vardo >/dev/null 2>&1; then
+        gid=$$(stat -c %g /var/run/docker.sock)
+        group=$$(getent group "$$gid" | cut -d: -f1)
+        if [ -z "$$group" ]; then addgroup -g "$$gid" docker-host; group=docker-host; fi
+        adduser -D -s /bin/sh -G "$$group" vardo
+        # Unlocked for key auth; there's still no password.
+        sed -i 's/^vardo:!:/vardo:*:/' /etc/shadow
+      fi
+      cat > /etc/ssh/sshd_config.vardo <<EOF
+      Port $$port
+      HostKey $$dir/ssh_host_ed25519_key
+      AuthorizedKeysFile $$dir/authorized_keys
+      AllowUsers vardo
+      AuthenticationMethods publickey
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      PermitTTY no
+      PermitTunnel no
+      PermitUserRC no
+      PermitUserEnvironment no
+      AllowAgentForwarding no
+      AllowTcpForwarding no
+      AllowStreamLocalForwarding no
+      X11Forwarding no
+      GatewayPorts no
+      DisableForwarding yes
+      ForceCommand docker system dial-stdio
+      ClientAliveInterval 30
+      ClientAliveCountMax 4
+      LogLevel VERBOSE
+      EOF
+      exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config.vardo
+
 volumes:
   postgres_data:
   redis_data:
@@ -463,6 +545,7 @@ volumes:
   letsencrypt:
   wireguard_config:
   traefik_dynamic:
+  mesh_ssh:
 
 networks:
   internal:

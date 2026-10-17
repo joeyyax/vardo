@@ -248,4 +248,20 @@ describe("webhook relay opt-in exchange", () => {
     expect(await setValues()).toMatchObject({ peerAcceptsInstanceSignin: false, peerAcceptsInstanceBrowse: true });
     expect(await res.json()).toMatchObject({ acceptsInstanceSignin: true, acceptsInstanceBrowse: false });
   });
+
+  it("exchanges the builds opt-in, off unless set", async () => {
+    mockRequireMeshPeer.mockResolvedValue({ ...FAKE_PEER, acceptBuilds: true });
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/mesh/heartbeat", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-token" },
+        body: JSON.stringify({ acceptsBuilds: true }),
+      }),
+      {},
+    );
+    expect(await setValues()).toMatchObject({ peerAcceptsBuilds: true });
+    expect(await res.json()).toMatchObject({ acceptsBuilds: true });
+    mockRequireMeshPeer.mockResolvedValue({ ...FAKE_PEER });
+    expect(await (await POST(makeRequest(), {})).json()).toMatchObject({ acceptsBuilds: false });
+  });
 });

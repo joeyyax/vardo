@@ -103,6 +103,10 @@ describe("inlineFiles", () => {
     expect(inlineFiles(out).size).toBe(0);
   });
 
+  it("unescapes the $$ that config keeps, as the container sees it", () => {
+    expect(inlineFiles(configJson("a=$$HOME b=$${X:-1}\n")).get("buildkit")).toEqual(new Map([[TARGET, "a=$HOME b=${X:-1}\n"]]));
+  });
+
   it("is empty for output that isn't JSON", () => {
     expect(inlineFiles("WARN something").size).toBe(0);
   });

@@ -6,14 +6,15 @@ import { join } from "path";
 
 // Build targets: stored config, the SSH session the docker CLI uses, readiness and which failures are the builder's.
 
-const { store } = vi.hoisted(() => ({ store: new Map<string, string>() }));
+const { store, mesh } = vi.hoisted(() => ({ store: new Map<string, string>(), mesh: [] as unknown[] }));
 vi.mock("@/lib/system-settings", () => ({
   getSystemSettingRaw: async (key: string) => store.get(key) || null,
   setSystemSetting: async (key: string, value: string) => void store.set(key, value),
 }));
+vi.mock("@/lib/mesh/build-peers", () => ({ meshBuildPeers: async () => mesh }));
 
 const {
-  builderFailureReason, BuilderError, describeTarget, getBuildTargets, isTargetReady, onTarget, openSshSession,
+  builderFailureReason, BuilderError, configuredTargets, describeTarget, getBuildTargets, isTargetReady, onTarget, openSshSession,
   remoteEnv, resetTargetHealth, setBuildTargets, targetDockerHost,
 } = await import("@/lib/docker/build-targets");
 
@@ -24,8 +25,15 @@ const target = {
   privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----", hostKey: "[10.99.0.2]:2222 ssh-ed25519 AAAAC3", maxConcurrent: 2,
 };
 
+const MESH_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nmesh\n-----END OPENSSH PRIVATE KEY-----\n";
+const linked = (over: Record<string, unknown> = {}) => ({
+  peerId: "lhpeer", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", privateKey: MESH_KEY,
+  hostKey: "10.99.0.2 ssh-ed25519 AAAAC3", waiting: null, accepts: true, ...over,
+});
+
 beforeEach(() => {
   store.clear();
+  mesh.length = 0;
   resetTargetHealth();
 });
 
@@ -39,6 +47,51 @@ describe("stored targets", () => {
 
   it("is empty when unset", async () => {
     expect(await getBuildTargets()).toEqual([]);
+  });
+});
+
+describe("linked instances", () => {
+  it("join at the end once they accept builds, one at a time, over the mesh", async () => {
+    await setBuildTargets([target]);
+    mesh.push(linked(), linked({ peerId: "other", name: "Edge", accepts: false, hostKey: null, waiting: "Edge doesn't accept builds from here" }));
+    const targets = await getBuildTargets();
+    expect(targets.map((t) => [t.id, t.kind])).toEqual([["lh", "ssh"], ["mesh-lhpeer", "mesh"]]);
+    expect(targets[1]).toMatchObject({ host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hostKey: "10.99.0.2 ssh-ed25519 AAAAC3" });
+    expect(describeTarget(targets[1])).toBe("Long House (vardo@10.99.0.2:22)");
+  });
+
+  it("keep their place and limit but never store the link's key or host key", async () => {
+    mesh.push(linked());
+    const [lh] = await getBuildTargets();
+    await setBuildTargets([{ ...lh, maxConcurrent: 3 }, target]);
+    const raw = store.get("build_targets")!;
+    expect(JSON.parse(raw).targets[0]).toEqual({ id: "mesh-lhpeer", kind: "mesh", peerId: "lhpeer", maxConcurrent: 3 });
+    expect(raw).not.toContain("mesh\\n");
+    expect((await getBuildTargets()).map((t) => [t.id, t.maxConcurrent])).toEqual([["mesh-lhpeer", 3], ["lh", 2]]);
+  });
+
+  it("drop out when unlinked and get no builds until they're ready", async () => {
+    mesh.push(linked());
+    await setBuildTargets(await getBuildTargets());
+    mesh.length = 0;
+    expect(await getBuildTargets()).toEqual([]);
+    mesh.push(linked({ accepts: true, hostKey: null, waiting: "Long House hasn't sent its mesh SSH host key yet" }));
+    expect((await getBuildTargets())[0]).toMatchObject({ kind: "mesh", hostKey: null, waiting: expect.stringContaining("host key") });
+    expect(await configuredTargets()).toEqual([]);
+  });
+
+  it("run through the same SSH session as a hand-added target", async () => {
+    mesh.push(linked());
+    const [lh] = await getBuildTargets();
+    const session = await openSshSession(lh);
+    try {
+      expect(session.env.DOCKER_HOST).toBe("ssh://vardo@10.99.0.2:22");
+      const dir = join(session.env.PATH.split(":")[0], "..");
+      expect(await readFile(join(dir, "known_hosts"), "utf8")).toBe("10.99.0.2 ssh-ed25519 AAAAC3\n");
+      expect(await readFile(join(dir, "id"), "utf8")).toBe(MESH_KEY);
+    } finally {
+      await session.close();
+    }
   });
 });
 

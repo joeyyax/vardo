@@ -19,6 +19,7 @@ import {
   Webhook,
   LogIn,
   Eye,
+  Hammer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,8 @@ type MeshPeer = {
   peerAcceptsInstanceSignin: boolean;
   acceptInstanceBrowse: boolean;
   peerAcceptsInstanceBrowse: boolean;
+  acceptBuilds: boolean;
+  peerAcceptsBuilds: boolean;
   lastRelaySentAt: string | null;
   lastRelaySentStatus: string | null;
   lastRelayReceivedAt: string | null;
@@ -108,8 +111,11 @@ const ACCEPT_SIGNIN_WARNING =
 const ACCEPT_BROWSE_WARNING =
   "Users on this peer can then see the names, statuses, domains and last deploy times of projects they belong to here, read-only. No env values, secrets or logs leave this instance.";
 
+const ACCEPT_BUILDS_WARNING =
+  "This peer can then run builds on this server's Docker over the mesh, as an SSH key that can only run docker system dial-stdio. That still lets it run any container here, so turn it on only for an instance you trust as much as this one.";
+
 /** Opt-ins that share the confirm-then-save flow. */
-type LinkToggle = "acceptInstanceSignin" | "acceptInstanceBrowse";
+type LinkToggle = "acceptInstanceSignin" | "acceptInstanceBrowse" | "acceptBuilds";
 
 const LINK_TOGGLES: Record<
   LinkToggle,
@@ -132,6 +138,15 @@ const LINK_TOGGLES: Record<
     warning: ACCEPT_BROWSE_WARNING,
     failed: "Couldn't change project sharing",
     badge: "Browse",
+  },
+  acceptBuilds: {
+    on: "Accept builds",
+    off: "Stop accepting builds",
+    confirm: "Accept builds",
+    title: (name) => `Run builds for ${name}?`,
+    warning: ACCEPT_BUILDS_WARNING,
+    failed: "Couldn't change builds",
+    badge: "Builds",
   },
 };
 
@@ -577,6 +592,15 @@ export function InstancesSettings() {
                                   </Badge>
                                 ),
                             )}
+                            {peer.peerAcceptsBuilds && (
+                              <Badge
+                                variant="secondary"
+                                className="shrink-0"
+                                title={`${peer.name} runs builds from here. It's under Build targets.`}
+                              >
+                                Builds there
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                             <span className="font-mono">{peer.internalIp}</span>
@@ -650,6 +674,16 @@ export function InstancesSettings() {
                                 {peer.acceptInstanceBrowse ? LINK_TOGGLES.acceptInstanceBrowse.off : LINK_TOGGLES.acceptInstanceBrowse.on}
                               </DropdownMenuItem>
                               <DropdownMenuItem
+                                onClick={() =>
+                                  peer.acceptBuilds
+                                    ? handleLinkToggle(peer, "acceptBuilds", false)
+                                    : setLinkTarget({ peer, key: "acceptBuilds" })
+                                }
+                              >
+                                <Hammer className="size-4" />
+                                {peer.acceptBuilds ? LINK_TOGGLES.acceptBuilds.off : LINK_TOGGLES.acceptBuilds.on}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
                                 onClick={() => setDeleteTarget(peer)}
                               >
@@ -714,11 +748,11 @@ export function InstancesSettings() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">Doesn&apos;t expose ports or replace SSH</span>
+                  <span className="text-muted-foreground">Doesn&apos;t expose ports or replace SSH; mesh SSH only runs builds a peer is allowed to send</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">Only carries Vardo API traffic — manifests, heartbeats and sync</span>
+                  <span className="text-muted-foreground">Only carries Vardo traffic: manifests, heartbeats, sync and builds you accept</span>
                 </li>
               </ul>
             </div>

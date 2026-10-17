@@ -12,12 +12,12 @@ const log = logger.child("mesh-forward");
 
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}$/;
 const PORT_RE = /^\d{1,5}$/;
-const WG_CONF = "/config/wg_confs/wg0.conf";
+export const WG_CONF = "/config/wg_confs/wg0.conf";
 const PROBE_TIMEOUT_MS = 2_000;
 
-function assertForwardTarget(ip: string, port: string): void {
-  if (!IPV4_RE.test(ip)) throw new Error(`Invalid console mesh IP: ${ip}`);
-  if (!PORT_RE.test(port)) throw new Error(`Invalid console port: ${port}`);
+export function assertForwardTarget(ip: string, port: string): void {
+  if (!IPV4_RE.test(ip)) throw new Error(`Invalid forward target IP: ${ip}`);
+  if (!PORT_RE.test(port)) throw new Error(`Invalid forward port: ${port}`);
 }
 
 /** wg0.conf PostUp/PostDown: masquerade out of wg0 and DNAT the console port to `ip`. */
@@ -96,13 +96,13 @@ export async function consoleMeshIp(projectName: string): Promise<string | null>
   return meshIpFrom(stdout.trim().split(/\s+/));
 }
 
-async function wgExec(args: string[]): Promise<string> {
+export async function wgExec(args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("docker", ["exec", WG_CONTAINER, ...args], { env: dockerEnv() });
   return stdout;
 }
 
 /** The DNAT target persisted in wg0.conf; `exists` is false when the mesh isn't set up. */
-async function readConfTarget(port: string): Promise<{ exists: boolean; ip: string | null }> {
+export async function readConfTarget(port: string): Promise<{ exists: boolean; ip: string | null }> {
   const out = await wgExec([
     "sh", "-c",
     `[ -f ${WG_CONF} ] || { echo missing; exit 0; }; grep -o -- '--to-destination [0-9.]*:${port}' ${WG_CONF} | head -1`,

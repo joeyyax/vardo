@@ -4,18 +4,21 @@ type AcceptFlags = {
   acceptWebhookRelay: boolean;
   acceptInstanceSignin: boolean;
   acceptInstanceBrowse: boolean;
+  acceptBuilds: boolean;
 };
 
 export type AcceptsPayload = {
   acceptsWebhookRelay: boolean;
   acceptsInstanceSignin: boolean;
   acceptsInstanceBrowse: boolean;
+  acceptsBuilds: boolean;
 };
 
 type PeerAcceptsColumns = Partial<{
   peerAcceptsWebhookRelay: boolean;
   peerAcceptsInstanceSignin: boolean;
   peerAcceptsInstanceBrowse: boolean;
+  peerAcceptsBuilds: boolean;
 }>;
 
 /** What this side accepts from `peer`, as sent to it. */
@@ -24,6 +27,7 @@ export function acceptsPayload(peer: Partial<AcceptFlags> | null | undefined): A
     acceptsWebhookRelay: peer?.acceptWebhookRelay ?? false,
     acceptsInstanceSignin: peer?.acceptInstanceSignin ?? false,
     acceptsInstanceBrowse: peer?.acceptInstanceBrowse ?? false,
+    acceptsBuilds: peer?.acceptBuilds ?? false,
   };
 }
 
@@ -34,5 +38,6 @@ export function peerAcceptsColumns(sent: unknown): PeerAcceptsColumns {
     ...(typeof s.acceptsWebhookRelay === "boolean" && { peerAcceptsWebhookRelay: s.acceptsWebhookRelay }),
     ...(typeof s.acceptsInstanceSignin === "boolean" && { peerAcceptsInstanceSignin: s.acceptsInstanceSignin }),
     ...(typeof s.acceptsInstanceBrowse === "boolean" && { peerAcceptsInstanceBrowse: s.acceptsInstanceBrowse }),
+    ...(typeof s.acceptsBuilds === "boolean" && { peerAcceptsBuilds: s.acceptsBuilds }),
   };
 }

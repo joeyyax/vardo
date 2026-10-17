@@ -37,6 +37,12 @@ async function handleDelete(
       await tx.delete(meshPeers).where(eq(meshPeers.id, peerId));
     });
 
+    // Its SSH key stops working here and its WireGuard peer goes.
+    await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
+    await import("@/lib/mesh/wireguard")
+      .then(async ({ isWireguardRunning, rebuildAndSync }) => (await isWireguardRunning()) && rebuildAndSync())
+      .catch(() => {});
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     return handleRouteError(error, "Error removing mesh peer");
@@ -52,6 +58,7 @@ const patchSchema = z
     acceptWebhookRelay: z.boolean().optional(),
     acceptInstanceSignin: z.boolean().optional(),
     acceptInstanceBrowse: z.boolean().optional(),
+    acceptBuilds: z.boolean().optional(),
   })
   .strict()
   .refine((d) => Object.values(d).some((v) => v !== undefined), { message: "Nothing to change" });
@@ -62,6 +69,7 @@ const SESSION_ONLY = {
   acceptWebhookRelay: "Only a signed-in instance admin can change webhook relays for a peer",
   acceptInstanceSignin: "Only a signed-in instance admin can change instance sign-in for a peer",
   acceptInstanceBrowse: "Only a signed-in instance admin can change instance browsing for a peer",
+  acceptBuilds: "Only a signed-in instance admin can change builds for a peer",
 } as const;
 
 /** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org or change what it may do here */
@@ -81,7 +89,7 @@ async function handlePatch(
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse } = parsed.data;
+    const { organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, acceptBuilds } = parsed.data;
     if (session.authMethod !== "session") {
       for (const [key, error] of Object.entries(SESSION_ONLY)) {
         if (parsed.data[key as keyof typeof SESSION_ONLY] !== undefined) {
@@ -101,7 +109,7 @@ async function handlePatch(
 
     const [peer] = await db
       .update(meshPeers)
-      .set({ organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, updatedAt: new Date() })
+      .set({ organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, acceptBuilds, updatedAt: new Date() })
       .where(eq(meshPeers.id, peerId))
       .returning({
         id: meshPeers.id,
@@ -110,16 +118,22 @@ async function handlePatch(
         acceptWebhookRelay: meshPeers.acceptWebhookRelay,
         acceptInstanceSignin: meshPeers.acceptInstanceSignin,
         acceptInstanceBrowse: meshPeers.acceptInstanceBrowse,
+        acceptBuilds: meshPeers.acceptBuilds,
       });
 
     if (!peer) {
       return NextResponse.json({ error: "Peer not found" }, { status: 404 });
     }
 
+    if (acceptBuilds !== undefined) {
+      await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
+    }
+
     // Tells the peer now rather than at its next heartbeat.
-    if (acceptWebhookRelay !== undefined || acceptInstanceSignin !== undefined || acceptInstanceBrowse !== undefined) {
+    if (acceptWebhookRelay !== undefined || acceptInstanceSignin !== undefined || acceptInstanceBrowse !== undefined || acceptBuilds !== undefined) {
       import("@/lib/mesh/heartbeat")
         .then(({ sendHeartbeatToPeer }) => sendHeartbeatToPeer(peerId))
+        .then(() => (acceptBuilds !== undefined ? import("@/lib/mesh/ssh-exchange").then((m) => m.exchangeSshKeys(peerId, { force: true })) : undefined))
         .catch(() => {});
     }
 

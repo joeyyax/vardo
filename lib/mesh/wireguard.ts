@@ -1,6 +1,8 @@
 import { HUB_IP } from "./ip-allocator";
-import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
+import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT, MESH_SSH_PORT } from "./constants";
 import { defaultForwardIp, forwardHooks } from "./console-forward";
+import { isRunningInContainer } from "./env";
+import { meshSshIp, sshForwardHooks } from "./ssh-forward";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
@@ -54,7 +56,8 @@ export function buildWgConfig(
   listenPort: number,
   address: string,
   peers: WgPeer[],
-  forwardIp: string = FRONTEND_MESH_IP
+  forwardIp: string = FRONTEND_MESH_IP,
+  sshForwardIp: string | null = null
 ): string {
   if (!WG_KEY_RE.test(privateKey)) {
     throw new Error("Invalid WireGuard private key format");
@@ -68,8 +71,12 @@ export function buildWgConfig(
     `Address = ${address}/24`,
     `PostUp = ${postUp}`,
     `PostDown = ${postDown}`,
-    "",
   ];
+  if (sshForwardIp) {
+    const ssh = sshForwardHooks(sshForwardIp, MESH_SSH_PORT);
+    lines.push(`PostUp = ${ssh.postUp}`, `PostDown = ${ssh.postDown}`);
+  }
+  lines.push("");
 
   for (const peer of peers) {
     validatePeer(peer);
@@ -84,6 +91,11 @@ export function buildWgConfig(
   }
 
   return lines.join("\n");
+}
+
+/** The SSH endpoint's mesh address for a freshly written wg0.conf, or null when it isn't running here. */
+async function defaultSshForwardIp(): Promise<string | null> {
+  return isRunningInContainer() ? meshSshIp() : null;
 }
 
 /** Write wg0.conf into the WireGuard container's config volume via stdin. */
@@ -154,7 +166,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   }));
 
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp());
+  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp(), await defaultSshForwardIp());
   await writeWgConfig(config);
 
   if (overrideAddress) {
@@ -196,7 +208,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
 
   const { privateKey, publicKey } = await generateKeypair();
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp());
+  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp(), await defaultSshForwardIp());
   await writeWgConfig(config);
 
   // The image deletes the default route when it boots without a config, so boot it with one.

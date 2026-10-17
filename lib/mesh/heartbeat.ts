@@ -64,11 +64,13 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
   let ok = false;
   let body: HeartbeatResponse | null = null;
 
-  let before: { status: string; acceptWebhookRelay: boolean; acceptInstanceSignin: boolean; acceptInstanceBrowse: boolean } | undefined;
+  let before:
+    | { status: string; acceptWebhookRelay: boolean; acceptInstanceSignin: boolean; acceptInstanceBrowse: boolean; acceptBuilds: boolean }
+    | undefined;
   try {
     before = await db.query.meshPeers.findFirst({
       where: eq(meshPeers.id, peerId),
-      columns: { status: true, acceptWebhookRelay: true, acceptInstanceSignin: true, acceptInstanceBrowse: true },
+      columns: { status: true, acceptWebhookRelay: true, acceptInstanceSignin: true, acceptInstanceBrowse: true, acceptBuilds: true },
     });
   } catch {
     before = undefined;

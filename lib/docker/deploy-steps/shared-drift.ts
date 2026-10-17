@@ -73,7 +73,8 @@ export function inlineFiles(output: string): Map<string, Map<string, string>> {
         const content = parsed[kind]?.[source]?.content;
         if (typeof content !== "string") continue;
         const target = typeof ref === "string" ? undefined : (ref as { target?: string }).target;
-        byTarget.set(fileTarget(kind, source, target), content);
+        // `config` keeps $ escaped as $$; the container gets it unescaped.
+        byTarget.set(fileTarget(kind, source, target), content.replaceAll("$$", "$"));
       }
     }
     if (byTarget.size > 0) files.set(name, byTarget);
