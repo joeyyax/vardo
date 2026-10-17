@@ -160,10 +160,27 @@ async function guarded(ctx: RunContext, host: string, at: number, now: () => num
 }
 
 /** Runs whichever check the monitor carries. */
-export function runCheck(
+/** Errors worth one quick retry: a dropped DNS packet or connection says little about the target. */
+const RETRYABLE: ErrorKind[] = ["dns", "reset"];
+export const RETRY_DELAY_MS = 1000;
+
+type CheckDeps = { now?: () => number; fetch?: typeof fetch; netConnect?: typeof net.connect; tlsConnect?: typeof tls.connect; guard?: HostGuard; sleep?: (ms: number) => Promise<void> };
+
+export async function runCheck(
   monitor: { id: string; check: HttpCheck | TcpCheck | TlsCheck },
   vantageId: string,
-  deps: { now?: () => number; fetch?: typeof fetch; netConnect?: typeof net.connect; tlsConnect?: typeof tls.connect; guard?: HostGuard } = {},
+  deps: CheckDeps = {},
+): Promise<CheckResult> {
+  const first = await runOnce(monitor, vantageId, deps);
+  if (first.ok || !first.error || !RETRYABLE.includes(first.error)) return first;
+  await (deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(RETRY_DELAY_MS);
+  return runOnce(monitor, vantageId, deps);
+}
+
+function runOnce(
+  monitor: { id: string; check: HttpCheck | TcpCheck | TlsCheck },
+  vantageId: string,
+  deps: CheckDeps,
 ): Promise<CheckResult> {
   const base = { monitorId: monitor.id, vantageId, now: deps.now, guard: deps.guard };
   switch (monitor.check.type) {
