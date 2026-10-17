@@ -56,18 +56,20 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
 
   describe("leader_lease", () => {
     it("acquires, renews, refuses a second holder and is stolen after expiry with a higher epoch", async () => {
-      const a = await lease.acquireLease("t1", 300, "A");
+      const a = await lease.acquireLease("t1", 60_000, "A");
       expect(a).toEqual({ name: "t1", holder: "A", epoch: 1 });
-      expect(await lease.acquireLease("t1", 300, "B")).toBeNull();
+      expect(await lease.acquireLease("t1", 60_000, "B")).toBeNull();
 
+      await sql`update leader_lease set expires_at = now() + interval '1 second' where name = 't1'`;
       const [before] = await sql`select expires_at from leader_lease where name = 't1'`;
-      const renewed = await lease.acquireLease("t1", 300, "A");
+      const renewed = await lease.acquireLease("t1", 60_000, "A");
       const [after] = await sql`select expires_at from leader_lease where name = 't1'`;
       expect(renewed?.epoch).toBe(1);
-      expect(after.expires_at.getTime()).toBeGreaterThanOrEqual(before.expires_at.getTime());
+      expect(after.expires_at.getTime()).toBeGreaterThan(before.expires_at.getTime());
 
-      await sleep(500);
-      const b = await lease.acquireLease("t1", 300, "B");
+      // Expiry is set on the database clock, so no stall can change what this checks.
+      await sql`update leader_lease set expires_at = now() - interval '1 second' where name = 't1'`;
+      const b = await lease.acquireLease("t1", 60_000, "B");
       expect(b).toEqual({ name: "t1", holder: "B", epoch: 2 });
       expect(await lease.checkFence(a!)).toBe(false);
       expect(await lease.checkFence(b!)).toBe(true);
@@ -88,24 +90,26 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
         name: "t3",
         intervalMs: 60_000,
         run: async (ctx) => {
-          for (let i = 0; i < 60; i++) {
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline) {
             if (!ctx.active) {
               fencedAfterLoss = await fence.holdsFence();
               return;
             }
             rows++;
-            await sleep(50);
+            await sleep(20);
           }
         },
       });
-      loop.start({ singleton: true, leaseTtlMs: 300 });
+      // The keepalive renews every TTL/3, which is how the pass notices the loss.
+      loop.start({ singleton: true, leaseTtlMs: 3_000 });
       const pass = loop.tick();
-      await sleep(250);
+      for (let i = 0; i < 400 && rows < 1; i++) await sleep(25);
+      expect(rows).toBeGreaterThan(0);
       // Another process takes over, as after a stall long enough to expire the lease.
       await sql`update leader_lease set holder = 'proc-b', epoch = epoch + 1, expires_at = now() + interval '1 minute' where name = 't3'`;
       await pass;
       await loop.stop();
-      expect(rows).toBeLessThan(60);
       expect(fencedAfterLoss).toBe(false);
       // The stop left the other holder's lease alone.
       const [row] = await sql`select holder from leader_lease where name = 't3'`;
@@ -121,23 +125,32 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
           firstRunMs: 0,
           run: async (ctx) => void ran.push(ctx.lease!.holder),
         });
+      const until = async (done: () => boolean) => {
+        for (let i = 0; i < 400 && !done(); i++) await sleep(25);
+        expect(done()).toBe(true);
+      };
       // instanceId() is read at start, so each loop keeps the holder it started with.
       holderRef.current = "proc-a";
       const a = make();
-      a.start({ singleton: true, leaseTtlMs: 2_000 });
-      await sleep(50);
+      const startedAt = Date.now();
+      a.start({ singleton: true, leaseTtlMs: 30_000 });
+      await until(() => ran.length >= 1);
       holderRef.current = "proc-b";
       const b = make();
-      b.start({ singleton: true, leaseTtlMs: 2_000 });
-      await sleep(700);
-      await Promise.all([a.stop(), b.stop()]);
+      b.start({ singleton: true, leaseTtlMs: 30_000 });
+      // Waits on passes, not wall time: a starved process runs fewer slots per second.
+      await until(() => ran.length >= 4);
+      const elapsed = Date.now() - startedAt;
+      // The standby stops first so it can't take the lease a releases.
+      await b.stop();
+      await a.stop();
 
       const [row] = await sql`select holder, epoch::int from leader_lease where name = 't4'`;
       expect(row).toMatchObject({ holder: "proc-a", epoch: 1 });
       // Every pass ran in proc-a; proc-b stayed on standby.
       expect(new Set(ran)).toEqual(new Set(["proc-a"]));
-      expect(ran.length).toBeGreaterThanOrEqual(3);
-      expect(ran.length).toBeLessThanOrEqual(10);
+      // One pass per slot at most: a second holder running the same slots would overshoot.
+      expect(ran.length).toBeLessThanOrEqual(Math.floor(elapsed / 100) + 2);
     });
   });
 
