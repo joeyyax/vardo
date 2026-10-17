@@ -518,7 +518,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           deploymentId: ctx.deploymentId,
           wait: ctx.wait,
           registry: registry ? { ops: registry, appName: app.name } : null,
-          targets: registry ? await configuredTargets() : [],
+          targets: await configuredTargets(),
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);

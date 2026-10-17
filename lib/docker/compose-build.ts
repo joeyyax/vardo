@@ -48,7 +48,7 @@ export type ComposeBuildOpts = {
   wait?: WaitWriter;
   /** Holds a builder slot for the build itself, after image reuse is settled. Defaults to the build gate. */
   gate?: <T>(run: (placement?: BuildPlacement) => Promise<T>) => Promise<T>;
-  /** Targets the build may run on when every service to build is keyed for the registry. */
+  /** Targets the build may run on when every service to build has a known image name. */
   targets?: BuildTarget[];
   /** Build registry: keyed images are pulled from it for reuse; only builds on a target push to it. */
   registry?: { ops: RegistryOps; appName: string } | null;
@@ -118,9 +118,12 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
   }
   if (services.length === 0) return null;
   const registry = opts.registry;
-  // Images come back by key, so every service built remotely needs one.
-  const remote = registry && services.every((name) => keys[name] && images[name])
-    ? services.map((name) => ({ image: images[name], ref: registry.ops.ref(serviceRepo(registry.appName, name), keys[name]) }))
+  // Images come back by name, so every service built remotely needs one; a keyed one can come through the registry.
+  const remote = services.every((name) => images[name])
+    ? services.map((name) => ({
+        image: images[name],
+        ref: registry && keys[name] ? registry.ops.ref(serviceRepo(registry.appName, name), keys[name]) : null,
+      }))
     : null;
   const targets = remote ? (opts.targets ?? []) : [];
   const gate = opts.gate ?? ((run) =>
@@ -130,7 +133,7 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     if (!target || !remote) return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
     return onTarget(target, async (session) => {
       const built = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
-      await bringBack(remote, { authEnv: opts.env, session, log, signal: opts.signal, exec });
+      await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, signal: opts.signal, exec });
       return built;
     });
   });

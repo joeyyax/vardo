@@ -1,8 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { bakeArgs, bakeUsesSecrets, composeBuild, type ComposeBuildOpts } from "@/lib/docker/compose-build";
+
+const { copies } = vi.hoisted(() => ({ copies: { ran: [] as string[], saveFails: false } }));
+// `docker save` there and `docker load` here, as shell stand-ins.
+vi.mock("child_process", async (orig) => {
+  const real = await orig<typeof import("child_process")>();
+  return {
+    ...real,
+    spawn: (_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv; stdio: ("ignore" | "pipe")[]; detached: boolean }) => {
+      copies.ran.push(`${opts.env.DOCKER_HOST ? "there" : "here"} ${args.join(" ")}`);
+      const script = args[0] === "save" ? (copies.saveFails ? "echo 'ssh: connect to host 10.99.0.2 port 2222: Connection refused' >&2; exit 255" : "head -c 1024 /dev/zero") : "cat >/dev/null";
+      return real.spawn("sh", ["-c", script], { stdio: opts.stdio, detached: opts.detached });
+    },
+  };
+});
 
 // A slot's compose build: reused services drop out, and the bounded builder's export goes through bake.
 
@@ -71,6 +85,8 @@ beforeEach(async () => {
   await mkdir(join(root, "slot"), { recursive: true });
   calls = [];
   answers = { print: BAKE, images: "" };
+  copies.ran = [];
+  copies.saveFails = false;
 });
 
 afterEach(async () => {
@@ -176,15 +192,44 @@ describe("composeBuild", () => {
       expect(calls.some((c) => !remote(c) && c.args[0] === "tag" && c.args[2] === "shop-production-green-web")).toBe(true);
     });
 
-    it("stays here when a service to build has no key", async () => {
+    it("builds there and copies a service with no key over SSH", async () => {
       const keyless: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
         cmd === "git" && args.at(-1)!.endsWith(":api") ? Promise.reject(new Error("not in tree")) : exec!(cmd, args, opts);
-      await composeBuild(options({ exec: keyless, registry, targets: [target], gate: (run) => run({ target }) }));
-      expect(bakeCall()).toBeDefined();
-      expect(calls.some((c) => c.env?.DOCKER_HOST)).toBe(false);
+      const lines: string[] = [];
+      await composeBuild(options({ exec: keyless, registry, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
+      expect(bakeCall()).toBeUndefined();
+      expect(calls.filter((c) => c.args[0] === "push").map((c) => c.args.at(-1))).toEqual([expect.stringMatching(/^localhost:5001\/shop-web:/)]);
+      expect(copies.ran).toEqual(["there save shop-production-green-api", "here load --quiet"]);
+      expect(lines).toContain("[build] Copying shop-production-green-api from Long House over SSH");
     });
 
-    it("turns a failed push from the target into a builder failure", async () => {
+    it("builds there with no build registry and copies each image over SSH", async () => {
+      const lines: string[] = [];
+      await composeBuild(options({ registry: null, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
+      expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "pull")).toBe(false);
+      expect(copies.ran).toEqual([
+        "there save shop-production-green-web", "here load --quiet",
+        "there save shop-production-green-api", "here load --quiet",
+      ]);
+      expect(calls.at(-1)).toMatchObject({ args: ["image", "rm", "shop-production-green-web", "shop-production-green-api"], env: { DOCKER_HOST: "ssh://vardo@10.99.0.2:2222" } });
+      expect(lines.filter((l) => l.startsWith("[build] Copied"))).toEqual([
+        expect.stringMatching(/^\[build\] Copied shop-production-green-web from Long House over SSH \(1 KB, \d+\.\ds\)$/),
+        expect.stringMatching(/^\[build\] Copied shop-production-green-api from Long House over SSH \(1 KB, \d+\.\ds\)$/),
+      ]);
+    });
+
+    it("falls back to SSH when the push from the target fails", async () => {
+      const failing: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
+        args[0] === "push" ? Promise.reject(Object.assign(new Error("push failed"), { stderr: "dial tcp: connection refused" })) : exec!(cmd, args, opts);
+      const lines: string[] = [];
+      await composeBuild(options({ exec: failing, registry, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
+      expect(lines.filter((l) => l.startsWith("[build] Couldn't use the build registry"))).toHaveLength(1);
+      expect(copies.ran.filter((r) => r.startsWith("there save"))).toEqual(["there save shop-production-green-web", "there save shop-production-green-api"]);
+      expect(lines).toContain("[build] Registry unavailable; copying shop-production-green-web from Long House over SSH");
+    });
+
+    it("turns a failed push and a failed copy into a builder failure", async () => {
+      copies.saveFails = true;
       const failing: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
         args[0] === "push" ? Promise.reject(Object.assign(new Error("push failed"), { stderr: "dial tcp: connection refused" })) : exec!(cmd, args, opts);
       const { BuilderError } = await import("@/lib/docker/build-targets");

@@ -92,7 +92,7 @@ describe.skipIf(!enabled)("remote build over SSH", () => {
         await run(["build", ...TARGET_BUILD.loadArgs, "--progress=plain", "-t", image, src], remoteEnv(dockerEnv(), session), src);
         expect(await exists(image, remoteEnv(dockerEnv(), session))).toBe(true);
         expect(await exists(image)).toBe(false);
-        await bringBack([{ image, ref }], { authEnv: dockerEnv(), session, log });
+        await bringBack([{ image, ref }], { authEnv: dockerEnv(), session, from: on.name, log });
         expect(await exists(image, remoteEnv(dockerEnv(), session))).toBe(false);
       });
     });
@@ -153,7 +153,7 @@ describe.skipIf(!enabled)("remote build over SSH", () => {
       if (!on) return void (await run(["build", "-q", "-t", image, src], dockerEnv(), src));
       await onTarget(on, async (session) => {
         await run(["build", "-q", "-t", image, src], remoteEnv(dockerEnv(), session), src);
-        await bringBack([{ image, ref: `${registryHost}/vardo-e2e-fallback:${tag}` }], { authEnv: dockerEnv(), session, log });
+        await bringBack([{ image, ref: `${registryHost}/vardo-e2e-fallback:${tag}` }], { authEnv: dockerEnv(), session, from: on.name, log });
       });
     });
     // The local slot frees once the target has failed, so the retry can take it.
