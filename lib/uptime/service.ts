@@ -9,6 +9,7 @@ import {
   uptimeDaily,
   uptimeHourly,
   uptimeMonitors,
+  uptimeRecords,
   uptimeResults,
   type UptimeMonitorRow,
 } from "@/lib/db/schema";
@@ -46,6 +47,8 @@ import type {
   UpdateMonitorInput,
   VantageStateView,
 } from "./types";
+import { vantageNames } from "./format";
+import { targetRefusal, type PolicyLevel } from "./outbound";
 import { listVantagePoints } from "./vantage";
 
 const MINUTE_MS = 60_000;
@@ -61,7 +64,7 @@ export function targetOf(check: Check): string {
   return check.type === "http" ? check.url : `${check.host}:${check.port}`;
 }
 
-function toResult(row: typeof uptimeResults.$inferSelect): CheckResult {
+export function toResult(row: typeof uptimeResults.$inferSelect): CheckResult {
   return {
     monitorId: row.monitorId,
     vantageId: row.vantageId,
@@ -295,6 +298,7 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
   const days90 = daily90.get(id) ?? [];
   const evaluation = evaluate({ vantages: ctx.vantages, results: results.filter((r) => r.at >= now - 15 * MINUTE_MS), now, intervalSec: row.intervalSec });
   const signed = hourly.find((h) => h.signedAt)?.signedAt?.getTime() ?? null;
+  const received = await latestSummaries(id);
   const outages = await outagesFor(scope, row, results, ctx.vantages, now);
   const ongoing = outages.find((o) => o.end === null);
   if (ongoing && summary.downSince) Object.assign(ongoing, { start: summary.downSince, durationMs: now - summary.downSince });
@@ -308,7 +312,7 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
     lastResult: s.last
       ? { at: s.last.at, ok: s.last.ok, latencyMs: s.last.latencyMs, status: s.last.status ?? null, error: s.last.error ?? null }
       : null,
-    signedAt: s.vantage.kind === "local" ? signed : null,
+    signedAt: s.vantage.kind === "local" ? signed : (received.get(s.vantage.id) ?? null),
   }));
 
   return {
@@ -324,8 +328,16 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
   };
 }
 
+/** Refuses a manual org monitor aimed at a private, loopback, link-local or mesh address. */
+async function assertTargetAllowed(scope: Scope, check: Check): Promise<void> {
+  const level: PolicyLevel = scope.kind === "org" ? "strict" : "operator";
+  const reason = await targetRefusal(check, level);
+  if (reason) throw new UptimeInputError(`That address isn't allowed for monitors: ${reason}.`);
+}
+
 export async function createMonitor(scope: Scope, input: CreateMonitorInput): Promise<MonitorSummary> {
   const check = buildCheck(input);
+  await assertTargetAllowed(scope, check);
   const id = `mon_${nanoid(16)}`;
   await db.insert(uptimeMonitors).values({
     id,
@@ -363,6 +375,7 @@ export async function updateMonitor(scope: Scope, id: string, patch: UpdateMonit
     if (touched) {
       const type = patch.type ?? row.check.type;
       set.check = buildCheck({ ...patch, type } as CreateMonitorInput, type === row.check.type ? row.check : undefined);
+      await assertTargetAllowed(scope, set.check);
     }
   }
   await db.update(uptimeMonitors).set(set).where(eq(uptimeMonitors.id, id));
@@ -440,7 +453,7 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
     localOnly: active.every((m) => m.localOnly),
     downSince: downs.length ? Math.min(...downs.map((m) => m.downSince ?? now)) : null,
     lastCheckedAt,
-    vantageName: ctx.vantages[0]?.name ?? null,
+    vantageName: vantageNames(ctx.vantages),
     uptime24h: rangeUptime(hourly.map(bucketOf)),
     uptime30d: rangeUptime(days90.slice(-30)),
     uptime90d: rangeUptime(days90),
@@ -448,6 +461,19 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
     medianLatency24h: median(results.filter((r) => r.ok && r.at >= now - DAY_MS).map((r) => r.latencyMs)),
     lastOutage,
   };
+}
+
+/** Epoch ms of the newest hourly summary each external vantage point signed for a monitor. */
+async function latestSummaries(monitorId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ vantageId: uptimeRecords.vantageId, issuedAt: uptimeRecords.issuedAt })
+    .from(uptimeRecords)
+    .where(and(eq(uptimeRecords.kind, "hourly"), eq(uptimeRecords.monitorId, monitorId)))
+    .orderBy(desc(uptimeRecords.issuedAt))
+    .limit(50);
+  const out = new Map<string, number>();
+  for (const r of rows) if (!out.has(r.vantageId)) out.set(r.vantageId, r.issuedAt.getTime());
+  return out;
 }
 
 /** Vantage points as the UI names them. */

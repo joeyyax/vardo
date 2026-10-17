@@ -1,6 +1,6 @@
 // The agreement rule: a vantage point is failing after two failed checks in a row; a monitor is down when most external vantage points are failing.
 
-import type { CheckResult, Evaluation, MonitorState, VantagePoint, VantageState, VantageStatus } from "./types";
+import { isUnknownResult, type CheckResult, type Evaluation, type MonitorState, type VantagePoint, type VantageState, type VantageStatus } from "./types";
 
 export const FAILURES_TO_FAIL = 2;
 
@@ -13,11 +13,12 @@ export function staleAfterMs(intervalSec: number): number {
 export function vantageStatus(vantage: VantagePoint, results: CheckResult[], now: number, intervalSec: number): VantageStatus {
   const mine = results.filter((r) => r.vantageId === vantage.id).sort((a, b) => b.at - a.at);
   const last = mine[0];
-  if (!last || now - last.at > staleAfterMs(intervalSec)) return { vantage, state: "unknown", last };
+  if (!last || isUnknownResult(last) || now - last.at > staleAfterMs(intervalSec)) return { vantage, state: "unknown", last };
 
+  const known = mine.filter((r) => !isUnknownResult(r));
   let run = 0;
-  while (run < mine.length && mine[run].ok === last.ok) run++;
-  const since = mine[run - 1].at;
+  while (run < known.length && known[run].ok === last.ok) run++;
+  const since = known[run - 1].at;
   const state: VantageState = !last.ok && run >= FAILURES_TO_FAIL ? "failing" : "up";
   return { vantage, state, last, since };
 }

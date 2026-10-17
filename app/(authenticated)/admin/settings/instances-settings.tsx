@@ -20,6 +20,7 @@ import {
   LogIn,
   Eye,
   Hammer,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +66,8 @@ type MeshPeer = {
   peerAcceptsInstanceBrowse: boolean;
   acceptBuilds: boolean;
   peerAcceptsBuilds: boolean;
+  uptimeChecksUs: boolean;
+  uptimeChecksPeer: boolean;
   lastRelaySentAt: string | null;
   lastRelaySentStatus: string | null;
   lastRelayReceivedAt: string | null;
@@ -386,6 +389,25 @@ export function InstancesSettings() {
     }
   }
 
+  async function handleUptimeSwitch(peer: MeshPeer, key: "uptimeChecksUs" | "uptimeChecksPeer", value: boolean) {
+    const body = key === "uptimeChecksUs" ? { checksThisInstance: value } : { thisInstanceChecks: value };
+    try {
+      const res = await fetch(`/api/v1/admin/uptime/vantages/${peer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || "Couldn't change uptime checks");
+        return;
+      }
+      setPeers((prev) => prev.map((p) => (p.id === peer.id ? { ...p, [key]: value } : p)));
+    } catch {
+      toast.error("Couldn't change uptime checks");
+    }
+  }
+
   async function handleCancelInvite(code: string) {
     setCancellingCode(code);
     try {
@@ -682,6 +704,14 @@ export function InstancesSettings() {
                               >
                                 <Hammer className="size-4" />
                                 {peer.acceptBuilds ? LINK_TOGGLES.acceptBuilds.off : LINK_TOGGLES.acceptBuilds.on}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUptimeSwitch(peer, "uptimeChecksUs", !peer.uptimeChecksUs)}>
+                                <Activity className="size-4" />
+                                {peer.name} checks this instance: {peer.uptimeChecksUs ? "On" : "Off"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUptimeSwitch(peer, "uptimeChecksPeer", !peer.uptimeChecksPeer)}>
+                                <Activity className="size-4" />
+                                This instance checks {peer.name}: {peer.uptimeChecksPeer ? "On" : "Off"}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"

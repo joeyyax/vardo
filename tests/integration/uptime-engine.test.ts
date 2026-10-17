@@ -11,6 +11,10 @@ vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).logg
 vi.mock("@/lib/notifications/dispatch", () => ({
   emit: (orgId: string, event: { type: string; incident?: { state: string } }) => void h.emitted.push({ orgId, type: event.type, incident: event.incident }),
 }));
+vi.mock("@/lib/uptime/outbound", async (orig) => ({
+  ...(await orig<typeof import("@/lib/uptime/outbound")>()),
+  checkDeps: async () => ({ fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args), guard: async () => null }),
+}));
 vi.mock("@/lib/activity/record", () => ({ recordActivity: async () => {} }));
 
 const conn = await connectScratchServer();
@@ -144,5 +148,13 @@ describe.skipIf(!conn)("uptime engine on Postgres", { timeout: MIGRATE_TIMEOUT }
     const edited = await client.uptimeClient.updateMonitor(org, created.id, { port: 5433, intervalSec: 30 });
     expect(edited).toMatchObject({ target: "db.example.com:5433", intervalSec: 30 });
     expect(await client.uptimeClient.deleteMonitor(org, created.id)).toBe("deleted");
+  });
+
+  it("refuses an org monitor aimed at a private, loopback or link-local address", async () => {
+    await expect(client.uptimeClient.createMonitor(org, { type: "http", url: "http://169.254.169.254/latest/meta-data" })).rejects.toThrow(/isn't allowed/);
+    await expect(client.uptimeClient.createMonitor(org, { type: "tcp", host: "10.99.0.2", port: 22 })).rejects.toThrow(/isn't allowed/);
+    const ok = await client.uptimeClient.createMonitor(org, { type: "tcp", host: "93.184.216.34", port: 443 });
+    await expect(client.uptimeClient.updateMonitor(org, ok.id, { host: "127.0.0.1" })).rejects.toThrow(/isn't allowed/);
+    await client.uptimeClient.deleteMonitor(org, ok.id);
   });
 });

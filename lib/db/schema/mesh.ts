@@ -55,6 +55,10 @@ export const meshPeers = pgTable("mesh_peer", {
   peerSshKey: text("peer_ssh_key"),
   peerSshHostKey: text("peer_ssh_host_key"),
   peerSshPort: integer("peer_ssh_port"),
+  // The peer checks this instance's monitors: we serve it our watch list and accept its results.
+  uptimeChecksUs: boolean("uptime_checks_us").default(true).notNull(),
+  // This instance checks the peer's monitors: we fetch its watch list and probe.
+  uptimeChecksPeer: boolean("uptime_checks_peer").default(true).notNull(),
   lastRelaySentAt: timestamp("last_relay_sent_at"),
   lastRelaySentStatus: text("last_relay_sent_status"),
   lastRelayReceivedAt: timestamp("last_relay_received_at"),

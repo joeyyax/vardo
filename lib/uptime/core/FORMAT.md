@@ -22,12 +22,14 @@ Every payload has `v: 1`, `kind`, `vantageId` and `issuedAt` (epoch ms). A verif
 | `at` | Epoch ms the check started |
 | `ok`, `latencyMs` | Outcome and duration |
 | `status` | HTTP status, when a response came back |
-| `error` | One of `timeout dns refused reset tls cert-expired cert-expiring status keyword invalid unknown` |
+| `error` | One of `timeout dns refused reset tls cert-expired cert-expiring status keyword invalid private-address blocked unknown` |
 | `certDaysLeft` | Whole days to certificate expiry (TLS checks) |
 
-Raw error strings and response bodies never appear.
+Raw error strings and response bodies never appear. `private-address` marks a check skipped because the host resolved to a private address; `blocked` marks a check the outbound policy refused. Both count as no data.
 
 `kind: "hourly"` carries `monitorId` and one `bucket`: `start` (epoch ms, on the hour), `minutesUp`, `minutesDown`, `minutesUnknown`, `uptimePct` (two decimals or null) and `medianLatencyMs` (or null).
+
+`kind: "watch"` carries `monitors`, the checks the signer asks a vantage point to run: `monitorId`, `check` and `intervalSec`. Only monitors with a public address appear.
 
 ## Rules
 

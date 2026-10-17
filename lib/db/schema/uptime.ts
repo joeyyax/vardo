@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
-import { bigserial, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { Check, MaintenanceWindow } from "@/lib/uptime/core/types";
 import { apps } from "./apps";
 import { domains } from "./domains";
 import { environments } from "./environments";
+import { meshPeers } from "./mesh";
 import { organizations } from "./organizations";
 
 // Text columns: adding a check type or vantage kind needs no migration.
@@ -39,6 +40,49 @@ export const uptimeMonitors = pgTable(
   ],
 );
 
+/** A place checks run from. This instance's own row holds its Ed25519 keypair. */
+export const uptimeVantages = pgTable(
+  "uptime_vantage",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    /** "local" or "external". */
+    kind: text("kind").notNull(),
+    location: text("location"),
+    publicKey: text("public_key").notNull(),
+    /** Encrypted with the system key. Null on external vantage points. */
+    privateKeyEncrypted: text("private_key_encrypted"),
+    /** The linked instance an external vantage point is. */
+    meshPeerId: text("mesh_peer_id").references(() => meshPeers.id, { onDelete: "cascade" }),
+    /** The id the vantage point signs with on its own instance. */
+    remoteId: text("remote_id"),
+    /** Monitor ids it may report on: the watch list last served to it. */
+    watching: jsonb("watching").$type<string[]>().notNull().default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uptime_vantage_peer_uniq").on(t.meshPeerId).where(sql`${t.meshPeerId} is not null`)],
+);
+
+/** Signed records exactly as an external vantage point sent them. Rows are inserted and never updated. */
+export const uptimeRecords = pgTable(
+  "uptime_record",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    vantageId: text("vantage_id")
+      .notNull()
+      .references(() => uptimeVantages.id, { onDelete: "cascade" }),
+    /** "results" or "hourly". */
+    kind: text("kind").notNull(),
+    /** The monitor an hourly summary covers. */
+    monitorId: text("monitor_id"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    payload: text("payload").notNull(),
+    sig: text("sig").notNull(),
+  },
+  (t) => [index("uptime_record_vantage_idx").on(t.vantageId, t.kind, t.monitorId, t.issuedAt)],
+);
+
 /** Raw results, kept 14 days. */
 export const uptimeResults = pgTable(
   "uptime_result",
@@ -55,10 +99,15 @@ export const uptimeResults = pgTable(
     /** An ErrorKind. */
     error: text("error"),
     certDaysLeft: integer("cert_days_left"),
+    /** The signed record an external result arrived in. Null on local results. */
+    recordId: bigint("record_id", { mode: "number" }).references(() => uptimeRecords.id, { onDelete: "cascade" }),
   },
   (t) => [
     index("uptime_result_monitor_at_idx").on(t.monitorId, t.at),
     index("uptime_result_at_idx").on(t.at),
+    uniqueIndex("uptime_result_external_uniq")
+      .on(t.monitorId, t.vantageId, t.at)
+      .where(sql`${t.recordId} is not null`),
   ],
 );
 
@@ -89,18 +138,56 @@ export const uptimeHourly = pgTable(
 /** Daily rollups, kept indefinitely. */
 export const uptimeDaily = pgTable("uptime_daily", bucketColumns, (t) => [primaryKey({ columns: [t.monitorId, t.start] })]);
 
-/** A place checks run from. This instance's own row holds its Ed25519 keypair. */
-export const uptimeVantages = pgTable("uptime_vantage", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  /** "local" or "external". */
-  kind: text("kind").notNull(),
-  location: text("location"),
-  publicKey: text("public_key").notNull(),
-  /** Encrypted with the system key. Null on external vantage points. */
-  privateKeyEncrypted: text("private_key_encrypted"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+/** Checks this instance runs for a linked peer, from the watch list the peer last served. */
+export const uptimeWatchEntries = pgTable(
+  "uptime_watch_entry",
+  {
+    peerId: text("peer_id")
+      .notNull()
+      .references(() => meshPeers.id, { onDelete: "cascade" }),
+    monitorId: text("monitor_id").notNull(),
+    check: jsonb("check").$type<Check>().notNull(),
+    intervalSec: integer("interval_sec").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.peerId, t.monitorId] })],
+);
+
+/** What this instance measured for a peer's monitors, kept 14 days as the witness copy. */
+export const uptimeProbeResults = pgTable(
+  "uptime_probe_result",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    peerId: text("peer_id")
+      .notNull()
+      .references(() => meshPeers.id, { onDelete: "cascade" }),
+    monitorId: text("monitor_id").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    ok: boolean("ok").notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    status: integer("status"),
+    error: text("error"),
+    certDaysLeft: integer("cert_days_left"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  },
+  (t) => [index("uptime_probe_result_pending_idx").on(t.peerId, t.deliveredAt), index("uptime_probe_result_at_idx").on(t.at)],
+);
+
+/** Hourly summaries this instance signed for a peer's monitors, kept a year. */
+export const uptimeProbeSummaries = pgTable(
+  "uptime_probe_summary",
+  {
+    peerId: text("peer_id")
+      .notNull()
+      .references(() => meshPeers.id, { onDelete: "cascade" }),
+    monitorId: text("monitor_id").notNull(),
+    start: timestamp("start", { withTimezone: true }).notNull(),
+    record: text("record").notNull(),
+    sig: text("sig").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.peerId, t.monitorId, t.start] })],
+);
 
 export type UptimeMonitorRow = typeof uptimeMonitors.$inferSelect;
 export type UptimeVantageRow = typeof uptimeVantages.$inferSelect;

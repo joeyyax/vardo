@@ -4,10 +4,15 @@ import net from "node:net";
 import tls from "node:tls";
 import type { CheckResult, ErrorKind, HttpCheck, TcpCheck, TlsCheck } from "./types";
 
+/** Resolves to a reason when the host must not be connected to, else null. */
+export type HostGuard = (host: string) => Promise<string | null>;
+
 export type RunContext = {
   monitorId: string;
   vantageId: string;
   now?: () => number;
+  /** Checked before a TCP or TLS connection; HTTP guards itself through the injected fetch. */
+  guard?: HostGuard;
 };
 
 export type HttpContext = RunContext & { fetch?: typeof fetch };
@@ -39,6 +44,7 @@ export function classifyError(err: unknown): ErrorKind {
   if (!err || typeof err !== "object") return "unknown";
   const e = err as { name?: string; code?: string; cause?: unknown };
   if (e.name === "TimeoutError" || e.name === "AbortError") return "timeout";
+  if (e.name === "BlockedUrlError") return "blocked";
   if (e.code && CODE_KINDS[e.code]) return CODE_KINDS[e.code];
   if (e.code?.startsWith("ERR_SSL") || e.code?.startsWith("ERR_TLS") || e.code?.includes("CERT")) return "tls";
   if (e.cause && e.cause !== err) return classifyError(e.cause);
@@ -97,7 +103,7 @@ export function runTcpCheck(check: TcpCheck, ctx: TcpContext): Promise<CheckResu
   const now = ctx.now ?? Date.now;
   const connect = ctx.connect ?? net.connect;
   const at = now();
-  return new Promise((resolve) => {
+  return guarded(ctx, check.host, at, now, () => new Promise((resolve) => {
     let settled = false;
     const done = (rest: Partial<CheckResult> & { ok: boolean }) => {
       if (settled) return;
@@ -110,14 +116,14 @@ export function runTcpCheck(check: TcpCheck, ctx: TcpContext): Promise<CheckResu
     socket.once("connect", () => done({ ok: true }));
     socket.once("timeout", () => done({ ok: false, error: "timeout" }));
     socket.once("error", (err) => done({ ok: false, error: classifyError(err) }));
-  });
+  }));
 }
 
 export function runTlsCheck(check: TlsCheck, ctx: TlsContext): Promise<CheckResult> {
   const now = ctx.now ?? Date.now;
   const connect = ctx.connect ?? tls.connect;
   const at = now();
-  return new Promise((resolve) => {
+  return guarded(ctx, check.host, at, now, () => new Promise((resolve) => {
     let settled = false;
     const done = (rest: Partial<CheckResult> & { ok: boolean }) => {
       if (settled) return;
@@ -138,16 +144,28 @@ export function runTlsCheck(check: TlsCheck, ctx: TlsContext): Promise<CheckResu
     });
     socket.once("timeout", () => done({ ok: false, error: "timeout" }));
     socket.once("error", (err) => done({ ok: false, error: classifyError(err) }));
-  });
+  }));
+}
+
+/** Runs `run` unless the guard refuses the host; a refusal is a "blocked" result. */
+async function guarded(ctx: RunContext, host: string, at: number, now: () => number, run: () => Promise<CheckResult>): Promise<CheckResult> {
+  if (ctx.guard) {
+    try {
+      if (await ctx.guard(host)) return result(ctx, at, now(), { ok: false, error: "blocked" });
+    } catch {
+      return result(ctx, at, now(), { ok: false, error: "blocked" });
+    }
+  }
+  return run();
 }
 
 /** Runs whichever check the monitor carries. */
 export function runCheck(
   monitor: { id: string; check: HttpCheck | TcpCheck | TlsCheck },
   vantageId: string,
-  deps: { now?: () => number; fetch?: typeof fetch; netConnect?: typeof net.connect; tlsConnect?: typeof tls.connect } = {},
+  deps: { now?: () => number; fetch?: typeof fetch; netConnect?: typeof net.connect; tlsConnect?: typeof tls.connect; guard?: HostGuard } = {},
 ): Promise<CheckResult> {
-  const base = { monitorId: monitor.id, vantageId, now: deps.now };
+  const base = { monitorId: monitor.id, vantageId, now: deps.now, guard: deps.guard };
   switch (monitor.check.type) {
     case "http":
       return runHttpCheck(monitor.check, { ...base, fetch: deps.fetch });

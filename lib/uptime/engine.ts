@@ -2,7 +2,7 @@
 
 import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, domains, environments, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeResults } from "@/lib/db/schema";
+import { apps, domains, environments, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { consoleBaseUrl } from "@/lib/incidents/key";
 import { openUptimeIncident, resolveUptimeIncident } from "@/lib/incidents/uptime";
@@ -24,6 +24,9 @@ import {
   type HttpCheck,
   type Monitor,
 } from "./core";
+import { checkDeps, levelOf } from "./outbound";
+import { pruneProbes, tickProber } from "./prober";
+import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
 
 const log = logger.child("uptime");
@@ -39,6 +42,7 @@ const alerted = new Set<string>();
 const seenUp = new Set<string>();
 let seeded = false;
 let lastRollup = 0;
+let lastReeval = 0;
 let lastPrune = 0;
 
 const httpCheck = (url: string): HttpCheck => ({
@@ -177,11 +181,13 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   });
   if (due.length === 0) return 0;
 
+  const deps = { strict: await checkDeps("strict"), operator: await checkDeps("operator") };
   const fresh: CheckResult[] = [];
   await pool(due, CONCURRENCY, async ({ monitor }) => {
     lastRun.set(monitor.id, now);
     try {
-      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, { now: clock }));
+      const { fetch, guard } = deps[levelOf(monitor)];
+      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, { now: clock, fetch, guard }));
     } catch (err) {
       log.warn(`Check for ${monitor.id} threw:`, err);
     }
@@ -205,6 +211,12 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   return fresh.length;
 }
 
+/** Re-evaluates the monitors with these ids, such as after a peer delivers results. */
+export async function syncAlertsFor(ids: string[], now = Date.now()): Promise<void> {
+  if (ids.length === 0) return;
+  await syncAlerts(await db.select().from(uptimeMonitors).where(and(eq(uptimeMonitors.enabled, true), inArray(uptimeMonitors.id, ids))), now);
+}
+
 async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now: number): Promise<void> {
   if (monitors.length === 0) return;
   const vantages = await listVantagePoints();
@@ -212,13 +224,7 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
     .select()
     .from(uptimeResults)
     .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(now - RECENT_MS))));
-  const results: CheckResult[] = recent.map((r) => ({
-    monitorId: r.monitorId,
-    vantageId: r.vantageId,
-    at: r.at.getTime(),
-    ok: r.ok,
-    latencyMs: r.latencyMs,
-  }));
+  const results: CheckResult[] = recent.map(toResult);
   const operator = monitors.some((m) => !m.organizationId) ? await adminOrgIds() : [];
 
   for (const m of monitors) {
@@ -273,7 +279,7 @@ export async function rollup(now = Date.now()): Promise<void> {
   const byMonitor = new Map<string, CheckResult[]>();
   for (const r of raw) {
     const list = byMonitor.get(r.monitorId) ?? [];
-    list.push({ monitorId: r.monitorId, vantageId: r.vantageId, at: r.at.getTime(), ok: r.ok, latencyMs: r.latencyMs });
+    list.push(toResult(r));
     byMonitor.set(r.monitorId, list);
   }
 
@@ -322,12 +328,25 @@ async function rollDays(monitorId: string, days: number[]): Promise<void> {
 export async function prune(now = Date.now()): Promise<void> {
   await db.delete(uptimeResults).where(lt(uptimeResults.at, new Date(now - RAW_RETENTION_MS)));
   await db.delete(uptimeHourly).where(lt(uptimeHourly.start, new Date(now - HOURLY_RETENTION_MS)));
+  await db.delete(uptimeRecords).where(and(eq(uptimeRecords.kind, "results"), lt(uptimeRecords.issuedAt, new Date(now - RAW_RETENTION_MS))));
+  await db.delete(uptimeRecords).where(and(eq(uptimeRecords.kind, "hourly"), lt(uptimeRecords.issuedAt, new Date(now - HOURLY_RETENTION_MS))));
+  await pruneProbes(now, RAW_RETENTION_MS, HOURLY_RETENTION_MS);
+}
+
+/** Re-evaluates every enabled monitor, so a vantage point that went quiet stops counting. */
+export async function syncAllAlerts(now = Date.now()): Promise<void> {
+  await syncAlerts(await db.select().from(uptimeMonitors).where(eq(uptimeMonitors.enabled, true)), now).catch((err) => log.error("Alert re-evaluation failed:", err));
 }
 
 /** One pass of the worker loop. */
 export async function tickUptime(now = Date.now()): Promise<void> {
   await syncIfDue(now);
   await runDueChecks(now);
+  await tickProber(now).catch((err) => log.error("Probing linked instances failed:", err));
+  if (now - lastReeval >= 30_000) {
+    lastReeval = now;
+    await syncAllAlerts(now);
+  }
   if (now - lastRollup >= 60_000) {
     lastRollup = now;
     await rollup(now);
