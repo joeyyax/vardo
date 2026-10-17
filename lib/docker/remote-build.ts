@@ -160,7 +160,6 @@ export async function bringBack(
   let registryDown = false;
   try {
     for (const { image, ref } of images) {
-      let registryError: string | null = null;
       if (ref && !registryDown) {
         const began = Date.now();
         try {
@@ -170,8 +169,7 @@ export async function bringBack(
         } catch (err) {
           if (opts.signal?.aborted) throw err;
           registryDown = true;
-          registryError = (err as Error).message;
-          opts.log(`[build] Couldn't use the build registry: ${registryError}`);
+          opts.log(`[build] Couldn't use the build registry: ${(err as Error).message}`);
         }
       }
       opts.log(`[build] ${ref ? "Registry unavailable; copying" : "Copying"} ${image} from ${opts.from} over SSH`);
@@ -183,10 +181,8 @@ export async function bringBack(
         if (opts.signal?.aborted) throw err;
         const message = (err as Error).message;
         const reason = builderFailureReason(message);
-        throw new BuilderError(
-          `couldn't copy ${image} here over SSH: ${reason ? `${reason} (${message})` : message}${registryError ? `, and ${registryError}` : ""}`,
-          err,
-        );
+        if (reason) opts.log(`[build] Copying over SSH failed: ${message}`);
+        throw new BuilderError(`couldn't copy ${image} here over SSH: ${reason ?? message}`, err);
       }
     }
   } finally {

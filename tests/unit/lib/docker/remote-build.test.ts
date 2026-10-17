@@ -142,12 +142,12 @@ describe("bringBack", () => {
   it("blames the builder when both paths fail, and still cleans up there", async () => {
     const { calls, exec } = recorder((args) => args[0] === "push");
     const { spawn } = shells({ save: "echo 'error during connect: Broken pipe' >&2; exit 1", load: "cat >/dev/null" });
-    const err = await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "lh", log: () => {}, exec, spawn })
+    const lines: string[] = [];
+    const err = await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "lh", log: (l) => lines.push(l), exec, spawn })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BuilderError);
-    expect((err as BuilderError).reason).toMatch(
-      /^couldn't copy shop:d here over SSH: the connection to it dropped \(docker save on the target failed \(exit 1\): error during connect: Broken pipe\), and couldn't push reg\/shop:k from the target: unauthorized/,
-    );
+    expect((err as BuilderError).reason).toBe("couldn't copy shop:d here over SSH: the connection to it dropped");
+    expect(lines.at(-1)).toBe("[build] Copying over SSH failed: docker save on the target failed (exit 1): error during connect: Broken pipe");
     expect(calls.at(-1)).toEqual({ args: ["image", "rm", "shop:d"], where: "there" });
   });
 
