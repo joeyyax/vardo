@@ -12,8 +12,9 @@ import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot, type BuildPlacement, type DeploySlot } from "./build-gate";
 import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
-import { TARGET_BUILD, bringBack } from "./remote-build";
+import { bringBack } from "./remote-build";
 import type { BuildPlacementRecorder } from "./build-placement";
+import { withTargetBuilder } from "./target-builder";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -142,9 +143,12 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<ComposeBuild
       return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
     }
     return onTarget(target, async (session) => {
-      const out = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
-      await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, placement: opts.placement, signal: opts.signal, exec });
-      return out;
+      const there = remoteEnv(opts.env, session);
+      return withTargetBuilder(target, there, log, async (targetBuild) => {
+        const out = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there);
+        await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, placement: opts.placement, signal: opts.signal, exec });
+        return out;
+      }, { signal: opts.signal });
     });
   });
   return { ...built, images: remote ? remote.map((r) => r.image) : null };

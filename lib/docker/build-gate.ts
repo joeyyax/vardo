@@ -16,7 +16,8 @@ import { dockerRequest } from "./client";
 import { dockerEnv } from "./docker-env";
 import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { waitForFifoSlot, type SlotPlace, type SlotStore } from "./fifo-slots";
-import type { BoundedBuild } from "./build-memory";
+import { buildKitLimit, type BoundedBuild } from "./build-memory";
+import { DEFAULT_BUILDKIT_HOST } from "./buildkit";
 import type { WaitWriter } from "./deploy-logger";
 import { builderLimitBytes, sizeBuildKit } from "./buildkit-size";
 import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
@@ -24,6 +25,7 @@ import { typicalBuildMs } from "@/lib/deploy/eta-history";
 import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTargetDown, type BuildTarget } from "./build-targets";
 import type { TargetSlots } from "@/lib/deploy/queue";
 import type { BuildPlacementRecorder } from "./build-placement";
+import { claimPeerSlot, releasePeerSlot, renewPeerSlot } from "@/lib/mesh/build-slot";
 
 const log = logger.child("build-gate");
 
@@ -44,6 +46,8 @@ const BUILD_GATE_KEYS = {
   target: "build:gate:target:",
   /** Ready targets as the last probing process saw them, for processes that don't probe. */
   ready: "build:gate:ready",
+  /** Prefix of a target whose own gate refused a slot lately. */
+  full: "build:gate:full:",
 };
 
 const LEASE_MS = 45_000;
@@ -54,6 +58,8 @@ const DIRTY_HOLD_MS = BUILD_TIMEOUT;
 const POLL_MS = 500;
 const POSITION_POLL_MS = 2_000;
 const SAMPLE_MS = 2_000;
+/** How long a target whose own gate is full stays out of the running. */
+export const PEER_FULL_MS = 15_000;
 /** A backstop only: leases free a dead holder, so a long wait is a long queue. Waits pause the sweeper's clock. */
 export const WAIT_TIMEOUT_MS = 6 * 60 * 60_000;
 /** Peaks older than this no longer size builds. */
@@ -179,6 +185,16 @@ redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), ARGV[1])
 return 1
 `;
 
+// Extends a lease only while it's held. KEYS: running. ARGV: id, leaseMs. Returns 1 when held.
+const LUA_RENEW_HELD = `
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+local score = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if not score or tonumber(score) < now then return 0 end
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), ARGV[1])
+return 1
+`;
+
 // Moves a deployment's waiting build to the head of the queue. KEYS: queue. ARGV: deployment id. Returns 1 when moved.
 const LUA_BUMP = `
 local prefix = ARGV[1] .. ':'
@@ -217,6 +233,11 @@ export function redisBuildStore(keys: Keys = BUILD_GATE_KEYS, client = redis): S
   release(id: string, dirty: boolean): Promise<number>;
   releaseTarget(id: string, target: string): Promise<void>;
   renew(id: string, target?: string | null): Promise<void>;
+  /** As renew for this host, but never retakes a lapsed or released slot. */
+  renewHeld(id: string): Promise<boolean>;
+  markFull(target: string): Promise<void>;
+  /** Targets whose own gate refused a slot lately. */
+  fullTargets(targets: string[]): Promise<Set<string>>;
   claimSweep(id: string): Promise<boolean>;
   endSweep(): Promise<void>;
   runningCount(): Promise<number>;
@@ -275,6 +296,17 @@ export function redisBuildStore(keys: Keys = BUILD_GATE_KEYS, client = redis): S
     },
     async renew(id, target) {
       await client.eval(LUA_RENEW, 1, target ? keys.target + target : keys.running, id, String(LEASE_MS));
+    },
+    async renewHeld(id) {
+      return Number(await client.eval(LUA_RENEW_HELD, 1, keys.running, id, String(LEASE_MS))) === 1;
+    },
+    async markFull(target) {
+      await client.set(keys.full + target, "1", "PX", PEER_FULL_MS);
+    },
+    async fullTargets(targets) {
+      if (targets.length === 0) return new Set<string>();
+      const values = await client.mget(...targets.map((t) => keys.full + t));
+      return new Set(targets.filter((_, i) => values[i] !== null));
     },
     async claimSweep(id) {
       return (await client.eval(LUA_CLAIM_SWEEP, 2, keys.running, keys.hold, id, String(SWEEP_HOLD_MS))) === 1;
@@ -590,6 +622,9 @@ export type BuildPlacement = { target: BuildTarget | null };
 
 let viewTargets: { at: number; targets: BuildTarget[] } | null = null;
 
+/** Gates that already said a target's builder is full. */
+const fullNoted = new WeakSet<BuildGate>();
+
 /**
  * Target slots as the gate sees them: ready targets only, with the deployment holding each busy slot.
  * A probing process checks targets without waiting on a first check and shares what it found; the others read that.
@@ -603,7 +638,8 @@ export async function targetSlotView(
     if (!viewTargets || Date.now() - viewTargets.at >= CACHE_MS) viewTargets = { at: Date.now(), targets: await load() };
     const targets = viewTargets.targets;
     const ready = await Promise.all(targets.map((t) => isTargetReady(t, check, { wait: false })));
-    live = targets.filter((_, i) => ready[i]).map((t) => ({ id: t.id, name: t.name, limit: t.maxConcurrent }));
+    const full = await store.fullTargets(targets.map((t) => t.id)).catch(() => new Set<string>());
+    live = targets.filter((t, i) => ready[i] && !full.has(t.id)).map((t) => ({ id: t.id, name: t.name, limit: t.maxConcurrent }));
     await store.setReadyTargets(live);
   } else {
     live = (await store.readyTargets()) ?? [];
@@ -622,7 +658,8 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   const targets = gate.targets ?? [];
   const readyTargets = async (): Promise<TargetSlot[]> => {
     const ready = await Promise.all(targets.map((t) => isTargetReady(t)));
-    return targets.filter((_, i) => ready[i]).map((t) => ({ id: t.id, limit: t.maxConcurrent }));
+    const full = await store.fullTargets(targets.map((t) => t.id)).catch(() => new Set<string>());
+    return targets.filter((t, i) => ready[i] && !full.has(t.id)).map((t) => ({ id: t.id, limit: t.maxConcurrent }));
   };
   const gated: SlotStore<Admission> = {
     tryAcquire: async (slotId, limit) => store.tryAcquireAt(slotId, limit, targets.length > 0 ? await readyTargets() : []),
@@ -717,9 +754,25 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   return runHeld(slot);
 
   async function runRemote(on: BuildTarget): Promise<T> {
+    const peer = on.kind === "mesh" && on.peerId ? on.peerId : null;
+    const peerToken = id.replace(/[^A-Za-z0-9-]/g, "-");
+    const claim = peer ? await claimPeerSlot(peer, peerToken) : null;
+    if (claim === "full") {
+      await store.releaseTarget(id, on.id).catch(() => {});
+      await store.markFull(on.id).catch(() => {});
+      if (!fullNoted.has(gate)) {
+        fullNoted.add(gate);
+        gate.log(`[queue] ${on.name}'s builder is full; waiting for a free slot`);
+      }
+      return withBuildSlot(gate, bounded, build);
+    }
+    if (claim === "unreachable") gate.log(`[build] Couldn't take a slot in ${on.name}'s build queue; building there without one`);
     gate.log(`[build] Building on ${describeTarget(on)}`);
     gate.placement?.started(on);
-    const renew = setInterval(() => void store.renew(id, on.id).catch(() => {}), RENEW_MS);
+    const renew = setInterval(() => {
+      void store.renew(id, on.id).catch(() => {});
+      if (peer && claim === "granted") void renewPeerSlot(peer, peerToken);
+    }, RENEW_MS);
     renew.unref?.();
     try {
       return await build({ target: on });
@@ -732,6 +785,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     } finally {
       clearInterval(renew);
       await store.releaseTarget(id, on.id).catch(() => {});
+      if (peer && claim === "granted") await releasePeerSlot(peer, peerToken);
     }
     await deploySlot?.awaitLocal({ signal: gate.signal, wait: gate.wait, log: gate.log });
     return withBuildSlot({ ...gate, targets: [] }, bounded, build);
@@ -838,4 +892,31 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       }
     }
   }
+}
+
+/** A linked instance's gate token here. Its deployment is unknown here, so estimates skip it. */
+export function peerSlotToken(peerId: string, token: string): string {
+  return `build:mesh-${peerId}-${token}`;
+}
+
+/** Takes a slot here for a linked instance's build, now or not at all: never past builds waiting here. */
+export async function claimSlotForPeer(token: string): Promise<boolean> {
+  const store = gateStores.redis;
+  const { limit } = await currentLimit(await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST));
+  const slot = await store.tryAcquire(token, limit);
+  if (!slot) {
+    await store.remove(token);
+    return false;
+  }
+  if (slot.alone) await store.endSweep();
+  return true;
+}
+
+/** Extends a linked instance's lease. False once it lapsed or was released. */
+export async function renewSlotForPeer(token: string): Promise<boolean> {
+  return gateStores.redis.renewHeld(token);
+}
+
+export async function releaseSlotForPeer(token: string): Promise<void> {
+  await gateStores.redis.release(token, false);
 }

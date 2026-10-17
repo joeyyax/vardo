@@ -23,6 +23,18 @@ vi.mock("@/lib/docker/build-targets", async (original) => ({
   markTargetDown: (t: { id: string }) => void ready.set(t.id, false),
 }));
 
+const { peerSlot } = vi.hoisted(() => ({
+  peerSlot: { reply: "granted" as string, calls: [] as string[] },
+}));
+vi.mock("@/lib/mesh/build-slot", () => ({
+  claimPeerSlot: async (peer: string) => {
+    peerSlot.calls.push(`claim:${peer}`);
+    return peerSlot.reply;
+  },
+  renewPeerSlot: async (peer: string) => void peerSlot.calls.push(`renew:${peer}`),
+  releasePeerSlot: async (peer: string) => void peerSlot.calls.push(`release:${peer}`),
+}));
+
 vi.mock("@/lib/deploy/running-clock", () => ({
   pauseRunningClock: (id: string) => {
     state.clock.push(`pause:${id}`);
@@ -73,7 +85,7 @@ vi.mock("@/lib/utils/exec", () => ({
 }));
 
 const { createBuildPlacement, NO_PLACEMENT } = await import("@/lib/docker/build-placement");
-const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta, recordablePeak } = await import(
+const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta, recordablePeak, claimSlotForPeer, targetSlotView } = await import(
   "@/lib/docker/build-gate"
 );
 
@@ -222,6 +234,7 @@ function fakeRedisStore() {
   let hold: string | null = null;
   let admits = 0;
   const targetRunning: Record<string, Set<string>> = {};
+  const full = new Set<string>();
   const store = {
     async tryAcquire(id: string, limit: number) {
       if (!queue.includes(id)) queue.push(id);
@@ -264,6 +277,22 @@ function fakeRedisStore() {
       return admits;
     },
     async renew() {},
+    async renewHeld(id: string) {
+      return running.has(id);
+    },
+    async markFull(target: string) {
+      full.add(target);
+    },
+    async fullTargets(ids: string[]) {
+      return new Set(ids.filter((id) => full.has(id)));
+    },
+    async readyTargets() {
+      return null;
+    },
+    async setReadyTargets() {},
+    async targetHolders(ids: string[]) {
+      return ids.flatMap((id) => [...(targetRunning[id] ?? [])]);
+    },
     async claimSweep(id: string) {
       if (running.size > 0 || hold?.startsWith("sweep:")) return false;
       hold = `sweep:${id}`;
@@ -283,8 +312,17 @@ function fakeRedisStore() {
     },
     queue,
     targetRunning,
+    full,
+    running,
+    hold: () => hold,
   };
-  return store as unknown as RedisStore & { queue: string[]; targetRunning: Record<string, Set<string>> };
+  return store as unknown as RedisStore & {
+    queue: string[];
+    targetRunning: Record<string, Set<string>>;
+    full: Set<string>;
+    running: Set<string>;
+    hold: () => string | null;
+  };
 }
 
 const bounded = { env: {}, loadArgs: [], limitBytes: 6 * GiB, container: "vardo-buildkit" };
@@ -629,5 +667,124 @@ describe("withBuildSlot with build targets", async () => {
     first.resolve();
     await running;
     expect(runs).toBe(1);
+  });
+});
+
+describe("withBuildSlot on a linked instance", () => {
+  let store: ReturnType<typeof fakeRedisStore>;
+  const mesh = (id: string) => ({
+    id: `mesh-${id}`, kind: "mesh" as const, peerId: id, name: "Long House", host: "10.99.0.2", port: 2222, user: "vardo-mesh",
+    privateKey: "key", hostKey: "[10.99.0.2]:2222 ssh-ed25519 AAAA", maxConcurrent: 1,
+  });
+
+  beforeEach(() => {
+    store = fakeRedisStore();
+    resetBuildGateForTests(store);
+    ready.clear();
+    peerSlot.reply = "granted";
+    peerSlot.calls.length = 0;
+    Object.assign(state, { peak: 3.2 * GB, recorded: [], steps: [], killed: [], anon: [], inspectFails: false, clock: [] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Holds this host's only slot until `resolve` runs. */
+  async function busyHere() {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-here").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    return { running, resolve: first.resolve };
+  }
+
+  it("takes a slot in the peer's gate before building there, renews it with the target's and gives it back", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const here = await busyHere();
+    const b = gateFor("dep-b");
+    await withBuildSlot({ ...b.gate, targets: [mesh("lh")] }, bounded, async ({ target }) => {
+      expect(target?.id).toBe("mesh-lh");
+      expect(peerSlot.calls).toEqual(["claim:lh"]);
+      vi.advanceTimersByTime(10_000);
+    });
+    here.resolve();
+    await here.running;
+    expect(peerSlot.calls).toEqual(["claim:lh", "renew:lh", "release:lh"]);
+    expect(b.lines).toContain("[build] Building on Long House (vardo-mesh@10.99.0.2:2222)");
+  });
+
+  it("waits for this host instead of building alongside a full peer's own builds", async () => {
+    peerSlot.reply = "full";
+    const here = await busyHere();
+    const b = gateFor("dep-b");
+    const where: (string | null)[] = [];
+    const queued = withBuildSlot({ ...b.gate, targets: [mesh("lh")] }, bounded, async ({ target }) => void where.push(target?.id ?? null));
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(where).toEqual([]);
+    expect(store.full.has("mesh-lh")).toBe(true);
+    expect(store.targetRunning["mesh-lh"]?.size ?? 0).toBe(0);
+    expect(b.lines.filter((l) => l.includes("builder is full"))).toEqual(["[queue] Long House's builder is full; waiting for a free slot"]);
+    here.resolve();
+    await Promise.all([here.running, queued]);
+    expect(where).toEqual([null]);
+    expect(peerSlot.calls).toEqual(["claim:lh"]);
+  });
+
+  it("builds on an older peer without the endpoint as before, with nothing to renew or release", async () => {
+    peerSlot.reply = "unsupported";
+    const here = await busyHere();
+    const b = gateFor("dep-b");
+    let where: string | null = null;
+    await withBuildSlot({ ...b.gate, targets: [mesh("old")] }, bounded, async ({ target }) => void (where = target?.id ?? null));
+    here.resolve();
+    await here.running;
+    expect(where).toBe("mesh-old");
+    expect(peerSlot.calls).toEqual(["claim:old"]);
+    expect(b.lines.some((l) => l.includes("build queue"))).toBe(false);
+  });
+
+  it("never asks a plain SSH target for a slot", async () => {
+    const here = await busyHere();
+    await withBuildSlot({ ...gateFor("dep-b").gate, targets: [{ ...mesh("lh"), kind: "ssh" as const, peerId: undefined }] }, bounded, async () => {});
+    here.resolve();
+    await here.running;
+    expect(peerSlot.calls).toEqual([]);
+  });
+
+  it("leaves a full peer out of the queue's target slots", async () => {
+    const lh = mesh("lh");
+    const load = async () => [lh];
+    expect((await targetSlotView({ load, check: async () => true })).slots).toBe(1);
+    await store.markFull(lh.id);
+    resetBuildGateForTests(store);
+    expect((await targetSlotView({ load, check: async () => true })).slots).toBe(0);
+  });
+});
+
+describe("claimSlotForPeer", () => {
+  let store: ReturnType<typeof fakeRedisStore>;
+
+  beforeEach(() => {
+    store = fakeRedisStore();
+    resetBuildGateForTests(store);
+    Object.assign(state, { peak: 3.2 * GB, recorded: [], steps: [], killed: [], anon: [], inspectFails: false, clock: [] });
+  });
+
+  it("takes a free slot here without holding the builder for a sweep", async () => {
+    expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+    expect(store.running.has("build:mesh-jy0-a")).toBe(true);
+    expect(store.hold()).toBeNull();
+  });
+
+  it("refuses while this host is full and leaves nothing queued ahead of its own builds", async () => {
+    state.peak = 9 * GiB;
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(false);
+    expect(store.queue).toEqual([]);
+    expect(store.running.has("build:mesh-jy0-a")).toBe(false);
+    first.resolve();
+    await running;
   });
 });

@@ -40,9 +40,10 @@ describe.skipIf(!client)("build gate on Redis", () => {
     remote: `${prefix}:remote`,
     target: `${prefix}:target:`,
     ready: `${prefix}:ready`,
+    full: `${prefix}:full:`,
   };
   const store = redisBuildStore(keys, client! as never);
-  const allKeys = () => [...Object.values(keys), `${keys.target}lh`, `${keys.target}hz`];
+  const allKeys = () => [...Object.values(keys), `${keys.target}lh`, `${keys.target}hz`, `${keys.full}lh`];
 
   beforeEach(async () => {
     await client!.del(...allKeys());
@@ -251,6 +252,27 @@ describe.skipIf(!client)("build gate on Redis", () => {
     await store.endSweep();
     await store.tryAcquire("c", 2);
     expect(await store.release("b", false)).not.toBe(b!.gen);
+  });
+
+  it("renews a held lease but never retakes a lapsed or released one", async () => {
+    await store.tryAcquire("peer", 2);
+    await store.endSweep();
+    expect(await store.renewHeld("peer")).toBe(true);
+    await client!.zadd(keys.running, Date.now() - 1000, "peer");
+    expect(await store.renewHeld("peer")).toBe(false);
+    expect(await client!.zscore(keys.running, "peer")).not.toBeNull();
+    expect(await store.tryAcquire("next", 1)).toMatchObject({ target: null });
+    expect(await client!.zscore(keys.running, "peer")).toBeNull();
+    await store.release("next", false);
+    expect(await store.renewHeld("next")).toBe(false);
+    expect(await client!.zcard(keys.running)).toBe(0);
+  });
+
+  it("keeps a target out while its own gate is full", async () => {
+    expect([...(await store.fullTargets(["lh", "hz"]))]).toEqual([]);
+    await store.markFull("lh");
+    expect([...(await store.fullTargets(["lh", "hz"]))]).toEqual(["lh"]);
+    expect(await client!.pttl(`${keys.full}lh`)).toBeGreaterThan(0);
   });
 
   it("takes the sweep hold only while nothing runs", async () => {
