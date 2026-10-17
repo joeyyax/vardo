@@ -123,16 +123,14 @@ describe.skipIf(!enabled)("remote build over SSH", () => {
     local.push(`${project}-api`);
 
     const ops = registryOps({ ...parseRegistryUrl(registryHost!)!, credential: null }, { log, withAuth: (fn) => fn(dockerEnv()) });
-    const pushes: Promise<boolean>[] = [];
     const before = lines.length;
     await composeBuild({
       appId: `e2e-${tag}`, slotDir: slot, composeFileArgs: ["-f", join(slot, "docker-compose.yml")], project, services: ["api"],
       noCache: false, rebuild: false, bounded: { env: {}, loadArgs: [], limitBytes: null }, env: dockerEnv(),
       sourceDir: repo, repoDir: repo, gitSha: sha, withGitDir: false, log,
-      registry: { ops, appName: project }, pushes, targets: [target],
+      registry: { ops, appName: project }, targets: [target],
       gate: (fn) => fn({ target }),
     });
-    expect(pushes).toHaveLength(0);
     expect(await run(["run", "--rm", `${project}-api`, "cat", "/built"])).toBe(`api-${tag}`);
     console.log(lines.slice(before).filter((l) => !l.startsWith("[e2e]")).join("\n"));
   }, 300_000);

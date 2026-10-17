@@ -391,18 +391,18 @@ describe("prepareRepo image reuse", () => {
       expect(dockerCalls).toContainEqual(["pull", "--quiet", ref]);
       expect(dockerCalls).toContainEqual(["tag", ref, newImage]);
       expect(remote.pushed).toEqual([]);
-      expect(ctx.registryPushes ?? []).toHaveLength(0);
       expect(ctx.builtImageRefs).toEqual([newImage]);
     });
 
-    it("keeps Nixpacks' own build here", async () => {
+    it("keeps Nixpacks' own build here and doesn't push it", async () => {
       const ctx = makeCtx();
       await prepareRepo(ctx);
       const [cmd, , opts] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
       expect(cmd).toBe("nixpacks");
       expect(opts.env.DOCKER_HOST).toBeUndefined();
       expect(remote.offered).toEqual([undefined]);
-      expect(remote.pushed).toEqual([newImage]);
+      expect(remote.pushed).toEqual([]);
+      expect(dockerCalls.some((a) => a[0] === "push")).toBe(false);
     });
   });
 });

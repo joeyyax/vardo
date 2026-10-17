@@ -407,8 +407,6 @@ type RepoBuild = {
   gate: BuildGate;
   /** Targets a Dockerfile build may run on, with the registry ref that brings its image here. */
   remote?: { targets: BuildTarget[]; ref: string } | null;
-  /** Set when the image came from a target, so it's already in the registry. */
-  ranOn?: { target: BuildTarget | null };
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -494,7 +492,6 @@ async function dockerBuild(
   let ran: BoundedBuild = bounded;
   try {
     await withBuildSlot({ ...build.gate, targets: remote?.targets }, bounded, async ({ target }) => {
-      if (build.ranOn) build.ranOn.target = target;
       if (!target || !remote) {
         ran = bounded;
         return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
@@ -878,7 +875,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       const registry = key ? await buildRegistryOps(log, signal) : null;
       // Targets bring images back through the registry, so they need one.
       const targets = registry ? await configuredTargets() : [];
-      const ranOn: { target: BuildTarget | null } = { target: null };
       const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName, registry) : null;
 
       if (reused) {
@@ -921,7 +917,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           buildKey: key,
           capture,
           remote: registry && key && targets.length > 0 ? { targets, ref: registry.ref(app.name, key) } : null,
-          ranOn,
         }));
         try {
           await run();
@@ -944,7 +939,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw buildErr;
           }
         }
-        if (registry && key && !ranOn.target) (ctx.registryPushes ??= []).push(registry.push(imageName, registry.ref(app.name, key)));
       }
 
       if (key) {

@@ -518,7 +518,6 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           deploymentId: ctx.deploymentId,
           wait: ctx.wait,
           registry: registry ? { ops: registry, appName: app.name } : null,
-          pushes: (ctx.registryPushes ??= []),
           targets: registry ? await configuredTargets() : [],
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());

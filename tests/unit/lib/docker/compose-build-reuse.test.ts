@@ -233,7 +233,6 @@ describe("planComposeReuse", () => {
               pulled.push(ref);
               return ref.endsWith(webKey);
             },
-            push: async () => true,
             untag: async (ref) => {
               untagged.push(ref);
             },
