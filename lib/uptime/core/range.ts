@@ -54,16 +54,20 @@ export function trimToHistory(buckets: Bucket[], bucketMs: number, historyStart:
   return { buckets: buckets.filter((b) => b.start + bucketMs > historyStart), since: historyStart };
 }
 
-const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-const monthDayTime = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+/** "Oct 16" in `timeZone`. */
+export const formatDay = (ms: number, timeZone = "UTC"): string => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(ms);
+/** "10:14 PM" in `timeZone`. */
+export const formatTime = (ms: number, timeZone = "UTC"): string => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(ms);
+/** "Oct 16, 10:14 PM" in `timeZone`: the one way uptime prints a moment. */
+export const formatWhen = (ms: number, timeZone = "UTC"): string => `${formatDay(ms, timeZone)}, ${formatTime(ms, timeZone)}`;
 
-/** "Oct 16" for a history of a day or more, "Oct 16, 22:14" for a shorter one. */
-export function sinceLabel(since: number, now: number): string {
-  return now - since < 2 * DAY_MS ? monthDayTime.format(since) : monthDay.format(since);
+/** "Oct 16" for a history of a day or more, "Oct 16, 10:14 PM" for a shorter one. */
+export function sinceLabel(since: number, now: number, timeZone = "UTC"): string {
+  return now - since < 2 * DAY_MS ? formatWhen(since, timeZone) : formatDay(since, timeZone);
 }
 
 /** What a figure covers: "30 days", or "since Oct 16" when the history is shorter than the range. */
-export function coverage(spanMs: number, historyStart: number | null, now: number, spanLabel: string): { label: string; since: boolean } {
-  if (historyStart !== null && now - historyStart < spanMs) return { label: `since ${sinceLabel(historyStart, now)}`, since: true };
+export function coverage(spanMs: number, historyStart: number | null, now: number, spanLabel: string, timeZone = "UTC"): { label: string; since: boolean } {
+  if (historyStart !== null && now - historyStart < spanMs) return { label: `since ${sinceLabel(historyStart, now, timeZone)}`, since: true };
   return { label: spanLabel, since: false };
 }

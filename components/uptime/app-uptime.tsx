@@ -6,24 +6,24 @@ import { RelativeTime } from "@/components/relative-time";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { RANGE_LABELS } from "@/lib/uptime/core/range";
+import { RANGE_LABELS, formatWhen } from "@/lib/uptime/core/range";
 import { figureTiles, figureWithSince, formatDuration, formatMs, readingLabel, stateLabel } from "@/lib/uptime/format";
 import type { AppUptime, UptimeRange } from "@/lib/uptime/types";
 import { CheckCard } from "./check-card";
 import { MonitorSheet, type CheckLink } from "./monitor-sheet";
 import { DayTicks, StatePill, Tile } from "./parts";
 import { BarsCaption, UptimeRangePicker } from "./range-controls";
+import { UptimeTimeZone } from "./time-zone";
 
 const POLL_MS = 30_000;
 
-const day = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /**
  * The app page's Uptime tab. Every check of the app is managed here: the domains' automatic checks and the ones added by hand.
  * The same monitors appear in the Uptime page, which renders the same components.
  */
 export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; appId: string; canManage: boolean }) {
-  const [data, setData] = useState<AppUptime | null>(null);
+  const [data, setData] = useState<(AppUptime & { timeZone?: string }) | null>(null);
   const [failed, setFailed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [range, setRange] = useState<UptimeRange | null>(null);
@@ -54,6 +54,7 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
 
   if (failed && !data) return <EmptyState title="Couldn't load uptime" body="Try again in a moment." />;
   if (!data) return <p className="text-sm text-muted-foreground">Loading uptime…</p>;
+  const timeZone = data.timeZone ?? "UTC";
 
   const link: CheckLink = {
     appId,
@@ -75,6 +76,7 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
   }
 
   return (
+    <UptimeTimeZone value={timeZone}>
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StatePill state={data.state}>
@@ -105,17 +107,17 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {figureTiles(data.historyStart, now, { h24: data.uptime24h, d30: data.uptime30d, d90: data.uptime90d }).map((t) => (
-          <Tile key={t.label} label={t.label} value={t.value} />
+        {figureTiles(data.historyStart, now, { h24: data.uptime24h, d30: data.uptime30d, d90: data.uptime90d }, timeZone, data.state === "stopped" ? "Not checked while stopped" : undefined).map((t) => (
+          <Tile key={t.label} label={t.label} value={t.value} pending={t.pending} />
         ))}
-        <Tile label="Response" value={formatMs(data.medianLatency24h)} sub="24h median" />
+        {data.medianLatency24h === null ? <Tile label="Response, 24h median" value="No responses yet" pending /> : <Tile label="Response" value={formatMs(data.medianLatency24h)} sub="24h median" />}
       </div>
 
       <Card variant="surface" className="space-y-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="type-h3">Last {RANGE_LABELS[data.range]}</h2>
-            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(data.rangeUptime, data.since, now)}</p>
+            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(data.rangeUptime, data.since, now, timeZone)}</p>
           </div>
           <UptimeRangePicker value={data.range} onChange={setRange} />
         </div>
@@ -123,7 +125,7 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
         <BarsCaption range={data.range} since={data.since} now={now} bars={data.bars.length} />
         <p className="text-xs text-muted-foreground">
           {data.lastOutage
-            ? `Last outage: ${day.format(data.lastOutage.start)}${data.lastOutage.end ? `, ${formatDuration(data.lastOutage.end - data.lastOutage.start)}` : ", ongoing"}`
+            ? `Last outage: ${formatWhen(data.lastOutage.start, timeZone)}${data.lastOutage.end ? `, ${formatDuration(data.lastOutage.end - data.lastOutage.start)}` : ", ongoing"}`
             : "No outages recorded."}
         </p>
       </Card>
@@ -138,5 +140,6 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
       </Card>
       {sheet}
     </div>
+    </UptimeTimeZone>
   );
 }

@@ -12,5 +12,5 @@ export default async function MonitorPage({ params }: PageProps) {
   if (!actor) redirect("/onboarding");
 
   const data = await pageData(loadMonitorPage(actor, monitorId));
-  return <MonitorDetail orgId={actor.org.id} initial={data.monitor} vantages={data.vantages} canManage={data.canManage} />;
+  return <MonitorDetail orgId={actor.org.id} initial={data.monitor} vantages={data.vantages} canManage={data.canManage} timeZone={data.timeZone} />;
 }

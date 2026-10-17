@@ -1,6 +1,6 @@
 // Display helpers for uptime. Pure, so client components can import them.
 
-import { coverage, sinceLabel } from "./core/range";
+import { coverage, formatDay, formatWhen, sinceLabel } from "./core/range";
 import type { Check, CheckPath, DayTick, DisplayState, ErrorKind, MonitorState, Reading, VantageView } from "./types";
 
 /** Why a check failed, in words. */
@@ -160,44 +160,50 @@ export function tickTone(day: Pick<DayTick, "minutesUp" | "minutesDown" | "uptim
   return (day.uptimePct ?? 0) < 95 ? "down" : "partial";
 }
 
-const dayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-
-const timeFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
-
-/** A bar's hover text: the day for daily bars, the time (UTC) for narrower ones. */
-export function tickTitle(day: DayTick, barMs = 86_400_000): string {
-  const date = barMs < 86_400_000 ? `${timeFormat.format(day.start)} UTC` : dayFormat.format(day.start);
+/** A bar's hover text: the day for daily bars, which are UTC days, and the time in `timeZone` for narrower ones. */
+export function tickTitle(day: DayTick, barMs = 86_400_000, timeZone = "UTC"): string {
+  const date = barMs < 86_400_000 ? formatWhen(day.start, timeZone) : formatDay(day.start, "UTC");
   const tone = tickTone(day);
   if (tone === "none") return `${date}: no data`;
   return `${date}: ${formatPct(day.uptimePct)}`;
 }
 
-/** "30 days", or "Since Oct 16" when the monitor is younger than that. */
-export function figureLabel(spanMs: number, spanLabel: string, createdAt: number | null, now = Date.now()): string {
-  const { label, since } = coverage(spanMs, createdAt, now, spanLabel);
-  return since ? `S${label.slice(1)}` : label;
+/** "Uptime, 30 days", or "Uptime since Oct 16" when the monitor is younger than that. */
+export function figureLabel(spanMs: number, spanLabel: string, createdAt: number | null, now = Date.now(), timeZone = "UTC"): string {
+  const { label, since } = coverage(spanMs, createdAt, now, spanLabel, timeZone);
+  return since ? `Uptime ${label}` : `Uptime, ${label}`;
 }
 
+/** What an empty figure is waiting for. */
+export const FIGURE_PENDING = "Waiting for the first checks";
+
 /**
- * The 24 hour, 30 day and 90 day figures as tiles. Tiles the history doesn't fill collapse into one "Since …" tile,
- * so a young monitor doesn't show the same number three times.
+ * The 24 hour, 30 day and 90 day figures as tiles. Tiles the history doesn't fill collapse into one "Uptime since …" tile,
+ * so a young monitor doesn't show the same number three times. A figure with no checks yet says so instead of a dash.
  */
-export function figureTiles(createdAt: number | null, now: number, v: { h24: number | null; d30: number | null; d90: number | null }): { label: string; value: string }[] {
+export function figureTiles(
+  createdAt: number | null,
+  now: number,
+  v: { h24: number | null; d30: number | null; d90: number | null },
+  timeZone = "UTC",
+  pendingText = FIGURE_PENDING,
+): { label: string; value: string; pending: boolean }[] {
   const spans = [
     { ms: 86_400_000, label: "24 hours", pct: v.h24 },
     { ms: 30 * 86_400_000, label: "30 days", pct: v.d30 },
     { ms: 90 * 86_400_000, label: "90 days", pct: v.d90 },
   ];
+  const tile = (label: string, pct: number | null) => ({ label, value: pct === null ? pendingText : formatPct(pct), pending: pct === null });
   const full = spans.filter((s) => !coverage(s.ms, createdAt, now, s.label).since);
   const short = spans.find((s) => coverage(s.ms, createdAt, now, s.label).since);
-  const tiles = full.map((s) => ({ label: s.label, value: formatPct(s.pct) }));
-  if (short) tiles.push({ label: figureLabel(short.ms, short.label, createdAt, now), value: formatPct(short.pct) });
+  const tiles = full.map((s) => tile(`Uptime, ${s.label}`, s.pct));
+  if (short) tiles.push(tile(figureLabel(short.ms, short.label, createdAt, now, timeZone), short.pct));
   return tiles;
 }
 
 /** "99.98%", with "since Oct 16" after it when the history is shorter than the range. */
-export function figureWithSince(pct: number | null, since: number | null, now = Date.now()): string {
-  return since === null ? formatPct(pct) : `${formatPct(pct)} since ${sinceLabel(since, now)}`;
+export function figureWithSince(pct: number | null, since: number | null, now = Date.now(), timeZone = "UTC"): string {
+  return since === null ? formatPct(pct) : `${formatPct(pct)} since ${sinceLabel(since, now, timeZone)}`;
 }
 
 /** "this instance", "Frankfurt", "this instance and Frankfurt". */

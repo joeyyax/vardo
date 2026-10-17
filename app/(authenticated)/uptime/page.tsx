@@ -9,5 +9,5 @@ export default async function UptimePage() {
   if (!actor) redirect("/onboarding");
 
   const data = await pageData(loadUptimePage(actor));
-  return <UptimeMonitors orgId={actor.org.id} initialMonitors={data.monitors} vantages={data.vantages} canManage={data.canManage} />;
+  return <UptimeMonitors orgId={actor.org.id} initialMonitors={data.monitors} vantages={data.vantages} canManage={data.canManage} timeZone={data.timeZone} />;
 }

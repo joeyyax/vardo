@@ -18,6 +18,7 @@ import { CheckNote, ReviewCard } from "./health-parts";
 import { MonitorActions } from "./monitor-actions";
 import { MonitorHistory } from "./monitor-history";
 import { DayTicks, StateMark, TargetLink } from "./parts";
+import { useUptimeTimeZone } from "./time-zone";
 
 /**
  * One check, with everything needed to manage it in place: state, range figures, path and expected response, the review question,
@@ -40,6 +41,7 @@ export function CheckCard({
   now: number;
   onChanged: () => void;
 }) {
+  const timeZone = useUptimeTimeZone();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<MonitorDetail | null>(null);
   const [failed, setFailed] = useState(false);
@@ -92,7 +94,7 @@ export function CheckCard({
           )}
         </div>
         <div className="text-right text-sm tabular-nums">
-          <p className="font-medium">{figureWithSince(m.rangeUptime, m.since, now)}</p>
+          <p className="font-medium">{figureWithSince(m.rangeUptime, m.since, now, timeZone)}</p>
           <p className="text-xs text-muted-foreground">{formatMs(m.latencyMs)}</p>
         </div>
       </div>

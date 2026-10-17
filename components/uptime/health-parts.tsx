@@ -22,20 +22,25 @@ const SOURCE_NOTE = {
 export const HOMEPAGE_HINT = "Checking the homepage. A health endpoint like /healthz is lighter and skips caches.";
 
 /** "Checking /healthz", or the homepage hint, for an automatic monitor. Manual monitors show their URL instead. */
-export function CheckNote({ monitor }: { monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check" | "cachedBy" | "state"> }) {
+export function CheckNote({
+  monitor,
+  homepageHint = true,
+}: {
+  monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check" | "cachedBy" | "state">;
+  /** False where a heavy-check notice already gives the advice. */
+  homepageHint?: boolean;
+}) {
   if (monitor.state === "stopped") return <p className="text-xs text-muted-foreground">Not checked while the app is stopped.</p>;
   const note = [];
   if (monitor.cachedBy) note.push(<span key="cache" className="text-status-warning">{cacheNote(monitor.cachedBy)}</span>);
   if (monitor.source === "auto" && monitor.check.type === "http" && monitor.healthSource) {
-    note.push(
-      monitor.healthPath ? (
+    if (monitor.healthPath) {
+      note.push(
         <span key="path">
           Checking <code className="font-mono">{monitor.healthPath}</code> · {SOURCE_NOTE[monitor.healthSource]}
-        </span>
-      ) : (
-        <span key="home">{HOMEPAGE_HINT}</span>
-      ),
-    );
+        </span>,
+      );
+    } else if (homepageHint) note.push(<span key="home">{HOMEPAGE_HINT}</span>);
   }
   if (monitor.privateHeader) note.push(<span key="private">Checked from this instance only: it uses a private header.</span>);
   if (note.length === 0) return null;

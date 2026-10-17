@@ -9,6 +9,7 @@ import { stateLabel, tickTitle, tickTone, type TickTone } from "@/lib/uptime/for
 import { rangeSlots } from "@/lib/uptime/core/range";
 import type { DayTick, DisplayState, MonitorSummary, UptimeRange } from "@/lib/uptime/types";
 import { cn } from "@/lib/utils";
+import { useUptimeTimeZone } from "./time-zone";
 
 const TICK_COLOR: Record<TickTone, string> = {
   up: "bg-status-success",
@@ -19,6 +20,7 @@ const TICK_COLOR: Record<TickTone, string> = {
 
 /** One bar per day: green up, amber partial, red down, grey no data. */
 export function DayTicks({ days, className, tall = false, barMs, range }: { days: DayTick[]; className?: string; tall?: boolean; barMs?: number; range?: UptimeRange }) {
+  const timeZone = useUptimeTimeZone();
   // Bars keep the width they have with full history and sit against "now"; the time before the history stays empty.
   const slots = Math.max(range ? rangeSlots(range) : days.length, days.length);
   return (
@@ -31,7 +33,7 @@ export function DayTicks({ days, className, tall = false, barMs, range }: { days
       {days.map((day, i) => (
         <span
           key={day.start}
-          title={tickTitle(day, barMs)}
+          title={tickTitle(day, barMs, timeZone)}
           className={cn("min-w-0 rounded-[2px]", TICK_COLOR[tickTone(day)])}
           style={i === 0 ? { gridColumnStart: slots - days.length + 1 } : undefined}
         />
@@ -71,11 +73,15 @@ export function StatePill({ state, downSince, children }: { state: DisplayState;
   );
 }
 
-export function Tile({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }) {
+export function Tile({ label, value, sub, tone, pending = false }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string; pending?: boolean }) {
   return (
     <div className="squircle grid gap-0.5 rounded-lg bg-card px-4 py-3 shadow-card dark:border">
       <span className="text-[13px] text-muted-foreground">{label}</span>
-      <span className={cn("text-2xl font-semibold leading-[1.1] tracking-[-0.01em] tabular-nums", tone)}>{value}</span>
+      {pending ? (
+        <span className="text-sm leading-7 text-muted-foreground">{value}</span>
+      ) : (
+        <span className={cn("text-2xl font-semibold leading-[1.1] tracking-[-0.01em] tabular-nums", tone)}>{value}</span>
+      )}
       {sub && <span className="text-xs text-muted-foreground">{sub}</span>}
     </div>
   );

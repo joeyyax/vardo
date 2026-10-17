@@ -5,6 +5,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { containerHealthFor } from "@/lib/uptime/health";
 import { getAppUptime } from "@/lib/uptime/service";
+import { getOrgTimeZone } from "@/lib/time-zone-settings";
 
 const rangeOf = (request: NextRequest) => parseRange(new URL(request.url).searchParams.get("range"));
 
@@ -16,8 +17,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId, "app.view");
     if (!app) return apiError.notFound("app");
-    const [uptime, container] = await Promise.all([getAppUptime(orgId, appId, Date.now(), rangeOf(request)), containerHealthFor(orgId, appId)]);
-    return NextResponse.json({ ...uptime, container });
+    const [uptime, container, timeZone] = await Promise.all([getAppUptime(orgId, appId, Date.now(), rangeOf(request)), containerHealthFor(orgId, appId), getOrgTimeZone(orgId)]);
+    return NextResponse.json({ ...uptime, container, timeZone });
   } catch (error) {
     return handleRouteError(error, "Error reading app uptime");
   }
