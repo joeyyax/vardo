@@ -93,8 +93,10 @@ export function BuildTargetsSettings() {
                   <p className="truncate font-mono text-xs text-muted-foreground">
                     {t.user}@{t.host}:{t.port} · {t.maxConcurrent} at a time
                   </p>
-                  <p className="truncate font-mono text-xs text-muted-foreground">
-                    {t.hostKey ? `Host key ${t.hostKey.join(", ")}` : "Host key not pinned yet; Test pins it"}
+                  <p className="truncate font-mono text-xs text-muted-foreground" title={t.hostKey?.join("\n")}>
+                    {t.hostKey
+                      ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}`
+                      : "Host key not pinned yet; Test pins it"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
