@@ -39,7 +39,7 @@ describe("proxyCreateBody", () => {
     const b = proxyCreateBody(proxyConfig("vardo-console:3001"), "nginx:1.31.6-alpine", false);
     expect(a.body.HostConfig).toMatchObject({ CapDrop: ["ALL"], ReadonlyRootfs: true, NetworkMode: "vardo-metadata" });
     expect(a.body.HostConfig.Sysctls).toEqual({ "net.ipv4.ip_forward": "0" });
-    expect(a.body.Labels["vardo.managed"]).toBeUndefined();
+    expect(a.body.Labels).not.toHaveProperty("vardo.managed");
     expect(a.hash).not.toBe(b.hash);
     expect(a.body.HostConfig).not.toHaveProperty("ExtraHosts");
     expect(proxyCreateBody(proxyConfig("host.docker.internal:3015"), "nginx:1.31.6-alpine", true).body.HostConfig.ExtraHosts).toEqual(["host.docker.internal:host-gateway"]);

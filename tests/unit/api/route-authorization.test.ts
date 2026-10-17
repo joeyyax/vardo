@@ -32,6 +32,7 @@ const GUARDS = new Set([
 /** Handlers that answer without a guard helper, keyed "path METHOD", each with its reason. */
 const ALLOWLIST: Record<string, string> = {
   "health/route.ts GET": "liveness probe; returns no instance data",
+  "internal/metadata/v1/self/route.ts GET": "answers only the metadata proxy and identifies the caller by container address (lib/metadata/handler.ts)",
   "auth/[...all]/route.ts GET": "Better Auth handler; authenticates the caller itself",
   "auth/[...all]/route.ts POST": "Better Auth handler; authenticates the caller itself",
   "mcp/route.ts GET": "static 405; stateless transport has no SSE stream",

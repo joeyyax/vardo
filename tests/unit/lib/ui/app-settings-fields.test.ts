@@ -265,7 +265,12 @@ describe("appSettingsPageFields", () => {
 describe("hasAppSettingsPageFields", () => {
   it("leaves a child service no Build page — its stack owns the build", () => {
     expect(hasAppSettingsPageFields("build", childService)).toBe(false);
-    expect(hasAppSettingsPageFields("networking", childService)).toBe(false);
+  });
+
+  it("gives a child service only its metadata endpoint on Networking", () => {
+    const fields = appSettingsPageFields("networking", childService);
+    const shown = (Object.keys(APP_SETTINGS_FIELD_PAGE) as AppSettingsFieldName[]).filter((k) => fields[k]);
+    expect(shown).toEqual(["metadataEndpoint"]);
   });
 
   it("keeps the pages a child service does own", () => {
