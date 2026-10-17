@@ -19,20 +19,26 @@ import {
   hourlySummary,
   effectiveIntervalSec,
   isDueAt,
+  markImpaired,
+  newMemory,
+  stepDamping,
   staggerOf,
   runCheck,
   signRecord,
   summarize,
   type Bucket,
   type CheckResult,
+  type DampMemory,
   type HttpCheck,
   type Monitor,
+  type Notice,
 } from "./core";
 import { incidentTitle, readingDetail } from "./format";
 import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
 import { syncPeerAlerts, syncPeerMonitors } from "./peers";
-import { externalWatchers, sharing } from "./watchers";
+import { queueNotice, flushNotices } from "./notices";
+import { externalWatchers, loadImpaired, sharing } from "./watchers";
 import { pruneProbes, tickProber } from "./prober";
 import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
@@ -46,9 +52,7 @@ const CONCURRENCY = 4;
 const CONSOLE_MONITOR_ID = "mon_console";
 
 const lastRun = new Map<string, number>();
-/** The state and reading each open alert was raised for. */
-const alerted = new Map<string, string>();
-const seenUp = new Set<string>();
+const damping = new Map<string, DampMemory>();
 let seeded = false;
 let lastRollup = 0;
 let lastReeval = 0;
@@ -259,34 +263,57 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
     await syncPeerAlerts(peerIds, now, silent).catch((err) => log.error("Peer alert sync failed:", err));
   }
 
+  const impaired = await loadImpaired(now);
   for (const m of monitors) {
     if (m.meshPeerId) continue;
     try {
-      const evaluation = evaluate({ vantages, results: results.filter((r) => r.monitorId === m.id), now, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length) });
+      const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
+      if (silent) continue;
+      const evaluation = evaluate({
+        vantages,
+        results: results.filter((r) => r.monitorId === m.id),
+        now,
+        intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length),
+        impaired,
+      });
+      const observation = evaluation.state === "unknown" ? null : { state: evaluation.state, key: `${evaluation.state}|${JSON.stringify(evaluation.reading ?? null)}` };
+      const before = damping.get(m.id) ?? newMemory();
+      const { memory, actions } = stepDamping(before, observation, now);
+      damping.set(m.id, memory);
+      if (actions.length === 0) continue;
+
       const title = incidentTitle(m.name, evaluation.state, evaluation.reading);
+      const audience = m.organizationId ? [m.organizationId] : operator;
       const outage = {
         about: m.id,
+        name: m.name,
         title,
-        orgIds: m.organizationId ? [m.organizationId] : operator,
+        orgIds: audience,
         appId: m.appId ?? undefined,
         severity: evaluation.state === "degraded" ? ("warning" as const) : ("critical" as const),
       };
-      if (evaluation.state === "down" || evaluation.state === "degraded") {
-        const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
-        const signature = `${evaluation.state}:${title}`;
-        const raised = alerted.get(m.id);
-        if (silent || raised === signature) continue;
-        // A new reading replaces the open incident, so its title is right.
-        if (raised) await resolveUptimeIncident(outage, "The reading changed.");
-        const detail = evaluation.reading
-          ? `${title}. ${readingDetail(evaluation.reading)}`
-          : `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`;
-        await openUptimeIncident(outage, detail);
-        alerted.set(m.id, signature);
-      } else if (evaluation.state === "up" && (alerted.delete(m.id) || !seenUp.has(m.id))) {
-        await resolveUptimeIncident(outage, `${m.name} is responding again.`);
+      const say = (kind: Notice["kind"], noticeTitle: string, detail: string) =>
+        queueNotice({ at: now, kind, audience: audience.join(","), monitorId: m.id, name: m.name, title: noticeTitle, detail });
+
+      for (const action of actions) {
+        if (action.kind === "open") {
+          // A new state or reading replaces the open incident, so its title is right.
+          if (before.announced) await resolveUptimeIncident(outage, "", { notify: false });
+          const detail = evaluation.reading
+            ? `${title}. ${readingDetail(evaluation.reading)}`
+            : `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`;
+          await openUptimeIncident(outage, detail, { notify: false });
+          if (action.notify) say("down", title, detail);
+        } else if (action.kind === "resolve") {
+          const wasOpen = await resolveUptimeIncident(outage, "", { notify: false });
+          if (action.notify || (action.stale && wasOpen)) say("recovered", `${m.name} is responding again`, `${m.name} is responding again.`);
+        } else if (action.kind === "flapping") {
+          say("flapping", `${m.name} is flapping`, `${m.name} changed state more than 3 times in 30 minutes. Notices pause until it has been stable for 15 minutes.`);
+        } else {
+          const word = action.state === "up" ? "up" : action.state === "down" ? "down" : "degraded";
+          say("settled", `${m.name} settled: ${word}`, `${m.name} has been stable for 15 minutes and is ${word}.`);
+        }
       }
-      if (evaluation.state === "up") seenUp.add(m.id);
     } catch (err) {
       log.error(`Alert sync for ${m.id} failed:`, err);
     }
@@ -310,7 +337,7 @@ export async function rollup(now = Date.now()): Promise<void> {
   if (monitors.length === 0) return;
   const thisHour = Math.floor(now / HOUR_MS) * HOUR_MS;
   const from = thisHour - HOUR_MS;
-  const [vantages, key, raw, watchers] = await Promise.all([
+  const [vantages, key, raw, watchers, impaired] = await Promise.all([
     listVantagePoints(),
     localSigningKey(),
     db
@@ -318,6 +345,7 @@ export async function rollup(now = Date.now()): Promise<void> {
       .from(uptimeResults)
       .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(from - 10 * 60_000)))),
     externalWatchers(),
+    loadImpaired(now),
   ]);
   const byMonitor = new Map<string, CheckResult[]>();
   for (const r of raw) {
@@ -328,7 +356,7 @@ export async function rollup(now = Date.now()): Promise<void> {
 
   const signedAt = new Date(now);
   for (const m of monitors) {
-    const buckets = summarize({ results: byMonitor.get(m.id) ?? [], vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
+    const buckets = summarize({ results: markImpaired(byMonitor.get(m.id) ?? [], impaired), vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
     for (const b of buckets) {
       if (b.minutesUp + b.minutesDown === 0 && b.minutesUnknown === 0) continue;
       const signed = signRecord(hourlySummary(LOCAL_VANTAGE_ID, m.id, b, now), key);
@@ -390,6 +418,7 @@ export async function tickUptime(now = Date.now()): Promise<void> {
     lastReeval = now;
     await syncAllAlerts(now);
   }
+  await flushNotices(now).catch((err) => log.error("Sending uptime notices failed:", err));
   if (now - lastRollup >= 60_000) {
     lastRollup = now;
     await rollup(now);

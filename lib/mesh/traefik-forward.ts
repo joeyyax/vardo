@@ -22,8 +22,8 @@ export const TRAEFIK_PORTS = ["80", "443"] as const;
 /** The mesh subnet; the only source the forward matches. */
 export const MESH_SUBNET = `${HUB_IP.split(".").slice(0, 3).join(".")}.0/24`;
 
-/** Off with VARDO_MESH_TRAEFIK_FORWARD=false. */
-export const traefikForwardEnabled = () => process.env.VARDO_MESH_TRAEFIK_FORWARD !== "false";
+/** Off unless VARDO_MESH_TRAEFIK_FORWARD=true. */
+export const traefikForwardEnabled = () => process.env.VARDO_MESH_TRAEFIK_FORWARD === "true";
 
 /** True while a linked instance is allowed to check this one. */
 export async function peerChecksAllowed(): Promise<boolean> {

@@ -80,7 +80,15 @@ describe("disagreement", () => {
     const e = ev([LOCAL, FRA, ORE], [...run("fra", "public", false), ...run("ore", "public", false), ...run("local", "local", true)]);
     expect(e).toMatchObject({ state: "down", reading: { kind: "unreachable-outside" } });
     const withMesh = ev([LOCAL, FRA, ORE], [...run("fra", "public", false), ...run("ore", "mesh", true)]);
-    expect(withMesh).toMatchObject({ state: "down", reading: { kind: "unreachable-outside" } });
+    expect(withMesh).toMatchObject({ state: "degraded", reading: { kind: "unreachable-outside" } });
+  });
+
+  it("never calls a single outside vantage point's failure an outage while local succeeds", () => {
+    const one = ev([LOCAL, FRA], [...run("fra", "public", false), ...run("local", "local", true)]);
+    expect(one).toMatchObject({ state: "degraded", reading: { kind: "unreachable-outside" } });
+    expect(one.downSince).toBeUndefined();
+    // Local failing too is agreement, so it is down.
+    expect(ev([LOCAL, FRA], [...run("fra", "public", false), ...run("local", "local", false)]).state).toBe("down");
   });
 
   it("reads 'failing from this instance only' when local fails and the others succeed", () => {

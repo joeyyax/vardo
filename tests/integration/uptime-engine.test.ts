@@ -5,11 +5,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "../unit/drizzle/scratch-db";
 
-const h = vi.hoisted(() => ({ emitted: [] as { orgId: string; type: string; incident?: { state: string } }[] }));
+type Emitted = { orgId: string; type: string; title?: string; message?: string; subject?: string; alerts?: unknown[]; incident?: { state: string } };
+const h = vi.hoisted(() => ({ emitted: [] as Emitted[] }));
 
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/notifications/dispatch", () => ({
-  emit: (orgId: string, event: { type: string; incident?: { state: string } }) => void h.emitted.push({ orgId, type: event.type, incident: event.incident }),
+  emit: (orgId: string, event: Emitted) =>
+    void h.emitted.push({ orgId, type: event.type, title: event.title, message: event.message, subject: event.subject, alerts: event.alerts, incident: event.incident }),
 }));
 vi.mock("@/lib/uptime/outbound", async (orig) => ({
   ...(await orig<typeof import("@/lib/uptime/outbound")>()),
@@ -28,8 +30,8 @@ describe.skipIf(!conn)("uptime engine on Postgres", { timeout: MIGRATE_TIMEOUT }
   const org = { kind: "org", orgId: "org1" } as const;
   let t = Date.UTC(2026, 0, 10, 12, 0, 0);
   const at = () => t;
-  // The console monitor shares the stubbed fetch; its incidents aren't under test.
-  const emitted = () => h.emitted.filter((e) => (e.incident as { subject?: { id: string } } | undefined)?.subject?.id !== "mon_console");
+  const emitted = () => h.emitted;
+  const flush = async () => (await import("@/lib/uptime/notices")).flushNotices(t);
 
   beforeAll(async () => {
     const url = await conn!.create(dbName);
@@ -78,28 +80,46 @@ describe.skipIf(!conn)("uptime engine on Postgres", { timeout: MIGRATE_TIMEOUT }
     expect(await engine.syncAutoMonitors()).toEqual({ added: 0, removed: 0 });
   });
 
-  it("opens an incident after two failures and resolves on recovery", async () => {
+  it("tells you about an outage once it has held, in one notice, with names", async () => {
     await pass(2);
     const up = await client.uptimeClient.listMonitors(org);
     expect(up.every((m) => m.state === "up" && m.localOnly)).toBe(true);
-    expect(emitted().filter((e) => e.incident?.state === "open")).toEqual([]);
+    expect(emitted()).toEqual([]);
 
     status = 503;
-    await pass(1);
-    expect(emitted()).toEqual([]);
-    await pass(1);
+    await pass(2);
     const down = (await client.uptimeClient.listMonitors(org)).find((m) => m.name === "shop.example.com")!;
     expect(down.state).toBe("down");
+    // Down, but not for 3 minutes yet.
+    await pass(2);
+    await flush();
+    expect(emitted()).toEqual([]);
+
+    // The incidents open once it has held; the notification waits a minute so a burst goes out together.
+    await pass(1);
+    expect((await sql`select 1 from incident where state = 'open'`).length).toBe(3);
+    await flush();
+    expect(emitted()).toEqual([]);
+    await pass(1);
+    await flush();
     const opened = emitted().filter((e) => e.type === "system.service-down");
-    expect(opened).toHaveLength(2);
-    expect(opened[0].incident?.state).toBe("open");
+    expect(opened).toHaveLength(1);
+    expect(opened[0].subject).toBe("Vardo: 3 monitors down");
+    expect(opened[0].message).toBe("- shop-pr-7.example.com\n- shop.example.com\n- Vardo console");
+    expect(JSON.stringify(opened)).not.toContain("mon_");
 
     await pass(3);
-    expect(emitted().filter((e) => e.type === "system.service-down")).toHaveLength(2);
+    await flush();
+    expect(emitted().filter((e) => e.type === "system.service-down")).toHaveLength(1);
 
     status = 200;
+    await pass(4);
     await pass(1);
-    expect(emitted().filter((e) => e.type === "alert.resolved")).toHaveLength(2);
+    await flush();
+    const resolved = emitted().filter((e) => e.type === "alert.resolved");
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].alerts).toHaveLength(3);
+    expect((await sql`select 1 from incident where state = 'open'`).length).toBe(0);
   });
 
   it("stays quiet while muted or in maintenance", async () => {

@@ -345,6 +345,8 @@ export type SystemServiceDownEvent = {
   service: string;
   description: string;
   latencyMs?: string;
+  /** Replaces "<service> down" as the email subject and heading, for notices that aren't a plain outage. */
+  subject?: string;
 };
 
 export type SystemRestartLoopEvent = {

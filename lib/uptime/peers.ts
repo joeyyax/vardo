@@ -12,6 +12,9 @@ import {
   DEFAULT_EXPECTED_STATUS,
   evaluate,
   judgePeerLink,
+  newMemory,
+  stepDamping,
+  type DampMemory,
   type Check,
   type PeerVerdict,
   type PeerVerdictKind,
@@ -22,6 +25,10 @@ import { toResult } from "./service";
 import { listVantagePoints } from "./vantage";
 
 const log = logger.child("uptime-peers");
+
+const damping = new Map<string, DampMemory>();
+/** The verdict kind each peer's open incident was raised for. */
+const announcedKind = new Map<string, PeerVerdictKind>();
 
 /** A heartbeat older than this is stale. */
 const HEARTBEAT_FRESH_MS = 5 * 60_000;
@@ -143,16 +150,27 @@ export async function syncPeerAlerts(peerIds: string[], now: number, silent: (m:
       const monitorId = linkMonitorId(peerId);
       const about = (kind: string) => `${monitorId}#${kind}`;
       if (verdict.state === "unknown") continue;
-      for (const kind of KINDS) {
-        if (kind !== verdict.kind) await resolveUptimeIncident({ about: about(kind), orgIds }, "Reachable again.");
-      }
-      if (verdict.kind === "ok") continue;
       const monitor = await db.query.uptimeMonitors.findFirst({ where: eq(uptimeMonitors.id, monitorId) });
       if (!monitor || silent(monitor)) continue;
-      await openUptimeIncident(
-        { about: about(verdict.kind), title: verdict.title, orgIds, severity: verdict.state === "down" ? "critical" : "warning" },
-        verdict.detail,
-      );
+
+      // A verdict is announced once it has held, like a monitor's state.
+      const state = verdict.kind === "ok" ? "up" : verdict.state === "down" ? "down" : "degraded";
+      const { memory, actions } = stepDamping(damping.get(peerId) ?? newMemory(), { state, key: verdict.kind }, now);
+      damping.set(peerId, memory);
+      for (const action of actions) {
+        if (action.kind === "resolve") {
+          for (const kind of KINDS) await resolveUptimeIncident({ about: about(kind), orgIds }, "Reachable again.", { notify: action.notify && kind === announcedKind.get(peerId) });
+          announcedKind.delete(peerId);
+        } else if (action.kind === "open") {
+          for (const kind of KINDS) if (kind !== verdict.kind) await resolveUptimeIncident({ about: about(kind), orgIds }, "", { notify: false });
+          await openUptimeIncident(
+            { about: about(verdict.kind), name: verdict.title, title: verdict.title, orgIds, severity: verdict.state === "down" ? "critical" : "warning" },
+            verdict.detail,
+            { notify: action.notify },
+          );
+          announcedKind.set(peerId, verdict.kind);
+        }
+      }
     } catch (err) {
       log.error(`Peer alert sync for ${peerId} failed:`, err);
     }

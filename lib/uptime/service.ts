@@ -27,6 +27,7 @@ import {
   effectiveIntervalSec,
   evaluate,
   fillDays,
+  markImpaired,
   findOutages,
   median,
   rangeUptime,
@@ -52,7 +53,7 @@ import type {
 import { vantageNames } from "./format";
 import { targetRefusal, type PolicyLevel } from "./outbound";
 import { listVantagePoints } from "./vantage";
-import { externalWatchers, sharing } from "./watchers";
+import { externalWatchers, loadImpaired, sharing } from "./watchers";
 
 const MINUTE_MS = 60_000;
 const RESULT_RETENTION_DAYS = 14;
@@ -128,6 +129,7 @@ export async function ownedRow(scope: Scope, id: string): Promise<UptimeMonitorR
 type Loaded = {
   rows: UptimeMonitorRow[];
   watchers: Map<string, string[]>;
+  impaired: Set<string>;
   appNames: Map<string, string>;
   vantages: VantagePoint[];
   recent: Map<string, CheckResult[]>;
@@ -187,7 +189,7 @@ const tick = (b: Bucket): DayTick => ({
 async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
   const ids = rows.map((r) => r.id);
   const appIds = [...new Set(rows.map((r) => r.appId).filter((id): id is string => !!id))];
-  const [vantages, resultRows, daily, appRows, watchers] = await Promise.all([
+  const [vantages, resultRows, daily, appRows, watchers, impaired] = await Promise.all([
     listVantagePoints(),
     ids.length
       ? db
@@ -198,8 +200,9 @@ async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
     dailyBuckets(ids, 30, now),
     appIds.length ? db.select({ id: apps.id, name: apps.name }).from(apps).where(inArray(apps.id, appIds)) : Promise.resolve([]),
     externalWatchers(),
+    loadImpaired(now),
   ]);
-  return { rows, watchers, appNames: new Map(appRows.map((a) => [a.id, a.name])), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
+  return { rows, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
 }
 
 /** How often each vantage point checks the monitor, counting those that share it. */
@@ -207,7 +210,7 @@ const periodOf = (row: UptimeMonitorRow, ctx: Pick<Loaded, "watchers">) => effec
 
 function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorSummary {
   const results = ctx.recent.get(row.id) ?? [];
-  const evaluation: Evaluation = evaluate({ vantages: ctx.vantages, results, now, intervalSec: periodOf(row, ctx) });
+  const evaluation: Evaluation = evaluate({ vantages: ctx.vantages, results, now, intervalSec: periodOf(row, ctx), impaired: ctx.impaired });
   const daily = ctx.daily.get(row.id) ?? [];
   const last = results.reduce<CheckResult | null>((best, r) => (!best || r.at > best.at ? r : best), null);
   const check = row.check;
@@ -309,10 +312,10 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
     channelNames(scope),
   ]);
   const summary = summarizeRow(row, ctx, now);
-  const results = rawRows.map(toResult);
+  const results = markImpaired(rawRows.map(toResult), ctx.impaired);
   const results24 = results.filter((r) => r.at >= since24.getTime());
   const days90 = daily90.get(id) ?? [];
-  const evaluation = evaluate({ vantages: ctx.vantages, results: results.filter((r) => r.at >= now - 15 * MINUTE_MS), now, intervalSec: periodOf(row, ctx) });
+  const evaluation = evaluate({ vantages: ctx.vantages, results: results.filter((r) => r.at >= now - 15 * MINUTE_MS), now, intervalSec: periodOf(row, ctx), impaired: ctx.impaired });
   const signed = hourly.find((h) => h.signedAt)?.signedAt?.getTime() ?? null;
   const received = await latestSummaries(id);
   const outages = await outagesFor(scope, row, results, ctx.vantages, sharing(ctx.watchers, row.id).length, now);
@@ -454,7 +457,7 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
   };
   const days90 = merged(90);
 
-  const results = raw.map(toResult);
+  const results = markImpaired(raw.map(toResult), ctx.impaired);
   const byMonitor = groupBy(results, (r) => r.monitorId);
   const outages = active.flatMap((m) =>
     findOutages({ results: byMonitor.get(m.id) ?? [], vantages: ctx.vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(ctx.watchers, m.id).length), from: now - RESULT_RETENTION_DAYS * DAY_MS, to: now }),

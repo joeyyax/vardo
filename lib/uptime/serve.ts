@@ -11,6 +11,7 @@ import { syncAlertsFor } from "./engine";
 import { localIdentity } from "./identity";
 import { resultsRequestSchema, watchRequestSchema, type VantageIdentity } from "./link";
 import { privateEntries, publicEntries, type Resolver } from "./net";
+import { traefikForwardEnabled } from "@/lib/mesh/traefik-forward";
 import { externalWatchers, sharing } from "./watchers";
 import { localSigningKey } from "./vantage";
 
@@ -36,7 +37,8 @@ export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[
   const live = rows
     .filter(({ monitor, appStatus }) => !(monitor.source === "auto" && appStatus === "stopped") && !monitor.meshPeerId)
     .map((r) => r.monitor);
-  const [open, closed] = await Promise.all([publicEntries(live, resolve), privateEntries(live, resolve)]);
+  // Private monitors go out as mesh checks only where the tunnel reaches Traefik; otherwise they stay local, without an error.
+  const [open, closed] = await Promise.all([publicEntries(live, resolve), traefikForwardEnabled() ? privateEntries(live, resolve) : []]);
   return [...open, ...closed];
 }
 

@@ -1,6 +1,7 @@
 // The agreement rule. A vantage point is failing on a path after two failed checks in a row. Public external results decide a monitor;
 // with none, mesh results decide; with none, the local one does. Vantage points outside the deciding set can still disagree.
 
+import { markImpaired } from "./impaired";
 import {
   isUnknownResult,
   type CheckPath,
@@ -51,6 +52,7 @@ const names = (list: VantageStatus[]) => [...new Set(list.map((s) => (s.vantage.
  * The monitor's state across vantage points and paths.
  * - Public external results decide; without them mesh results do; without those the local one does (`localOnly`).
  * - No deciding vantage point failing is `up`; most failing is `down`; some failing is `degraded`.
+ * - A single outside vantage point failing while the local check passes is `degraded`, never `down`.
  * - A mesh verdict of down with the local check passing is `degraded`: the app is up and the link or peer is the problem.
  * - A vantage point outside the deciding set that fails while the deciders are up makes it `degraded`.
  * - `reading` says which of these it is.
@@ -60,12 +62,15 @@ export function evaluate(args: {
   results: CheckResult[];
   now: number;
   intervalSec: number;
+  /** Vantage points whose timeouts say nothing about the target. */
+  impaired?: ReadonlySet<string>;
 }): Evaluation {
+  const results = markImpaired(args.results, args.impaired ?? new Set());
   const statuses: VantageStatus[] = [];
   for (const v of args.vantages) {
-    const paths = new Set<CheckPath>(args.results.filter((r) => r.vantageId === v.id).map((r) => r.path));
+    const paths = new Set<CheckPath>(results.filter((r) => r.vantageId === v.id).map((r) => r.path));
     if (paths.size === 0) paths.add(defaultPath(v));
-    for (const path of paths) statuses.push(vantageStatus(v, args.results, args.now, args.intervalSec, path));
+    for (const path of paths) statuses.push(vantageStatus(v, results, args.now, args.intervalSec, path));
   }
 
   const known = statuses.filter((s) => s.state !== "unknown");
@@ -82,8 +87,11 @@ export function evaluate(args: {
   let reading: Reading | undefined;
 
   if (state === "down" && !localOnly && others.some((s) => s.state === "up")) {
-    if (tier === "public") reading = { kind: "unreachable-outside" };
-    else {
+    if (tier === "public") {
+      reading = { kind: "unreachable-outside" };
+      // One outside vantage point against a local one that succeeds is a disagreement, not an outage.
+      if (deciding.length === 1) state = "degraded";
+    } else {
       state = "degraded";
       reading = { kind: "unreachable-mesh" };
     }

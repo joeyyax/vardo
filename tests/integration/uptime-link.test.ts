@@ -18,13 +18,14 @@ type G = typeof globalThis & {
 };
 const g = globalThis as G;
 
-const h = vi.hoisted(() => ({ emitted: [] as { orgId: string; type: string; incident?: { state: string; subject?: { id: string } } }[] }));
+type Emitted = { orgId: string; type: string; title?: string; message?: string; subject?: string; alerts?: { title: string }[]; incident?: { state: string; subject?: { id: string } } };
+const h = vi.hoisted(() => ({ emitted: [] as Emitted[] }));
 
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/activity/record", () => ({ recordActivity: async () => {} }));
 vi.mock("@/lib/notifications/dispatch", () => ({
-  emit: (orgId: string, event: { type: string; incident?: { state: string; subject?: { id: string } } }) =>
-    void h.emitted.push({ orgId, type: event.type, incident: event.incident }),
+  emit: (orgId: string, event: Emitted) =>
+    void h.emitted.push({ orgId, type: event.type, title: event.title, message: event.message, subject: event.subject, alerts: event.alerts, incident: event.incident }),
 }));
 vi.mock("node:dns/promises", () => {
   const lookup = async (host: string) => [{ address: host === "intranet.example.com" ? "10.0.0.9" : "93.184.216.34", family: 4 }];
@@ -83,6 +84,7 @@ vi.mock("@/lib/mesh/client", async () => {
 async function boot(name: string, url: string) {
   process.env.DATABASE_URL = url;
   process.env.ENCRYPTION_MASTER_KEY = "e".repeat(64);
+  process.env.VARDO_MESH_TRAEFIK_FORWARD = "true";
   g.vardoPgClient = undefined;
   g.__loading = name;
   vi.resetModules();
@@ -90,9 +92,10 @@ async function boot(name: string, url: string) {
   const serve = await import("@/lib/uptime/serve");
   const prober = await import("@/lib/uptime/prober");
   const client = await import("@/lib/uptime/client");
+  const notices = await import("@/lib/uptime/notices");
   const vantage = await import("@/lib/uptime/vantage");
   const core = await import("@/lib/uptime/core");
-  return { engine, serve, prober, client, vantage, core, pg: g.vardoPgClient!, sql: postgres(url, { max: 1, onnotice: () => {} }) };
+  return { engine, serve, prober, client, vantage, core, notices, pg: g.vardoPgClient!, sql: postgres(url, { max: 1, onnotice: () => {} }) };
 }
 
 const conn = await connectScratchServer();
@@ -108,7 +111,19 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
   const org = { kind: "org", orgId: "org1" } as const;
   let t = Date.UTC(2026, 0, 10, 12, 0, 0);
   const at = () => t;
-  const shop = () => h.emitted.filter((e) => e.incident?.subject?.id === monitorId);
+  /** Notifications that mention a monitor by name. */
+  const about = (name: string) => h.emitted.filter((e) => `${e.title ?? ""} ${e.subject ?? ""} ${e.message ?? ""} ${(e.alerts ?? []).map((a) => a.title).join(" ")}`.includes(name));
+  const shop = () => about("shop.example.com");
+  const flushA = () => A.notices.flushNotices(t);
+  /** A minute passes: A checks locally, B checks and delivers. */
+  async function cycle(minutes = 1) {
+    for (let i = 0; i < minutes; i++) {
+      advance(60_000);
+      await A.engine.runDueChecks(t, at);
+      await asB(() => B.prober.probeDue(t, { now: at }));
+      await asB(() => B.prober.deliverResults(t, true));
+    }
+  }
   const stateOnA = async () => (await A.client.uptimeClient.listMonitors(org)).find((m) => m.id === monitorId)!;
 
   async function asB<T>(fn: () => Promise<T>): Promise<T> {
@@ -174,6 +189,8 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
     await A.sql`insert into app (id, organization_id, project_id, name, display_name, status) values ('app1', 'org1', 'proj1', 'shop', 'Shop', 'active')`;
     await A.sql`insert into domain (id, app_id, domain, is_primary) values ('dom1', 'app1', 'shop.example.com', true)`;
     await A.engine.syncAutoMonitors();
+    // The console shares the stubbed fetch; its outages aren't under test.
+    await A.sql`update uptime_monitor set muted = true where id = 'mon_console'`;
     monitorId = (await A.client.uptimeClient.listMonitors(org))[0].id;
   }, MIGRATE_TIMEOUT);
 
@@ -225,27 +242,34 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
     expect(witness.every((w) => w.delivered_at)).toBe(true);
   });
 
-  it("is degraded, not down, while only the local vantage point fails, and goes down when B agrees", async () => {
+  it("is degraded, without a notification, while only the local vantage point fails, and notifies once it is down and has held", async () => {
     status = 503;
     for (let i = 0; i < 2; i++) {
       advance(60_000);
       await A.engine.runDueChecks(t, at);
     }
     expect(await stateOnA()).toMatchObject({ state: "degraded", localOnly: false, reading: { kind: "local-only" } });
-    expect(shop().filter((e) => e.type === "system.service-down")).toHaveLength(1);
+    expect(shop()).toEqual([]);
 
-    await bProbes(1);
-    expect((await stateOnA()).state).toBe("degraded");
-    await bProbes(1);
+    // B agrees: both fail, so it's down. Nobody is told until it has held.
+    await cycle(2);
     expect(await stateOnA()).toMatchObject({ state: "down", localOnly: false });
-    expect(shop().filter((e) => e.type === "system.service-down")).toHaveLength(2);
+    await flushA();
+    expect(shop()).toEqual([]);
+    await cycle(3);
+    await flushA();
+    expect(shop()).toEqual([]);
+    await cycle(1);
+    await flushA();
+    expect(shop().filter((e) => e.type === "system.service-down")).toEqual([
+      expect.objectContaining({ title: "shop.example.com is down", subject: "shop.example.com is down", message: "shop.example.com isn't responding." }),
+    ]);
 
     status = 200;
-    await bProbes(1);
-    expect((await stateOnA()).state).toBe("degraded");
-    advance(1000);
-    await A.engine.runDueChecks(t, at);
+    await cycle(1);
     expect((await stateOnA()).state).toBe("up");
+    await cycle(5);
+    await flushA();
     expect(shop().some((e) => e.type === "alert.resolved")).toBe(true);
   });
 
@@ -296,12 +320,17 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
 
   describe("private monitors over the mesh path", () => {
     let privateId = "";
-    const privateEvents = () => h.emitted.filter((e) => e.incident?.subject?.id === privateId);
 
     it("serves a monitor that resolves only to private addresses as a mesh check", async () => {
       await A.sql`insert into domain (id, app_id, domain, is_primary) values ('dom2', 'app1', 'intranet.example.com', false)`;
       await A.engine.syncAutoMonitors();
       privateId = (await A.client.uptimeClient.listMonitors(org)).find((m) => m.target.includes("intranet"))!.id;
+
+      // Without the tunnel's route to Traefik on this host, private monitors stay local and nothing errors.
+      process.env.VARDO_MESH_TRAEFIK_FORWARD = "false";
+      await asB(() => B.prober.refreshWatchLists(t, true));
+      expect((await B.sql`select monitor_id from uptime_watch_entry`).map((w) => w.monitor_id)).toEqual([monitorId]);
+      process.env.VARDO_MESH_TRAEFIK_FORWARD = "true";
       await asB(() => B.prober.refreshWatchLists(t, true));
 
       const watch = await B.sql`select monitor_id, path from uptime_watch_entry`;
@@ -331,18 +360,22 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
       expect(detail.vantages.map((v) => `${v.kind}:${v.path}`).sort()).toEqual(["external:mesh", "local:local"]);
     });
 
-    it("is degraded, with a warning and not an outage, while the mesh fails and the app answers locally", async () => {
+    it("is degraded, as a warning that notifies nobody, while the mesh fails and the app answers locally", async () => {
       tunnelUp = false;
-      await bProbes(3);
-      advance(1000);
-      await A.engine.runDueChecks(t, at);
+      await cycle(6);
       expect(await A.client.uptimeClient.getMonitor(org, privateId)).toMatchObject({ state: "degraded", reading: { kind: "unreachable-mesh" } });
-      expect(privateEvents().filter((e) => e.type === "system.service-down")).toHaveLength(1);
+      await flushA();
+      expect(about("intranet.example.com")).toEqual([]);
+      expect(await A.sql`select title, severity from incident where state = 'open' and subject_id = ${privateId}`).toEqual([
+        { title: "intranet.example.com is unreachable over the mesh", severity: "warning" },
+      ]);
 
       tunnelUp = true;
-      await bProbes(1);
+      await cycle(6);
+      await flushA();
       expect((await A.client.uptimeClient.getMonitor(org, privateId))!.state).toBe("up");
-      expect(privateEvents().some((e) => e.type === "alert.resolved")).toBe(true);
+      expect(await A.sql`select 1 from incident where state = 'open' and subject_id = ${privateId}`).toHaveLength(0);
+      expect(about("intranet.example.com")).toEqual([]);
     });
 
     it("staggers the vantage points that share a monitor, each checking every interval x N", async () => {
@@ -409,40 +442,43 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
       expect(await openOn()).toEqual([]);
     });
 
-    it("says the link is down when the tunnel fails and the public URL answers", async () => {
+    it("says the link is down once the tunnel has failed and stayed down, while the public URL answers", async () => {
       tunnelUp = false;
       status = 200;
-      await bChecks(2);
+      await bChecks(3);
+      expect(await openOn()).toEqual([]);
+      await bChecks(4);
       expect(await openOn()).toMatchObject([{ subject_id: `${linkId}#link-down`, title: "Link to inst-A is down", severity: "critical" }]);
     });
 
     it("moves to one 'down' alert when the public URL fails too, not two", async () => {
       status = 503;
-      await bChecks(2);
+      await bChecks(7);
       expect(await openOn()).toMatchObject([{ subject_id: `${linkId}#peer-down`, title: "inst-A is down" }]);
       expect(peerEvents().filter((e) => e.type === "system.service-down").map((e) => e.incident?.subject?.id)).toEqual([`${linkId}#link-down`, `${linkId}#peer-down`]);
       expect(await B.sql`select 1 from incident where kind = 'host.peer-silent' and state = 'open'`).toHaveLength(0);
     });
 
     it("says the peer is unreachable when it has no public URL", async () => {
+      advance(31 * 60_000);
       await B.sql`update mesh_peer set public_api_url = null where id = 'peer-a-on-b'`;
       await asB(() => B.engine.syncAutoMonitors());
       expect(await B.sql`select 1 from uptime_monitor where id = 'mon_peer_pub_peer-a-on-b'`).toHaveLength(0);
-      await bChecks(1);
+      await bChecks(7);
       expect(await openOn()).toMatchObject([{ subject_id: `${linkId}#unreachable`, title: "inst-A unreachable from Vardo" }]);
     });
 
     it("resolves when the tunnel answers again", async () => {
       tunnelUp = true;
       status = 200;
-      await bChecks(1);
+      await bChecks(6);
       expect(await openOn()).toEqual([]);
       expect(peerEvents().some((e) => e.type === "alert.resolved")).toBe(true);
     });
   });
 
   it("shows B's signed hourly summary, then goes unknown once B stops delivering", async () => {
-    t = Date.UTC(2026, 0, 10, 13, 30, 0);
+    t += 70 * 60_000;
     vi.setSystemTime(t);
     await asB(() => B.prober.signSummaries(t));
     await asB(() => B.prober.deliverResults(t, true));

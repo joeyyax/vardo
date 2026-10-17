@@ -78,7 +78,7 @@ describe("staleness with staggered checks", () => {
   it("keeps each vantage point's own failure streak", () => {
     const results = [r("ext", 300, false), r("ext", 120, false), r("local", 200, true), r("local", 20, true)];
     const e = evaluate({ vantages: [LOCAL, EXT], results, now: NOW, intervalSec: effectiveIntervalSec(60, 2) });
-    expect(e).toMatchObject({ state: "down", localOnly: false });
+    expect(e).toMatchObject({ state: "degraded", localOnly: false });
     expect(e.reading).toEqual({ kind: "unreachable-outside" });
   });
 

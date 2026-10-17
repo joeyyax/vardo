@@ -28,6 +28,7 @@ function docker(a: { inspect?: string; conf?: string; rules?: string[]; post?: s
 }
 
 beforeEach(() => {
+  vi.stubEnv("VARDO_MESH_TRAEFIK_FORWARD", "true");
   mockExec.mockReset();
   rebuild.mockReset();
   allowed.value = true;
@@ -104,9 +105,10 @@ describe("reconcileTraefikForward", () => {
     expect(rebuild).not.toHaveBeenCalled();
   });
 
-  it("stays off when switched off", async () => {
+  it("stays off unless switched on", async () => {
+    vi.stubEnv("VARDO_MESH_TRAEFIK_FORWARD", "");
+    expect(await reconcileTraefikForward()).toEqual({ state: "disabled" });
     vi.stubEnv("VARDO_MESH_TRAEFIK_FORWARD", "false");
     expect(await reconcileTraefikForward()).toEqual({ state: "disabled" });
-    vi.unstubAllEnvs();
   });
 });
