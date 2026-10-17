@@ -7,9 +7,9 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/messenger";
-import { formatDuration, formatMs, formatPct, stateLabel } from "@/lib/uptime/format";
+import { formatDuration, formatMs, formatPct, readingLabel, stateLabel } from "@/lib/uptime/format";
 import type { AppUptime } from "@/lib/uptime/types";
-import { DayTicks, StatePill, Tile } from "./parts";
+import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
 
 const POLL_MS = 30_000;
 
@@ -65,6 +65,8 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
         <StatePill state={data.state}>
           {data.state === "down" ? (
             stateLabel("down", data.downSince)
+          ) : data.state === "degraded" ? (
+            (data.reading ? readingLabel(data.reading) : "Degraded")
           ) : data.state === "up" && data.lastCheckedAt ? (
             <>
               Up · checked <RelativeTime date={data.lastCheckedAt} /> from {data.vantageName}
@@ -104,7 +106,10 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
                 <Link href={`/uptime/${m.id}`} className="block truncate text-sm font-medium hover:underline">
                   {m.name}
                 </Link>
-                <p className="truncate font-mono text-xs text-muted-foreground">{m.target}</p>
+                <p className="flex min-w-0 font-mono text-xs text-muted-foreground">
+                  <TargetLink monitor={m} />
+                </p>
+                {m.reading && <p className="truncate text-xs text-muted-foreground">{readingLabel(m.reading)}</p>}
                 {m.preview && <p className="text-xs text-muted-foreground">Preview · removed with the preview</p>}
               </div>
               <Switch

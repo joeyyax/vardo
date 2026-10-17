@@ -3,6 +3,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { meshPeers, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
+import { reconcileTraefikForward } from "@/lib/mesh/traefik-forward";
+import { logger } from "@/lib/logger";
 import type { LinkPatch } from "./link";
 import type { VantageLinkView } from "./types";
 
@@ -50,7 +52,11 @@ export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<
     .where(eq(meshPeers.id, peerId))
     .returning({ id: meshPeers.id });
   if (!peer) return null;
-  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
+  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [], meshWatching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
+  // The tunnel's route to Traefik exists only while a peer may check this instance.
+  if (patch.checksThisInstance !== undefined) {
+    await reconcileTraefikForward().catch((err) => logger.child("uptime-links").warn("Traefik forward update failed:", err));
+  }
   if (patch.thisInstanceChecks === false) await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
   return viewOf(peerId);
 }

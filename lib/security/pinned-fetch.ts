@@ -10,9 +10,16 @@ import { alwaysBlockedReason, blockedAddressReason, BlockedUrlError } from "./ss
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
 
 /** A dns.lookup replacement that fails when any resolved address is blocked, unless the host is allowlisted. */
-export function guardedLookup(allowPrivate: boolean) {
+export function guardedLookup(allowPrivate: boolean, resolve?: (host: string) => Promise<LookupAddress[]>) {
+  const lookupAll = (hostname: string, options: LookupOptions, done: (err: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void) => {
+    if (!resolve) return dnsLookup(hostname, { ...options, all: true }, (err, addresses) => done(err, addresses as LookupAddress[]));
+    resolve(hostname).then(
+      (addresses) => done(null, addresses),
+      (err) => done(err, []),
+    );
+  };
   return (hostname: string, options: LookupOptions, callback: LookupCallback): void => {
-    dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
+    lookupAll(hostname, options, (err, addresses) => {
       if (err) return callback(err, []);
       for (const { address } of addresses) {
         const reason = alwaysBlockedReason(address);
@@ -50,7 +57,7 @@ const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
 /** A single request with no redirect following. `allowPrivate` is for allowlisted hosts only. */
 export function pinnedFetch(
   url: URL,
-  init: RequestInit & { allowPrivate?: boolean } = {},
+  init: RequestInit & { allowPrivate?: boolean; resolve?: (host: string) => Promise<LookupAddress[]> } = {},
 ): Promise<Response> {
   const body = bodyBuffer(init.body);
   const headers = new Headers(init.headers);
@@ -64,7 +71,7 @@ export function pinnedFetch(
       {
         method: init.method ?? "GET",
         headers: Object.fromEntries(headers.entries()),
-        lookup: guardedLookup(init.allowPrivate === true) as never,
+        lookup: guardedLookup(init.allowPrivate === true, init.resolve) as never,
         signal: init.signal ?? undefined,
         agent: false,
       },

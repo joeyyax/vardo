@@ -5,12 +5,14 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, meshPeers, uptimeMonitors, uptimeRecords, uptimeResults, uptimeVantages, type UptimeVantageRow } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
-import { HOUR_MS, signRecord, verifyRecord, watchList, type CheckResult, type WatchEntry } from "./core";
-import { checkWatchedBatch } from "./batch";
+import { HOUR_MS, phaseOf, signRecord, staggerOf, verifyRecord, watchList, type CheckResult, type WatchEntry } from "./core";
+import { checkWatchedBatch, expectedPath } from "./batch";
 import { syncAlertsFor } from "./engine";
 import { localIdentity } from "./identity";
 import { resultsRequestSchema, watchRequestSchema, type VantageIdentity } from "./link";
-import { publicEntries, type Resolver } from "./net";
+import { privateEntries, publicEntries, type Resolver } from "./net";
+import { traefikForwardEnabled } from "@/lib/mesh/traefik-forward";
+import { externalWatchers, sharing } from "./watchers";
 import { localSigningKey } from "./vantage";
 
 const log = logger.child("uptime-link");
@@ -22,15 +24,22 @@ const reply = (status: number, json: unknown): LinkReply => ({ status, json });
 
 export const externalVantageId = (peerId: string) => `ext_${peerId}`;
 
-/** Every enabled monitor with a public address. Monitors of stopped apps stay out, as they do from local checks. */
+/**
+ * Every enabled monitor with a public address, as a public-path check, and every one whose host resolves only to private addresses,
+ * as a mesh-path check. Monitors of stopped apps stay out, as they do from local checks. Monitors of the peers themselves stay out.
+ */
 export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[]> {
   const rows = await db
     .select({ monitor: uptimeMonitors, appStatus: apps.status })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .where(eq(uptimeMonitors.enabled, true));
-  const live = rows.filter(({ monitor, appStatus }) => !(monitor.source === "auto" && appStatus === "stopped")).map((r) => r.monitor);
-  return publicEntries(live, resolve);
+  const live = rows
+    .filter(({ monitor, appStatus }) => !(monitor.source === "auto" && appStatus === "stopped") && !monitor.meshPeerId)
+    .map((r) => r.monitor);
+  // Private monitors go out as mesh checks only where the tunnel reaches Traefik; otherwise they stay local, without an error.
+  const [open, closed] = await Promise.all([publicEntries(live, resolve), traefikForwardEnabled() ? privateEntries(live, resolve) : []]);
+  return [...open, ...closed];
 }
 
 function validKey(pem: string): boolean {
@@ -47,7 +56,7 @@ async function vantageFor(peerId: string): Promise<UptimeVantageRow | null> {
 
 /** A peer asks for our watch list and tells us who it is. */
 export async function serveWatchList(peerId: string, body: unknown, now = Date.now(), resolve?: Resolver): Promise<LinkReply> {
-  const peer = await db.query.meshPeers.findFirst({ where: eq(meshPeers.id, peerId), columns: { id: true, name: true, uptimeChecksUs: true } });
+  const peer = await db.query.meshPeers.findFirst({ where: eq(meshPeers.id, peerId), columns: { id: true, name: true, status: true, uptimeChecksUs: true } });
   if (!peer || !peer.uptimeChecksUs) return reply(403, { error: "This instance doesn't accept uptime checks from you" });
 
   const parsed = watchRequestSchema.safeParse(body);
@@ -61,6 +70,7 @@ export async function serveWatchList(peerId: string, body: unknown, now = Date.n
     publicKey: who.publicKey,
     remoteId: who.id,
     watching: entries.map((e) => e.monitorId),
+    meshWatching: entries.filter((e) => e.path === "mesh").map((e) => e.monitorId),
   };
   const id = externalVantageId(peer.id);
   await db
@@ -68,8 +78,18 @@ export async function serveWatchList(peerId: string, body: unknown, now = Date.n
     .values({ id, kind: "external", meshPeerId: peer.id, ...row })
     .onConflictDoUpdate({ target: uptimeVantages.id, set: row });
 
+  // Vantage points sharing a monitor split its checks: each runs every interval x N at its own offset. A peer that is offline isn't counted here, so it checks every interval.
+  const watchers = await externalWatchers();
+  const scheduled = entries.map((e) => {
+    const slot =
+      peer.status === "online"
+        ? staggerOf(e.monitorId, e.intervalSec, sharing(watchers, e.monitorId), id)
+        : { periodSec: e.intervalSec, offsetMs: phaseOf(e.monitorId, e.intervalSec * 1000) };
+    return { ...e, ...slot };
+  });
+
   const identity = await localIdentity();
-  return reply(200, { vantage: identity, watch: signRecord(watchList(identity.id, entries, now), await localSigningKey()) });
+  return reply(200, { vantage: identity, watch: signRecord(watchList(identity.id, scheduled, now), await localSigningKey()) });
 }
 
 type Rejection = { index: number; reason: string };
@@ -85,6 +105,7 @@ export async function receiveRecords(peerId: string, body: unknown, now = Date.n
   if (!parsed.success) return reply(400, { error: "Invalid records" });
 
   const watching = new Set(vantage.watching);
+  const meshWatching = new Set(vantage.meshWatching);
   const rejected: Rejection[] = [];
   const touched = new Set<string>();
   let accepted = 0;
@@ -101,12 +122,12 @@ export async function receiveRecords(peerId: string, body: unknown, now = Date.n
     }
     const issuedAt = new Date(payload.issuedAt);
     if (payload.kind === "results") {
-      const bad = checkWatchedBatch(payload.results, vantage.remoteId, watching, now);
+      const bad = checkWatchedBatch(payload.results, vantage.remoteId, watching, now, meshWatching);
       if (bad) {
         rejected.push({ index, reason: bad });
         continue;
       }
-      const stored = await storeRecord(vantage.id, "results", null, issuedAt, record, payload.results);
+      const stored = await storeRecord(vantage.id, "results", null, issuedAt, record, payload.results, meshWatching);
       if (stored) payload.results.forEach((r) => touched.add(r.monitorId));
       accepted++;
     } else if (payload.kind === "hourly") {
@@ -138,6 +159,7 @@ async function storeRecord(
   issuedAt: Date,
   record: { payload: string; sig: string },
   results: CheckResult[],
+  meshWatching: Set<string> = new Set(),
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     const seen = await tx
@@ -157,6 +179,7 @@ async function storeRecord(
           results.map((r) => ({
             monitorId: r.monitorId,
             vantageId,
+            path: expectedPath(r.monitorId, meshWatching),
             at: new Date(r.at),
             ok: r.ok,
             latencyMs: r.latencyMs,

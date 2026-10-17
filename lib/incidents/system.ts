@@ -22,14 +22,14 @@ export type SystemProblem = {
 };
 
 /** Emits the notice to each org with the incident it opens or updates there. */
-export async function emitSystemIncident(orgIds: string[], event: BusEvent, problem: SystemProblem, now = new Date()): Promise<void> {
+export async function emitSystemIncident(orgIds: string[], event: BusEvent, problem: SystemProblem, now = new Date(), opts: { quiet?: boolean } = {}): Promise<void> {
   for (const orgId of orgIds) {
     const incident = await safely(
       "open",
       () => openIncident(orgId, { kind: problem.kind, about: problem.about, severity: problem.severity, title: problem.title, appId: problem.appId }, now),
       null,
     );
-    emit(orgId, incident ? { ...event, incident } : event);
+    if (!opts.quiet) emit(orgId, incident ? { ...event, incident } : event);
   }
 }
 
@@ -40,10 +40,14 @@ export async function resolveSystemIncident(
   about: string,
   detail: string,
   now = new Date(),
-): Promise<void> {
+  opts: { quiet?: boolean } = {},
+): Promise<boolean> {
+  let resolved = false;
   for (const orgId of orgIds) {
     const incident = (await safely("resolve", () => resolveIncidents(orgId, kind, [about], now), new Map())).get(about);
     if (!incident) continue;
+    resolved = true;
+    if (opts.quiet) continue;
     const item: AlertItem & { firedAt: string; resolvedAt: string } = {
       type: kind,
       about,
@@ -56,4 +60,5 @@ export async function resolveSystemIncident(
     };
     emit(orgId, { type: "alert.resolved", title: `Resolved: ${incident.title}`, message: incident.title, alerts: [item], incident });
   }
+  return resolved;
 }

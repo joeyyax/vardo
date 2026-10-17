@@ -1044,6 +1044,13 @@
       "when": 1792212831813,
       "tag": "0148_uptime_links",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1792215343062,
+      "tag": "0149_uptime_paths",
+      "breakpoints": true
     }
   ]
 }

@@ -21,7 +21,7 @@ const EXT_B: VantagePoint = { id: "ext_b", name: "Oregon", kind: "external" };
 const NOW = Date.UTC(2026, 0, 10, 12, 0, 30);
 
 function r(vantageId: string, ageSec: number, ok: boolean, error?: CheckResult["error"]): CheckResult {
-  return { monitorId: "m1", vantageId, at: NOW - ageSec * 1000, ok, latencyMs: 80, ...(error ? { error } : {}) };
+  return { monitorId: "m1", vantageId, path: vantageId === "local" ? "local" : "public", at: NOW - ageSec * 1000, ok, latencyMs: 80, ...(error ? { error } : {}) };
 }
 
 const DNS: Record<string, string[]> = {
@@ -141,14 +141,14 @@ describe("agreement with local and external data", () => {
     expect(evaluation).toMatchObject({ state: "down", localOnly: true });
   });
 
-  it("ignores a failing local vantage point while an external one reports up", () => {
+  it("doesn't let a failing local vantage point decide while an external one reports up", () => {
     const results = [r("local", 10, false), r("local", 40, false), r("ext_a", 20, true)];
-    expect(decide(results)).toMatchObject({ state: "up", localOnly: false });
+    expect(decide(results)).toMatchObject({ state: "degraded", localOnly: false, reading: { kind: "local-only" } });
   });
 
   it("needs most external vantage points to fail", () => {
     const oneOfTwo = [r("ext_a", 10, false), r("ext_a", 40, false), r("ext_b", 20, true)];
-    expect(decide(oneOfTwo).state).toBe("up");
+    expect(decide(oneOfTwo)).toMatchObject({ state: "degraded", reading: { kind: "vantage-failing" } });
     const both = [...oneOfTwo.slice(0, 2), r("ext_b", 10, false), r("ext_b", 40, false)];
     expect(decide(both)).toMatchObject({ state: "down", localOnly: false });
   });

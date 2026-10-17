@@ -54,6 +54,14 @@ export function checkHost(check: Check): string {
 
 const INTERNAL_NAME = /^localhost$|\.(local|localhost|internal|lan|home|corp|intranet)$|^[^.]+$/i;
 
+/** Names that never resolve on the public internet: reserved suffixes and bare hostnames. */
+const NEVER_PUBLIC = /(^|\.)(localhost|local|internal|test|lan)$|^[^.]+$/i;
+
+/** True for a domain no outside vantage point could reach, such as `app.localhost` or `nas`. */
+export function isNeverPublic(host: string): boolean {
+  return net.isIP(host) === 0 && NEVER_PUBLIC.test(host);
+}
+
 /** A name that can't be public, judged without a lookup. */
 export function isInternalName(host: string): boolean {
   return net.isIP(host) === 0 && INTERNAL_NAME.test(host);

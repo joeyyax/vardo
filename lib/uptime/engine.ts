@@ -2,30 +2,44 @@
 
 import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, domains, environments, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
+import { apps, domains, environments, meshPeers, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { consoleBaseUrl } from "@/lib/incidents/key";
 import { openUptimeIncident, resolveUptimeIncident } from "@/lib/incidents/uptime";
+import { CONSOLE_PORT } from "@/lib/mesh/constants";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { nanoid } from "nanoid";
 import {
   DAY_MS,
-  DEFAULT_EXPECTED_STATUS,
+  AUTO_EXPECTED_STATUS,
   DEFAULT_HTTP_TIMEOUT_MS,
   HOUR_MS,
+  isNeverPublic,
   combine,
   evaluate,
   hourlySummary,
-  isDue,
+  effectiveIntervalSec,
+  isDueAt,
+  markImpaired,
+  newMemory,
+  stepDamping,
+  staggerOf,
   runCheck,
   signRecord,
   summarize,
   type Bucket,
   type CheckResult,
+  type DampMemory,
   type HttpCheck,
   type Monitor,
+  type Notice,
 } from "./core";
+import { incidentTitle, readingDetail } from "./format";
+import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
+import { syncPeerAlerts, syncPeerMonitors } from "./peers";
+import { queueNotice, flushNotices } from "./notices";
+import { externalWatchers, loadImpaired, sharing } from "./watchers";
 import { pruneProbes, tickProber } from "./prober";
 import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
@@ -39,8 +53,7 @@ const CONCURRENCY = 4;
 const CONSOLE_MONITOR_ID = "mon_console";
 
 const lastRun = new Map<string, number>();
-const alerted = new Set<string>();
-const seenUp = new Set<string>();
+const damping = new Map<string, DampMemory>();
 let seeded = false;
 let lastRollup = 0;
 let lastReeval = 0;
@@ -49,9 +62,11 @@ let lastPrune = 0;
 const httpCheck = (url: string): HttpCheck => ({
   type: "http",
   url,
-  expectedStatus: { ...DEFAULT_EXPECTED_STATUS },
+  expectedStatus: { ...AUTO_EXPECTED_STATUS },
   timeoutMs: DEFAULT_HTTP_TIMEOUT_MS,
 });
+
+const sameStatus = (a: { min: number; max: number }, b: { min: number; max: number }) => a.min === b.min && a.max === b.max;
 
 function domainUrl(d: { domain: string; pathPrefix: string | null; sslEnabled: boolean | null }): string {
   return `${d.sslEnabled === false ? "http" : "https"}://${d.domain}${d.pathPrefix ?? ""}`;
@@ -86,14 +101,15 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
   const byEnv = new Map(existing.filter((m) => m.environmentId).map((m) => [m.environmentId!, m]));
 
   const wanted: { key: string; row: typeof uptimeMonitors.$inferInsert }[] = [];
-  for (const d of domainRows) {
+  // Domains that can't be public get no monitor, and lose the one they had.
+  for (const d of domainRows.filter((r) => !isNeverPublic(r.domain))) {
     const url = domainUrl(d);
     wanted.push({
       key: `d:${d.id}`,
       row: { id: `mon_${nanoid(16)}`, organizationId: d.orgId, name: d.domain + (d.pathPrefix ?? ""), check: httpCheck(url), source: "auto", appId: d.appId, domainId: d.id },
     });
   }
-  for (const p of previewRows) {
+  for (const p of previewRows.filter((r) => !isNeverPublic(r.domain!))) {
     wanted.push({
       key: `e:${p.id}`,
       row: { id: `mon_${nanoid(16)}`, organizationId: p.orgId, name: p.domain!, check: httpCheck(`https://${p.domain}`), source: "auto", appId: p.appId, environmentId: p.id, preview: true },
@@ -110,10 +126,11 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
     }
     keep.add(current.id);
     const check = w.row.check as HttpCheck;
-    if (current.check.type !== "http" || current.check.url !== check.url || current.name !== w.row.name || current.organizationId !== w.row.organizationId) {
+    const stale = current.check.type === "http" && !sameStatus(current.check.expectedStatus, check.expectedStatus);
+    if (current.check.type !== "http" || stale || current.check.url !== check.url || current.name !== w.row.name || current.organizationId !== w.row.organizationId) {
       await db
         .update(uptimeMonitors)
-        .set({ check: current.check.type === "http" ? { ...current.check, url: check.url } : check, name: w.row.name as string, organizationId: w.row.organizationId, updatedAt: new Date() })
+        .set({ check: current.check.type === "http" ? { ...current.check, url: check.url, expectedStatus: check.expectedStatus } : check, name: w.row.name as string, organizationId: w.row.organizationId, updatedAt: new Date() })
         .where(eq(uptimeMonitors.id, current.id));
     }
   }
@@ -128,9 +145,13 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
       .values({ id: CONSOLE_MONITOR_ID, organizationId: null, name: "Vardo console", check: httpCheck(consoleUrl), source: "auto" })
       .onConflictDoNothing();
     added++;
-  } else if (consoleRow.check.type === "http" && consoleRow.check.url !== consoleUrl) {
-    await db.update(uptimeMonitors).set({ check: { ...consoleRow.check, url: consoleUrl }, updatedAt: new Date() }).where(eq(uptimeMonitors.id, CONSOLE_MONITOR_ID));
+  } else if (consoleRow.check.type === "http" && (consoleRow.check.url !== consoleUrl || !sameStatus(consoleRow.check.expectedStatus, AUTO_EXPECTED_STATUS))) {
+    await db.update(uptimeMonitors).set({ check: { ...consoleRow.check, url: consoleUrl, expectedStatus: { ...AUTO_EXPECTED_STATUS } }, updatedAt: new Date() }).where(eq(uptimeMonitors.id, CONSOLE_MONITOR_ID));
   }
+
+  const peers = await syncPeerMonitors(existing);
+  for (const id of peers.keep) keep.add(id);
+  added += peers.added;
 
   for (const m of existing) {
     if (keep.has(m.id)) continue;
@@ -170,25 +191,35 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   await seedLastRun();
   const local = await ensureLocalVantage();
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status })
+    .select({ monitor: uptimeMonitors, appStatus: apps.status, peerIp: meshPeers.internalIp })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
+    .leftJoin(meshPeers, eq(meshPeers.id, uptimeMonitors.meshPeerId))
     .where(eq(uptimeMonitors.enabled, true));
 
-  // A stopped app is expected to be down.
+  // A stopped app is expected to be down. Vantage points sharing a monitor take turns, so this one runs it every interval x N.
+  const watchers = await externalWatchers();
   const due = rows.filter(({ monitor, appStatus }) => {
     if (monitor.source === "auto" && appStatus === "stopped") return false;
-    return isDue(monitor.id, monitor.intervalSec, lastRun.get(monitor.id), now);
+    const slot = staggerOf(monitor.id, monitor.intervalSec, sharing(watchers, monitor.id), LOCAL_VANTAGE_ID);
+    return isDueAt(slot.periodSec * 1000, slot.offsetMs, lastRun.get(monitor.id), now);
   });
   if (due.length === 0) return 0;
 
   const deps = { strict: await checkDeps("strict"), operator: await checkDeps("operator") };
   const fresh: CheckResult[] = [];
-  await pool(due, CONCURRENCY, async ({ monitor }) => {
+  await pool(due, CONCURRENCY, async ({ monitor, peerIp }) => {
     lastRun.set(monitor.id, now);
     try {
-      const { fetch, guard } = deps[levelOf(monitor)];
-      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, { now: clock, fetch, guard }));
+      // The tunnel monitor of a peer connects to that peer's console and nowhere else.
+      if (monitor.peerRole === "link") {
+        const address = tunnelAddress(peerIp);
+        if (!address) return;
+        fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, "local", { now: clock, ...tunnelDeps(address, [Number(CONSOLE_PORT)]) }));
+        return;
+      }
+      const { fetch, guard } = deps[monitor.peerRole === "public" ? "strict" : levelOf(monitor)];
+      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, "local", { now: clock, fetch, guard }));
     } catch (err) {
       log.warn(`Check for ${monitor.id} threw:`, err);
     }
@@ -199,6 +230,7 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
       fresh.map((r) => ({
         monitorId: r.monitorId,
         vantageId: r.vantageId,
+        path: r.path,
         at: new Date(r.at),
         ok: r.ok,
         latencyMs: r.latencyMs,
@@ -227,25 +259,66 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
     .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(now - RECENT_MS))));
   const results: CheckResult[] = recent.map(toResult);
   const operator = monitors.some((m) => !m.organizationId) ? await adminOrgIds() : [];
+  const watchers = await externalWatchers();
 
+  // A peer's monitors are read together, so one verdict raises one alert.
+  const peerIds = [...new Set(monitors.map((m) => m.meshPeerId).filter((id): id is string => !!id))];
+  if (peerIds.length > 0) {
+    const silent = (row: typeof uptimeMonitors.$inferSelect) => row.muted || inMaintenance({ maintenance: row.maintenance }, now);
+    await syncPeerAlerts(peerIds, now, silent).catch((err) => log.error("Peer alert sync failed:", err));
+  }
+
+  const impaired = await loadImpaired(now);
   for (const m of monitors) {
+    if (m.meshPeerId) continue;
     try {
-      const evaluation = evaluate({ vantages, results: results.filter((r) => r.monitorId === m.id), now, intervalSec: m.intervalSec });
+      const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
+      if (silent) continue;
+      const evaluation = evaluate({
+        vantages,
+        results: results.filter((r) => r.monitorId === m.id),
+        now,
+        intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length),
+        impaired,
+      });
+      const observation = evaluation.state === "unknown" ? null : { state: evaluation.state, key: `${evaluation.state}|${JSON.stringify(evaluation.reading ?? null)}` };
+      const before = damping.get(m.id) ?? newMemory();
+      const { memory, actions } = stepDamping(before, observation, now);
+      damping.set(m.id, memory);
+      if (actions.length === 0) continue;
+
+      const title = incidentTitle(m.name, evaluation.state, evaluation.reading);
+      const audience = m.organizationId ? [m.organizationId] : operator;
       const outage = {
         about: m.id,
-        title: `${m.name} is down`,
-        orgIds: m.organizationId ? [m.organizationId] : operator,
+        name: m.name,
+        title,
+        orgIds: audience,
         appId: m.appId ?? undefined,
+        severity: evaluation.state === "degraded" ? ("warning" as const) : ("critical" as const),
       };
-      if (evaluation.state === "down") {
-        const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
-        if (silent || alerted.has(m.id)) continue;
-        await openUptimeIncident(outage, `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`);
-        alerted.add(m.id);
-      } else if (evaluation.state === "up" && (alerted.delete(m.id) || !seenUp.has(m.id))) {
-        await resolveUptimeIncident(outage, `${m.name} is responding again.`);
+      const say = (kind: Notice["kind"], noticeTitle: string, detail: string) =>
+        queueNotice({ at: now, kind, audience: audience.join(","), monitorId: m.id, name: m.name, title: noticeTitle, detail });
+
+      for (const action of actions) {
+        if (action.kind === "open") {
+          // A new state or reading replaces the open incident, so its title is right.
+          if (before.announced) await resolveUptimeIncident(outage, "", { notify: false });
+          const detail = evaluation.reading
+            ? `${title}. ${readingDetail(evaluation.reading)}`
+            : `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`;
+          await openUptimeIncident(outage, detail, { notify: false });
+          if (action.notify) say("down", title, detail);
+        } else if (action.kind === "resolve") {
+          const wasOpen = await resolveUptimeIncident(outage, "", { notify: false });
+          if (action.notify || (action.stale && wasOpen)) say("recovered", `${m.name} is responding again`, `${m.name} is responding again.`);
+        } else if (action.kind === "flapping") {
+          say("flapping", `${m.name} is flapping`, `${m.name} changed state more than 3 times in 30 minutes. Notices pause until it has been stable for 15 minutes.`);
+        } else {
+          const word = action.state === "up" ? "up" : action.state === "down" ? "down" : "degraded";
+          say("settled", `${m.name} settled: ${word}`, `${m.name} has been stable for 15 minutes and is ${word}.`);
+        }
       }
-      if (evaluation.state === "up") seenUp.add(m.id);
     } catch (err) {
       log.error(`Alert sync for ${m.id} failed:`, err);
     }
@@ -269,13 +342,15 @@ export async function rollup(now = Date.now()): Promise<void> {
   if (monitors.length === 0) return;
   const thisHour = Math.floor(now / HOUR_MS) * HOUR_MS;
   const from = thisHour - HOUR_MS;
-  const [vantages, key, raw] = await Promise.all([
+  const [vantages, key, raw, watchers, impaired] = await Promise.all([
     listVantagePoints(),
     localSigningKey(),
     db
       .select()
       .from(uptimeResults)
       .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(from - 10 * 60_000)))),
+    externalWatchers(),
+    loadImpaired(now),
   ]);
   const byMonitor = new Map<string, CheckResult[]>();
   for (const r of raw) {
@@ -286,7 +361,7 @@ export async function rollup(now = Date.now()): Promise<void> {
 
   const signedAt = new Date(now);
   for (const m of monitors) {
-    const buckets = summarize({ results: byMonitor.get(m.id) ?? [], vantages, intervalSec: m.intervalSec, from, to: now + 1, bucketMs: HOUR_MS });
+    const buckets = summarize({ results: markImpaired(byMonitor.get(m.id) ?? [], impaired), vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
     for (const b of buckets) {
       if (b.minutesUp + b.minutesDown === 0 && b.minutesUnknown === 0) continue;
       const signed = signRecord(hourlySummary(LOCAL_VANTAGE_ID, m.id, b, now), key);
@@ -348,6 +423,7 @@ export async function tickUptime(now = Date.now()): Promise<void> {
     lastReeval = now;
     await syncAllAlerts(now);
   }
+  await flushNotices(now).catch((err) => log.error("Sending uptime notices failed:", err));
   if (now - lastRollup >= 60_000) {
     lastRollup = now;
     await rollup(now);

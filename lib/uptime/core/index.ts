@@ -5,3 +5,7 @@ export * from "./summary";
 export * from "./signing";
 export * from "./address";
 export * from "./schedule";
+export * from "./peer-link";
+export * from "./damping";
+export * from "./notices";
+export * from "./impaired";

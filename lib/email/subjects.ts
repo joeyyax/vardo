@@ -127,7 +127,7 @@ export function subjectLine(event: BusEvent): string {
       return `${mark} ${plural(findings || event.criticalCount + event.warningCount, "new security finding")} on ${event.appName}`;
     }
     case "system.service-down":
-      return `✗ ${event.service} down`;
+      return event.subject ? `✗ ${event.subject}` : `✗ ${event.service} down`;
     case "system.restart-loop":
       return "⚠ Vardo restarted";
     case "system.cert-expiring":

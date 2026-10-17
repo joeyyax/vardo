@@ -1,4 +1,5 @@
-// The probing side of a link: fetches a peer's watch list, checks its monitors over the public path and delivers signed results.
+// The probing side of a link: fetches a peer's watch list, checks its monitors and delivers signed results. Public monitors are checked over the
+// internet; private ones over the mesh, connecting only to that peer's tunnel address.
 
 import { and, asc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -7,13 +8,13 @@ import { logger } from "@/lib/logger";
 import { MeshClientError, meshSignedPost } from "@/lib/mesh/client";
 import {
   HOUR_MS,
-  checkHost,
+  isDueAt,
   hourlySummary,
   resultBatch,
-  runCheck,
   signRecord,
   summarize,
   verifyRecord,
+  type CheckPath,
   type CheckResult,
   type SignedRecord,
   type VantagePoint,
@@ -28,7 +29,8 @@ import {
   watchEntrySchema,
   watchResponseSchema,
 } from "./link";
-import { classifyHost, type Resolver } from "./net";
+import { tunnelAddress } from "./mesh-path";
+import { probeEntry, type ProbeDeps } from "./probe-entry";
 import { checkDeps } from "./outbound";
 import { localSigningKey } from "./vantage";
 
@@ -46,7 +48,7 @@ const lastDelivery = new Map<string, number>();
 const lastProbe = new Map<string, number>();
 let seeded = false;
 
-export type ProbeDeps = { now?: () => number; resolve?: Resolver; fetch?: typeof fetch };
+export type { ProbeDeps };
 
 type LinkedPeer = { id: string; name: string };
 
@@ -67,10 +69,10 @@ async function storeWatch(peerId: string, entries: WatchEntry[], now: number): P
     for (const e of entries) {
       await tx
         .insert(uptimeWatchEntries)
-        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, fetchedAt: at })
+        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at })
         .onConflictDoUpdate({
           target: [uptimeWatchEntries.peerId, uptimeWatchEntries.monitorId],
-          set: { check: e.check, intervalSec: e.intervalSec, fetchedAt: at },
+          set: { check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at },
         });
     }
   });
@@ -145,28 +147,29 @@ async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>)
   );
 }
 
-/** Runs the peers' checks that are due. A host that resolves to a private or tunnel address isn't checked; the result is unknown. */
+/** Runs the peers' checks that are due. */
 export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<number> {
   await seedLastProbe();
   const rows = await db
-    .select({ entry: uptimeWatchEntries })
+    .select({ entry: uptimeWatchEntries, internalIp: meshPeers.internalIp })
     .from(uptimeWatchEntries)
     .innerJoin(meshPeers, eq(meshPeers.id, uptimeWatchEntries.peerId))
     .where(eq(meshPeers.uptimeChecksPeer, true));
-  const due = rows.map((r) => r.entry).filter((e) => now - (lastProbe.get(`${e.peerId}:${e.monitorId}`) ?? 0) >= e.intervalSec * 1000 - 1000);
+  // A schedule from the owner staggers this vantage point among those sharing the monitor; without one it checks every interval.
+  const due = rows.filter(({ entry: e }) => {
+    const last = lastProbe.get(`${e.peerId}:${e.monitorId}`);
+    if (e.periodSec !== null && e.offsetMs !== null) return isDueAt(e.periodSec * 1000, e.offsetMs, last, now);
+    return now - (last ?? 0) >= e.intervalSec * 1000 - 1000;
+  });
   if (due.length === 0) return 0;
 
   const identity = await localIdentity();
   const strict = await checkDeps("strict");
   const fresh: { peerId: string; result: CheckResult }[] = [];
-  await pool(due, CONCURRENCY, async (e) => {
+  await pool(due, CONCURRENCY, async ({ entry: e, internalIp }) => {
     lastProbe.set(`${e.peerId}:${e.monitorId}`, now);
     try {
-      const reach = await classifyHost(checkHost(e.check), deps.resolve);
-      const result: CheckResult =
-        reach === "private"
-          ? { monitorId: e.monitorId, vantageId: identity.id, at: (deps.now ?? Date.now)(), ok: false, latencyMs: 0, error: "private-address" }
-          : await runCheck({ id: e.monitorId, check: e.check }, identity.id, { now: deps.now, fetch: deps.fetch ?? strict.fetch, guard: strict.guard });
+      const result = await probeEntry(e, { vantageId: identity.id, peerAddress: tunnelAddress(internalIp), strict, deps });
       fresh.push({ peerId: e.peerId, result });
     } catch (err) {
       log.warn(`Probe of ${e.monitorId} threw:`, err);
@@ -178,6 +181,7 @@ export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<
       fresh.map(({ peerId, result: r }) => ({
         peerId,
         monitorId: r.monitorId,
+        path: r.path,
         at: new Date(r.at),
         ok: r.ok,
         latencyMs: r.latencyMs,
@@ -222,12 +226,13 @@ export async function signSummaries(now = Date.now()): Promise<void> {
       const results: CheckResult[] = rows.map((r) => ({
         monitorId: r.monitorId,
         vantageId: identity.id,
+        path: r.path as CheckPath,
         at: r.at.getTime(),
         ok: r.ok,
         latencyMs: r.latencyMs,
         ...(r.error ? { error: r.error as CheckResult["error"] } : {}),
       }));
-      const [bucket] = summarize({ results, vantages: [self], intervalSec: e.intervalSec, from: hour, to: hour + HOUR_MS, bucketMs: HOUR_MS });
+      const [bucket] = summarize({ results, vantages: [self], intervalSec: e.periodSec ?? e.intervalSec, from: hour, to: hour + HOUR_MS, bucketMs: HOUR_MS });
       if (!bucket) continue;
       const signed = signRecord(hourlySummary(identity.id, e.monitorId, bucket, now), key);
       await db
@@ -271,6 +276,7 @@ async function pushTo(peer: LinkedPeer, now: number): Promise<void> {
     const results: CheckResult[] = sendable.map((r) => ({
       monitorId: r.monitorId,
       vantageId: identity.id,
+      path: r.path as CheckPath,
       at: r.at.getTime(),
       ok: r.ok,
       latencyMs: r.latencyMs,

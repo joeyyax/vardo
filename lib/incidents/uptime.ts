@@ -1,4 +1,4 @@
-// Confirmed monitor outages as `domain` incidents: opened once while the monitor is down, resolved when it recovers.
+// Confirmed monitor outages and disagreements as incidents: opened once while the monitor is down or degraded, resolved when it recovers.
 
 import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -11,10 +11,14 @@ export const UPTIME_INCIDENT = "uptime.down";
 export type UptimeOutage = {
   /** Monitor id. */
   about: string;
+  /** The monitor's name, which the notice reads as its service. */
+  name: string;
   title: string;
   /** Orgs that hear about it: the owning org, or the operator's for an instance monitor. */
   orgIds: string[];
   appId?: string;
+  /** Critical unless given. */
+  severity?: "critical" | "warning";
 };
 
 async function isOpen(orgId: string, about: string): Promise<boolean> {
@@ -26,21 +30,23 @@ async function isOpen(orgId: string, about: string): Promise<boolean> {
 }
 
 /** Opens the incident where none is open. Returns whether anything opened. */
-export async function openUptimeIncident(outage: UptimeOutage, detail: string): Promise<boolean> {
+export async function openUptimeIncident(outage: UptimeOutage, detail: string, opts: { notify?: boolean } = {}): Promise<boolean> {
   const fresh: string[] = [];
   for (const orgId of outage.orgIds) if (!(await isOpen(orgId, outage.about))) fresh.push(orgId);
   if (fresh.length === 0) return false;
   await emitSystemIncident(
     fresh,
-    { type: "system.service-down", title: outage.title, message: detail, service: outage.about, description: outage.title },
-    { kind: UPTIME_INCIDENT, about: outage.about, title: outage.title, severity: "critical", appId: outage.appId },
+    { type: "system.service-down", title: outage.title, message: detail, service: outage.name, description: outage.title, subject: outage.title },
+    { kind: UPTIME_INCIDENT, about: outage.about, title: outage.title, severity: outage.severity ?? "critical", appId: outage.appId },
+    new Date(),
+    { quiet: opts.notify === false },
   );
   return true;
 }
 
-/** Resolves the incident where one is open. */
-export async function resolveUptimeIncident(outage: Pick<UptimeOutage, "about" | "orgIds">, recovered: string): Promise<void> {
-  await resolveSystemIncident(outage.orgIds, UPTIME_INCIDENT, outage.about, recovered);
+/** Resolves the incident where one is open. Returns whether there was one. */
+export async function resolveUptimeIncident(outage: Pick<UptimeOutage, "about" | "orgIds">, recovered: string, opts: { notify?: boolean } = {}): Promise<boolean> {
+  return resolveSystemIncident(outage.orgIds, UPTIME_INCIDENT, outage.about, recovered, new Date(), { quiet: opts.notify === false });
 }
 
 export type UptimeIncident = { id: string; openedAt: Date; resolvedAt: Date | null };

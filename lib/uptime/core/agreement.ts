@@ -1,6 +1,18 @@
-// The agreement rule: a vantage point is failing after two failed checks in a row; a monitor is down when most external vantage points are failing.
+// The agreement rule. A vantage point is failing on a path after two failed checks in a row. Public external results decide a monitor;
+// with none, mesh results decide; with none, the local one does. Vantage points outside the deciding set can still disagree.
 
-import { isUnknownResult, type CheckResult, type Evaluation, type MonitorState, type VantagePoint, type VantageState, type VantageStatus } from "./types";
+import { markImpaired } from "./impaired";
+import {
+  isUnknownResult,
+  type CheckPath,
+  type CheckResult,
+  type Evaluation,
+  type MonitorState,
+  type Reading,
+  type VantagePoint,
+  type VantageState,
+  type VantageStatus,
+} from "./types";
 
 export const FAILURES_TO_FAIL = 2;
 
@@ -9,40 +21,96 @@ export function staleAfterMs(intervalSec: number): number {
   return Math.max(90_000, intervalSec * 3 * 1000);
 }
 
-/** One vantage point's state from its results, in any order. */
-export function vantageStatus(vantage: VantagePoint, results: CheckResult[], now: number, intervalSec: number): VantageStatus {
-  const mine = results.filter((r) => r.vantageId === vantage.id).sort((a, b) => b.at - a.at);
+/** The path a vantage point's results take when it has none yet. */
+export const defaultPath = (v: Pick<VantagePoint, "kind">): CheckPath => (v.kind === "local" ? "local" : "public");
+
+/** One vantage point's state on one path from its results, in any order. */
+export function vantageStatus(vantage: VantagePoint, results: CheckResult[], now: number, intervalSec: number, path: CheckPath = defaultPath(vantage)): VantageStatus {
+  const mine = results.filter((r) => r.vantageId === vantage.id && r.path === path).sort((a, b) => b.at - a.at);
   const last = mine[0];
-  if (!last || isUnknownResult(last) || now - last.at > staleAfterMs(intervalSec)) return { vantage, state: "unknown", last };
+  if (!last || isUnknownResult(last) || now - last.at > staleAfterMs(intervalSec)) return { vantage, path, state: "unknown", last };
 
   const known = mine.filter((r) => !isUnknownResult(r));
   let run = 0;
   while (run < known.length && known[run].ok === last.ok) run++;
   const since = known[run - 1].at;
   const state: VantageState = !last.ok && run >= FAILURES_TO_FAIL ? "failing" : "up";
-  return { vantage, state, last, since };
+  return { vantage, path, state, last, since };
 }
 
+/** Which tier a status weighs in: public external, mesh external or local. */
+export type Tier = "public" | "mesh" | "local";
+
+export function tierOf(s: Pick<VantageStatus, "vantage" | "path">): Tier {
+  if (s.vantage.kind === "local") return "local";
+  return s.path === "mesh" ? "mesh" : "public";
+}
+
+const names = (list: VantageStatus[]) => [...new Set(list.map((s) => (s.vantage.kind === "local" ? "this instance" : s.vantage.name)))];
+
 /**
- * The monitor's state across vantage points. External vantage points decide when any has current data;
- * otherwise the local one does and the evaluation is flagged `localOnly`.
+ * The monitor's state across vantage points and paths.
+ * - Public external results decide; without them mesh results do; without those the local one does (`localOnly`).
+ * - No deciding vantage point failing is `up`; most failing is `down`; some failing is `degraded`.
+ * - A single outside vantage point failing while the local check passes is `degraded`, never `down`.
+ * - A mesh verdict of down with the local check passing is `degraded`: the app is up and the link or peer is the problem.
+ * - A vantage point outside the deciding set that fails while the deciders are up makes it `degraded`.
+ * - `reading` says which of these it is.
  */
 export function evaluate(args: {
   vantages: VantagePoint[];
   results: CheckResult[];
   now: number;
   intervalSec: number;
+  /** Vantage points whose timeouts say nothing about the target. */
+  impaired?: ReadonlySet<string>;
 }): Evaluation {
-  const statuses = args.vantages.map((v) => vantageStatus(v, args.results, args.now, args.intervalSec));
-  const known = (s: VantageStatus) => s.state !== "unknown";
-  const externals = statuses.filter((s) => s.vantage.kind === "external" && known(s));
+  const results = markImpaired(args.results, args.impaired ?? new Set());
+  const statuses: VantageStatus[] = [];
+  for (const v of args.vantages) {
+    const paths = new Set<CheckPath>(results.filter((r) => r.vantageId === v.id).map((r) => r.path));
+    if (paths.size === 0) paths.add(defaultPath(v));
+    for (const path of paths) statuses.push(vantageStatus(v, results, args.now, args.intervalSec, path));
+  }
 
-  const localOnly = externals.length === 0;
-  const deciding = localOnly ? statuses.filter((s) => s.vantage.kind === "local" && known(s)) : externals;
+  const known = statuses.filter((s) => s.state !== "unknown");
+  const tiers: Record<Tier, VantageStatus[]> = { public: [], mesh: [], local: [] };
+  for (const s of known) tiers[tierOf(s)].push(s);
+  const tier: Tier = tiers.public.length ? "public" : tiers.mesh.length ? "mesh" : "local";
+  const deciding = tiers[tier];
+  const localOnly = tier === "local";
   if (deciding.length === 0) return { state: "unknown", localOnly, vantages: statuses };
 
   const failing = deciding.filter((s) => s.state === "failing");
-  const state: MonitorState = failing.length * 2 > deciding.length ? "down" : "up";
+  const others = known.filter((s) => !deciding.includes(s));
+  let state: MonitorState = failing.length === 0 ? "up" : failing.length * 2 > deciding.length ? "down" : "degraded";
+  let reading: Reading | undefined;
+
+  if (state === "down" && !localOnly && others.some((s) => s.state === "up")) {
+    if (tier === "public") {
+      reading = { kind: "unreachable-outside" };
+      // One outside vantage point against a local one that succeeds is a disagreement, not an outage.
+      if (deciding.length === 1) state = "degraded";
+    } else {
+      state = "degraded";
+      reading = { kind: "unreachable-mesh" };
+    }
+  } else if (state === "degraded") {
+    reading = { kind: "vantage-failing", vantages: names(failing) };
+  } else if (state === "up" && !localOnly) {
+    const dissent = others.filter((s) => s.state === "failing");
+    if (dissent.length > 0) {
+      state = "degraded";
+      reading = dissent.length === 1 && tierOf(dissent[0]) === "local" ? { kind: "local-only" } : { kind: "vantage-failing", vantages: names(dissent) };
+    }
+  }
+
   const downSince = state === "down" ? Math.min(...failing.map((s) => s.since ?? args.now)) : undefined;
-  return { state, localOnly, vantages: statuses, ...(downSince !== undefined ? { downSince } : {}) };
+  return {
+    state,
+    localOnly,
+    vantages: statuses,
+    ...(downSince !== undefined ? { downSince } : {}),
+    ...(reading ? { reading } : {}),
+  };
 }

@@ -4,6 +4,7 @@
 import * as engine from "./engine";
 import type { LinkPatch } from "./link";
 import * as links from "./links";
+import * as peers from "./peers";
 import * as service from "./service";
 import type {
   AppUptime,
@@ -29,6 +30,8 @@ export interface UptimeClient {
   /** Linked instances with their two uptime switches. */
   listVantageLinks(): Promise<VantageLinkView[]>;
   setVantageLink(peerId: string, patch: LinkPatch): Promise<VantageLinkView | null>;
+  /** Whether uptime watches this linked instance and alerts when it goes quiet, so the heartbeat watcher stays silent about it. */
+  watchesPeer(peerId: string): Promise<boolean>;
   /** Matches automatic monitors to the apps' domains and previews. */
   syncAutoMonitors(): Promise<{ added: number; removed: number }>;
   /** One worker pass: due checks, rollups, alerts and retention. */
@@ -46,6 +49,7 @@ export const inProcessUptimeClient: UptimeClient = {
   listVantages: () => service.listVantages(),
   listVantageLinks: () => links.listVantageLinks(),
   setVantageLink: (peerId, patch) => links.setVantageLink(peerId, patch),
+  watchesPeer: (peerId) => peers.watchesPeer(peerId),
   syncAutoMonitors: () => engine.syncAutoMonitors(),
   tick: () => engine.tickUptime(),
 };

@@ -19,6 +19,8 @@ export type TlsCheck = { type: "tls"; host: string; port: number; warnDays: numb
 export type Check = HttpCheck | TcpCheck | TlsCheck;
 
 export const DEFAULT_EXPECTED_STATUS = { min: 200, max: 399 } as const;
+/** Automatic monitors count any response below 500 as up: an API that answers 404 at / is still serving. */
+export const AUTO_EXPECTED_STATUS = { min: 100, max: 499 } as const;
 export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 export const DEFAULT_TLS_PORT = 443;
 export const DEFAULT_TLS_WARN_DAYS = 14;
@@ -59,8 +61,21 @@ export const ERROR_KINDS = [
 ] as const;
 export type ErrorKind = (typeof ERROR_KINDS)[number];
 
-/** A check a prober runs for another instance's monitor. */
-export type WatchEntry = { monitorId: string; check: Check; intervalSec: IntervalSec };
+/** The route a check took: the internet, a linked instance's WireGuard tunnel, or this instance. */
+export const CHECK_PATHS = ["public", "mesh", "local"] as const;
+export type CheckPath = (typeof CHECK_PATHS)[number];
+
+/** A check a prober runs for another instance's monitor. `path` defaults to public. */
+export type WatchEntry = {
+  monitorId: string;
+  check: Check;
+  intervalSec: IntervalSec;
+  path?: "public" | "mesh";
+  /** How often to run it: the interval times the vantage points sharing the monitor. Defaults to `intervalSec`. */
+  periodSec?: number;
+  /** When in the period to run it, in ms from the epoch's period boundary. */
+  offsetMs?: number;
+};
 
 /** A result that says nothing about the target, such as a check skipped for a private address or refused by the outbound policy. It counts as no data. */
 export function isUnknownResult(r: Pick<CheckResult, "error">): boolean {
@@ -70,6 +85,8 @@ export function isUnknownResult(r: Pick<CheckResult, "error">): boolean {
 export type CheckResult = {
   monitorId: string;
   vantageId: string;
+  /** The route the check took. */
+  path: CheckPath;
   /** Epoch milliseconds when the check started. */
   at: number;
   ok: boolean;
@@ -89,10 +106,23 @@ export type VantagePoint = {
 };
 
 export type VantageState = "up" | "failing" | "unknown";
-export type MonitorState = "up" | "down" | "unknown";
+/** `degraded`: the vantage points that decide split, or one that doesn't decide disagrees. */
+export type MonitorState = "up" | "degraded" | "down" | "unknown";
+
+/** Why vantage points disagree, when they do. */
+export type Reading =
+  /** Public checks fail while local or mesh checks succeed: DNS, certificate, CDN or firewall. */
+  | { kind: "unreachable-outside" }
+  /** The mesh check fails while the local one succeeds: the link or the peer. */
+  | { kind: "unreachable-mesh" }
+  /** The local check fails while the others succeed. */
+  | { kind: "local-only" }
+  /** Some vantage points fail while the rest succeed. */
+  | { kind: "vantage-failing"; vantages: string[] };
 
 export type VantageStatus = {
   vantage: VantagePoint;
+  path: CheckPath;
   state: VantageState;
   last?: CheckResult;
   /** Epoch ms the current run of the same outcome began. */
@@ -106,6 +136,7 @@ export type Evaluation = {
   vantages: VantageStatus[];
   /** Epoch ms the monitor went down, when it's down. */
   downSince?: number;
+  reading?: Reading;
 };
 
 /** Minutes of one bucket, by outcome. */

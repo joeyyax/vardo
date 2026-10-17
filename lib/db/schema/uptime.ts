@@ -27,6 +27,10 @@ export const uptimeMonitors = pgTable(
     /** A preview environment's hostname. */
     environmentId: text("environment_id").references(() => environments.id, { onDelete: "cascade" }),
     preview: boolean("preview").notNull().default(false),
+    /** The linked instance an automatic instance monitor watches. */
+    meshPeerId: text("mesh_peer_id").references(() => meshPeers.id, { onDelete: "cascade" }),
+    /** "link" for the tunnel, "public" for the peer's public URL. */
+    peerRole: text("peer_role"),
     /** Windows that mute alerts. Downtime inside them still counts. */
     maintenance: jsonb("maintenance").$type<MaintenanceWindow[]>().notNull().default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -58,6 +62,8 @@ export const uptimeVantages = pgTable(
     remoteId: text("remote_id"),
     /** Monitor ids it may report on: the watch list last served to it. */
     watching: jsonb("watching").$type<string[]>().notNull().default([]),
+    /** The part of `watching` served as mesh-path checks. */
+    meshWatching: jsonb("mesh_watching").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("uptime_vantage_peer_uniq").on(t.meshPeerId).where(sql`${t.meshPeerId} is not null`)],
@@ -92,6 +98,8 @@ export const uptimeResults = pgTable(
       .notNull()
       .references(() => uptimeMonitors.id, { onDelete: "cascade" }),
     vantageId: text("vantage_id").notNull(),
+    /** "public", "mesh" or "local". */
+    path: text("path").notNull().default("public"),
     at: timestamp("at", { withTimezone: true }).notNull(),
     ok: boolean("ok").notNull(),
     latencyMs: integer("latency_ms").notNull(),
@@ -148,6 +156,11 @@ export const uptimeWatchEntries = pgTable(
     monitorId: text("monitor_id").notNull(),
     check: jsonb("check").$type<Check>().notNull(),
     intervalSec: integer("interval_sec").notNull(),
+    /** "public" or "mesh". */
+    path: text("path").notNull().default("public"),
+    /** How often to run it and the offset into that period. Null before the peer sent a schedule. */
+    periodSec: integer("period_sec"),
+    offsetMs: bigint("offset_ms", { mode: "number" }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.peerId, t.monitorId] })],
@@ -162,6 +175,7 @@ export const uptimeProbeResults = pgTable(
       .notNull()
       .references(() => meshPeers.id, { onDelete: "cascade" }),
     monitorId: text("monitor_id").notNull(),
+    path: text("path").notNull().default("public"),
     at: timestamp("at", { withTimezone: true }).notNull(),
     ok: boolean("ok").notNull(),
     latencyMs: integer("latency_ms").notNull(),

@@ -67,6 +67,7 @@ export async function openIncident(organizationId: string, req: OpenRequest, now
         state: "open",
         resolvedAt: null,
         severity: req.severity,
+        title: req.title,
         peakSeverity: worse(recent.peakSeverity, req.severity),
         updatedAt: now,
         updateCount: sql`${incidents.updateCount} + 1`,

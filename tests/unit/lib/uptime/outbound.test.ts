@@ -9,7 +9,7 @@ import { runHttpCheck, runTcpCheck, runTlsCheck, type HttpCheck } from "@/lib/up
 import { checkDeps, levelOf, targetRefusal } from "@/lib/uptime/outbound";
 
 const http = (url: string): HttpCheck => ({ type: "http", url, expectedStatus: { min: 200, max: 399 }, timeoutMs: 2000 });
-const ctx = { monitorId: "m", vantageId: "v" };
+const ctx = { monitorId: "m", vantageId: "v", path: "public" as const };
 
 describe("target refusal at create and update", () => {
   it.each([
@@ -72,5 +72,23 @@ describe("checks under the policy", () => {
     expect(tcp).toMatchObject({ ok: false, error: "blocked" });
     expect(tls).toMatchObject({ ok: false, error: "blocked" });
     expect(connect).not.toHaveBeenCalled();
+  });
+});
+
+describe("cached resolution", () => {
+  it("vets the cached addresses and resolves the host once for the policy check", async () => {
+    const { blockedHostReason } = await import("@/lib/uptime/outbound");
+    const resolve = vi.fn(async () => [{ address: "10.0.0.5", family: 4 }]);
+    expect(await blockedHostReason("app.example.com", { resolve }, "strict")).toMatch(/10\.0\.0\.5/);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    const ok = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+    expect(await blockedHostReason("app.example.com", { resolve: ok }, "strict")).toBeNull();
+  });
+
+  it("gives the fetch the same resolver, so the policy check and the connect share an answer", async () => {
+    const { assertOutboundUrlAllowed } = await import("@/lib/security/ssrf");
+    const resolve = vi.fn(async () => [{ address: "169.254.169.254", family: 4 }]);
+    await expect(assertOutboundUrlAllowed("https://app.example.com/", { resolve })).rejects.toThrow(/169\.254\.169\.254/);
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 });

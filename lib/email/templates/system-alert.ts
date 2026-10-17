@@ -107,7 +107,7 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
       return {
         tone: "fail",
         status: "Service down",
-        heading: `${event.service} isn't responding`,
+        heading: event.subject ?? `${event.service} isn't responding`,
         preheader: known ? `${known.impact}.` : event.message,
         blocks: [
           ...(known?.appsServing ? [{ kind: "reassure" as const, strong: "Your apps are still serving.", text: "Only Vardo itself is affected." }] : []),
