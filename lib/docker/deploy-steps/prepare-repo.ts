@@ -60,6 +60,8 @@ import { buildKey, findReusableImage } from "../build-key";
 import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
+import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../build-targets";
+import { TARGET_BUILD, bringBack } from "../remote-build";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -403,6 +405,10 @@ type RepoBuild = {
   capture?: { text: string };
   /** Queues the build for the builder. */
   gate: BuildGate;
+  /** Targets a Dockerfile build may run on, with the registry ref that brings its image here. */
+  remote?: { targets: BuildTarget[]; ref: string } | null;
+  /** Set when the image came from a target, so it's already in the registry. */
+  ranOn?: { target: BuildTarget | null };
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -473,7 +479,7 @@ async function dockerBuild(
 ): Promise<void> {
   const { repoPath, logs, signal } = build;
   const bounded = await boundedBuild((line) => logs.push(line), signal);
-  const args = dockerfileBuildArgs({
+  const argsInput = {
     imageName: build.imageName,
     dockerfile: build.dockerfile,
     context: repoPath,
@@ -482,13 +488,26 @@ async function dockerBuild(
     noCache: build.noCache,
     buildKey: build.buildKey,
     gitSha: build.gitSha,
-  });
+  };
+  const args = dockerfileBuildArgs(argsInput);
+  const remote = build.remote;
+  let ran: BoundedBuild = bounded;
   try {
-    await withBuildSlot(build.gate, bounded, () =>
-      spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture),
-    );
+    await withBuildSlot({ ...build.gate, targets: remote?.targets }, bounded, async ({ target }) => {
+      if (build.ranOn) build.ranOn.target = target;
+      if (!target || !remote) {
+        ran = bounded;
+        return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
+      }
+      ran = TARGET_BUILD;
+      const remoteArgs = dockerfileBuildArgs({ ...argsInput, loadArgs: TARGET_BUILD.loadArgs });
+      await onTarget(target, async (session) => {
+        await spawnStream("docker", remoteArgs, { cwd: repoPath, env: remoteEnv(authEnv, session), signal }, logs, "[build][docker]", build.capture);
+        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, log: (line) => logs.push(line), signal });
+      });
+    });
   } catch (err) {
-    throw explainBuildOom(err, bounded);
+    throw explainBuildOom(err, ran);
   }
 }
 
@@ -857,6 +876,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           : undefined;
       let key = await keyFor();
       const registry = key ? await buildRegistryOps(log, signal) : null;
+      // Targets bring images back through the registry, so they need one.
+      const targets = registry ? await configuredTargets() : [];
+      const ranOn: { target: BuildTarget | null } = { target: null };
       const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName, registry) : null;
 
       if (reused) {
@@ -898,6 +920,8 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           gitSha: ctx.gitSha,
           buildKey: key,
           capture,
+          remote: registry && key && targets.length > 0 ? { targets, ref: registry.ref(app.name, key) } : null,
+          ranOn,
         }));
         try {
           await run();
@@ -920,7 +944,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw buildErr;
           }
         }
-        if (registry && key) (ctx.registryPushes ??= []).push(registry.push(imageName, registry.ref(app.name, key)));
+        if (registry && key && !ranOn.target) (ctx.registryPushes ??= []).push(registry.push(imageName, registry.ref(app.name, key)));
       }
 
       if (key) {

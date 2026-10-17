@@ -37,16 +37,86 @@ describe.skipIf(!client)("build gate on Redis", () => {
     hold: `${prefix}:hold`,
     admits: `${prefix}:admits`,
     started: `${prefix}:started`,
+    remote: `${prefix}:remote`,
+    target: `${prefix}:target:`,
   };
   const store = redisBuildStore(keys, client! as never);
+  const allKeys = () => [...Object.values(keys), `${keys.target}lh`, `${keys.target}hz`];
 
   beforeEach(async () => {
-    await client!.del(...Object.values(keys));
+    await client!.del(...allKeys());
   });
 
   afterAll(async () => {
-    await client!.del(...Object.values(keys));
+    await client!.del(...allKeys());
     client!.disconnect();
+  });
+
+  describe("build targets", () => {
+    const lh = { id: "lh", limit: 1 };
+    const hz = { id: "hz", limit: 2 };
+    const busy = async () => {
+      await store.tryAcquire("here", 1);
+      await store.endSweep();
+    };
+
+    it("takes this host first when it has a slot", async () => {
+      expect(await store.tryAcquireAt("a", 1, [lh])).toMatchObject({ target: null, alone: true });
+      expect(await client!.zcard(`${keys.target}lh`)).toBe(0);
+    });
+
+    it("overflows to targets in order, each up to its limit, then queues", async () => {
+      await busy();
+      expect(await store.tryAcquireAt("a", 1, [lh, hz])).toMatchObject({ target: "lh" });
+      expect(await store.tryAcquireAt("b", 1, [lh, hz])).toMatchObject({ target: "hz" });
+      expect(await store.tryAcquireAt("c", 1, [lh, hz])).toMatchObject({ target: "hz" });
+      expect(await store.tryAcquireAt("d", 1, [lh, hz])).toBeNull();
+      expect(await client!.lrange(keys.queue, 0, -1)).toEqual(["d"]);
+      await store.releaseTarget("a", "lh");
+      expect(await store.tryAcquireAt("d", 1, [lh, hz])).toMatchObject({ target: "lh" });
+      expect(await client!.hlen(keys.remote)).toBe(0);
+    });
+
+    it("never sends a build to a target it wasn't offered", async () => {
+      await busy();
+      expect(await store.tryAcquireAt("a", 1, [])).toBeNull();
+      expect(await store.tryAcquire("a", 1)).toBeNull();
+      expect(await client!.zcard(`${keys.target}lh`)).toBe(0);
+    });
+
+    it("lets a remote-eligible build pass one that can only build here, but not another eligible one", async () => {
+      await busy();
+      expect(await store.tryAcquireAt("local-only", 1, [])).toBeNull();
+      expect(await store.tryAcquireAt("first", 1, [{ id: "lh", limit: 0 }])).toBeNull();
+      expect(await store.tryAcquireAt("second", 1, [lh])).toBeNull();
+      expect(await store.tryAcquireAt("first", 1, [lh])).toMatchObject({ target: "lh" });
+      expect(await client!.lrange(keys.queue, 0, -1)).toEqual(["local-only", "second"]);
+    });
+
+    it("drops a dead eligible waiter ahead instead of waiting on it", async () => {
+      await busy();
+      await store.tryAcquireAt("dead", 1, [{ id: "lh", limit: 0 }]);
+      await client!.hset(keys.seen, "dead", String(Date.now() - 60_000));
+      await store.tryAcquireAt("live-local", 1, []);
+      expect(await store.tryAcquireAt("next", 1, [lh])).toMatchObject({ target: "lh" });
+      expect(await client!.lrange(keys.queue, 0, -1)).toEqual(["live-local"]);
+    });
+
+    it("frees a target slot whose lease lapsed", async () => {
+      await busy();
+      await client!.zadd(`${keys.target}lh`, Date.now() - 1000, "dead");
+      expect(await store.tryAcquireAt("a", 1, [lh])).toMatchObject({ target: "lh" });
+    });
+
+    it("renews a target build's lease on the target's set", async () => {
+      await busy();
+      await store.tryAcquireAt("a", 1, [lh]);
+      const before = Number(await client!.zscore(`${keys.target}lh`, "a"));
+      await new Promise((r) => setTimeout(r, 20));
+      await store.renew("a", "lh");
+      expect(Number(await client!.zscore(`${keys.target}lh`, "a"))).toBeGreaterThan(before);
+      expect(await client!.zscore(keys.running, "a")).toBeNull();
+    });
   });
 
   it("admits the first build alone and holds the builder for its sweep", async () => {

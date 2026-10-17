@@ -16,6 +16,13 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
+const { ready } = vi.hoisted(() => ({ ready: new Map<string, boolean>() }));
+vi.mock("@/lib/docker/build-targets", async (original) => ({
+  ...(await original<typeof import("@/lib/docker/build-targets")>()),
+  isTargetReady: async (t: { id: string }) => ready.get(t.id) ?? true,
+  markTargetDown: (t: { id: string }) => void ready.set(t.id, false),
+}));
+
 vi.mock("@/lib/deploy/running-clock", () => ({
   pauseRunningClock: (id: string) => {
     state.clock.push(`pause:${id}`);
@@ -213,6 +220,7 @@ function fakeRedisStore() {
   const running = new Set<string>();
   let hold: string | null = null;
   let admits = 0;
+  const targetRunning: Record<string, Set<string>> = {};
   const store = {
     async tryAcquire(id: string, limit: number) {
       if (!queue.includes(id)) queue.push(id);
@@ -223,7 +231,23 @@ function fakeRedisStore() {
       admits++;
       const alone = running.size === 1;
       if (alone) hold = `sweep:${id}`;
-      return { gen: admits, alone, local: false };
+      return { gen: admits, alone, local: false, target: null };
+    },
+    async tryAcquireAt(id: string, limit: number, slots: { id: string; limit: number }[]) {
+      const here = await store.tryAcquire(id, limit);
+      if (here || slots.length === 0) return here;
+      for (const slot of slots) {
+        const set = (targetRunning[slot.id] ??= new Set());
+        if (set.size < slot.limit) {
+          queue.splice(queue.indexOf(id), 1);
+          set.add(id);
+          return { gen: 0, alone: false, local: false, target: slot.id };
+        }
+      }
+      return null;
+    },
+    async releaseTarget(id: string, target: string) {
+      targetRunning[target]?.delete(id);
     },
     async place(id: string) {
       const i = queue.indexOf(id);
@@ -257,8 +281,9 @@ function fakeRedisStore() {
       return false;
     },
     queue,
+    targetRunning,
   };
-  return store as unknown as RedisStore & { queue: string[] };
+  return store as unknown as RedisStore & { queue: string[]; targetRunning: Record<string, Set<string>> };
 }
 
 const bounded = { env: {}, loadArgs: [], limitBytes: 6 * GiB, container: "vardo-buildkit" };
@@ -495,5 +520,102 @@ describe("withBuildSlot", () => {
     ).rejects.toThrow(/timed out/);
     expect(state.killed).toEqual(["left-behind"]);
     expect(state.recorded).toHaveLength(0);
+  });
+});
+
+describe("withBuildSlot with build targets", async () => {
+  let store: ReturnType<typeof fakeRedisStore>;
+  const { BuilderError } = await import("@/lib/docker/build-targets");
+  const target = (id: string, maxConcurrent = 1) => ({
+    id, kind: "ssh" as const, name: id, host: `${id}.example.com`, port: 22, user: "vardo",
+    privateKey: "key", hostKey: `${id}.example.com ssh-ed25519 AAAA`, maxConcurrent,
+  });
+
+  beforeEach(() => {
+    store = fakeRedisStore();
+    resetBuildGateForTests(store);
+    ready.clear();
+    Object.assign(state, { peak: 3.2 * GB, recorded: [], steps: [], killed: [], anon: [], inspectFails: false, clock: [] });
+  });
+
+  it("builds here while this host has a slot, and says so", async () => {
+    const a = gateFor("dep-a");
+    let where: unknown = "unset";
+    await withBuildSlot({ ...a.gate, targets: [target("lh")] }, bounded, async ({ target }) => void (where = target));
+    expect(where).toBeNull();
+    expect(a.lines).toContain("[build] Building on this server");
+  });
+
+  it("overflows to the first target with a free slot when this host is busy", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const lh = target("lh", 1);
+    const hz = target("hz", 2);
+    const b = gateFor("dep-b");
+    const c = gateFor("dep-c");
+    const busy = deferred();
+    const on: string[] = [];
+    const queuedB = withBuildSlot({ ...b.gate, targets: [lh, hz] }, bounded, async ({ target }) => {
+      on.push(`b:${target?.id}`);
+      await busy.promise;
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    const queuedC = withBuildSlot({ ...c.gate, targets: [lh, hz] }, bounded, async ({ target }) => void on.push(`c:${target?.id}`));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(on).toEqual(["b:lh", "c:hz"]);
+    expect(b.lines).toContain("[build] Building on lh (vardo@lh.example.com:22)");
+    busy.resolve();
+    first.resolve();
+    await Promise.all([running, queuedB, queuedC]);
+    expect(store.targetRunning.lh.size).toBe(0);
+  });
+
+  it("skips a target that isn't answering", async () => {
+    ready.set("lh", false);
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    let where: unknown = "unset";
+    const queued = withBuildSlot({ ...gateFor("dep-b").gate, targets: [target("lh")] }, bounded, async ({ target }) => void (where = target?.id ?? null));
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(where).toBe("unset");
+    first.resolve();
+    await Promise.all([running, queued]);
+    expect(where).toBeNull();
+  });
+
+  it("builds here once after a builder failure on the target, and logs why", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    const b = gateFor("dep-b");
+    const on: (string | null)[] = [];
+    const queued = withBuildSlot({ ...b.gate, targets: [target("lh")] }, bounded, async ({ target }) => {
+      on.push(target?.id ?? null);
+      if (target) throw new BuilderError("it's unreachable");
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    first.resolve();
+    await Promise.all([running, queued]);
+    expect(on).toEqual(["lh", null]);
+    expect(b.lines).toContain("[build] lh couldn't build: it's unreachable. Building on this server instead");
+    expect(ready.get("lh")).toBe(false);
+  });
+
+  it("doesn't retry a build the app's own code failed", async () => {
+    const first = deferred();
+    const running = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    await new Promise((r) => setTimeout(r, 10));
+    let runs = 0;
+    const queued = withBuildSlot({ ...gateFor("dep-b").gate, targets: [target("lh")] }, bounded, async () => {
+      runs++;
+      throw new Error('failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 1');
+    });
+    await expect(queued).rejects.toThrow(/npm run build/);
+    first.resolve();
+    await running;
+    expect(runs).toBe(1);
   });
 });

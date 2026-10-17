@@ -183,6 +183,50 @@ describe("composeBuild", () => {
     expect(pushed).toEqual(["shop-production-green-api"]);
   });
 
+  describe("on a build target", () => {
+    const target = {
+      id: "lh", kind: "ssh" as const, name: "Long House", host: "10.99.0.2", port: 2222, user: "vardo",
+      privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----", hostKey: "[10.99.0.2]:2222 ssh-ed25519 AAAA", maxConcurrent: 1,
+    };
+    const registry = {
+      appName: "shop",
+      ops: { ref: (r: string, k: string) => `localhost:5001/${r}:${k.slice(0, 6)}`, pull: async () => false, push: async () => true, untag: async () => {} },
+    };
+
+    it("builds there with compose build, pushes from there and pulls each image here", async () => {
+      const pushes: Promise<boolean>[] = [];
+      await composeBuild(options({ registry, pushes, targets: [target], gate: (run) => run({ target }) }));
+      const remote = (c: (typeof calls)[number]) => c.env?.DOCKER_HOST === "ssh://vardo@10.99.0.2:2222";
+      expect(bakeCall()).toBeUndefined();
+      const build = calls.find((c) => c.args.includes("build") && c.args[0] === "compose" && !c.args.includes("--print"))!;
+      expect(remote(build)).toBe(true);
+      expect(build.env?.BUILDX_BUILDER).toBeUndefined();
+      const push = calls.filter((c) => c.args[0] === "push");
+      const pull = calls.filter((c) => c.args[0] === "pull");
+      expect(push.map((c) => c.args.at(-1))).toEqual([expect.stringMatching(/^localhost:5001\/shop-web:/), expect.stringMatching(/^localhost:5001\/shop-api:/)]);
+      expect(push.every(remote)).toBe(true);
+      expect(pull.some(remote)).toBe(false);
+      expect(calls.some((c) => !remote(c) && c.args[0] === "tag" && c.args[2] === "shop-production-green-web")).toBe(true);
+      expect(pushes).toHaveLength(0);
+    });
+
+    it("stays here when a service to build has no key", async () => {
+      const keyless: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
+        cmd === "git" && args.at(-1)!.endsWith(":api") ? Promise.reject(new Error("not in tree")) : exec!(cmd, args, opts);
+      await composeBuild(options({ exec: keyless, registry, pushes: [], targets: [target], gate: (run) => run({ target }) }));
+      expect(bakeCall()).toBeDefined();
+      expect(calls.some((c) => c.env?.DOCKER_HOST)).toBe(false);
+    });
+
+    it("turns a failed push from the target into a builder failure", async () => {
+      const failing: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
+        args[0] === "push" ? Promise.reject(Object.assign(new Error("push failed"), { stderr: "dial tcp: connection refused" })) : exec!(cmd, args, opts);
+      const { BuilderError } = await import("@/lib/docker/build-targets");
+      await expect(composeBuild(options({ exec: failing, registry, pushes: [], targets: [target], gate: (run) => run({ target }) })))
+        .rejects.toBeInstanceOf(BuilderError);
+    });
+  });
+
   it("builds everything, without keys, from a checkout with no commit", async () => {
     await composeBuild(options({ gitSha: undefined }));
     expect(calls.some((c) => c.args.includes("config"))).toBe(false);
