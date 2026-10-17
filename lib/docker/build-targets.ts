@@ -298,10 +298,11 @@ function healthKey(t: BuildTarget): string {
   return `${t.id}|${targetDockerHost(t)}|${t.hostKey ?? ""}`;
 }
 
-/** Whether a target answered lately. The first call waits for a check; a stale result refreshes in the background. */
+/** Whether a target answered lately. The first call waits for a check unless `wait` is false; a stale result refreshes in the background. */
 export async function isTargetReady(
   target: BuildTarget,
   check: (t: BuildTarget) => Promise<unknown> = targetDockerVersion,
+  { wait = true }: { wait?: boolean } = {},
 ): Promise<boolean> {
   if (!target.hostKey || target.maxConcurrent < 1) return false;
   const key = healthKey(target);
@@ -316,7 +317,7 @@ export async function isTargetReady(
     });
     inflight.set(key, pending);
   }
-  return entry ? entry.ok : pending;
+  return entry ? entry.ok : wait ? pending : false;
 }
 
 /** Marks a target down until its next check, as after a builder failure. */

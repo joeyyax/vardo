@@ -9,6 +9,7 @@ import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import type { DeployAbortReason, DeployResult, DeployStage } from "@/lib/docker/deploy";
 import {
   LEASE_RENEW_MS,
+  claimedSlot,
   dropSupersede,
   enterSwap,
   markStage,
@@ -193,6 +194,7 @@ export async function runClaimedDeployment(row: ClaimedDeploy, job: Job, run?: R
       executorId: executor,
       signal: job.controller.signal,
       fence: () => enterSwap(executor, row.id),
+      deploySlot: row.onTarget ? claimedSlot(executor, row) : undefined,
       onStage: (stage, status) => {
         feedback.stage(stage, status);
         if (status === "running") void onStage(job, stage);

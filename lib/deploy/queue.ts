@@ -7,6 +7,7 @@ import { deployments, environments, type DeployCancelReason, type DeployRequest 
 import { maxDeployConcurrency } from "@/lib/resources/host";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import type { DeployOpts, DeployStage } from "@/lib/docker/deploy";
+import type { DeploySlot } from "@/lib/docker/build-gate";
 
 /** Lease a claim holds without renewal. */
 export const LEASE_TTL_MS = 45_000;
@@ -234,11 +235,23 @@ export async function releaseHeldDeploy(id: string): Promise<boolean> {
   });
 }
 
+/** Build target slots as the build gate sees them. */
+export type TargetSlots = {
+  /** Builds the ready targets take at once. */
+  slots: number;
+  /** The deployment holding each busy slot on a ready target; null for a build without one. */
+  holders: (string | null)[];
+  /** Ready targets, in order. */
+  names: string[];
+};
+
 export type ClaimOpts = {
   /** "only" claims the Vardo self app alone; "exclude" claims everything else. */
   self?: "only" | "exclude";
-  /** Host-wide running limit. Defaults to the deploy concurrency setting. */
+  /** This server's running limit. Defaults to the deploy concurrency setting. */
   capacity?: number;
+  /** Free slots here add capacity for deploys that build on a target. */
+  targets?: TargetSlots | null;
   leaseMs?: number;
 };
 
@@ -254,6 +267,10 @@ export type ClaimedDeploy = {
   attempts: number;
   /** It had a queue wait open, which the claim ends. */
   waited?: boolean;
+  /** Claimed on a build target's slot: it builds only there until it takes this server's. */
+  onTarget?: boolean;
+  /** The deploy log's line for a claim on a target's slot. */
+  note?: string;
 };
 
 /** A write that hit the one-running-row-per-scope index. */
@@ -264,9 +281,44 @@ export function isScopeConflict(err: unknown): boolean {
   return false;
 }
 
+/** Running rows by slot: this server's, a target's, and a target's waiting for this server's. */
+type SlotUse = { local: number; onTarget: Set<string>; awaitingLocal: number };
+
+async function slotUse(tx: Tx | typeof db): Promise<SlotUse> {
+  const rows = await tx.execute<{ id: string; claim_slot: string | null; wait_reason: string | null }>(sql`
+    SELECT id, claim_slot, wait_reason FROM deployment WHERE status = 'running'`);
+  const onTarget = new Set<string>();
+  let local = 0;
+  let awaitingLocal = 0;
+  for (const r of rows) {
+    if (r.claim_slot !== "target") local++;
+    else {
+      onTarget.add(r.id);
+      if (r.wait_reason === "deploy-slot") awaitingLocal++;
+    }
+  }
+  return { local, onTarget, awaitingLocal };
+}
+
+/** Free target slots for deploys claimed there. A slot held by a build of a deploy claimed here isn't one. */
+export function freeTargetSlots(targets: TargetSlots | null | undefined, onTarget: Set<string>): number {
+  if (!targets || targets.slots <= 0) return 0;
+  const heldByOthers = targets.holders.filter((id) => id === null || !onTarget.has(id)).length;
+  return Math.max(0, targets.slots - heldByOthers - onTarget.size);
+}
+
+const deploysAtATime = (capacity: number) => `${capacity} deploy${capacity === 1 ? "" : "s"} at a time`;
+
+/** The deploy log's line for a deploy claimed on a target's slot. */
+export function targetSlotNote(names: string[], capacity: number): string {
+  const where = names.length === 1 ? `${names[0]}'s build slot` : `a build slot on ${names.join(" or ")}`;
+  return `[queue] Started on ${where} (this server runs ${deploysAtATime(capacity)})`;
+}
+
 /**
  * Claims queued deploys up to free capacity: one per idle scope, Vardo's own first, then bumped (latest bump first),
  * then explicit triggers, then oldest. A claimer that excludes Vardo's own leaves a slot for each one ready to claim.
+ * Past this server's limit, each free target slot takes the next deploy that may build there.
  */
 export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Promise<ClaimedDeploy[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
@@ -288,17 +340,42 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
     const claimed = await db.transaction(async (tx) => {
       await lockClaims(tx);
 
-      const [state] = await tx.execute<{ running: number; exclusive: boolean; self_ready: number }>(sql`
+      const [state] = await tx.execute<{ exclusive: boolean; self_ready: number }>(sql`
         SELECT
-          (SELECT count(*)::int FROM deployment WHERE status = 'running') AS running,
           EXISTS (
             SELECT 1 FROM deployment
             WHERE exclusive_requested_at > now() - ${EXCLUSIVE_MAX_AGE_MS}::int * interval '1 millisecond'
           ) AS exclusive,
           (SELECT count(DISTINCT d.scope_key)::int FROM deployment d JOIN app a ON a.id = d.app_id
            WHERE ${claimable} AND ${isSelf}) AS self_ready`);
-      const free = capacity - state.running - (opts.self === "exclude" ? state.self_ready : 0);
-      if (state.exclusive || free <= 0) return [];
+      if (state.exclusive) return [];
+      const use = await slotUse(tx);
+      // A deploy on a target's slot that waits for this server's gets it before the queue does.
+      const localFree = capacity - use.local - use.awaitingLocal - (opts.self === "exclude" ? state.self_ready : 0);
+      const targetFree = opts.self === "only" ? 0 : freeTargetSlots(opts.targets, use.onTarget);
+      if (localFree <= 0 && targetFree <= 0) return [];
+
+      const heads = await tx.execute<{ id: string; target_ok: boolean }>(sql`
+        WITH heads AS (
+          SELECT DISTINCT ON (d.scope_key) d.id, ${isSelf} AS is_self, NOT ${automatic} AS explicit, d.started_at, d.bumped_at,
+            d.claim_slot IS DISTINCT FROM 'local' AS any_slot
+          FROM deployment d JOIN app a ON a.id = d.app_id
+          WHERE ${claimable} ${selfFilter}
+          ORDER BY d.scope_key, d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id
+        )
+        SELECT id, NOT is_self AND any_slot AS target_ok FROM heads
+        ORDER BY is_self DESC, bumped_at DESC NULLS LAST, explicit DESC, started_at, id`);
+
+      // This server's slots take the line in order; a target's take the next deploys that may build there.
+      const here: string[] = [];
+      const there: string[] = [];
+      for (const head of heads) {
+        if (here.length < localFree) here.push(head.id);
+        else if (head.target_ok && there.length < targetFree) there.push(head.id);
+        if (here.length >= localFree && there.length >= targetFree) break;
+      }
+      if (here.length + there.length === 0) return [];
+      const ids = (list: string[]) => (list.length === 0 ? sql`NULL` : sql.join(list.map((id) => sql`${id}`), sql`, `));
 
       return tx.execute<{
         id: string;
@@ -315,17 +392,12 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
         waited: boolean;
         started_at: Date;
         bumped_at: Date | null;
+        on_target: boolean;
       }>(sql`
-        WITH heads AS (
-          SELECT DISTINCT ON (d.scope_key) d.id, ${isSelf} AS is_self, NOT ${automatic} AS explicit, d.started_at, d.bumped_at
+        WITH picked AS (
+          SELECT d.id, d.bumped_at, d.wait_reason IS NOT NULL AS waited, ${isSelf} AS is_self, NOT ${automatic} AS explicit
           FROM deployment d JOIN app a ON a.id = d.app_id
-          WHERE ${claimable} ${selfFilter}
-          ORDER BY d.scope_key, d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id
-        ), picked AS (
-          SELECT d.id, h.is_self, h.explicit, h.bumped_at, d.wait_reason IS NOT NULL AS waited FROM deployment d JOIN heads h ON h.id = d.id
-          WHERE d.status = 'queued'
-          ORDER BY h.is_self DESC, h.bumped_at DESC NULLS LAST, h.explicit DESC, h.started_at, h.id
-          LIMIT ${free}
+          WHERE d.id IN (${ids([...here, ...there])}) AND d.status = 'queued'
           FOR UPDATE OF d SKIP LOCKED
         )
         UPDATE deployment d SET
@@ -339,11 +411,13 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           wait_total = NULL,
           wait_eta = NULL,
           waiting_since = NULL,
+          claim_slot = CASE WHEN d.id IN (${ids(there)}) THEN 'target' END,
           -- Cleared so a requeued deploy keeps its place in line.
           bumped_at = NULL
         FROM picked WHERE d.id = picked.id
         RETURNING d.id, d.app_id, d.trigger, d.triggered_by, d.environment_id, d.group_environment_id,
-          d.scope_key, d.request, d.attempts, picked.is_self, picked.explicit, picked.waited, d.started_at, picked.bumped_at`);
+          d.scope_key, d.request, d.attempts, picked.is_self, picked.explicit, picked.waited, d.started_at, picked.bumped_at,
+          d.claim_slot = 'target' AS on_target`);
     });
 
     return [...claimed]
@@ -365,12 +439,103 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
         request: r.request,
         attempts: r.attempts,
         waited: r.waited,
+        ...(r.on_target ? { onTarget: true, note: targetSlotNote(opts.targets?.names ?? [], capacity) } : {}),
       }));
   } catch (err) {
     // A row written as running outside the queue took a scope first; the next pass claims around it.
     if (isScopeConflict(err)) return [];
     throw err;
   }
+}
+
+/** Moves a deploy on a target's slot to this server's when one is free and no earlier waiter is owed it. */
+export async function takeLocalSlot(
+  executorId: string,
+  id: string,
+  opts: { capacity?: number } = {},
+): Promise<boolean> {
+  const capacity = opts.capacity ?? maxDeployConcurrency();
+  return db.transaction(async (tx) => {
+    await lockClaims(tx);
+    const [me] = await tx.execute<{ waiting_since: Date | null }>(sql`
+      SELECT waiting_since FROM deployment
+      WHERE id = ${id} AND status = 'running' AND claimed_by = ${executorId} AND wait_reason = 'deploy-slot'`);
+    const [{ owed }] = await tx.execute<{ owed: number }>(sql`
+      SELECT count(*)::int AS owed FROM deployment
+      WHERE status = 'running' AND claim_slot = 'target' AND wait_reason = 'deploy-slot' AND id <> ${id}
+        AND (${me?.waiting_since ?? null}::timestamptz IS NULL OR waiting_since < ${me?.waiting_since ?? null}::timestamptz)`);
+    const use = await slotUse(tx);
+    if (use.local + owed >= capacity) return false;
+    const moved = await tx
+      .update(deployments)
+      .set({ claimSlot: null })
+      .where(and(eq(deployments.id, id), eq(deployments.status, "running"), eq(deployments.claimedBy, executorId)))
+      .returning({ id: deployments.id });
+    return moved.length > 0;
+  });
+}
+
+/** Puts a deploy claimed on a target's slot back in the queue for this server's, keeping its place and its log. */
+export async function requeueForLocalSlot(executorId: string, id: string, log: string): Promise<boolean> {
+  const rows = await db
+    .update(deployments)
+    .set({
+      status: "queued",
+      claimedBy: null,
+      leaseExpiresAt: null,
+      stage: null,
+      claimSlot: "local",
+      waitReason: null,
+      waitAhead: null,
+      waitTotal: null,
+      waitEta: null,
+      waitingSince: null,
+      log,
+    })
+    .where(and(eq(deployments.id, id), eq(deployments.status, "running"), eq(deployments.claimedBy, executorId)))
+    .returning({ id: deployments.id });
+  if (rows.length === 0) return false;
+  // The rerun gets the full time budget.
+  const { redis } = await import("@/lib/redis");
+  const { runningSinceKey } = await import("./running-clock");
+  await redis.del(runningSinceKey(id)).catch(() => {});
+  return true;
+}
+
+/** The deploy slot a claimed deploy holds, as the build gate reads it. */
+export function claimedSlot(executorId: string, row: Pick<ClaimedDeploy, "id" | "onTarget" | "note">, pollMs = 2_000): DeploySlot {
+  let onTarget = row.onTarget === true;
+  const capacity = () => maxDeployConcurrency();
+  return {
+    note: row.note,
+    onTarget: () => onTarget,
+    async takeLocal() {
+      if (onTarget && (await takeLocalSlot(executorId, row.id))) onTarget = false;
+      return !onTarget;
+    },
+    async awaitLocal({ signal, wait, log }) {
+      if (!onTarget) return;
+      log(`[queue] Waiting for this server's deploy slot to build here (it runs ${deploysAtATime(capacity())})`);
+      // The row's own wait is what puts it ahead of the queue.
+      await db
+        .update(deployments)
+        .set({ waitReason: "deploy-slot", waitingSince: sql`coalesce(${deployments.waitingSince}, now())` })
+        .where(and(eq(deployments.id, row.id), eq(deployments.claimedBy, executorId)));
+      await wait?.("deploy-slot");
+      try {
+        while (!(await takeLocalSlot(executorId, row.id))) await sleep(pollMs, signal);
+        onTarget = false;
+      } finally {
+        await wait?.(null);
+        await db
+          .update(deployments)
+          .set({ waitReason: null, waitingSince: null })
+          .where(and(eq(deployments.id, row.id), eq(deployments.waitReason, "deploy-slot")))
+          .catch(() => {});
+      }
+      log("[queue] Took this server's deploy slot");
+    },
+  };
 }
 
 export type LeaseRenewal = {

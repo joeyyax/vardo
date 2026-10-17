@@ -19,6 +19,7 @@ import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError, DeployClosedElsewhereError } from "./errors";
+import { NeedsLocalDeploySlotError, type DeploySlot } from "./build-gate";
 import { assertSlotWithinApp } from "./slot-guard";
 import { assertDiskHeadroom } from "./disk-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
@@ -109,6 +110,8 @@ export type DeployOpts = {
   executorId?: string;
   /** Checked before the swap touches containers, and records the swap stage. False stops the deploy. */
   fence?: () => Promise<boolean>;
+  /** The deploy slot its claim took. */
+  deploySlot?: DeploySlot;
 };
 
 /** Why an executor aborted a run. */
@@ -268,6 +271,7 @@ export async function runDeployment(
       await streamLogger.flush();
       return { deploymentId, success: false, log: logLines.join("\n"), durationMs: 0, status: "cancelled", closedElsewhere: true };
     }
+    if (opts.deploySlot?.note) log(opts.deploySlot.note);
 
     if (opts.groupEnvironmentId && !opts.environmentId) {
       throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
@@ -496,6 +500,7 @@ export async function runDeployment(
       signal: opts.signal,
       claimedBy: opts.executorId,
       fence: opts.fence,
+      deploySlot: opts.deploySlot,
       rollback: rollbackTarget
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
@@ -582,6 +587,16 @@ export async function runDeployment(
     if (ctx?.releaseHold) {
       await ctx.releaseHold().catch(() => {});
       ctx.releaseHold = undefined;
+    }
+
+    // Back in the queue for this server's deploy slot; the next claim runs it from the start.
+    if (error instanceof NeedsLocalDeploySlotError && opts.executorId && !opts.signal?.aborted) {
+      log("[queue] Back in the queue: this build runs only on this server, and its deploy slots are full");
+      const { requeueForLocalSlot } = await import("@/lib/deploy/queue");
+      if (await requeueForLocalSlot(opts.executorId, deploymentId, saved())) {
+        await streamLogger.flush();
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled", closedElsewhere: true };
+      }
     }
 
     // The sweeper closed the row and reported it; the step already dropped the new slot.

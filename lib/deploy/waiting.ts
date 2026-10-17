@@ -10,10 +10,10 @@ import { WORKER_FRESH_MS } from "@/lib/worker/mode";
 import { readWorkers } from "@/lib/worker/presence";
 import { addDeployLog } from "@/lib/stream/producer";
 import { waitEntry, type WaitPlace, type WaitReason } from "@/lib/docker/deploy-logger";
-import { etaMoved, lineEtas, slotFreeAt } from "./eta";
+import { etaMoved, pooledLineEtas, slotFreeAt } from "./eta";
 import { typicalDeploySql } from "./eta-history";
 import { executorFor } from "./claim-scope";
-import { EXCLUSIVE_MAX_AGE_MS, lockClaims } from "./queue";
+import { EXCLUSIVE_MAX_AGE_MS, freeTargetSlots, lockClaims, type TargetSlots } from "./queue";
 
 const log = logger.child("deploy-waiting");
 
@@ -105,6 +105,7 @@ export type QueueWait = {
 type QueuedRow = {
   id: string;
   reason: WaitReason | null;
+  target_ok: boolean;
   typical_ms: number | null;
   wait_reason: WaitReason | null;
   wait_ahead: number | null;
@@ -112,9 +113,27 @@ type QueuedRow = {
   wait_eta: Date | string | null;
 };
 
-/** Records why each queued deploy waits and, in the deploy-slot line, its place, the line's length and start. Writes only rows that changed. */
-export async function markQueueWaits(opts: { capacity?: number; workerMissing?: boolean; now?: number } = {}): Promise<QueueWait[]> {
+type RunningRow = { id: string; claim_slot: string | null; wait_reason: string | null; since: Date | string; typical_ms: number | null };
+
+/** Target slots as the last probing claimer saw them, or null. */
+async function sharedTargetSlots(): Promise<TargetSlots | null> {
+  try {
+    const { targetSlotView } = await import("@/lib/docker/build-gate");
+    return await targetSlotView({ probe: false });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Records why each queued deploy waits and, in the deploy-slot line, its place, the line's length and start. Writes only rows that changed.
+ * The line is served by this server's deploy slots and, for deploys that may build on one, free build target slots.
+ */
+export async function markQueueWaits(
+  opts: { capacity?: number; targets?: TargetSlots | null; workerMissing?: boolean; now?: number } = {},
+): Promise<QueueWait[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
+  const targets = opts.targets !== undefined ? opts.targets : await sharedTargetSlots();
   const noWorker = opts.workerMissing ?? (await workerMissing());
   const automatic = sql`d.trigger IN ('webhook', 'relay', 'poll')`;
 
@@ -122,14 +141,13 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
   const queued = await db.execute<QueuedRow>(sql`
     WITH state AS (
       SELECT
-        (SELECT count(*)::int FROM deployment WHERE status = 'running') AS running,
         EXISTS (
           SELECT 1 FROM deployment
           WHERE exclusive_requested_at > now() - ${EXCLUSIVE_MAX_AGE_MS}::int * interval '1 millisecond'
         ) AS exclusive
     ), queued AS (
       SELECT d.id, d.app_id, d.started_at, d.bumped_at, NOT ${automatic} AS explicit, a.name AS app_name,
-        d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta,
+        d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta, d.claim_slot,
         row_number() OVER (PARTITION BY d.scope_key ORDER BY d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id) AS in_scope,
         EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running') AS scope_busy
       FROM deployment d JOIN app a ON a.id = d.app_id
@@ -140,25 +158,55 @@ export async function markQueueWaits(opts: { capacity?: number; workerMissing?: 
           WHEN ${noWorker} AND q.app_name <> ${VARDO_SELF_APP_NAME} THEN 'worker'
           WHEN s.exclusive THEN 'exclusive'
           WHEN q.scope_busy OR q.in_scope > 1 THEN 'app'
-          WHEN s.running >= ${capacity} THEN 'deploy-slot'
         END AS reason
       FROM queued q CROSS JOIN state s
     )
     SELECT r.id, r.reason, r.wait_reason, r.wait_ahead, r.wait_total, r.wait_eta,
-      CASE WHEN r.reason = 'deploy-slot' THEN ${typicalDeploySql(sql`r.app_id`)} END AS typical_ms
+      r.app_name <> ${VARDO_SELF_APP_NAME} AND r.claim_slot IS DISTINCT FROM 'local' AS target_ok,
+      CASE WHEN r.reason IS NULL THEN ${typicalDeploySql(sql`r.app_id`)} END AS typical_ms
     FROM reasons r
     ORDER BY r.app_name = ${VARDO_SELF_APP_NAME} DESC, r.bumped_at DESC NULLS LAST, r.explicit DESC, r.started_at, r.id`);
 
-  const line = [...queued].filter((r) => r.reason === "deploy-slot");
+  const running = [
+    ...(await db.execute<RunningRow>(sql`
+      SELECT d.id, d.claim_slot, d.wait_reason, coalesce(d.claimed_at, d.started_at) AS since, ${typicalDeploySql(sql`d.app_id`)} AS typical_ms
+      FROM deployment d WHERE d.status = 'running'`)),
+  ];
   const now = opts.now ?? Date.now();
+  const freeAt = (r: RunningRow) => slotFreeAt(now, new Date(r.since).getTime(), r.typical_ms === null ? null : Number(r.typical_ms));
+  const typicalOf = (r: { typical_ms: number | null }) => (r.typical_ms === null ? null : Number(r.typical_ms));
+  const onTarget = running.filter((r) => r.claim_slot === "target");
+  // A deploy on a target's slot waiting for this server's is owed the next one.
+  const owed = onTarget.filter((r) => r.wait_reason === "deploy-slot");
+  const busyHere = running.filter((r) => r.claim_slot !== "target");
+  const targetSlots = Math.max(0, freeTargetSlots(targets, new Set(onTarget.map((r) => r.id))) + onTarget.length);
+
+  // The claim's own rule: this server's slots in order, then a target's for deploys that may build there.
+  const candidates = [...queued].filter((r) => r.reason === null);
+  let here = capacity - busyHere.length - owed.length;
+  let there = targetSlots - onTarget.length;
+  for (const r of candidates) {
+    if (here > 0) here--;
+    else if (r.target_ok && there > 0) there--;
+    else r.reason = "deploy-slot";
+  }
+
+  const line = candidates.filter((r) => r.reason === "deploy-slot");
   let etas: (number | null)[] = [];
   if (line.length > 0) {
-    const running = await db.execute<{ since: Date | string; typical_ms: number | null }>(sql`
-      SELECT coalesce(d.claimed_at, d.started_at) AS since, ${typicalDeploySql(sql`d.app_id`)} AS typical_ms
-      FROM deployment d WHERE d.status = 'running'`);
-    const busy = [...running].map((r) => slotFreeAt(now, new Date(r.since).getTime(), r.typical_ms === null ? null : Number(r.typical_ms)));
-    const idle = Array.from({ length: Math.max(0, capacity - busy.length) }, () => now);
-    etas = lineEtas(now, [...busy, ...idle], line.map((r) => (r.typical_ms === null ? null : Number(r.typical_ms))));
+    const slots = [
+      ...busyHere.map((r) => ({ at: freeAt(r), local: true })),
+      ...Array.from({ length: Math.max(0, capacity - busyHere.length) }, () => ({ at: now, local: true })),
+      ...onTarget.map((r) => ({ at: freeAt(r), local: false })),
+      ...Array.from({ length: Math.max(0, targetSlots - onTarget.length) }, () => ({ at: now, local: false })),
+    ];
+    // Owed deploys and those about to be claimed go first, so each in the line starts after them.
+    const places = [
+      ...owed.map((r) => ({ typicalMs: typicalOf(r), any: false })),
+      ...candidates.map((r) => ({ typicalMs: typicalOf(r), any: r.target_ok })),
+    ];
+    const all = pooledLineEtas(now, slots, places).slice(owed.length);
+    etas = candidates.flatMap((r, i) => (r.reason === "deploy-slot" ? [all[i]] : []));
   }
 
   const place = new Map(line.map((r, i) => [r.id, { ahead: i, total: line.length, eta: etas[i] ?? null }]));

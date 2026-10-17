@@ -10,7 +10,7 @@ import { composeImageName, planComposeReuse, writeBuildKeysFile } from "./compos
 import { serviceRepo, type RegistryOps } from "./build-registry";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
-import { withBuildSlot, type BuildPlacement } from "./build-gate";
+import { withBuildSlot, type BuildPlacement, type DeploySlot } from "./build-gate";
 import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
 import { TARGET_BUILD, bringBack } from "./remote-build";
 
@@ -50,6 +50,8 @@ export type ComposeBuildOpts = {
   gate?: <T>(run: (placement?: BuildPlacement) => Promise<T>) => Promise<T>;
   /** Targets the build may run on when every service to build has a known image name. */
   targets?: BuildTarget[];
+  /** The deploy slot its claim took. */
+  deploySlot?: DeploySlot;
   /** Build registry: keyed images are pulled from it for reuse; only builds on a target push to it. */
   registry?: { ops: RegistryOps; appName: string } | null;
 };
@@ -127,7 +129,7 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     : null;
   const targets = remote ? (opts.targets ?? []) : [];
   const gate = opts.gate ?? ((run) =>
-    withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets }, opts.bounded, run));
+    withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets, deploySlot: opts.deploySlot }, opts.bounded, run));
   return gate(async (placement) => {
     const target = placement?.target;
     if (!target || !remote) return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);

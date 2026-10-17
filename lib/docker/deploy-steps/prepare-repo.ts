@@ -909,7 +909,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,
-          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal },
+          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal, deploySlot: ctx.deploySlot },
           overrides,
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,
