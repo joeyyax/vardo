@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MAX_ETA_MS, MAX_TYPICAL_MS, etaMoved, lineEtas, slotFreeAt } from "@/lib/deploy/eta";
+import { MAX_ETA_MS, MAX_TYPICAL_MS, etaMoved, lineEtas, pooledLineEtas, slotFreeAt } from "@/lib/deploy/eta";
 
 // The start-estimate walk: each place takes the earliest free slot for its app's typical run.
 
@@ -21,6 +21,21 @@ describe("lineEtas", () => {
     expect(lineEtas(now, [now], [10 * MAX_TYPICAL_MS, 0])).toEqual([now, now + MAX_TYPICAL_MS]);
     const far = Array.from({ length: MAX_ETA_MS / MAX_TYPICAL_MS + 2 }, () => MAX_TYPICAL_MS);
     expect(lineEtas(now, [now], far).at(-1)).toBeNull();
+  });
+});
+
+describe("pooledLineEtas", () => {
+  const here = (at: number | null) => ({ at, local: true });
+  const target = (at: number | null) => ({ at, local: false });
+
+  it("keeps a place that can't use a target's slot on this server's", () => {
+    const slots = [here(now + 5 * min), target(now)];
+    expect(pooledLineEtas(now, slots, [{ typicalMs: 2 * min, any: false }, { typicalMs: 2 * min, any: true }])).toEqual([now + 5 * min, now]);
+    expect(pooledLineEtas(now, slots, [{ typicalMs: 2 * min, any: true }, { typicalMs: 2 * min, any: false }])).toEqual([now, now + 5 * min]);
+  });
+
+  it("is null for a place no slot can take, and goes on", () => {
+    expect(pooledLineEtas(now, [target(now)], [{ typicalMs: min, any: false }, { typicalMs: min, any: true }])).toEqual([null, now]);
   });
 });
 

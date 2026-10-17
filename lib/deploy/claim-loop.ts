@@ -5,7 +5,7 @@ import { IntervalLoop, type LoopRole } from "@/lib/worker/interval-loop";
 import { claimScope, type ClaimScope } from "./claim-scope";
 import { executorId, isDraining, startClaimed } from "./executor";
 import { GROUP_JOBS_PER_EXECUTOR, claimGroupJobs, groupJobsHere, startGroupJob } from "./group-job";
-import { claimDeploys, clearFinishedExclusive, type ClaimOpts } from "./queue";
+import { claimDeploys, clearFinishedExclusive, type ClaimOpts, type TargetSlots } from "./queue";
 import { markQueuedForOldSweeper } from "./legacy-compat";
 import { clearFinishedWaits, endQueueWaits, markQueueWaits } from "./waiting";
 
@@ -22,19 +22,31 @@ const DESCRIBE: Record<ClaimScope, string> = {
   none: "no deploys (VARDO_DEPLOY_EXECUTOR=web)",
 };
 
+/** Build target slots for this pass. Only a claimer that may start other apps' deploys checks targets itself. */
+async function targetSlots(scope: ClaimScope): Promise<TargetSlots | null> {
+  try {
+    const { targetSlotView } = await import("@/lib/docker/build-gate");
+    return await targetSlotView({ probe: scope === "all" || scope === "others" });
+  } catch (err) {
+    log.warn("Couldn't read build target slots; counting this server's only:", err);
+    return null;
+  }
+}
+
 /** One pass: clears finished exclusive flags, claims and starts, then records why the rest still wait. Returns the ids started. */
 export async function claimPass(scope: ClaimScope): Promise<string[]> {
   await markQueuedForOldSweeper();
+  const targets = await targetSlots(scope);
   try {
-    return await claimAndStart(scope);
+    return await claimAndStart(scope, targets);
   } finally {
     // Runs even with nothing to claim, so a missing worker still shows.
-    await markQueueWaits().catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
+    await markQueueWaits({ targets }).catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
     await clearFinishedWaits().catch(() => {});
   }
 }
 
-async function claimAndStart(scope: ClaimScope): Promise<string[]> {
+async function claimAndStart(scope: ClaimScope, targets: TargetSlots | null): Promise<string[]> {
   if (scope === "none" || isDraining()) return [];
   const me = executorId();
   const started: string[] = [];
@@ -42,10 +54,10 @@ async function claimAndStart(scope: ClaimScope): Promise<string[]> {
   const { ownSlot } = await import("@/lib/docker/own-slot");
   await clearFinishedExclusive(await ownSlot());
 
-  const claimed = await claimDeploys(me, { self: SELF_FILTER[scope] });
+  const claimed = await claimDeploys(me, { self: SELF_FILTER[scope], targets });
   await endQueueWaits(claimed.filter((row) => row.waited).map((row) => row.id));
   for (const row of claimed) {
-    log.info(`Claimed deployment ${row.id} (${row.trigger}, ${row.scopeKey})`);
+    log.info(`Claimed deployment ${row.id} (${row.trigger}, ${row.scopeKey}${row.onTarget ? ", on a build target's slot" : ""})`);
     void startClaimed(row);
     started.push(row.id);
   }

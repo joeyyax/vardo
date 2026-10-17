@@ -39,6 +39,7 @@ describe.skipIf(!client)("build gate on Redis", () => {
     started: `${prefix}:started`,
     remote: `${prefix}:remote`,
     target: `${prefix}:target:`,
+    ready: `${prefix}:ready`,
   };
   const store = redisBuildStore(keys, client! as never);
   const allKeys = () => [...Object.values(keys), `${keys.target}lh`, `${keys.target}hz`];
@@ -106,6 +107,44 @@ describe.skipIf(!client)("build gate on Redis", () => {
       await busy();
       await client!.zadd(`${keys.target}lh`, Date.now() - 1000, "dead");
       expect(await store.tryAcquireAt("a", 1, [lh])).toMatchObject({ target: "lh" });
+    });
+
+    it("never takes this host for a build that may run only on a target, even with this host idle", async () => {
+      expect(await store.tryAcquireAt("remote", 2, [{ id: "lh", limit: 0 }], true)).toBeNull();
+      expect(await client!.zcard(keys.running)).toBe(0);
+      expect(await store.tryAcquireAt("remote", 2, [lh], true)).toMatchObject({ target: "lh" });
+      expect(await client!.zcard(keys.running)).toBe(0);
+    });
+
+    it("lets a build for this host pass one waiting only for a target", async () => {
+      expect(await store.tryAcquireAt("remote", 1, [{ id: "lh", limit: 0 }], true)).toBeNull();
+      expect(await store.tryAcquire("here", 1)).toMatchObject({ target: null });
+      expect(await client!.lrange(keys.queue, 0, -1)).toEqual(["remote"]);
+    });
+
+    it("keeps a build that may run only on a target behind a live eligible one", async () => {
+      await busy();
+      expect(await store.tryAcquireAt("first", 1, [{ id: "lh", limit: 0 }])).toBeNull();
+      expect(await store.tryAcquireAt("remote", 1, [lh], true)).toBeNull();
+      expect(await store.tryAcquireAt("first", 1, [lh])).toMatchObject({ target: "lh" });
+    });
+
+    it("drops a dead entry ahead of this host's next build, past one waiting only for a target", async () => {
+      await store.tryAcquireAt("remote", 1, [{ id: "lh", limit: 0 }], true);
+      await store.tryAcquire("dead", 1).then(() => store.release("dead", false));
+      await client!.rpush(keys.queue, "dead");
+      await client!.hset(keys.seen, "dead", String(Date.now() - 60_000));
+      await store.endSweep();
+      expect(await store.tryAcquire("here", 1)).toMatchObject({ target: null });
+      expect(await client!.lrange(keys.queue, 0, -1)).toEqual(["remote"]);
+    });
+
+    it("lists the builds holding each target's slots", async () => {
+      await busy();
+      await store.tryAcquireAt("d1:abc", 1, [lh, hz]);
+      await store.tryAcquireAt("d2:def", 1, [lh, hz]);
+      await client!.zadd(`${keys.target}hz`, Date.now() - 1000, "lapsed");
+      expect(await store.targetHolders(["lh", "hz"])).toEqual(["d1:abc", "d2:def"]);
     });
 
     it("renews a target build's lease on the target's set", async () => {

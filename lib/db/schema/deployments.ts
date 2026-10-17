@@ -30,6 +30,9 @@ export type DeployRequest = {
   held?: boolean;
 };
 
+/** Whose deploy slot a claim took. */
+export type ClaimSlot = "local" | "target";
+
 export type DeployCancelReason = "user" | "supersede" | "timeout";
 
 export const deployments = pgTable("deployment", {
@@ -99,6 +102,8 @@ export const deployments = pgTable("deployment", {
   bumpedAt: timestamp("bumped_at", { withTimezone: true }),
   // When an executor last claimed it.
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  // "target" while running on a build target's deploy slot; "local" on a queued row that must build on this server.
+  claimSlot: text("claim_slot").$type<ClaimSlot>(),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),

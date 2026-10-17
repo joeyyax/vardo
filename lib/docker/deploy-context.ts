@@ -9,6 +9,7 @@ import type { RollbackTarget } from "./rollback-target";
 
 import type { StageTimer } from "./stage-timings";
 import type { BuildCacheMode, RebuildMode } from "./build-key";
+import type { DeploySlot } from "./build-gate";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
 
@@ -95,6 +96,8 @@ export type DeployContext = {
   signal?: AbortSignal;
   /** Executor holding the row's claim. */
   claimedBy?: string;
+  /** The deploy slot its claim took. On a build target's, it builds only there until it takes this server's. */
+  deploySlot?: DeploySlot;
   /** Checked before the swap touches containers, and records the swap stage. False stops the deploy. */
   fence?: () => Promise<boolean>;
 

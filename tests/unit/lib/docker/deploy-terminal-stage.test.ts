@@ -64,7 +64,11 @@ const { dbMock, events, dockerCalls, claimRow, logWrites } = vi.hoisted(() => {
   return { dbMock, events, dockerCalls, claimRow, logWrites };
 });
 
-const { assertDiskHeadroom } = vi.hoisted(() => ({ assertDiskHeadroom: vi.fn(async () => {}) }));
+const { assertDiskHeadroom, requeueForLocalSlot } = vi.hoisted(() => ({
+  assertDiskHeadroom: vi.fn(async () => {}),
+  requeueForLocalSlot: vi.fn(async (_executor: string, _id: string, _log: string) => true),
+}));
+vi.mock("@/lib/deploy/queue", () => ({ requeueForLocalSlot }));
 vi.mock("@/lib/docker/disk-guard", () => ({ assertDiskHeadroom }));
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -187,6 +191,21 @@ describe("runDeployment terminal stages", () => {
     expect(stageCalls().some(([, status]) => status === "failed")).toBe(false);
     expect(result.status).toBe("success");
     expect(result.error).toBeUndefined();
+  });
+
+  it("puts a deploy on a target's slot back in the queue when its build runs only here, without failing it", async () => {
+    const { NeedsLocalDeploySlotError } = await import("@/lib/docker/build-gate");
+    vi.mocked(build).mockRejectedValue(new NeedsLocalDeploySlotError());
+    dbMock.select.mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([{ log: null }]) }) });
+    const slot = { note: "[queue] Started on Long House's build slot (this server runs 1 deploy at a time)", onTarget: () => true, takeLocal: async () => false, awaitLocal: async () => {} };
+
+    const result = await runDeployment("dep-1", { ...OPTS, onStage, executorId: "ex", deploySlot: slot });
+
+    expect(requeueForLocalSlot).toHaveBeenCalledWith("ex", "dep-1", expect.stringContaining("[queue] Back in the queue"));
+    expect(requeueForLocalSlot.mock.calls[0][2]).toContain("Started on Long House's build slot");
+    expect(result).toMatchObject({ status: "cancelled", closedElsewhere: true });
+    expect(events.some((e) => e.kind === "row")).toBe(false);
+    expect(stageCalls().some(([, status]) => status === "failed")).toBe(false);
   });
 
   it("emits the failed stage before the deployment row is written", async () => {
