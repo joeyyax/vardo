@@ -11,7 +11,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("infra");
 
 /** Whether this process runs in a container that can join a Docker network. */
-function inContainer(): boolean {
+export function inContainer(): boolean {
   return !!process.env.CONTAINER_ID || existsSync("/.dockerenv");
 }
 

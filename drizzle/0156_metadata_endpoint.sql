@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "metadata_endpoint" boolean DEFAULT true NOT NULL;

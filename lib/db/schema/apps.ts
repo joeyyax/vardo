@@ -143,6 +143,8 @@ export const apps = pgTable(
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     // Alerts when the app strays from its own learned baseline.
     anomalyAlerts: boolean("anomaly_alerts").notNull().default(true),
+    // Serves http://vardo.internal/v1/self to the app's own containers.
+    metadataEndpoint: boolean("metadata_endpoint").notNull().default(true),
     healthCheckTimeout: integer("health_check_timeout"), // Seconds; null = system default 60s
     autoRollback: boolean("auto_rollback").default(false),
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy

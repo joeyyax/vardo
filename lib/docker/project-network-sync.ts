@@ -89,6 +89,8 @@ export async function prepareProjectNetwork(
       return null;
     }
   }
+  const { attachMetadataProxy } = await import("@/lib/metadata/proxy");
+  await attachMetadataProxy(network).catch((err) => log(`[deploy] metadata proxy: not attached to ${network} (${errText(err)})`));
   return network;
 }
 
