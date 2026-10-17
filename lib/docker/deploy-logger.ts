@@ -5,6 +5,7 @@ import { expireDeployStream } from "@/lib/stream/deploy-expiry";
 import { pauseRunningClock } from "@/lib/deploy/running-clock";
 import { etaMoved } from "@/lib/deploy/eta";
 import { logger } from "@/lib/logger";
+import { pipelineStage, pipelineWait } from "@/lib/pipeline/events";
 import { MIN_KEYED_LENGTH, redactSecrets, secretEnvValues } from "@/lib/redact";
 
 const log = logger.child("deploy-logger");
@@ -143,6 +144,7 @@ export function createDeployLogger(deployId: string) {
   /** Record a stage transition. Terminal writes are kept on `lastWrite` for `flush()`; others are fire-and-forget. */
   function setStage(stage: StreamStage, status: DeployStatus): void {
     currentStage = stage;
+    pipelineStage(deployId, stage, status);
 
     const isTerminal = status === "success" || status === "failed" || status === "cancelled";
     const write = addDeployLog(deployId, {
@@ -190,6 +192,7 @@ export function createDeployLogger(deployId: string) {
       paused = null;
     }
     const restart = reason !== openWait;
+    if (restart) pipelineWait(deployId, reason);
     const sameAhead = next === openAhead;
     openWait = reason;
     openAhead = next;

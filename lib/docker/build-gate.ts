@@ -26,10 +26,11 @@ import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTar
 import type { TargetSlots } from "@/lib/deploy/queue";
 import type { BuildPlacementRecorder } from "./build-placement";
 import { claimPeerSlot, releasePeerSlot, renewPeerSlot } from "@/lib/mesh/build-slot";
+import { pipelineFallback, pipelineSlot } from "@/lib/pipeline/events";
 
 const log = logger.child("build-gate");
 
-const BUILD_GATE_KEYS = {
+export const BUILD_GATE_KEYS = {
   queue: "build:gate:queue",
   /** Waiters' last poll, so a dead process's entry leaves the head. */
   seen: "build:gate:seen",
@@ -769,6 +770,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     if (claim === "unreachable") gate.log(`[build] Couldn't take a slot in ${on.name}'s build queue; building there without one`);
     gate.log(`[build] Building on ${describeTarget(on)}`);
     gate.placement?.started(on);
+    pipelineSlot("claim", id, on.id);
     const renew = setInterval(() => {
       void store.renew(id, on.id).catch(() => {});
       if (peer && claim === "granted") void renewPeerSlot(peer, peerToken);
@@ -782,9 +784,11 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       log.warn(`Build target ${on.name} failed: ${err.reason}`, err.cause);
       gate.log(`[build] ${on.name} couldn't build: ${err.reason}. Building on this server instead`);
       gate.placement?.fellBack(on, err.reason);
+      pipelineFallback(id, on, err.reason);
     } finally {
       clearInterval(renew);
       await store.releaseTarget(id, on.id).catch(() => {});
+      pipelineSlot("release", id, on.id);
       if (peer && claim === "granted") await releasePeerSlot(peer, peerToken);
     }
     await deploySlot?.awaitLocal({ signal: gate.signal, wait: gate.wait, log: gate.log });
@@ -840,11 +844,13 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
 
   async function runHeld(held: Admission): Promise<T> {
     gate.placement?.here();
+    pipelineSlot("claim", id);
     if (held.local) {
       try {
         return await build({ target: null });
       } finally {
         gateStores.local.release(id);
+        pipelineSlot("release", id);
       }
     }
 
@@ -877,6 +883,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       const buildMs = Date.now() - buildStart;
       const rise = sampler ? await sampler.stop() : null;
       const admits = await store.release(id, !ok).catch(() => null);
+      pipelineSlot("release", id);
       // Alone at admission and nobody admitted since: the builder's rise is this build's.
       if (ok && held.alone && admits === held.gen && recordablePeak(rise, buildMs)) {
         gate.placement?.peak(rise);
@@ -894,6 +901,11 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   }
 }
 
+/** Builds this host takes at once now. */
+export async function localBuildLimit(): Promise<number> {
+  return (await currentLimit(await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST))).limit;
+}
+
 /** A linked instance's gate token here. Its deployment is unknown here, so estimates skip it. */
 export function peerSlotToken(peerId: string, token: string): string {
   return `build:mesh-${peerId}-${token}`;
@@ -909,6 +921,7 @@ export async function claimSlotForPeer(token: string): Promise<boolean> {
     return false;
   }
   if (slot.alone) await store.endSweep();
+  pipelineSlot("claim", token);
   return true;
 }
 
@@ -919,4 +932,5 @@ export async function renewSlotForPeer(token: string): Promise<boolean> {
 
 export async function releaseSlotForPeer(token: string): Promise<void> {
   await gateStores.redis.release(token, false);
+  pipelineSlot("release", token);
 }
