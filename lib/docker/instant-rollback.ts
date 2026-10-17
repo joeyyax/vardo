@@ -9,7 +9,7 @@ import { appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
 import { detectActiveSlot } from "./slots";
 import { slotScopeArgs } from "./slot-partition";
-import { readSlotBound, readSlotPartition } from "./shared-project";
+import { readSlotBound, readSlotHostPorts, readSlotPartition } from "./shared-project";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import {
@@ -197,9 +197,12 @@ async function rollbackClaimed(
   // Drop the cutover pin first: it names the outgoing slot and would 502 the app after the flip.
   await clearCutoverPin(appName, env.name).catch(() => {});
 
-  // A service on a directory both slots address must never run twice, so the active slot stops first. Stop-first apps too.
+  // A service on a directory both slots address or on host ports can't run twice, so the active slot stops first. Stop-first apps too.
   const slotBound = await readSlotBound(standbyDir);
-  const stopActiveFirst = slotBound.length > 0 || opts.stopFirst === true;
+  // Vardo's own active slot runs this rollback.
+  const hostPorts = isSelfApp(appName) ? [] : await readSlotHostPorts(standbyDir);
+  const stopActiveFirst = slotBound.length > 0 || hostPorts.length > 0 || opts.stopFirst === true;
+  const blocking = [...new Set([...slotBound, ...hostPorts.map((h) => h.service)])];
   const restartActive = async () => {
     if (!stopActiveFirst) return;
     await execFileAsync(
@@ -220,7 +223,7 @@ async function rollbackClaimed(
       return {
         success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
         durationMs: Date.now() - startTime,
-        error: `Couldn't stop ${activeSlot} before starting ${slotBound.length > 0 ? slotBound.join(", ") : standbySlot} on the standby`,
+        error: `Couldn't stop ${activeSlot} before starting ${blocking.length > 0 ? blocking.join(", ") : standbySlot} on the standby`,
       };
     }
   }

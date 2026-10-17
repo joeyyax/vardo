@@ -5,6 +5,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { parseCompose } from "./compose-parse";
 import { partitionBySlot, slotBoundServices, type SlotPartition } from "./slot-partition";
+import { hostPortHolders, type HostPortHolder } from "./host-ports";
 
 /** Injectable for tests. */
 export type ComposeReader = (path: string) => Promise<string>;
@@ -34,6 +35,19 @@ export async function readSlotBound(
   try {
     const compose = parseCompose(await read(join(slotDir, "docker-compose.yml")));
     return slotBoundServices(compose, partitionBySlot(compose).slotted);
+  } catch {
+    return [];
+  }
+}
+
+/** Rotating services in a slot's deployed compose that bind host ports. Empty when unreadable. */
+export async function readSlotHostPorts(
+  slotDir: string,
+  read: ComposeReader = defaultReader,
+): Promise<HostPortHolder[]> {
+  try {
+    const compose = parseCompose(await read(join(slotDir, "docker-compose.yml")));
+    return hostPortHolders(partitionBySlot(compose).slotted);
   } catch {
     return [];
   }
