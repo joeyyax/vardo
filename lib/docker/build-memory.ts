@@ -23,6 +23,8 @@ export type BoundedBuild = {
   limitBytes: number | null;
   /** The BuildKit container, when builds run in one. */
   container?: string;
+  /** Lines held back for the deploy log until the build runs on this server. */
+  notes?: string[];
 };
 
 const UNBOUNDED: BoundedBuild = { env: {}, loadArgs: [], limitBytes: null };
@@ -82,8 +84,15 @@ function formatGiB(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(bytes % 1024 ** 3 === 0 ? 0 : 1)} GiB`;
 }
 
-/** Where this deploy's builds run. Falls back to the daemon when BuildKit is down or VARDO_BUILD_BUILDER=daemon. */
-export async function boundedBuild(log: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
+/** Where this deploy's builds run. Without a log, its lines go to `notes`. */
+export async function boundedBuild(log?: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
+  if (log) return localBuilder(log, signal);
+  const notes: string[] = [];
+  return { ...(await localBuilder((line) => notes.push(line), signal)), notes };
+}
+
+/** Falls back to the daemon when BuildKit is down or VARDO_BUILD_BUILDER=daemon. */
+async function localBuilder(log: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
   if (process.env.VARDO_BUILD_BUILDER === "daemon") {
     log("[build] Warning: VARDO_BUILD_BUILDER=daemon — this build runs on the Docker daemon with no memory limit");
     return UNBOUNDED;

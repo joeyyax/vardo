@@ -167,6 +167,13 @@ describe("composeBuild", () => {
     expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
   });
 
+  it("logs this server's builder only when it builds here", async () => {
+    const notes = ["[build] Building in vardo-buildkit (memory limit 4 GiB)"];
+    const here: string[] = [];
+    await composeBuild(options({ bounded: { ...bounded(null), notes }, log: (l) => here.push(l) }));
+    expect(here).toContain(notes[0]);
+  });
+
   describe("on a build target", () => {
     const target = {
       id: "lh", kind: "ssh" as const, name: "Long House", host: "10.99.0.2", port: 2222, user: "vardo",
@@ -190,6 +197,13 @@ describe("composeBuild", () => {
       expect(push.every(remote)).toBe(true);
       expect(pull.some(remote)).toBe(false);
       expect(calls.some((c) => !remote(c) && c.args[0] === "tag" && c.args[2] === "shop-production-green-web")).toBe(true);
+    });
+
+    it("leaves this server's builder out of the log", async () => {
+      const lines: string[] = [];
+      const notes = ["[build] Building in vardo-buildkit (memory limit 4 GiB)"];
+      await composeBuild(options({ bounded: { ...bounded(null), notes }, registry, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
+      expect(lines).not.toContain(notes[0]);
     });
 
     it("builds there and copies a service with no key over SSH", async () => {

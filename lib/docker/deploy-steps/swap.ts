@@ -493,7 +493,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await withRegistryAuth(async (env) => {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
-        const bounded = await boundedBuild(log, ctx.signal);
+        const bounded = await boundedBuild(undefined, ctx.signal);
         const registry = ctx.gitSha ? await buildRegistryOps(log, ctx.signal) : null;
         const buildBegan = Date.now();
         const waitedBefore = ctx.timer.waited();

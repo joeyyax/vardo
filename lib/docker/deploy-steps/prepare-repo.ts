@@ -476,7 +476,7 @@ async function dockerBuild(
   authEnv: NodeJS.ProcessEnv,
 ): Promise<void> {
   const { repoPath, logs, signal } = build;
-  const bounded = await boundedBuild((line) => logs.push(line), signal);
+  const bounded = await boundedBuild(undefined, signal);
   const argsInput = {
     imageName: build.imageName,
     dockerfile: build.dockerfile,
@@ -494,6 +494,7 @@ async function dockerBuild(
     await withBuildSlot({ ...build.gate, targets: remote?.targets }, bounded, async ({ target }) => {
       if (!target || !remote) {
         ran = bounded;
+        for (const line of bounded.notes ?? []) logs.push(line);
         return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
       }
       ran = TARGET_BUILD;
