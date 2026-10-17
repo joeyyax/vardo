@@ -87,11 +87,11 @@ A linked instance can run another's builds when that one's builder is full. The 
 
 ### The isolated builder
 
-- Each instance runs `vardo-mesh-builder`: rootless BuildKit in a user namespace, with memory, CPU and process limits (`VARDO_MESH_BUILDER_MEM`, default `VARDO_BUILDKIT_MEM`, and `VARDO_MESH_BUILDER_CPUS`, default `2`). Its only volume is its own cache. It has no Docker socket and no host paths.
+- Each instance runs `vardo-mesh-builder`: rootless BuildKit in a user namespace, with memory, CPU and process limits. The console sizes its memory like `vardo-buildkit`'s ([BuildKit's size](worker.md#buildkits-size)); `VARDO_MESH_BUILDER_MEM` pins it. `VARDO_MESH_BUILDER_CPUS` defaults to `2`. Its only volume is its own cache. It has no Docker socket and no host paths.
 - It answers BuildKit over mutual TLS on port 1234 (`VARDO_MESH_BUILDER_PORT`). `vardo-wireguard` forwards that port on the tunnel address to it, only from the tunnel addresses of peers this instance accepts builds from.
 - Each instance keeps an Ed25519 CA for its builder, encrypted in its settings. The signed key exchange carries each side's builder client key. The side that accepts builds answers with its CA and a client certificate for that key, valid for 6 hours and renewed past half of that.
 - Turning **Accept builds** off or removing the peer drops its forward right away, and its certificate isn't renewed. A build already running there finishes.
-- A build from a peer takes a slot in this instance's build gate. It waits while both builders growing to their limits would leave less free memory than a tenth of RAM, at least 1 GiB.
+- A build from a peer takes a slot in this instance's build gate. It's refused while both builders growing to their limits would leave less free memory than a tenth of RAM, at least 1 GiB, and this instance's own builds wait on the same check while a peer's runs.
 - A build that runs out of memory there builds again on the sending instance. The sending instance reads the builder's OOM kills from its cgroup, since BuildKit often reports only the package manager's exit code.
 - Every image built there carries labels for the requesting instance, the app and the commit: `dev.vardo.build.requester`, `dev.vardo.build.requester-id`, `dev.vardo.build.app` and `org.opencontainers.image.revision`. Pushed images carry them as annotations too.
 

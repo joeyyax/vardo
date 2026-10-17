@@ -36,7 +36,7 @@ vi.mock("@/lib/docker/client", () => ({
   }),
 }));
 
-const { buildkitSize, peerBuildFits, pinnedBuildKitMem, sizeBuildKit } = await import("@/lib/docker/buildkit-size");
+const { buildkitSize, buildersFit, pinnedBuildKitMem, pinnedMeshBuilderMem, sizeBuildKit } = await import("@/lib/docker/buildkit-size");
 
 const meminfo = (totalBytes: number, availableBytes: number) =>
   `MemTotal:       ${Math.round(totalBytes / 1024)} kB\nMemFree:        1024 kB\nMemAvailable:   ${Math.round(availableBytes / 1024)} kB\n`;
@@ -66,26 +66,31 @@ describe("buildkitSize", () => {
     expect(size.floored).toBe(true);
   });
 
+  it("leaves room for what another busy builder can still grow into", () => {
+    const size = buildkitSize({ totalBytes: 48 * GiB, availableBytes: 30 * GiB, builderBytes: 0, otherHeadroomBytes: 11 * GiB });
+    expect(size.memoryBytes).toBe(Math.floor(((30 - 4.8 - 11) * GiB) / (64 * MiB)) * 64 * MiB);
+  });
+
   it("moves in 64 MiB steps", () => {
     const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 7 * GiB + 100 * MiB, builderBytes: 0 });
     expect(size.memoryBytes % (64 * MiB)).toBe(0);
   });
 });
 
-describe("peerBuildFits", () => {
+describe("buildersFit", () => {
   const host = { totalBytes: 48 * GiB, availableBytes: 20 * GiB };
 
   it("takes a peer's 12 GiB build within free memory less a tenth of RAM", () => {
-    expect(peerBuildFits({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
+    expect(buildersFit({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
   });
 
   it("refuses one that could grow with this host's own builds into the apps' reserve", () => {
-    expect(peerBuildFits({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 6 * GiB })).toBe(false);
+    expect(buildersFit({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 6 * GiB })).toBe(false);
   });
 
   it("keeps at least 1 GiB for the apps on a small host", () => {
-    expect(peerBuildFits({ totalBytes: 4 * GiB, availableBytes: 4.5 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
-    expect(peerBuildFits({ totalBytes: 4 * GiB, availableBytes: 4.4 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(false);
+    expect(buildersFit({ totalBytes: 4 * GiB, availableBytes: 4.5 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
+    expect(buildersFit({ totalBytes: 4 * GiB, availableBytes: 4.4 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(false);
   });
 });
 
@@ -100,6 +105,19 @@ describe("pinnedBuildKitMem", () => {
   });
 });
 
+describe("pinnedMeshBuilderMem", () => {
+  it("follows vardo-buildkit's pin when VARDO_MESH_BUILDER_MEM is unset", () => {
+    expect(pinnedMeshBuilderMem({ VARDO_BUILDKIT_MEM: "4g" }, 15.6 * GiB)).toBeNull();
+    expect(pinnedMeshBuilderMem({ VARDO_BUILDKIT_MEM: "4g", VARDO_MESH_BUILDER_MEM: " " }, 15.6 * GiB)).toBeNull();
+    expect(pinnedMeshBuilderMem({ VARDO_BUILDKIT_MEM: "6g" }, 15.6 * GiB)).toBe(6 * GiB);
+  });
+
+  it("pins any VARDO_MESH_BUILDER_MEM, even the install default", () => {
+    expect(pinnedMeshBuilderMem({ VARDO_BUILDKIT_MEM: "4g", VARDO_MESH_BUILDER_MEM: "4g" }, 15.6 * GiB)).toBe(4 * GiB);
+    expect(pinnedMeshBuilderMem({ VARDO_MESH_BUILDER_MEM: "12g" }, 15.6 * GiB)).toBe(12 * GiB);
+  });
+});
+
 describe("sizeBuildKit", () => {
   beforeEach(() => {
     state.meminfo = meminfo(15.6 * GiB, 7 * GiB);
@@ -108,10 +126,33 @@ describe("sizeBuildKit", () => {
     state.updateFails = false;
   });
 
-  const run = (env: Record<string, string | undefined> = {}, builder = 0.57 * GiB) => {
+  const run = (env: Record<string, string | undefined> = {}, builder = 0.57 * GiB, extra: Partial<Parameters<typeof sizeBuildKit>[1]> = {}) => {
     const lines: string[] = [];
-    return sizeBuildKit("vardo-buildkit", { builderBytes: async () => builder, log: (l) => lines.push(l), env }).then((bytes) => ({ bytes, lines }));
+    return sizeBuildKit("vardo-buildkit", { builderBytes: async () => builder, log: (l) => lines.push(l), env, ...extra }).then((bytes) => ({ bytes, lines }));
   };
+
+  it("grows a busy builder but never shrinks it", async () => {
+    expect((await run({}, 0.57 * GiB, { shrink: false })).bytes).toBe(6 * GiB);
+    state.updates = [];
+    state.limits = { Memory: 7 * GiB, MemorySwap: 7 * GiB };
+    expect((await run({}, 0.57 * GiB, { shrink: false })).bytes).toBeNull();
+    state.limits = { Memory: 0, MemorySwap: 0 };
+    expect((await run({}, 0.57 * GiB, { shrink: false })).bytes).toBeNull();
+    expect(state.updates).toEqual([]);
+  });
+
+  it("shrinks an idle one", async () => {
+    state.limits = { Memory: 7 * GiB, MemorySwap: 7 * GiB };
+    expect((await run()).bytes).toBe(6 * GiB);
+  });
+
+  it("uses the pin rule it's given and says what the other builder keeps", async () => {
+    expect((await run({ VARDO_MESH_BUILDER_MEM: "8g" }, 0.57 * GiB, { pinned: pinnedMeshBuilderMem })).bytes).toBeNull();
+    state.meminfo = meminfo(48 * GiB, 30 * GiB);
+    const { bytes, lines } = await run({}, 0, { pinned: pinnedMeshBuilderMem, otherHeadroomBytes: async () => 11 * GiB });
+    expect(bytes).toBe(Math.floor(((30 - 4.8 - 11) * GiB) / (64 * MiB)) * 64 * MiB);
+    expect(lines).toEqual(["[build] Sized vardo-buildkit to 14.2 GiB: 30.0 GiB free on the host, 4.8 GiB kept for apps, 11.0 GiB for the other builder's builds"]);
+  });
 
   it("resizes BuildKit live and says why", async () => {
     const { bytes, lines } = await run();
