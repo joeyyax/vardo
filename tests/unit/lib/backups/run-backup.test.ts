@@ -413,6 +413,28 @@ describe("runBackup — stopped apps", () => {
     expect(volumesFindMany).not.toHaveBeenCalled();
   });
 
+  it("refreshes lastRunAt beside a missing app the operator stopped", async () => {
+    const parked = jobApp("app-b", "org-1", "missing");
+    Object.assign(parked.app, { parked: true, lastRunningAt: new Date("2026-08-02") });
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a"), parked] }));
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    await runBackup("job-1");
+
+    expect(updated.some((u) => u.table === backupJobs && u.set.lastRunAt instanceof Date)).toBe(true);
+  });
+
+  it("leaves lastRunAt alone beside an app that vanished after running", async () => {
+    const vanished = jobApp("app-b", "org-1", "missing");
+    Object.assign(vanished.app, { parked: false, lastRunningAt: new Date("2026-08-02") });
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a"), vanished] }));
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    await runBackup("job-1");
+
+    expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
+
   it("records a dump against a stopped app as skipped, not failed", async () => {
     backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "stopped")] }));
     volumesPerApp([dumpVolume({ name: "pgdata" })]);

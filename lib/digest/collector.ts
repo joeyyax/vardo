@@ -3,7 +3,10 @@
 import { and, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import { activities, alertHistory, appRecaps, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains, projects } from "@/lib/db/schema";
+import { appNotRunning } from "@/lib/apps/run-state";
+import { withJobApps } from "@/lib/backups/job-apps";
+import { backupJobStaleness, type StoppedBackupJob } from "@/lib/backups/staleness";
+import { activities, alertHistory, appRecaps, appSecurityScans, apps, backupJobs, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains, projects } from "@/lib/db/schema";
 import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
 import { ALERTS, isAlertType } from "@/lib/notifications/registry";
 import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
@@ -105,6 +108,30 @@ export function staleByApp(rows: { appId: string | null; appName: string }[]): N
     byApp.set(key, entry);
   }
   return [...byApp.values()].sort((a, b) => b.volumes - a.volumes);
+}
+
+/** Jobs past due only because their apps were stopped on purpose. Live at send time. */
+async function loadStoppedBackupJobs(orgId: string, now: Date) {
+  const jobs = await db.query.backupJobs.findMany({
+    where: and(eq(backupJobs.organizationId, orgId), eq(backupJobs.enabled, true)),
+    columns: { id: true, name: true, schedule: true, enabled: true, lastRunAt: true, createdAt: true },
+  });
+  return backupJobStaleness(await withJobApps(jobs, now), now).stopped;
+}
+
+/** Each stopped app once, with its newest last backup across its jobs. */
+export function stoppedBackupApps(jobs: StoppedBackupJob[], nameOf: (appId: string) => string | null): NonNullable<DigestHealthEvent["stoppedBackups"]> {
+  const byApp = new Map<string, { appId: string; appName: string; lastBackupAt: string | null }>();
+  for (const { job, lastBackupAt } of jobs) {
+    for (const app of job.apps ?? []) {
+      const appName = nameOf(app.id);
+      if (!appName) continue;
+      const at = lastBackupAt?.toISOString() ?? null;
+      const held = byApp.get(app.id);
+      if (!held || (at && (!held.lastBackupAt || at > held.lastBackupAt))) byApp.set(app.id, { appId: app.id, appName, lastBackupAt: at });
+    }
+  }
+  return [...byApp.values()].sort((a, b) => a.appName.localeCompare(b.appName));
 }
 
 /** How far back a start looks for the stop before it. */
@@ -246,7 +273,7 @@ export async function collectDigestData(
   const [orgApps, orgProjects, orgCronJobs] = await Promise.all([
     db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, projectId: true, parentAppId: true, isSystemManaged: true },
+      columns: { id: true, name: true, displayName: true, projectId: true, parentAppId: true, isSystemManaged: true, status: true, parked: true, lastRunningAt: true, exitReason: true },
     }),
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
@@ -268,7 +295,8 @@ export async function collectDigestData(
     fired,
     resolvedCount,
     openCount,
-    stale,
+    allStale,
+    stoppedJobs,
     certs,
     updates,
     resources,
@@ -312,6 +340,7 @@ export async function collectDigestData(
       .from(alertHistory)
       .where(and(eq(alertHistory.organizationId, orgId), isNull(alertHistory.resolvedAt), lt(alertHistory.firedAt, window.until))),
     import("@/lib/backups/runs").then(({ loadStaleVolumes }) => loadStaleVolumes(orgId, window.until.getTime())),
+    loadStoppedBackupJobs(orgId, now).catch(() => []),
     expiringCerts(orgId, now),
     imageUpdates(orgId).catch(() => NO_IMAGE_UPDATES),
     opts.withHost ? hostTrends(window).catch(() => undefined) : Promise.resolve(undefined),
@@ -341,6 +370,10 @@ export async function collectDigestData(
       .then(({ appSummaries }) => appSummaries(orgId, { from: window.since, to: window.until }))
       .catch(() => new Map<string, never>()),
   ]);
+
+  // A stopped app's volumes wait for it; the digest lists them under backups on hold.
+  const offApps = new Set(orgApps.filter((a) => appNotRunning(a)).map((a) => a.id));
+  const stale = allStale.filter((v) => !v.appId || !offApps.has(v.appId));
 
   const deploys = {
     total: deployRows.length,
@@ -464,6 +497,10 @@ export async function collectDigestData(
       ...backupRunRollup(runRows),
     },
     staleApps: staleByApp(stale),
+    stoppedBackups: stoppedBackupApps(stoppedJobs, (id) => {
+      const app = appById.get(id);
+      return app ? label(app) : null;
+    }),
     drillFailures: drillFailRows.map((r) => {
       const app = r.appId ? appById.get(r.appId) : undefined;
       return { appId: app?.id ?? null, appName: app ? label(app) : r.appName ?? "an app", volume: r.volume ?? "a volume" };

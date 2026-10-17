@@ -529,6 +529,8 @@ export type DigestHealthEvent = {
   };
   /** Apps holding the stale volumes, most volumes first. */
   staleApps?: { appId: string | null; appName: string; volumes: number }[];
+  /** Apps stopped on purpose whose backup jobs are past due, live at send time. */
+  stoppedBackups?: { appId: string; appName: string; lastBackupAt: string | null }[];
   drillFailures?: { appId: string | null; appName: string; volume: string }[];
   /** Apps killed for memory in the window, most first. */
   oomApps?: { appId: string; appName: string; count: number }[];

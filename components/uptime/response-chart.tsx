@@ -5,7 +5,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { TooltipFrame, TooltipRow } from "@/components/metrics-chart";
 import { Card } from "@/components/ui/card";
 import { CHART_COLORS, chartTickStyle } from "@/lib/metrics/constants";
-import { formatTime } from "@/lib/uptime/core/range";
+import { formatTime } from "@/lib/time-zone";
 import type { LatencySeries } from "@/lib/uptime/types";
 import { useUptimeTimeZone } from "./time-zone";
 

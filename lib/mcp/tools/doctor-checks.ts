@@ -7,6 +7,7 @@ import { formatRelativeTime } from "@/lib/ui/relative-time";
 import { UPDATES_HREF } from "@/lib/attention/vardo-update-row";
 import { probeAppName } from "@/lib/infra/instance-apps";
 import { jobAnchor } from "@/components/backups/job-anchor";
+import { stoppedBackupLabel } from "@/lib/backups/staleness";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 
@@ -191,6 +192,8 @@ export type BackupJobsReading = {
   enabledJobs: number;
   failing: string[];
   overdue: { id: string; name: string; since: Date; neverRan: boolean }[];
+  /** Jobs behind only because their apps were stopped on purpose, dated in their org's zone. */
+  stopped?: { id: string; name: string; lastBackupAt: Date | null; timeZone: string }[];
   now: Date;
 };
 
@@ -213,6 +216,9 @@ export function backupJobLines(r: BackupJobsReading): DoctorLine[] {
         ? line("backups", "warn", "No backup jobs enabled", { fix: BACKUPS_HREF })
         : line("backups", "pass", `${plural(r.enabledJobs, "backup job")} on schedule`),
     );
+  }
+  for (const s of r.stopped ?? []) {
+    lines.push(line("backups", "pass", `${s.name} backup on hold`, { detail: stoppedBackupLabel(s.lastBackupAt, s.timeZone), fix: `${BACKUPS_HREF}#${jobAnchor(s.id)}` }));
   }
   return lines;
 }

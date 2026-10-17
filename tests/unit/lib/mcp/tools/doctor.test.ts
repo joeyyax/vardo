@@ -43,6 +43,8 @@ vi.mock("@/lib/alerts/oom", () => ({ sharedOomKills: h.oom }));
 vi.mock("@/lib/backups/engine", () => ({ STALE_RUN_MS: 3_600_000 }));
 vi.mock("@/lib/backups/job-claim", () => ({ jobClaimKey: (id: string) => `backup:job-claim:${id}`, jobClaimHolder: vi.fn() }));
 vi.mock("@/lib/backups/system-storage", () => ({ readSystemBackupJob: h.systemJob }));
+vi.mock("@/lib/backups/job-apps", () => ({ withJobApps: async <T,>(jobs: T[]) => jobs }));
+vi.mock("@/lib/time-zone-settings", () => ({ getInstanceTimeZone: async () => "UTC", resolveTimeZone: (org: string | null | undefined, instance: string) => org ?? instance }));
 vi.mock("@/lib/deploy/queue", () => ({ LEASE_TTL_MS: 45_000 }));
 vi.mock("@/lib/deploy/waiting", () => ({ deploysWaitingForWorker: h.waiting }));
 vi.mock("@/lib/probe-guard/history", () => ({ guardHistory: h.guardHistory }));
@@ -172,6 +174,18 @@ describe("vardo_doctor", () => {
     expect(report.lines.filter((l) => l.label.endsWith("backup overdue"))).toEqual([
       { check: "backups", status: "warn", label: "fabric backup overdue", detail: "last ran 2mo ago", fix: "/backups#job-j1" },
       { check: "backups", status: "warn", label: "loki backup overdue", detail: "never ran", fix: "/backups#job-j2" },
+    ]);
+  });
+
+  it("reads a stopped app's job as on hold, dated in its org's zone", async () => {
+    const old = new Date("2026-08-02T05:00:00Z");
+    const nvr = { id: "lonvr", status: "stopped", parked: true, lastRunningAt: old };
+    h.jobs.mockResolvedValue([
+      { id: "j1", name: "Reeve NVR", schedule: "0 3 * * *", enabled: true, lastRunAt: old, createdAt: old, backups: [], apps: [nvr], organization: { timeZone: "America/Los_Angeles" } },
+    ]);
+    const lines = (await run()).structuredContent.lines.filter((l) => l.check === "backups" && l.label.includes("Reeve"));
+    expect(lines).toEqual([
+      { check: "backups", status: "pass", label: "Reeve NVR backup on hold", detail: "App stopped · last backup Aug 1", fix: "/backups#job-j1" },
     ]);
   });
 

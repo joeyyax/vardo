@@ -138,3 +138,6 @@ export function formatDayTime(date: Date, tz: string): string {
 export function formatStamp(date: Date, tz: string): string {
   return `${zonedDateKey(date, tz)} ${formatClock(date, tz)} ${zoneAbbreviation(date, tz)}`;
 }
+
+// Defined in the uptime core, which can't import Vardo.
+export { formatDay, formatTime, formatWhen } from "@/lib/uptime/core/range";

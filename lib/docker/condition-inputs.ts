@@ -15,6 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { appsWithBackupState, type SelectableVolume } from "@/lib/backups/selection";
 import { getSystemBackupsDefault, resolveBackupSwitch } from "@/lib/backups/switch";
+import { appNotRunning, runStateColumns } from "@/lib/apps/run-state";
 import type { ConditionInput } from "./conditions";
 
 export type AdvisoryInput = {
@@ -44,7 +45,7 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
         id: apps.id,
         organizationId: apps.organizationId,
         persistentVolumes: apps.persistentVolumes,
-        parked: apps.parked,
+        ...runStateColumns,
         backupsEnabled: apps.backupsEnabled,
         orgBackupsEnabled: organizations.backupsEnabled,
       })
@@ -101,8 +102,8 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
     );
 
     for (const app of appRows) {
-      // A parked app is off on purpose, as is one with backups switched off. Neither needs a backup.
-      const off = app.parked || !resolveBackupSwitch(app.backupsEnabled, app.orgBackupsEnabled, systemDefault).enabled;
+      // An app stopped on purpose, or with backups switched off, needs no backup.
+      const off = appNotRunning(app) || !resolveBackupSwitch(app.backupsEnabled, app.orgBackupsEnabled, systemDefault).enabled;
       byApp.set(app.id, {
         security: scanByApp.get(app.id) ?? null,
         backup: off
