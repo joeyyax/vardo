@@ -158,6 +158,9 @@ export const uptimeWatchEntries = pgTable(
     intervalSec: integer("interval_sec").notNull(),
     /** "public" or "mesh". */
     path: text("path").notNull().default("public"),
+    /** How often to run it and the offset into that period. Null before the peer sent a schedule. */
+    periodSec: integer("period_sec"),
+    offsetMs: bigint("offset_ms", { mode: "number" }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.peerId, t.monitorId] })],

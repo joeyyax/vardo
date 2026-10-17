@@ -148,6 +148,8 @@ export function blockedAddressReason(address: string): string | null {
 }
 
 export type OutboundPolicy = {
+  /** Resolves names for the policy check and the connect. Defaults to the system resolver. */
+  resolve?: (host: string) => Promise<{ address: string; family: number }[]>;
   /** Hostnames permitted to resolve into a blocked range. Exact match, or a leading "." for a suffix match. */
   allowlist?: string[];
 };
@@ -200,7 +202,7 @@ export async function assertOutboundUrlAllowed(
 
   let resolved: { address: string }[];
   try {
-    resolved = await lookup(url.hostname, { all: true });
+    resolved = await (policy.resolve ?? ((host) => lookup(host, { all: true })))(url.hostname);
   } catch {
     throw new BlockedUrlError(`Could not resolve ${url.hostname}`);
   }

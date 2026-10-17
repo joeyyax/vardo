@@ -1,5 +1,5 @@
 {
-  "id": "9d78cf7e-f316-469a-b40a-66414da2c663",
+  "id": "ce1688f9-28ac-4c00-ad9e-bc0b892d48bf",
   "prevId": "2a7999bf-0747-4039-8695-5d1e6aaa2bdd",
   "version": "7",
   "dialect": "postgresql",
@@ -10274,6 +10274,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'public'"
+        },
+        "period_sec": {
+          "name": "period_sec",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "offset_ms": {
+          "name": "offset_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "fetched_at": {
           "name": "fetched_at",

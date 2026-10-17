@@ -36,7 +36,7 @@ export async function safeFetch(
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const allowPrivate = isAllowlisted(url.hostname, policy?.allowlist);
-    const response = await pinnedFetch(url, { ...init, method, body, headers, redirect: "manual", allowPrivate });
+    const response = await pinnedFetch(url, { ...init, method, body, headers, redirect: "manual", allowPrivate, resolve: policy?.resolve });
 
     const location = response.headers.get("location");
     if (response.status < 300 || response.status > 399 || !location) {

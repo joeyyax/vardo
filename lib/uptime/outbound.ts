@@ -1,11 +1,11 @@
 // Outbound policy for uptime checks. The core takes a fetcher and a host guard; this builds them from Vardo's SSRF policy.
 
-import { lookup } from "node:dns/promises";
 import { consoleBaseUrl } from "@/lib/incidents/key";
 import { getDomainProbePolicy } from "@/lib/security/outbound-policy";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { alwaysBlockedReason, blockedAddressReason, isAllowlisted, parseIPv4, parseIPv6, type OutboundPolicy } from "@/lib/security/ssrf";
 import { checkHost, type Check, type HostGuard } from "./core";
+import { uptimeLookup } from "./dns-cache";
 import { isPrivateOrMesh } from "./net";
 
 /** Strict refuses private, loopback, link-local and mesh addresses outright. Operator follows the domain-probe policy, with its allowlist. */
@@ -15,13 +15,15 @@ export type CheckDeps = { fetch: typeof fetch; guard: HostGuard };
 
 const isLiteral = (host: string) => !!(parseIPv4(host) || parseIPv6(host));
 
+/** Names resolve through a 60 second cache, shared by the policy check and the connect. */
 async function policyFor(level: PolicyLevel): Promise<OutboundPolicy> {
-  if (level === "strict") return {};
+  const resolve = uptimeLookup;
+  if (level === "strict") return { resolve };
   const policy = await getDomainProbePolicy();
   try {
-    return { allowlist: [...(policy.allowlist ?? []), new URL(consoleBaseUrl()).hostname] };
+    return { ...policy, resolve, allowlist: [...(policy.allowlist ?? []), new URL(consoleBaseUrl()).hostname] };
   } catch {
-    return policy;
+    return { ...policy, resolve };
   }
 }
 
@@ -34,7 +36,7 @@ export async function blockedHostReason(host: string, policy: OutboundPolicy, le
   if (isLiteral(name)) addresses = [name];
   else {
     try {
-      addresses = (await lookup(name, { all: true })).map((a) => a.address);
+      addresses = (await (policy.resolve ?? uptimeLookup)(name)).map((a) => a.address);
     } catch {
       return null;
     }

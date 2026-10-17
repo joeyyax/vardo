@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { MeshClientError, meshSignedPost } from "@/lib/mesh/client";
 import {
   HOUR_MS,
+  isDueAt,
   hourlySummary,
   resultBatch,
   signRecord,
@@ -68,10 +69,10 @@ async function storeWatch(peerId: string, entries: WatchEntry[], now: number): P
     for (const e of entries) {
       await tx
         .insert(uptimeWatchEntries)
-        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", fetchedAt: at })
+        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at })
         .onConflictDoUpdate({
           target: [uptimeWatchEntries.peerId, uptimeWatchEntries.monitorId],
-          set: { check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", fetchedAt: at },
+          set: { check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at },
         });
     }
   });
@@ -154,7 +155,12 @@ export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<
     .from(uptimeWatchEntries)
     .innerJoin(meshPeers, eq(meshPeers.id, uptimeWatchEntries.peerId))
     .where(eq(meshPeers.uptimeChecksPeer, true));
-  const due = rows.filter(({ entry: e }) => now - (lastProbe.get(`${e.peerId}:${e.monitorId}`) ?? 0) >= e.intervalSec * 1000 - 1000);
+  // A schedule from the owner staggers this vantage point among those sharing the monitor; without one it checks every interval.
+  const due = rows.filter(({ entry: e }) => {
+    const last = lastProbe.get(`${e.peerId}:${e.monitorId}`);
+    if (e.periodSec !== null && e.offsetMs !== null) return isDueAt(e.periodSec * 1000, e.offsetMs, last, now);
+    return now - (last ?? 0) >= e.intervalSec * 1000 - 1000;
+  });
   if (due.length === 0) return 0;
 
   const identity = await localIdentity();
@@ -226,7 +232,7 @@ export async function signSummaries(now = Date.now()): Promise<void> {
         latencyMs: r.latencyMs,
         ...(r.error ? { error: r.error as CheckResult["error"] } : {}),
       }));
-      const [bucket] = summarize({ results, vantages: [self], intervalSec: e.intervalSec, from: hour, to: hour + HOUR_MS, bucketMs: HOUR_MS });
+      const [bucket] = summarize({ results, vantages: [self], intervalSec: e.periodSec ?? e.intervalSec, from: hour, to: hour + HOUR_MS, bucketMs: HOUR_MS });
       if (!bucket) continue;
       const signed = signRecord(hourlySummary(identity.id, e.monitorId, bucket, now), key);
       await db

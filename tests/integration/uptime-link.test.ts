@@ -345,6 +345,25 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
       expect(privateEvents().some((e) => e.type === "alert.resolved")).toBe(true);
     });
 
+    it("staggers the vantage points that share a monitor, each checking every interval x N", async () => {
+      const period = async () => (await B.sql`select monitor_id, period_sec, offset_ms from uptime_watch_entry`) as unknown as { period_sec: number; offset_ms: number }[];
+      await asB(() => B.prober.refreshWatchLists(t, true));
+      expect((await period()).map((r) => r.period_sec)).toEqual([60, 60]);
+
+      await A.sql`update mesh_peer set status = 'online' where id = 'peer-b-on-a'`;
+      await asB(() => B.prober.refreshWatchLists(t, true));
+      const shared = await period();
+      expect(shared.map((r) => r.period_sec)).toEqual([120, 120]);
+      // Sorted ids are ext_peer-b-on-a, then local: B takes the first slot of each period.
+      expect(shared.every((r) => Number(r.offset_ms) < 60_000)).toBe(true);
+      const local = A.core.staggerOf(monitorId, 60, ["local", "ext_peer-b-on-a"], "local");
+      expect(local.periodSec).toBe(120);
+      expect(local.offsetMs).toBeGreaterThanOrEqual(60_000);
+
+      await A.sql`update mesh_peer set status = 'offline' where id = 'peer-b-on-a'`;
+      await asB(() => B.prober.refreshWatchLists(t, true));
+    });
+
     it("refuses a mesh result for a public monitor, and a public one for a mesh monitor", async () => {
       const { signRecord, resultBatch } = A.core;
       const key = await B.vantage.localSigningKey();

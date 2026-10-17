@@ -32,6 +32,10 @@ Raw error strings and response bodies never appear. `private-address` marks a ch
 
 `kind: "watch"` carries `monitors`, the checks the signer asks a vantage point to run: `monitorId`, `check`, `intervalSec` and `path` (`public` or `mesh`). A monitor whose host resolves only to private addresses is listed with `path: "mesh"`; one with a public address with `path: "public"`. A mesh check is run through the signer's WireGuard tunnel: the vantage point connects to the signer's tunnel address and sends the check's host as the Host header and SNI name. Other monitors don't appear.
 
+## Schedule
+
+A watch entry may carry `periodSec` and `offsetMs`. The vantage point runs the check once per `periodSec`, at `offsetMs` into each period (`floor((now - offsetMs) / period)` advancing). When N vantage points share a monitor, each is given `periodSec = intervalSec x N` and an offset of the monitor's phase plus its place in the sorted vantage ids times the interval, so the monitor is checked about once per interval in all. Without them, a vantage point checks every `intervalSec`. The owner judges a vantage point current for three of its own periods (at least 90 seconds).
+
 ## Paths
 
 `path` was added to version 1 compatibly. A reader treats a result or watch entry without it as `public` on an external vantage point and `local` on the local one. The owner accepts a result only on the path it served for that monitor. Verifiers that don't know `path` ignore it, and a mesh entry they receive is skipped as a private address.

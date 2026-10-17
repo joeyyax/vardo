@@ -3,7 +3,7 @@ import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT, MESH_SSH_PORT } from "./c
 import { defaultForwardIp, forwardHooks } from "./console-forward";
 import { isRunningInContainer } from "./env";
 import { meshSshIp, sshForwardHooks } from "./ssh-forward";
-import { traefikForwardEnabled, traefikForwardHooks, traefikIp } from "./traefik-forward";
+import { traefikForwardHooks, traefikForwardWanted, traefikIp } from "./traefik-forward";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
@@ -104,9 +104,9 @@ async function defaultSshForwardIp(): Promise<string | null> {
   return isRunningInContainer() ? meshSshIp() : null;
 }
 
-/** Traefik's address for a freshly written wg0.conf, or null when it isn't running here or the forward is off. */
+/** Traefik's address for a freshly written wg0.conf, or null when it isn't running here or no linked peer may check this instance. */
 async function defaultTraefikForwardIp(): Promise<string | null> {
-  return isRunningInContainer() && traefikForwardEnabled() ? traefikIp() : null;
+  return isRunningInContainer() && (await traefikForwardWanted()) ? traefikIp() : null;
 }
 
 /** Write wg0.conf into the WireGuard container's config volume via stdin. */

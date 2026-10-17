@@ -5,12 +5,13 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, meshPeers, uptimeMonitors, uptimeRecords, uptimeResults, uptimeVantages, type UptimeVantageRow } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
-import { HOUR_MS, signRecord, verifyRecord, watchList, type CheckResult, type WatchEntry } from "./core";
+import { HOUR_MS, phaseOf, signRecord, staggerOf, verifyRecord, watchList, type CheckResult, type WatchEntry } from "./core";
 import { checkWatchedBatch, expectedPath } from "./batch";
 import { syncAlertsFor } from "./engine";
 import { localIdentity } from "./identity";
 import { resultsRequestSchema, watchRequestSchema, type VantageIdentity } from "./link";
 import { privateEntries, publicEntries, type Resolver } from "./net";
+import { externalWatchers, sharing } from "./watchers";
 import { localSigningKey } from "./vantage";
 
 const log = logger.child("uptime-link");
@@ -53,7 +54,7 @@ async function vantageFor(peerId: string): Promise<UptimeVantageRow | null> {
 
 /** A peer asks for our watch list and tells us who it is. */
 export async function serveWatchList(peerId: string, body: unknown, now = Date.now(), resolve?: Resolver): Promise<LinkReply> {
-  const peer = await db.query.meshPeers.findFirst({ where: eq(meshPeers.id, peerId), columns: { id: true, name: true, uptimeChecksUs: true } });
+  const peer = await db.query.meshPeers.findFirst({ where: eq(meshPeers.id, peerId), columns: { id: true, name: true, status: true, uptimeChecksUs: true } });
   if (!peer || !peer.uptimeChecksUs) return reply(403, { error: "This instance doesn't accept uptime checks from you" });
 
   const parsed = watchRequestSchema.safeParse(body);
@@ -75,8 +76,18 @@ export async function serveWatchList(peerId: string, body: unknown, now = Date.n
     .values({ id, kind: "external", meshPeerId: peer.id, ...row })
     .onConflictDoUpdate({ target: uptimeVantages.id, set: row });
 
+  // Vantage points sharing a monitor split its checks: each runs every interval x N at its own offset. A peer that is offline isn't counted here, so it checks every interval.
+  const watchers = await externalWatchers();
+  const scheduled = entries.map((e) => {
+    const slot =
+      peer.status === "online"
+        ? staggerOf(e.monitorId, e.intervalSec, sharing(watchers, e.monitorId), id)
+        : { periodSec: e.intervalSec, offsetMs: phaseOf(e.monitorId, e.intervalSec * 1000) };
+    return { ...e, ...slot };
+  });
+
   const identity = await localIdentity();
-  return reply(200, { vantage: identity, watch: signRecord(watchList(identity.id, entries, now), await localSigningKey()) });
+  return reply(200, { vantage: identity, watch: signRecord(watchList(identity.id, scheduled, now), await localSigningKey()) });
 }
 
 type Rejection = { index: number; reason: string };

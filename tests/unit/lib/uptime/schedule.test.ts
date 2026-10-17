@@ -37,7 +37,7 @@ describe("runCheck retry", () => {
       if (calls === 1) throw Object.assign(new Error("lookup"), { code: "EAI_AGAIN" });
       return new Response("ok", { status: 200 });
     }) as typeof globalThis.fetch;
-    const r = await runCheck({ id: "m", check }, "local", { fetch, sleep });
+    const r = await runCheck({ id: "m", check }, "local", "local", { fetch, sleep });
     expect(r.ok).toBe(true);
     expect(calls).toBe(2);
   });
@@ -48,7 +48,7 @@ describe("runCheck retry", () => {
       calls++;
       return new Response("no", { status: 503 });
     }) as typeof globalThis.fetch;
-    const r = await runCheck({ id: "m", check }, "local", { fetch, sleep });
+    const r = await runCheck({ id: "m", check }, "local", "local", { fetch, sleep });
     expect(r.ok).toBe(false);
     expect(calls).toBe(1);
   });

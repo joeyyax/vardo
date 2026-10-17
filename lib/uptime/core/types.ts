@@ -64,7 +64,16 @@ export const CHECK_PATHS = ["public", "mesh", "local"] as const;
 export type CheckPath = (typeof CHECK_PATHS)[number];
 
 /** A check a prober runs for another instance's monitor. `path` defaults to public. */
-export type WatchEntry = { monitorId: string; check: Check; intervalSec: IntervalSec; path?: "public" | "mesh" };
+export type WatchEntry = {
+  monitorId: string;
+  check: Check;
+  intervalSec: IntervalSec;
+  path?: "public" | "mesh";
+  /** How often to run it: the interval times the vantage points sharing the monitor. Defaults to `intervalSec`. */
+  periodSec?: number;
+  /** When in the period to run it, in ms from the epoch's period boundary. */
+  offsetMs?: number;
+};
 
 /** A result that says nothing about the target, such as a check skipped for a private address or refused by the outbound policy. It counts as no data. */
 export function isUnknownResult(r: Pick<CheckResult, "error">): boolean {

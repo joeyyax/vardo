@@ -17,7 +17,9 @@ import {
   combine,
   evaluate,
   hourlySummary,
-  isDue,
+  effectiveIntervalSec,
+  isDueAt,
+  staggerOf,
   runCheck,
   signRecord,
   summarize,
@@ -30,6 +32,7 @@ import { incidentTitle, readingDetail } from "./format";
 import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
 import { syncPeerAlerts, syncPeerMonitors } from "./peers";
+import { externalWatchers, sharing } from "./watchers";
 import { pruneProbes, tickProber } from "./prober";
 import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
@@ -185,10 +188,12 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
     .leftJoin(meshPeers, eq(meshPeers.id, uptimeMonitors.meshPeerId))
     .where(eq(uptimeMonitors.enabled, true));
 
-  // A stopped app is expected to be down.
+  // A stopped app is expected to be down. Vantage points sharing a monitor take turns, so this one runs it every interval x N.
+  const watchers = await externalWatchers();
   const due = rows.filter(({ monitor, appStatus }) => {
     if (monitor.source === "auto" && appStatus === "stopped") return false;
-    return isDue(monitor.id, monitor.intervalSec, lastRun.get(monitor.id), now);
+    const slot = staggerOf(monitor.id, monitor.intervalSec, sharing(watchers, monitor.id), LOCAL_VANTAGE_ID);
+    return isDueAt(slot.periodSec * 1000, slot.offsetMs, lastRun.get(monitor.id), now);
   });
   if (due.length === 0) return 0;
 
@@ -245,6 +250,7 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
     .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(now - RECENT_MS))));
   const results: CheckResult[] = recent.map(toResult);
   const operator = monitors.some((m) => !m.organizationId) ? await adminOrgIds() : [];
+  const watchers = await externalWatchers();
 
   // A peer's monitors are read together, so one verdict raises one alert.
   const peerIds = [...new Set(monitors.map((m) => m.meshPeerId).filter((id): id is string => !!id))];
@@ -256,7 +262,7 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   for (const m of monitors) {
     if (m.meshPeerId) continue;
     try {
-      const evaluation = evaluate({ vantages, results: results.filter((r) => r.monitorId === m.id), now, intervalSec: m.intervalSec });
+      const evaluation = evaluate({ vantages, results: results.filter((r) => r.monitorId === m.id), now, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length) });
       const title = incidentTitle(m.name, evaluation.state, evaluation.reading);
       const outage = {
         about: m.id,
@@ -304,13 +310,14 @@ export async function rollup(now = Date.now()): Promise<void> {
   if (monitors.length === 0) return;
   const thisHour = Math.floor(now / HOUR_MS) * HOUR_MS;
   const from = thisHour - HOUR_MS;
-  const [vantages, key, raw] = await Promise.all([
+  const [vantages, key, raw, watchers] = await Promise.all([
     listVantagePoints(),
     localSigningKey(),
     db
       .select()
       .from(uptimeResults)
       .where(and(inArray(uptimeResults.monitorId, monitors.map((m) => m.id)), gte(uptimeResults.at, new Date(from - 10 * 60_000)))),
+    externalWatchers(),
   ]);
   const byMonitor = new Map<string, CheckResult[]>();
   for (const r of raw) {
@@ -321,7 +328,7 @@ export async function rollup(now = Date.now()): Promise<void> {
 
   const signedAt = new Date(now);
   for (const m of monitors) {
-    const buckets = summarize({ results: byMonitor.get(m.id) ?? [], vantages, intervalSec: m.intervalSec, from, to: now + 1, bucketMs: HOUR_MS });
+    const buckets = summarize({ results: byMonitor.get(m.id) ?? [], vantages, intervalSec: effectiveIntervalSec(m.intervalSec, sharing(watchers, m.id).length), from, to: now + 1, bucketMs: HOUR_MS });
     for (const b of buckets) {
       if (b.minutesUp + b.minutesDown === 0 && b.minutesUnknown === 0) continue;
       const signed = signRecord(hourlySummary(LOCAL_VANTAGE_ID, m.id, b, now), key);
