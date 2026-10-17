@@ -103,7 +103,7 @@ vi.mock("@/lib/docker/constants", async (importOriginal) => ({
 vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials: vi.fn().mockResolvedValue({}) }));
 
 const { remote } = vi.hoisted(() => ({
-  remote: { on: false, pushed: [] as string[], offered: [] as (string[] | undefined)[] },
+  remote: { on: false, registry: true, pushed: [] as string[], offered: [] as (string[] | undefined)[] },
 }));
 const TARGET = {
   id: "lh", kind: "ssh" as const, name: "Long House", host: "10.99.0.2", port: 22, user: "vardo",
@@ -131,7 +131,7 @@ vi.mock("@/lib/docker/build-gate", async (orig) => {
 vi.mock("@/lib/docker/registry-auth", async (orig) => ({
   ...(await orig<typeof import("@/lib/docker/registry-auth")>()),
   buildRegistryOps: async () =>
-    remote.on
+    remote.on && remote.registry
       ? {
           ref: (repo: string, key: string) => `reg.example.com/${repo}:${key}`,
           pull: async () => false,
@@ -368,7 +368,7 @@ describe("prepareRepo image reuse", () => {
 
   describe("with a build target", () => {
     beforeEach(() => {
-      Object.assign(remote, { on: true, pushed: [], offered: [] });
+      Object.assign(remote, { on: true, registry: true, pushed: [], offered: [] });
       earlier.rows = [];
     });
 
@@ -391,6 +391,35 @@ describe("prepareRepo image reuse", () => {
       expect(dockerCalls).toContainEqual(["pull", "--quiet", ref]);
       expect(dockerCalls).toContainEqual(["tag", ref, newImage]);
       expect(remote.pushed).toEqual([]);
+      expect(ctx.builtImageRefs).toEqual([newImage]);
+    });
+
+    it("copies the image here over SSH when there's no build registry", async () => {
+      remote.registry = false;
+      nixpacks.generates = true;
+      const { PassThrough } = await import("stream");
+      const ran: { args: string[]; host?: string }[] = [];
+      vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv }) => {
+        ran.push({ args, host: opts.env.DOCKER_HOST });
+        const proc = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), pid: undefined });
+        if (args[0] === "save") setImmediate(() => { proc.stdout.end(Buffer.alloc(4096)); proc.emit("close", 0); });
+        else if (args[0] === "load") proc.stdin.on("finish", () => proc.emit("close", 0)).resume();
+        else setImmediate(() => proc.emit("close", 0));
+        return proc;
+      }) as unknown as typeof spawn);
+      const ctx = makeCtx();
+      await prepareRepo(ctx);
+
+      expect(ran.map((r) => `${r.host ?? "here"} ${r.args[0]}`)).toEqual([
+        "ssh://vardo@10.99.0.2:22 build",
+        "ssh://vardo@10.99.0.2:22 save",
+        "here load",
+      ]);
+      expect(ran[1].args).toEqual(["save", newImage]);
+      expect(dockerCalls.some((a) => a[0] === "push" || a[0] === "pull")).toBe(false);
+      expect(dockerCalls).toContainEqual(["image", "rm", newImage]);
+      expect(ctx.logLines).toContain(`[build] Copying ${newImage} from Long House over SSH`);
+      expect(ctx.logLines).toContainEqual(expect.stringMatching(new RegExp(`^\\[build\\] Copied ${newImage} from Long House over SSH \\(4 KB, `)));
       expect(ctx.builtImageRefs).toEqual([newImage]);
     });
 

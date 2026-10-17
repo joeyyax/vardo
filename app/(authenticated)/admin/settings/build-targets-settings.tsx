@@ -79,14 +79,17 @@ export function BuildTargetsSettings() {
       <CardHeader>
         <CardTitle>Build targets</CardTitle>
         <CardDescription>
-          When this server&apos;s builder is full, builds run on these Docker hosts in order and come back through the build registry.
+          When this server&apos;s builder is full, builds run on these Docker hosts in order. Images come back through the build
+          registry when one is set, otherwise over SSH.
           Dockerfile, Nixpacks and compose builds can run there; Railpack builds stay here. A linked instance that accepts builds
           from here joins the list on its own.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!loading && !data.registry && data.targets.length > 0 && (
-          <p className="text-sm text-muted-foreground">Set a build registry first. Until then every build runs on this server.</p>
+          <p className="text-sm text-muted-foreground">
+            No build registry, so each image comes back whole over SSH. A registry sends only the layers that changed.
+          </p>
         )}
 
         {data.targets.length > 0 && (

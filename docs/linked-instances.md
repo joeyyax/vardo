@@ -78,12 +78,12 @@ The app's **Settings** page lists the triggers that apply to it (webhook, relay 
 
 ## Builds on a linked instance
 
-A linked instance can run another's builds when that one's builder is full. Builds come back through the build registry, as with any build target.
+A linked instance can run another's builds when that one's builder is full. Images come back as from any build target: through the build registry when one is set, otherwise over the SSH connection.
 
 ### Turn it on
 
 1. **On the instance that runs the builds:** an instance admin, signed in, opens **Admin settings → Instances**, picks the sending peer's menu and chooses **Accept builds**.
-2. **On the sending instance:** the peer shows **Builds there** and joins **Admin settings → This instance → Build targets** at the end, one build at a time. Move it or set its builds at a time there; 0 sends it none. It needs a build registry like any target.
+2. **On the sending instance:** the peer shows **Builds there** and joins **Admin settings → This instance → Build targets** at the end, one build at a time. Move it or set its builds at a time there; 0 sends it none.
 
 ### How it connects
 

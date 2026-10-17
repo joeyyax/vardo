@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { bringBack } from "@/lib/docker/remote-build";
+import { spawn } from "child_process";
+import { bringBack, copyImage } from "@/lib/docker/remote-build";
 import { BuilderError } from "@/lib/docker/build-targets";
 
-// Bringing a target's image here: push there, pull here, drop the registry tags on both sides.
+// Bringing a target's image here: the build registry first, then `docker save | docker load` over SSH.
 
 const session = { env: { DOCKER_HOST: "ssh://vardo@lh:22", PATH: "/tmp/s/bin:/usr/bin" }, close: async () => {} };
 
@@ -17,35 +18,150 @@ function recorder(fail?: (args: string[]) => boolean) {
   return { calls, exec };
 }
 
+/** A spawn that runs a shell script per docker subcommand and records where each ran. */
+function shells(scripts: { save: string; load: string }) {
+  const ran: string[] = [];
+  const fake = ((_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv; stdio: ("ignore" | "pipe")[]; detached: boolean }) => {
+    const which = args[0] === "save" ? "save" : "load";
+    ran.push(`${opts.env.DOCKER_HOST ? "there" : "here"} ${args.join(" ")}`);
+    return spawn("sh", ["-c", scripts[which]], { stdio: opts.stdio, detached: opts.detached });
+  }) as Parameters<typeof copyImage>[1]["spawn"];
+  return { ran, spawn: fake };
+}
+
+const env = { here: {} as NodeJS.ProcessEnv, there: { DOCKER_HOST: "ssh://vardo@lh:22" } as unknown as NodeJS.ProcessEnv };
+
+describe("copyImage", () => {
+  it("pipes save there into load here and counts the bytes", async () => {
+    const { ran, spawn } = shells({ save: "head -c 300000 /dev/zero", load: "test \"$(wc -c)\" -eq 300000" });
+    expect(await copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn })).toBe(300_000);
+    expect(ran).toEqual(["there save shop:d", "here load --quiet"]);
+  });
+
+  it("kills load when save fails, with save's error", async () => {
+    const { spawn } = shells({ save: "echo 'error during connect: ssh: connect to host lh port 22: Connection refused' >&2; exit 1", load: "sleep 30" });
+    const began = Date.now();
+    await expect(copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn }))
+      .rejects.toThrow(/^docker save on the target failed \(exit 1\): error during connect/);
+    expect(Date.now() - began).toBeLessThan(5_000);
+  });
+
+  it("kills save when load fails, with load's error", async () => {
+    const { spawn } = shells({ save: "while true; do head -c 65536 /dev/zero; done", load: "head -c 1000 >/dev/null; echo 'write /var/lib/docker: no space left on device' >&2; exit 1" });
+    const began = Date.now();
+    await expect(copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn }))
+      .rejects.toThrow(/^docker load here failed \(exit 1\): write \/var\/lib\/docker: no space left on device$/);
+    expect(Date.now() - began).toBeLessThan(5_000);
+  });
+
+  it("kills both when the deploy is aborted", async () => {
+    const { spawn } = shells({ save: "sleep 30", load: "sleep 30" });
+    const abort = new AbortController();
+    setTimeout(() => abort.abort(), 100);
+    const began = Date.now();
+    await expect(copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn, signal: abort.signal })).rejects.toThrow("Deployment aborted");
+    expect(Date.now() - began).toBeLessThan(5_000);
+  });
+
+  it("fails a copy that stops sending", async () => {
+    const { spawn } = shells({ save: "head -c 10 /dev/zero; sleep 30", load: "cat >/dev/null" });
+    await expect(copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn, idleMs: 200 })).rejects.toThrow("no data for 0.2s");
+  });
+
+  it("fails when docker can't start", async () => {
+    const fake = ((_c: string, _a: string[], opts: { stdio: ("ignore" | "pipe")[] }) =>
+      spawn("/nonexistent/docker", [], { stdio: opts.stdio })) as Parameters<typeof copyImage>[1]["spawn"];
+    await expect(copyImage("shop:d", { fromEnv: env.there, toEnv: env.here, spawn: fake })).rejects.toThrow(/couldn't start: spawn \/nonexistent\/docker ENOENT/);
+  });
+});
+
 describe("bringBack", () => {
+  const authEnv = { DOCKER_CONFIG: "/tmp/auth" } as unknown as NodeJS.ProcessEnv;
+
   it("pushes from the target, pulls here under the image's name and untags the ref on both", async () => {
     const { calls, exec } = recorder();
+    const { ran, spawn } = shells({ save: "true", load: "true" });
     const lines: string[] = [];
-    await bringBack([{ image: "shop:deploy-1", ref: "reg/shop:k1" }], {
-      authEnv: { DOCKER_CONFIG: "/tmp/auth" } as unknown as NodeJS.ProcessEnv, session, log: (l) => lines.push(l), exec,
-    });
+    await bringBack([{ image: "shop:deploy-1", ref: "reg/shop:k1" }], { authEnv, session, from: "Long House", log: (l) => lines.push(l), exec, spawn });
     expect(calls.map((c) => `${c.where} ${c.args.join(" ")}`)).toEqual([
       "there tag shop:deploy-1 reg/shop:k1",
       "there push --quiet reg/shop:k1",
-      "there image rm reg/shop:k1 shop:deploy-1",
+      "there image rm reg/shop:k1",
       "here pull --quiet reg/shop:k1",
       "here tag reg/shop:k1 shop:deploy-1",
       "here image rm reg/shop:k1",
+      "there image rm shop:deploy-1",
     ]);
-    expect(lines[0]).toMatch(/^\[build\] Pulled reg\/shop:k1 from the build registry as shop:deploy-1/);
+    expect(ran).toEqual([]);
+    expect(lines).toEqual([expect.stringMatching(/^\[build\] Pulled reg\/shop:k1 from the build registry as shop:deploy-1 \(\d+\.\ds\)$/)]);
   });
 
-  it("blames the builder when the push fails, and still cleans up there", async () => {
+  it("copies over SSH when the push fails, and keeps the image there until the copy is done", async () => {
     const { calls, exec } = recorder((args) => args[0] === "push");
-    await expect(bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv: {} as NodeJS.ProcessEnv, session, log: () => {}, exec }))
-      .rejects.toBeInstanceOf(BuilderError);
-    expect(calls.at(-1)).toEqual({ args: ["image", "rm", "reg/shop:k", "shop:d"], where: "there" });
-    expect(calls.some((c) => c.args[0] === "pull")).toBe(false);
+    const { ran, spawn } = shells({ save: "head -c 2097152 /dev/zero", load: "cat >/dev/null" });
+    const lines: string[] = [];
+    await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "Long House", log: (l) => lines.push(l), exec, spawn });
+    expect(calls.map((c) => `${c.where} ${c.args.join(" ")}`)).toEqual([
+      "there tag shop:d reg/shop:k",
+      "there push --quiet reg/shop:k",
+      "there image rm reg/shop:k",
+      "there image rm shop:d",
+    ]);
+    expect(ran).toEqual(["there save shop:d", "here load --quiet"]);
+    expect(lines).toEqual([
+      "[build] Couldn't use the build registry: couldn't push reg/shop:k from the target: unauthorized: authentication required",
+      "[build] Registry unavailable; copying shop:d from Long House over SSH",
+      expect.stringMatching(/^\[build\] Copied shop:d from Long House over SSH \(2 MB, \d+\.\ds\)$/),
+    ]);
   });
 
-  it("blames the builder when the pull here fails", async () => {
+  it("copies over SSH when the pull here fails", async () => {
     const { exec } = recorder((args) => args[0] === "pull");
-    await expect(bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv: {} as NodeJS.ProcessEnv, session, log: () => {}, exec }))
-      .rejects.toMatchObject({ reason: expect.stringMatching(/^couldn't pull reg\/shop:k here: unauthorized/) });
+    const { ran, spawn } = shells({ save: "true", load: "true" });
+    const lines: string[] = [];
+    await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "lh", log: (l) => lines.push(l), exec, spawn });
+    expect(ran).toEqual(["there save shop:d", "here load --quiet"]);
+    expect(lines[0]).toMatch(/^\[build\] Couldn't use the build registry: couldn't pull reg\/shop:k here: unauthorized/);
+  });
+
+  it("copies over SSH with no registry, and skips the registry for the rest once it fails", async () => {
+    const { calls, exec } = recorder((args) => args[0] === "push");
+    const { ran, spawn } = shells({ save: "true", load: "true" });
+    const lines: string[] = [];
+    await bringBack(
+      [{ image: "app-web", ref: null }, { image: "app-api", ref: "reg/app-api:k" }, { image: "app-worker", ref: "reg/app-worker:k" }],
+      { authEnv, session, from: "lh", log: (l) => lines.push(l), exec, spawn },
+    );
+    expect(ran).toEqual(["there save app-web", "here load --quiet", "there save app-api", "here load --quiet", "there save app-worker", "here load --quiet"]);
+    expect(calls.filter((c) => c.args[0] === "push").length).toBe(1);
+    expect(lines[0]).toBe("[build] Copying app-web from lh over SSH");
+    expect(lines).toContain("[build] Registry unavailable; copying app-worker from lh over SSH");
+    expect(calls.at(-1)).toEqual({ args: ["image", "rm", "app-web", "app-api", "app-worker"], where: "there" });
+  });
+
+  it("blames the builder when both paths fail, and still cleans up there", async () => {
+    const { calls, exec } = recorder((args) => args[0] === "push");
+    const { spawn } = shells({ save: "echo 'error during connect: Broken pipe' >&2; exit 1", load: "cat >/dev/null" });
+    const lines: string[] = [];
+    const err = await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "lh", log: (l) => lines.push(l), exec, spawn })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BuilderError);
+    expect((err as BuilderError).reason).toBe("couldn't copy shop:d here over SSH: the connection to it dropped");
+    expect(lines.at(-1)).toBe("[build] Copying over SSH failed: docker save on the target failed (exit 1): error during connect: Broken pipe");
+    expect(calls.at(-1)).toEqual({ args: ["image", "rm", "shop:d"], where: "there" });
+  });
+
+  it("doesn't fall back when the deploy is aborted", async () => {
+    const abort = new AbortController();
+    const { exec } = recorder((args) => {
+      if (args[0] !== "push") return false;
+      abort.abort();
+      return true;
+    });
+    const { ran, spawn } = shells({ save: "true", load: "true" });
+    const err = await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "lh", log: () => {}, exec, spawn, signal: abort.signal })
+      .catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(BuilderError);
+    expect(ran).toEqual([]);
   });
 });

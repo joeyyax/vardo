@@ -114,6 +114,23 @@ Admin → This instance → Build registry takes any OCI registry. Only builds o
 
 There's no setting to push builds from this server too. The key includes the app id and a transferred app gets a new id, so another instance never matches the key; the copy would only duplicate disk this host already uses.
 
+### Bringing a target's image back
+
+A build target doesn't need a registry. Each built image comes back by the first path that works:
+
+1. **Build registry**, when one is set and the image has a build key: push there, pull here. Only changed layers move.
+2. **Over SSH**: `docker save` on the target streams into `docker load` here through the same SSH session, with no temp file on either side. The whole image moves. Used when there's no registry, the image has no key, or the push or pull fails. After one registry failure the rest of that build's images skip it.
+3. **Build here**: only when the target itself fails (unreachable, refused key, out of disk) or both paths fail. The target is marked down and the build runs on this server.
+
+The copy fails after 2 minutes without data or 60 minutes in all, and stops when the deploy is cancelled. A failure on either end stops the other. The image is removed from the target afterwards. The deploy log names the path:
+
+```
+[build] Pulled reg.example.com/shop:3f9c… from the build registry as shop:deploy-1 (3.1s)
+[build] Couldn't use the build registry: couldn't push reg.example.com/shop:3f9c… from the target: …
+[build] Registry unavailable; copying shop:deploy-1 from Long House over SSH
+[build] Copied shop:deploy-1 from Long House over SSH (412 MB, 38.0s)
+```
+
 ### Cleanup
 
 Every 6 hours the `build-registry-cleanup` loop lists the registry's repos under the configured namespace and touches only those named `<app>` or `<app>-<service>` for an app on this instance. In each it keeps:

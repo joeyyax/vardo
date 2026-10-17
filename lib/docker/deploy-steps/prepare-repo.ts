@@ -405,8 +405,8 @@ type RepoBuild = {
   capture?: { text: string };
   /** Queues the build for the builder. */
   gate: BuildGate;
-  /** Targets a Dockerfile build may run on, with the registry ref that brings its image here. */
-  remote?: { targets: BuildTarget[]; ref: string } | null;
+  /** Targets a Dockerfile build may run on, with the build registry ref for its image when there is one. */
+  remote?: { targets: BuildTarget[]; ref: string | null } | null;
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -500,7 +500,7 @@ async function dockerBuild(
       const remoteArgs = dockerfileBuildArgs({ ...argsInput, loadArgs: TARGET_BUILD.loadArgs });
       await onTarget(target, async (session) => {
         await spawnStream("docker", remoteArgs, { cwd: repoPath, env: remoteEnv(authEnv, session), signal }, logs, "[build][docker]", build.capture);
-        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, log: (line) => logs.push(line), signal });
+        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, from: target.name, log: (line) => logs.push(line), signal });
       });
     });
   } catch (err) {
@@ -873,8 +873,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           : undefined;
       let key = await keyFor();
       const registry = key ? await buildRegistryOps(log, signal) : null;
-      // Targets bring images back through the registry, so they need one.
-      const targets = registry ? await configuredTargets() : [];
+      const targets = await configuredTargets();
       const reused = key && !ctx.rebuild ? await reuseImage(ctx, key, imageName, registry) : null;
 
       if (reused) {
@@ -916,7 +915,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           gitSha: ctx.gitSha,
           buildKey: key,
           capture,
-          remote: registry && key && targets.length > 0 ? { targets, ref: registry.ref(app.name, key) } : null,
+          remote: targets.length > 0 ? { targets, ref: registry && key ? registry.ref(app.name, key) : null } : null,
         }));
         try {
           await run();
