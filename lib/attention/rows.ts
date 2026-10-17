@@ -21,9 +21,10 @@ import { isBackupSelected } from "@/lib/backups/durability";
 import { listUncoveredApps } from "@/lib/backups/enroll";
 import { backupJobStaleness, OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
 import { withJobApps } from "@/lib/backups/job-apps";
+import { runStateColumns } from "@/lib/apps/run-state";
 import { UTC } from "@/lib/time-zone";
 import { getOrgTimeZone } from "@/lib/time-zone-settings";
-import { stoppedBackupRow } from "./backup-stopped-row";
+import { splitPausedDumps, stoppedBackupRow } from "./backup-stopped-row";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
@@ -137,10 +138,9 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
     .where(eq(backupJobs.organizationId, orgId));
 
   const { overdue, stopped } = backupJobStaleness(await withJobApps(jobRows, now), now);
-  if (overdue.length === 0 && stopped.length === 0) return { overdue: [], stopped: [], timeZone: UTC };
+  if (overdue.length === 0 && stopped.length === 0) return { overdue: [], stopped: [] };
 
-  const [links, timeZone] = await Promise.all([
-    db
+  const links = await db
       .select({ jobId: backupJobApps.backupJobId, id: apps.id, name: apps.name, displayName: apps.displayName })
       .from(backupJobApps)
       .innerJoin(apps, eq(apps.id, backupJobApps.appId))
@@ -149,9 +149,7 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
           backupJobApps.backupJobId,
           [...overdue, ...stopped].map((o) => o.job.id),
         ),
-      ),
-    getOrgTimeZone(orgId),
-  ]);
+      );
 
   const appsByJob = new Map<string, { id: string; name: string; displayName: string }[]>();
   for (const { jobId, ...app } of links) {
@@ -165,7 +163,6 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
       apps: (appsByJob.get(entry.job.id) ?? []).filter((a) => !entry.stoppedAppIds.includes(a.id)),
     })),
     stopped: stopped.map((entry) => ({ ...entry, apps: appsByJob.get(entry.job.id) ?? [] })),
-    timeZone,
   };
 }
 
@@ -226,7 +223,7 @@ async function loadSystemJobState(): Promise<SystemJobState> {
   return overdue ? { kind: "overdue", since: overdue.since, neverRan: overdue.neverRan } : { kind: "ok" };
 }
 
-/** Stopped apps whose database can't be dumped until they run again. */
+/** Down apps whose database can't be dumped until they run again, split by whether they were stopped on purpose. */
 async function loadPausedDumps(orgId: string) {
   const rows = await db
     .select({
@@ -236,8 +233,12 @@ async function loadPausedDumps(orgId: string) {
       parentName: pausedParents.displayName,
       statusChangedAt: apps.statusChangedAt,
       isSystemManaged: apps.isSystemManaged,
+      ...runStateColumns,
       persistent: volumes.persistent,
       durability: volumes.durability,
+      jobId: backupJobs.id,
+      jobName: backupJobs.name,
+      lastRunAt: backupJobs.lastRunAt,
     })
     .from(apps)
     .leftJoin(pausedParents, eq(pausedParents.id, apps.parentAppId))
@@ -250,19 +251,13 @@ async function loadPausedDumps(orgId: string) {
     .where(
       and(
         eq(apps.organizationId, orgId),
-        eq(apps.status, "stopped"),
+        inArray(apps.status, ["stopped", "error", "missing"]),
         eq(volumes.backupStrategy, "dump"),
         isNull(volumes.removedAt),
       ),
     );
 
-  const byApp = new Map<string, (typeof rows)[number]>();
-  for (const row of rows) {
-    if (isVardoManagedApp(row)) continue;
-    if (!isBackupSelected(row)) continue;
-    if (!byApp.has(row.id)) byApp.set(row.id, row);
-  }
-  return [...byApp.values()];
+  return splitPausedDumps(rows.filter((row) => !isVardoManagedApp(row) && isBackupSelected(row)));
 }
 
 /** Every app the kernel may have killed, children included. */
@@ -427,8 +422,8 @@ export async function buildAttentionRows(
     updates,
     version,
     failedBackups,
-    { overdue: overdueJobs, stopped: stoppedJobs, timeZone },
-    pausedDumps,
+    { overdue: overdueJobs, stopped: stoppedJobs },
+    { paused: pausedDumps, onHold: heldDumps },
     activity,
     exited,
     subjects,
@@ -611,7 +606,8 @@ export async function buildAttentionRows(
     });
   }
 
-  const stoppedRow = stoppedBackupRow(stoppedJobs, timeZone);
+  const held = [...stoppedJobs, ...heldDumps];
+  const stoppedRow = stoppedBackupRow(held, held.length ? await getOrgTimeZone(orgId) : UTC);
   if (stoppedRow) rows.push(stoppedRow);
 
   if (coverage) rows.push(...backupCoverageRows(coverage));
@@ -631,7 +627,7 @@ export async function buildAttentionRows(
         fix: { label: "Start", run: "restart", app: { id: a.id, name: a.name } },
       })),
       footer:
-        "These apps are stopped. Their volumes are still archived on schedule, but a database dump cannot run until the app is started.",
+        "These apps aren't running and weren't stopped on purpose. A database dump can't run until the app starts.",
     });
   }
 
