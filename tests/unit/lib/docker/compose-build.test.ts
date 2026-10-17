@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { bakeArgs, bakeUsesSecrets, composeBuild, type ComposeBuildOpts } from "@/lib/docker/compose-build";
+import { bakeArgs, bakeUsesSecrets, composeBuild, serviceBakeArgs, type ComposeBuildOpts } from "@/lib/docker/compose-build";
 
 const { copies } = vi.hoisted(() => ({ copies: { ran: [] as string[], saveFails: false } }));
 // `docker save` there and `docker load` here, as shell stand-ins.
@@ -264,5 +264,13 @@ describe("bakeUsesSecrets", () => {
     expect(bakeUsesSecrets({ target: { a: {}, b: { secret: ["id=x"] } } })).toBe(true);
     expect(bakeUsesSecrets({ target: { a: { secret: [] } } })).toBe(false);
     expect(bakeUsesSecrets(null)).toBe(false);
+  });
+});
+
+describe("serviceBakeArgs", () => {
+  it("tags a pushed service with only its registry ref", () => {
+    const args = serviceBakeArgs("/s/bake.json", { web: "type=image,name=reg/shop-web:k,push=true,compression=zstd", api: "type=docker,dest=/tmp/1.tar" }, ["web", "api"]);
+    expect(args).toContain("web.tags=reg/shop-web:k");
+    expect(args.some((a) => a.startsWith("api.tags="))).toBe(false);
   });
 });

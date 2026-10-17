@@ -63,7 +63,7 @@ import { withBuildSlot, type BuildGate } from "../build-gate";
 import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../build-targets";
 import { bringBack } from "../remote-build";
 import { withTargetBuilder } from "../target-builder";
-import { bringDirect } from "../direct-export";
+import { bringDirect, pushedName } from "../direct-export";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -506,8 +506,8 @@ async function dockerBuild(
         const log = (line: string) => void logs.push(line);
         await withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
           ran = targetBuild;
-          const run = (loadArgs: string[]) =>
-            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, loadArgs }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+          const run = (loadArgs: string[], tag = argsInput.imageName) =>
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
           const image = { image: build.imageName, ref: remote.ref };
           if (!compression) {
             await run(targetBuild.loadArgs);
@@ -516,7 +516,8 @@ async function dockerBuild(
           }
           await bringDirect([image], {
             authEnv, from: target.name, log, placement: build.gate.placement, signal, compression,
-            build: ([output]) => run(["--output", output, "--provenance=false", "--sbom=false"]),
+            // A pushed image carries only its registry ref; BuildKit would push every `-t` name too.
+            build: ([output]) => run(["--output", output, "--provenance=false", "--sbom=false"], pushedName(output) ?? argsInput.imageName),
           });
         }, { signal });
       });

@@ -15,7 +15,7 @@ import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
 import { bringBack } from "./remote-build";
 import type { BuildPlacementRecorder } from "./build-placement";
 import { withTargetBuilder } from "./target-builder";
-import { bringDirect } from "./direct-export";
+import { bringDirect, pushedName } from "./direct-export";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -81,7 +81,11 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
 export function serviceBakeArgs(file: string, outputs: Record<string, string>, services: string[]): string[] {
   return [
     "buildx", "bake", "-f", file, "--progress=plain",
-    ...Object.entries(outputs).flatMap(([service, output]) => ["--set", `${service}.output=${output}`]),
+    // A pushed service carries only its registry ref; BuildKit would push the compose image name too.
+    ...Object.entries(outputs).flatMap(([service, output]) => {
+      const ref = pushedName(output);
+      return ["--set", `${service}.output=${output}`, ...(ref ? ["--set", `${service}.tags=${ref}`] : [])];
+    }),
     "--provenance=false", "--sbom=false", ...services,
   ];
 }

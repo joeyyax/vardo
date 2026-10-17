@@ -38,6 +38,12 @@ export function registryOutput(ref: string, compression: PushCompression): strin
   return `type=image,name=${ref},push=true,compression=${compression}${compression === "zstd" ? ",oci-mediatypes=true" : ""}`;
 }
 
+/** The ref an output pushes, or null when it doesn't push. */
+export function pushedName(output: string): string | null {
+  if (!/(^|,)push=true(,|$)/.test(output)) return null;
+  return /(?:^|,)name=([^,]+)/.exec(output)?.[1] ?? null;
+}
+
 function errorText(err: unknown): string {
   const e = err as { stderr?: unknown; message?: unknown };
   return `${typeof e?.message === "string" ? e.message : String(err)}\n${typeof e?.stderr === "string" ? e.stderr : ""}`;
@@ -111,7 +117,8 @@ export async function bringDirect(
         await opts.build(outputs());
       } catch (err) {
         const pushed = images.filter((_, i) => mode[i] === "registry");
-        const host = pushed.map((p) => p.ref!.split("/")[0]).find((h) => errorText(err).includes(h));
+        const text = errorText(err);
+        const host = pushed.map((p) => p.ref!.split("/")[0]).find((h) => text.includes(h)) ?? (/failed to push|push access denied/i.test(text) ? pushed[0]?.ref!.split("/")[0] : undefined);
         if (attempt > 0 || opts.signal?.aborted || !host) throw err;
         cutOff = CUT_OFF.test(errorText(err));
         log(`[build] Couldn't use the build registry: couldn't push ${pushed[0].ref} from the target: ${pushLine(err, host)}`);
