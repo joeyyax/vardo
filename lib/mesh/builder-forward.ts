@@ -11,7 +11,7 @@ import { isRunningInContainer } from "./env";
 import { assertForwardTarget, meshIpFrom, parseForwardRules, wgExec } from "./console-forward";
 import { MESH_BUILDER_CONTAINER, MESH_BUILDER_PORT } from "./constants";
 import { ownMeshAddress } from "./heartbeat";
-import { MESH_SUBNET } from "./traefik-forward";
+import { MESH_SUBNET } from "./constants";
 
 const log = logger.child("mesh-builder-forward");
 

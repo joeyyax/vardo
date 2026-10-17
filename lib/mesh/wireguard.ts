@@ -1,8 +1,6 @@
 import { HUB_IP } from "./ip-allocator";
 import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
 import { defaultForwardIp, forwardHooks } from "./console-forward";
-import { isRunningInContainer } from "./env";
-import { traefikForwardHooks, traefikForwardWanted, traefikIp } from "./traefik-forward";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
@@ -56,8 +54,7 @@ export function buildWgConfig(
   listenPort: number,
   address: string,
   peers: WgPeer[],
-  forwardIp: string = FRONTEND_MESH_IP,
-  traefikForwardIp: string | null = null
+  forwardIp: string = FRONTEND_MESH_IP
 ): string {
   if (!WG_KEY_RE.test(privateKey)) {
     throw new Error("Invalid WireGuard private key format");
@@ -72,10 +69,6 @@ export function buildWgConfig(
     `PostUp = ${postUp}`,
     `PostDown = ${postDown}`,
   ];
-  if (traefikForwardIp) {
-    const traefik = traefikForwardHooks(traefikForwardIp);
-    lines.push(`PostUp = ${traefik.postUp}`, `PostDown = ${traefik.postDown}`);
-  }
   lines.push("");
 
   for (const peer of peers) {
@@ -91,11 +84,6 @@ export function buildWgConfig(
   }
 
   return lines.join("\n");
-}
-
-/** Traefik's address for a freshly written wg0.conf, or null when it isn't running here or no linked peer may check this instance. */
-async function defaultTraefikForwardIp(): Promise<string | null> {
-  return isRunningInContainer() && (await traefikForwardWanted()) ? traefikIp() : null;
 }
 
 /** Write wg0.conf into the WireGuard container's config volume via stdin. */
@@ -166,7 +154,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   }));
 
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp(), await defaultTraefikForwardIp());
+  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp());
   await writeWgConfig(config);
 
   if (overrideAddress) {
@@ -208,7 +196,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
 
   const { privateKey, publicKey } = await generateKeypair();
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp(), await defaultTraefikForwardIp());
+  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp());
   await writeWgConfig(config);
 
   // The image deletes the default route when it boots without a config, so boot it with one.

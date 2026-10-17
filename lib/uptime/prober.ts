@@ -1,5 +1,4 @@
-// The probing side of a link: fetches a peer's watch list, checks its monitors and delivers signed results. Public monitors are checked over the
-// internet; private ones over the mesh, connecting only to that peer's tunnel address.
+// The probing side of a link: fetches a peer's watch list, checks its public monitors over the internet and delivers signed results.
 
 import { and, asc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { decryptSystem, encryptSystem } from "@/lib/crypto/encrypt";
@@ -31,7 +30,6 @@ import {
   watchEntrySchema,
   watchResponseSchema,
 } from "./link";
-import { tunnelAddress } from "./mesh-path";
 import { probeEntry, type ProbeDeps } from "./probe-entry";
 import { checkDeps } from "./outbound";
 import { localSigningKey } from "./vantage";
@@ -105,7 +103,8 @@ async function fetchWatch(peer: LinkedPeer): Promise<WatchEntry[] | null> {
   const entries: WatchEntry[] = [];
   for (const raw of payload.monitors.slice(0, MAX_WATCH_ENTRIES)) {
     const entry = watchEntrySchema.safeParse(raw);
-    if (entry.success) entries.push(entry.data as WatchEntry);
+    // Mesh entries from an older owner would need the tunnel to reach its sites; they're dropped.
+    if (entry.success && entry.data.path !== "mesh") entries.push(entry.data as WatchEntry);
   }
   return entries;
 }
@@ -165,7 +164,7 @@ function withHeaders<E extends { check: WatchEntry["check"]; headersEncrypted: s
 export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<number> {
   await seedLastProbe();
   const rows = await db
-    .select({ entry: uptimeWatchEntries, internalIp: meshPeers.internalIp })
+    .select({ entry: uptimeWatchEntries })
     .from(uptimeWatchEntries)
     .innerJoin(meshPeers, eq(meshPeers.id, uptimeWatchEntries.peerId))
     .where(eq(meshPeers.uptimeChecksPeer, true));
@@ -180,10 +179,10 @@ export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<
   const identity = await localIdentity();
   const strict = await checkDeps("strict");
   const fresh: { peerId: string; result: CheckResult }[] = [];
-  await pool(due, CONCURRENCY, async ({ entry: e, internalIp }) => {
+  await pool(due, CONCURRENCY, async ({ entry: e }) => {
     lastProbe.set(`${e.peerId}:${e.monitorId}`, now);
     try {
-      const result = await probeEntry(withHeaders(e), { vantageId: identity.id, peerAddress: tunnelAddress(internalIp), strict, deps });
+      const result = await probeEntry(withHeaders(e), { vantageId: identity.id, strict, deps });
       fresh.push({ peerId: e.peerId, result });
     } catch (err) {
       log.warn(`Probe of ${e.monitorId} threw:`, err);
