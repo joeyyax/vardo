@@ -88,12 +88,12 @@ export function BuildTargetsSettings() {
           <ul className="divide-y rounded-md border">
             {data.targets.map((t, i) => (
               <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
                   <p className="text-sm font-medium">{t.name}</p>
                   <p className="truncate font-mono text-xs text-muted-foreground">
                     {t.user}@{t.host}:{t.port} · {t.maxConcurrent} at a time
                   </p>
-                  <p className="truncate font-mono text-xs text-muted-foreground" title={t.hostKey?.join("\n")}>
+                  <p className="[overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:truncate" title={t.hostKey?.join("\n")}>
                     {t.hostKey
                       ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}`
                       : "Host key not pinned yet; Test pins it"}
