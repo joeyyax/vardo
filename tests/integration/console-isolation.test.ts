@@ -21,6 +21,7 @@ try {
 }
 
 const IMAGE = "nginx:1.31.6-alpine";
+const HOOK_TIMEOUT = 180_000;
 const id = randomBytes(3).toString("hex");
 const apps = `vardo-test-1136-apps-${id}`;
 const consoleNet = `vardo-test-1136-console-${id}`;
@@ -79,7 +80,7 @@ describe.skipIf(!hasDocker)("console isolation on Docker", { timeout: 180_000 },
     consoleIpOnApps = ipOn(names.console, apps);
     docker("run", "-d", "--name", names.probe, "--network", consoleNet, IMAGE);
     bridgesIsolated = !reaches(names.app, ipOn(names.probe, consoleNet));
-  });
+  }, HOOK_TIMEOUT);
 
   afterAll(() => {
     for (const name of Object.values(names)) {
@@ -88,7 +89,7 @@ describe.skipIf(!hasDocker)("console isolation on Docker", { timeout: 180_000 },
     for (const net of [apps, consoleNet]) {
       try { docker("network", "rm", net); } catch { /* gone */ }
     }
-  });
+  }, HOOK_TIMEOUT);
 
   it("starts with the app able to reach the console", () => {
     expect(reaches(names.app, names.console)).toBe(true);
