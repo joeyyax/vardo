@@ -21,29 +21,32 @@ import {
   stateLabel,
   ERROR_TEXT,
 } from "@/lib/uptime/format";
-import { RANGE_LABELS } from "@/lib/uptime/core/range";
+import { RANGE_LABELS, formatWhen } from "@/lib/uptime/core/range";
 import type { MonitorDetail as Detail, UptimeRange, VantageView } from "@/lib/uptime/types";
-import { CheckNote, ReviewCard } from "./health-parts";
+import { CheckNote, HeavyNoticeCard, ReviewCard } from "./health-parts";
 import { MonitorActions } from "./monitor-actions";
 import { OutageList } from "./monitor-history";
 import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
 import { BarsCaption, UptimeRangePicker } from "./range-controls";
 import { ResponseChart } from "./response-chart";
+import { UptimeTimeZone } from "./time-zone";
 
 const POLL_MS = 30_000;
 
-const when = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export function MonitorDetail({
   orgId,
   initial,
   vantages,
   canManage,
+  timeZone,
 }: {
   orgId: string;
   initial: Detail;
   vantages: VantageView[];
   canManage: boolean;
+  /** The org's time zone. */
+  timeZone: string;
 }) {
   const router = useRouter();
   const apiBase = `/api/v1/organizations/${orgId}/uptime/monitors`;
@@ -77,6 +80,7 @@ export function MonitorDetail({
   const active = m.maintenance.find((w) => w.start <= now && w.end > now);
 
   return (
+    <UptimeTimeZone value={timeZone}>
     <div className="space-y-6">
       <Link href="/uptime" className="text-sm text-muted-foreground hover:text-foreground">
         ← Uptime
@@ -97,7 +101,7 @@ export function MonitorDetail({
               · {checkLabel(m.check)} · {intervalLabel(m.intervalSec)} · {expectation(m.check)}
             </span>
           </p>
-          <CheckNote monitor={m} />
+          <CheckNote monitor={m} homepageHint={!m.heavy} />
           {(m.appName || reportNote(m.report)) && (
             <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
               {m.appName && (
@@ -120,6 +124,7 @@ export function MonitorDetail({
       </div>
 
       <ReviewCard monitor={m} apiBase={apiBase} canManage={canManage} onAnswered={refresh} />
+      <HeavyNoticeCard monitor={m} apiBase={apiBase} canManage={canManage} onChanged={refresh} />
 
       {m.reading && (
         <Card variant="surface" className="space-y-1 p-5">
@@ -129,17 +134,17 @@ export function MonitorDetail({
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {figureTiles(m.createdAt, now, { h24: m.uptime24h, d30: m.uptime30, d90: m.uptime90d }).map((t) => (
-          <Tile key={t.label} label={t.label} value={t.value} />
+        {figureTiles(m.createdAt, now, { h24: m.uptime24h, d30: m.uptime30, d90: m.uptime90d }, timeZone, m.state === "stopped" ? "Not checked while stopped" : undefined).map((t) => (
+          <Tile key={t.label} label={t.label} value={t.value} pending={t.pending} />
         ))}
-        <Tile label="Response, 24h median" value={formatMs(m.medianLatency24h)} />
+        <Tile label="Response, 24h median" value={m.medianLatency24h === null ? "No responses yet" : formatMs(m.medianLatency24h)} pending={m.medianLatency24h === null} />
       </div>
 
       <Card variant="surface" className="space-y-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="type-h3">Last {RANGE_LABELS[range]}</h2>
-            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(m.rangeUptime, m.since, now)}</p>
+            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(m.rangeUptime, m.since, now, timeZone)}</p>
           </div>
           <UptimeRangePicker value={range} onChange={setRange} />
         </div>
@@ -210,7 +215,7 @@ export function MonitorDetail({
           <ul className="text-sm text-muted-foreground">
             {upcoming.map((w) => (
               <li key={w.start}>
-                Maintenance {when.format(w.start)} to {when.format(w.end)}
+                Maintenance {formatWhen(w.start, timeZone)} to {formatWhen(w.end, timeZone)}
               </li>
             ))}
           </ul>
@@ -225,5 +230,6 @@ export function MonitorDetail({
       </Card>
 
     </div>
+    </UptimeTimeZone>
   );
 }

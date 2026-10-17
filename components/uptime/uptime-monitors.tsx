@@ -10,10 +10,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageToolbar } from "@/components/page-toolbar";
 import { RangePicker } from "@/components/range-picker";
-import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, reportNote, readingLabel, vantageNames } from "@/lib/uptime/format";
+import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalRangePhrase, reportNote, readingLabel, vantageNames } from "@/lib/uptime/format";
 import { sinceLabel } from "@/lib/uptime/core/range";
 import type { MonitorSummary, UptimeRange, VantageView } from "@/lib/uptime/types";
 import { CheckNote } from "./health-parts";
+import { UptimeTimeZone } from "./time-zone";
 import { UptimeRangePicker } from "./range-controls";
 import { DayTicks, StateMark, TargetLink, Tile } from "./parts";
 import { MonitorSheet } from "./monitor-sheet";
@@ -27,11 +28,14 @@ export function UptimeMonitors({
   initialMonitors,
   vantages,
   canManage,
+  timeZone,
 }: {
   orgId: string;
   initialMonitors: MonitorSummary[];
   vantages: VantageView[];
   canManage: boolean;
+  /** The org's time zone. */
+  timeZone: string;
 }) {
   const apiBase = `/api/v1/organizations/${orgId}/uptime/monitors`;
   const [monitors, setMonitors] = useState(initialMonitors);
@@ -84,10 +88,12 @@ export function UptimeMonitors({
     });
   }, [monitors, filter, query]);
 
-  const interval = monitors.reduce((min, m) => Math.min(min, m.intervalSec), 60);
+  const interval = monitors.length ? Math.min(...monitors.map((m) => m.intervalSec)) : 60;
+  const slowest = monitors.length ? Math.max(...monitors.map((m) => m.intervalSec)) : 60;
   const hasExternal = vantages.some((v) => v.kind === "external");
 
   return (
+    <UptimeTimeZone value={timeZone}>
     <div className="space-y-6">
       <PageToolbar
         actions={
@@ -101,7 +107,7 @@ export function UptimeMonitors({
         <div>
           <h1 className="type-h1">Uptime</h1>
           <p className="type-body-sm mt-1 text-muted-foreground">
-            Checked {intervalPhrase(interval)} from {vantageNames(vantages)}.
+            Checked {intervalRangePhrase(interval, slowest)} from {vantageNames(vantages)}.
           </p>
         </div>
       </PageToolbar>
@@ -187,9 +193,9 @@ export function UptimeMonitors({
                   <td className="hidden py-3 pr-3 lg:table-cell">
                     <DayTicks days={m.bars} barMs={m.barMs} range={m.range} />
                   </td>
-                  <td className="py-3 pr-3 text-right tabular-nums" title={m.since !== null ? `Since ${sinceLabel(m.since, now)}` : undefined}>
+                  <td className="py-3 pr-3 text-right tabular-nums" title={m.since !== null ? `Since ${sinceLabel(m.since, now, timeZone)}` : undefined}>
                     {formatPct(m.rangeUptime)}
-                    {m.since !== null && <span className="block text-xs text-muted-foreground">since {sinceLabel(m.since, now)}</span>}
+                    {m.since !== null && <span className="block text-xs text-muted-foreground">since {sinceLabel(m.since, now, timeZone)}</span>}
                   </td>
                   <td className="py-3 pr-3 text-right tabular-nums text-muted-foreground">{formatMs(m.latencyMs)}</td>
                   <td className="hidden py-3 pr-4 text-muted-foreground md:table-cell">
@@ -204,5 +210,6 @@ export function UptimeMonitors({
 
       <MonitorSheet open={adding} onOpenChange={setAdding} apiBase={apiBase} vantages={vantages} onSaved={refresh} />
     </div>
+    </UptimeTimeZone>
   );
 }

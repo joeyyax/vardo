@@ -23,14 +23,16 @@ Every payload has `v: 1`, `kind`, `vantageId` and `issuedAt` (epoch ms). A verif
 | `at` | Epoch ms the check started |
 | `ok`, `latencyMs` | Outcome and duration |
 | `status` | HTTP status, when a response came back |
-| `error` | One of `timeout dns refused reset tls cert-expired cert-expiring status keyword invalid private-address blocked unknown` |
+| `error` | One of `timeout dns refused reset tls cert-expired cert-expiring status keyword no-route invalid private-address blocked unknown` |
 | `certDaysLeft` | Whole days to certificate expiry (TLS checks) |
+| `cache` | The cache that answered an HTTP check instead of the origin: `cloudflare vercel cloudfront fastly proxy cache`. Absent when the origin answered |
+| `bytes` | Body size of an HTTP check: Content-Length when sent, else the bytes read, capped at 64 KiB |
 
-Raw error strings and response bodies never appear. `private-address` marks a check skipped because the host resolved to a private address; `blocked` marks a check the outbound policy refused. Both count as no data.
+Raw error strings and response bodies never appear. `private-address` marks a check skipped because the host resolved to a private address; `blocked` marks a check the outbound policy refused. Both count as no data. `no-route` marks a response carrying `x-vardo-route: none`, which a Vardo console sets only on the page it serves for a host with no route; it counts as failing.
 
 `kind: "hourly"` carries `monitorId` and one `bucket`: `start` (epoch ms, on the hour), `minutesUp`, `minutesDown`, `minutesUnknown`, `uptimePct` (two decimals or null) and `medianLatencyMs` (or null).
 
-`kind: "watch"` carries `monitors`, the checks the signer asks a vantage point to run: `monitorId`, `check`, `intervalSec` and `path` (`public`). Only monitors with a public address appear. Older signers also listed private monitors with `path: "mesh"`, to be checked through their WireGuard tunnel; a vantage point drops those entries and never checks them.
+`kind: "watch"` carries `monitors`, the checks the signer asks a vantage point to run: `monitorId`, `check`, `intervalSec` and `path` (`public`). An HTTP `check` may carry `method` (`GET`, `HEAD` or `POST`, sent without a body); without it the check is a GET. Only monitors with a public address appear. Older signers also listed private monitors with `path: "mesh"`, to be checked through their WireGuard tunnel; a vantage point drops those entries and never checks them.
 
 `kind: "report"` carries `monitors`, the signer's own view of the monitors a watching peer doesn't check: those with no public address, or with request headers the owner keeps to itself. Each entry is:
 
@@ -54,6 +56,8 @@ A watch entry may carry `periodSec` and `offsetMs`. The vantage point runs the c
 ## Paths
 
 `path` was added to version 1 compatibly. A reader treats a result or watch entry without it as `public` on an external vantage point and `local` on the local one. The owner accepts external results on the `public` path only. `mesh` remains readable for results stored before mesh checks were retired.
+
+`method`, `cache`, `bytes` and the `no-route` error were added to version 1 the same way. A reader that doesn't know `method` runs a GET.
 
 ## Reports
 

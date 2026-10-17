@@ -1,21 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { formatWhen } from "@/lib/uptime/core/range";
 import { formatDuration } from "@/lib/uptime/format";
 import type { MonitorDetail, OutageView } from "@/lib/uptime/types";
 import { ResponseChart } from "./response-chart";
+import { useUptimeTimeZone } from "./time-zone";
 
-const when = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Outages from the last 14 days, newest first. */
 export function OutageList({ outages }: { outages: OutageView[] }) {
+  const timeZone = useUptimeTimeZone();
   if (outages.length === 0) return <p className="text-sm text-muted-foreground">No outages in the last 14 days.</p>;
   return (
     <ul className="divide-y">
       {outages.map((o) => (
         <li key={o.start} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
           <span>
-            {when.format(o.start)} · {o.end ? `${formatDuration(o.durationMs)}` : `ongoing for ${formatDuration(o.durationMs)}`}
+            {formatWhen(o.start, timeZone)} · {o.end ? `${formatDuration(o.durationMs)}` : `ongoing for ${formatDuration(o.durationMs)}`}
           </span>
           {o.incidentId && (
             <Link href="/activity" className="text-primary hover:underline">

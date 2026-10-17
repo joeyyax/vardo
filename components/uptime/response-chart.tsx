@@ -5,16 +5,17 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { TooltipFrame, TooltipRow } from "@/components/metrics-chart";
 import { Card } from "@/components/ui/card";
 import { CHART_COLORS, chartTickStyle } from "@/lib/metrics/constants";
+import { formatTime } from "@/lib/uptime/core/range";
 import type { LatencySeries } from "@/lib/uptime/types";
+import { useUptimeTimeZone } from "./time-zone";
 
 const SERIES_COLORS = [CHART_COLORS.cpu, CHART_COLORS.memory, CHART_COLORS.networkRx, CHART_COLORS.networkTx];
-
-const hhmm = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
 type Row = { at: number } & Record<string, number>;
 
 /** Response time over the last 24 hours, one line per vantage point. */
 export function ResponseChart({ series, height = 220 }: { series: LatencySeries[]; height?: number }) {
+  const timeZone = useUptimeTimeZone();
   const data = useMemo(() => {
     const rows = new Map<number, Row>();
     for (const s of series) {
@@ -48,12 +49,12 @@ export function ResponseChart({ series, height = 220 }: { series: LatencySeries[
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-          <XAxis dataKey="at" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={(v: number) => hhmm.format(v)} tick={chartTickStyle} />
+          <XAxis dataKey="at" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={(v: number) => formatTime(v, timeZone)} tick={chartTickStyle} />
           <YAxis width={56} tickFormatter={(v: number) => `${v} ms`} tick={chartTickStyle} />
           <Tooltip
             content={({ active, payload, label }) =>
               active && payload?.length ? (
-                <TooltipFrame label={hhmm.format(Number(label))}>
+                <TooltipFrame label={formatTime(Number(label), timeZone)}>
                   {payload.map((p) => (
                     <TooltipRow
                       key={String(p.dataKey)}

@@ -39,7 +39,8 @@ export async function safeFetch(
     const response = await pinnedFetch(url, { ...init, method, body, headers, redirect: "manual", allowPrivate, resolve: policy?.resolve });
 
     const location = response.headers.get("location");
-    if (response.status < 300 || response.status > 399 || !location) {
+    // A caller asking for manual redirects gets the 3xx back to follow itself.
+    if (response.status < 300 || response.status > 399 || !location || init.redirect === "manual") {
       // The address the last hop asked for, so callers can see where redirects ended.
       if (!response.url) Object.defineProperty(response, "url", { value: url.toString() });
       return response;

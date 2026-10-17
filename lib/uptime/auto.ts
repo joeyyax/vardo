@@ -1,7 +1,7 @@
 // What an automatic monitor runs with: the detected path, the operator's answer and their edits, over the address the domain gives it.
 
-import type { UptimeMonitorRow, uptimeMonitors } from "@/lib/db/schema";
-import { AUTO_EXPECTED_STATUS, DEFAULT_HTTP_TIMEOUT_MS, type AutoOverrides, type HttpCheck, type ReviewAnswer } from "./core";
+import { apps, type UptimeMonitorRow, type uptimeMonitors } from "@/lib/db/schema";
+import { AUTO_EXPECTED_STATUS, DEFAULT_HTTP_TIMEOUT_MS, DEFAULT_INTERVAL, HOMEPAGE_INTERVAL, type AutoOverrides, type HttpCheck, type IntervalSec, type ReviewAnswer } from "./core";
 import { UptimeInputError } from "./errors";
 import type { UpdateMonitorInput } from "./types";
 
@@ -9,19 +9,58 @@ import type { UpdateMonitorInput } from "./types";
 export function expectedStatusFor(row: { reviewAnswer: ReviewAnswer | null; overrides?: AutoOverrides | null }): { min: number; max: number } {
   if (row.overrides?.expectedStatus) return { ...row.overrides.expectedStatus };
   const answer = row.reviewAnswer;
-  return answer?.kind === "status" ? { min: answer.status, max: answer.status } : { ...AUTO_EXPECTED_STATUS };
+  const status = answer?.kind === "status" || answer?.kind === "path" ? answer.status : undefined;
+  return status !== undefined ? { min: status, max: status } : { ...AUTO_EXPECTED_STATUS };
+}
+
+/** What decides whether an app is meant to be down. */
+export type AppRunState = { status: string | null; parked: boolean | null; lastRunningAt: Date | null; exitReason?: { signal?: string } | null };
+
+/**
+ * An app someone stopped or never started: its monitors aren't checked, don't alert and show as stopped.
+ * Reads status-reconcile's verdict: a non-zero exit or OOM kill is "error", a stop signal is "stopped". `parked` is set by Vardo's stop action.
+ * A crash (error, or a SIGSEGV stop) and a container that vanished after running stay outages unless the operator stopped the app.
+ */
+export function appNotRunning(app: AppRunState | null | undefined): boolean {
+  if (!app?.status) return false;
+  // Stop sets parked before the containers go; start and deploy clear it.
+  if (app.parked && app.status !== "deploying") return true;
+  if (app.status === "stopped") return app.exitReason?.signal !== "SIGSEGV";
+  return app.status === "missing" && !app.lastRunningAt;
+}
+
+/** The app columns `appNotRunning` reads, for a select. */
+export const runStateColumns = { status: apps.status, parked: apps.parked, lastRunningAt: apps.lastRunningAt, exitReason: apps.exitReason };
+
+/** How often an automatic monitor runs: the operator's edit, else less often when it checks the homepage. */
+export function autoIntervalFor(row: { healthSource: string | null; overrides?: AutoOverrides | null }): IntervalSec {
+  return row.overrides?.intervalSec ?? (row.healthSource === "homepage" ? HOMEPAGE_INTERVAL : DEFAULT_INTERVAL);
 }
 
 /** The check an automatic monitor should run for a base address: detected or pinned path, with the operator's edits applied. */
 export function autoCheckFor(row: Pick<UptimeMonitorRow, "healthPath" | "reviewAnswer" | "overrides">, base: string): HttpCheck {
   const ov = row.overrides ?? {};
+  const answer = row.reviewAnswer;
+  const method = answer?.kind === "status" || answer?.kind === "path" ? answer.method : undefined;
   return {
     type: "http",
     url: base + (ov.path ?? row.healthPath ?? ""),
+    ...(method && method !== "GET" ? { method } : {}),
     expectedStatus: expectedStatusFor(row),
     timeoutMs: ov.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS,
     ...(ov.keyword ? { keyword: ov.keyword } : {}),
   };
+}
+
+/** The check with the fields an automatic monitor derives replaced, keeping anything else it carries. */
+export function withAutoFields(prev: HttpCheck, next: HttpCheck): HttpCheck {
+  const { method: _method, keyword: _keyword, ...rest } = prev;
+  return { ...rest, url: next.url, expectedStatus: next.expectedStatus, timeoutMs: next.timeoutMs, ...(next.method ? { method: next.method } : {}), ...(next.keyword ? { keyword: next.keyword } : {}) };
+}
+
+/** True when two checks run the same request with the same expectations. */
+export function sameAutoFields(a: HttpCheck, b: HttpCheck): boolean {
+  return a.url === b.url && (a.method ?? "GET") === (b.method ?? "GET") && a.expectedStatus.min === b.expectedStatus.min && a.expectedStatus.max === b.expectedStatus.max && a.timeoutMs === b.timeoutMs && a.keyword === b.keyword;
 }
 
 /** The monitor's URL without its health path. */
@@ -49,14 +88,15 @@ export function autoEdit(row: UptimeMonitorRow, patch: UpdateMonitorInput & { re
     if (k in patch) throw new UptimeInputError("An automatic monitor's address follows its domain. Change the path instead.");
   }
   if (patch.resetOverrides) {
+    const healthSource = row.overrides?.path !== undefined ? null : row.healthSource;
     return {
       overrides: null,
       reviewAnswer: null,
       ...(row.reviewAnswer?.kind === "skip" ? { enabled: true } : {}),
-      intervalSec: 60,
+      intervalSec: autoIntervalFor({ healthSource }),
       healthDueAt: null,
       healthPath: row.overrides?.path !== undefined ? null : row.healthPath,
-      healthSource: row.overrides?.path !== undefined ? null : row.healthSource,
+      healthSource,
       reviewStatus: null,
       reviewReason: null,
     };
@@ -90,10 +130,8 @@ export function autoEdit(row: UptimeMonitorRow, patch: UpdateMonitorInput & { re
     else delete ov.keyword;
   }
   if (patch.timeoutMs !== undefined) ov.timeoutMs = patch.timeoutMs;
-  if (patch.intervalSec !== undefined) {
-    ov.intervalSec = patch.intervalSec;
-    set.intervalSec = patch.intervalSec;
-  }
+  if (patch.intervalSec !== undefined) ov.intervalSec = patch.intervalSec;
   set.overrides = Object.keys(ov).length > 0 ? ov : null;
+  set.intervalSec = autoIntervalFor({ healthSource: set.healthSource === undefined ? row.healthSource : set.healthSource, overrides: set.overrides });
   return set;
 }

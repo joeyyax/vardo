@@ -10,16 +10,23 @@ import {
   DAY_MS,
   HASH_BODY_BYTES,
   HEALTH_PATHS,
+  HTTP_METHODS,
+  cacheOf,
   hashBody,
+  imageHealthPaths,
+  isNoRoute,
   judgeHomepage,
   parseHealthcheckPath,
   qualifiesAsHealth,
+  qualifiesAsImageHealth,
   type HealthSource,
   type HttpCheck,
+  type HttpMethod,
+  type ImageHealthPath,
   type ReviewAnswer,
   type Sample,
 } from "./core";
-import { baseUrlOf, expectedStatusFor } from "./auto";
+import { appNotRunning, autoCheckFor, autoIntervalFor, baseUrlOf, runStateColumns, withAutoFields } from "./auto";
 import { UptimeInputError } from "./errors";
 import { checkDeps, levelOf, targetRefusal, type PolicyLevel } from "./outbound";
 import { applyHeaderPatch, openHeaders, type HeaderPatch } from "./secrets";
@@ -53,15 +60,33 @@ export async function spaced(gapMs = probeSpacing.gapMs, sleep: (ms: number) => 
 
 type Fetched = { sample: Sample; finalPath: string };
 
-async function fetchSample(doFetch: typeof fetch, url: string, headers: Record<string, string>): Promise<Fetched | null> {
+/** Redirects a probe follows, on its own host only. */
+const MAX_PROBE_REDIRECTS = 5;
+
+/**
+ * One request and what it answered. A probe follows redirects on the same host only, such as `/healthz` to a basePath's `/docs/healthz`;
+ * a redirect to another host is the answer. The homepage follows any, as its check does.
+ */
+async function fetchSample(doFetch: typeof fetch, url: string, headers: Record<string, string>, method: HttpMethod = "GET", sameHostOnly = false): Promise<Fetched | null> {
   await spaced();
   try {
-    const res = await doFetch(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      headers: { ...headers, "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
-    });
+    let current = new URL(url);
+    let res!: Response;
+    for (let hop = 0; ; hop++) {
+      res = await doFetch(current.toString(), {
+        method,
+        redirect: sameHostOnly ? "manual" : "follow",
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        headers: { ...headers, "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
+      });
+      const location = sameHostOnly && res.status >= 300 && res.status <= 399 ? res.headers.get("location") : null;
+      if (!location || hop >= MAX_PROBE_REDIRECTS) break;
+      const next = new URL(location, current);
+      if (next.host !== current.host || next.protocol !== current.protocol) break;
+      await res.body?.cancel().catch(() => {});
+      current = next;
+    }
+    url = current.toString();
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     const reader = res.body?.getReader();
@@ -79,39 +104,78 @@ async function fetchSample(doFetch: typeof fetch, url: string, headers: Record<s
     } catch {
       // keep the requested path
     }
-    return { sample: { status: res.status, contentType: res.headers.get("content-type") ?? "", bytes: body.byteLength, hash: hashBody(body) }, finalPath };
+    const sample: Sample = { status: res.status, contentType: res.headers.get("content-type") ?? "", bytes: body.byteLength, hash: hashBody(body), noRoute: isNoRoute(res.headers), cache: cacheOf(res.headers) };
+    return { sample, finalPath };
   } catch {
     return null;
   }
 }
 
 export type Detection =
+  /** No answer, a 5xx with no health path, or Vardo's catch-all: try again later. */
   | { outcome: "unreachable" }
   | { outcome: "decided"; path: string | null; source: HealthSource; review: { status: number; reason: "status" | "login" } | null };
 
 const join = (base: string, path: string) => base.replace(/\/+$/, "") + path;
 
+type Candidate = { path: string; source: HealthSource; status?: number[] };
+
 /**
- * Looks for a health endpoint under `base` (an origin plus any path prefix): the app's own healthcheck path first, then the usual names.
- * Falls back to the homepage, and says when the homepage answers below 500 but not 2xx.
+ * Looks for a health endpoint under `base` (an origin plus any path prefix): the app's own healthcheck path, then known paths for its images,
+ * then the usual names. One answered by the origin beats one answered by a cache. Falls back to the homepage, and says when it answers below 500 but not 2xx.
  */
-export async function detectHealth(input: { base: string; healthcheckPath?: string | null; headers?: Record<string, string>; fetch: typeof fetch }): Promise<Detection> {
+export async function detectHealth(input: { base: string; healthcheckPath?: string | null; imagePaths?: ImageHealthPath[]; headers?: Record<string, string>; fetch: typeof fetch }): Promise<Detection> {
   const headers = input.headers ?? {};
   const home = await fetchSample(input.fetch, input.base, headers);
-  if (!home) return { outcome: "unreachable" };
+  // Vardo's catch-all answers every path of a host with no route, so nothing past the homepage is worth asking.
+  if (!home || home.sample.noRoute) return { outcome: "unreachable" };
   const verdict = judgeHomepage(home.sample.status, home.finalPath, new URL(input.base).pathname);
 
   // A broken homepage says nothing about the app; a health path might still answer.
-  const candidates: { path: string; source: HealthSource }[] = [];
-  if (input.healthcheckPath) candidates.push({ path: input.healthcheckPath, source: "healthcheck" });
-  for (const path of HEALTH_PATHS) if (path !== input.healthcheckPath) candidates.push({ path, source: "probe" });
+  const candidates: Candidate[] = [];
+  const add = (c: Candidate) => {
+    if (!candidates.some((x) => x.path === c.path)) candidates.push(c);
+  };
+  if (input.healthcheckPath) add({ path: input.healthcheckPath, source: "healthcheck" });
+  for (const p of input.imagePaths ?? []) add({ path: p.path, source: "image", status: p.status });
+  for (const path of HEALTH_PATHS) add({ path, source: "probe" });
 
-  for (const { path, source } of candidates) {
-    const probe = await fetchSample(input.fetch, join(input.base, path), headers);
-    if (probe && qualifiesAsHealth(probe.sample, home.sample)) return { outcome: "decided", path, source, review: null };
+  // A same-host redirect is followed once here, and the check goes straight to where it ends when that's under the base.
+  const basePath = new URL(input.base).pathname.replace(/\/+$/, "");
+  const landed = (requested: string, finalPath: string) => (finalPath !== join(basePath, requested) && finalPath.startsWith(basePath + "/") ? finalPath.slice(basePath.length) : requested);
+
+  let cached: Candidate | null = null;
+  for (const c of candidates) {
+    const probe = await fetchSample(input.fetch, join(input.base, c.path), headers, "GET", true);
+    if (!probe) continue;
+    const ok = c.status ? qualifiesAsImageHealth(probe.sample, home.sample, c.status) : qualifiesAsHealth(probe.sample, home.sample);
+    if (!ok) continue;
+    const found = { ...c, path: landed(c.path, probe.finalPath) };
+    if (!probe.sample.cache) return { outcome: "decided", path: found.path, source: found.source, review: null };
+    cached ??= found;
   }
+  if (cached) return { outcome: "decided", path: cached.path, source: cached.source, review: null };
   if (verdict.kind === "unreachable") return { outcome: "unreachable" };
   return { outcome: "decided", path: null, source: "homepage", review: verdict.kind === "review" ? { status: verdict.status, reason: verdict.reason } : null };
+}
+
+/** The images of the services a domain routes to: the app's own image, or its compose services'. */
+export async function imagesFor(appId: string, serviceName: string | null): Promise<string[]> {
+  const app = await db.query.apps.findFirst({ where: eq(apps.id, appId), columns: { imageName: true, composeContent: true, parentAppId: true, composeService: true } });
+  if (!app) return [];
+  const out = app.imageName ? [app.imageName] : [];
+  let content = app.composeContent;
+  if (!content && app.parentAppId) content = (await db.query.apps.findFirst({ where: eq(apps.id, app.parentAppId), columns: { composeContent: true } }))?.composeContent ?? null;
+  if (!content) return out;
+  try {
+    const services = parseCompose(content).services ?? {};
+    const wanted = app.composeService ?? serviceName;
+    const names = wanted && services[wanted] ? [wanted] : Object.keys(services);
+    for (const name of names) if (services[name]?.image) out.push(services[name].image!);
+  } catch {
+    // An unreadable compose file names no images.
+  }
+  return out;
 }
 
 /** The path the app's compose healthcheck requests from the container, for the service this domain routes to. */
@@ -151,6 +215,7 @@ async function applyDetection(row: UptimeMonitorRow, detection: Detection, now: 
       check,
       healthPath: detection.path,
       healthSource: detection.source,
+      intervalSec: autoIntervalFor({ healthSource: detection.source, overrides: row.overrides }),
       healthDueAt: new Date(now + DAY_MS),
       // An edited expected status already says what counts as up.
       reviewStatus: row.overrides?.expectedStatus ? null : (detection.review?.status ?? null),
@@ -175,7 +240,7 @@ let detecting = false;
 
 async function detectDue(now: number, deps?: { fetch?: typeof fetch }): Promise<number> {
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status, serviceName: domains.serviceName })
+    .select({ monitor: uptimeMonitors, app: runStateColumns, serviceName: domains.serviceName })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .leftJoin(domains, eq(domains.id, uptimeMonitors.domainId))
@@ -189,7 +254,7 @@ async function detectDue(now: number, deps?: { fetch?: typeof fetch }): Promise<
         or(isNull(uptimeMonitors.healthDueAt), lte(uptimeMonitors.healthDueAt, new Date(now))),
       ),
     );
-  const due = rows.filter((r) => (r.monitor.domainId || r.monitor.environmentId) && r.appStatus !== "stopped");
+  const due = rows.filter((r) => (r.monitor.domainId || r.monitor.environmentId) && !appNotRunning(r.app));
   if (due.length === 0) return 0;
 
   const started = Date.now();
@@ -203,7 +268,8 @@ async function detectDue(now: number, deps?: { fetch?: typeof fetch }): Promise<
       const level = levelOf(monitor);
       const doFetch = deps?.fetch ?? (checks[level] ??= (await checkDeps(level)).fetch);
       const healthcheckPath = monitor.appId ? await healthcheckPathFor(monitor.appId, serviceName) : null;
-      const detection = await detectHealth({ base, healthcheckPath, headers: openHeaders(monitor.headersEncrypted, monitor), fetch: doFetch });
+      const imagePaths = monitor.appId ? imageHealthPaths(await imagesFor(monitor.appId, serviceName)) : [];
+      const detection = await detectHealth({ base, healthcheckPath, imagePaths, headers: openHeaders(monitor.headersEncrypted, monitor), fetch: doFetch });
       await applyDetection(monitor, detection, now);
       if (detection.outcome === "decided") decided++;
     } catch (err) {
@@ -212,6 +278,24 @@ async function detectDue(now: number, deps?: { fetch?: typeof fetch }): Promise<
     }
   }
   return decided;
+}
+
+/** A lighter path than the one a monitor checks: the app's container healthcheck, else the path detection found for its domain. */
+export async function lighterPathFor(row: UptimeMonitorRow): Promise<{ path: string; source: "healthcheck" | "detected" } | null> {
+  if (row.check.type !== "http" || !row.appId) return null;
+  let current: string;
+  try {
+    current = new URL(row.check.url).pathname;
+  } catch {
+    return null;
+  }
+  const domainId = row.domainId ?? row.linkDomainId;
+  const domain = domainId ? await db.query.domains.findFirst({ where: eq(domains.id, domainId), columns: { serviceName: true } }) : null;
+  const fromHealthcheck = await healthcheckPathFor(row.appId, domain?.serviceName ?? null);
+  if (fromHealthcheck && fromHealthcheck !== current) return { path: fromHealthcheck, source: "healthcheck" };
+  if (row.source === "auto" || !row.linkDomainId) return null;
+  const auto = await db.query.uptimeMonitors.findFirst({ where: and(eq(uptimeMonitors.domainId, row.linkDomainId), eq(uptimeMonitors.source, "auto")), columns: { healthPath: true } });
+  return auto?.healthPath && auto.healthPath !== current ? { path: auto.healthPath, source: "detected" } : null;
 }
 
 /** Runs detection for the app's automatic monitors on the next pass, such as after a deploy. */
@@ -244,11 +328,11 @@ export async function detectForUrl(scope: Scope, rawUrl: string, headers?: Recor
 /** Monitors of the org waiting on an answer, for Attention. */
 export async function listReviews(orgId: string): Promise<ReviewItem[]> {
   const rows = await db
-    .select({ id: uptimeMonitors.id, name: uptimeMonitors.name, status: uptimeMonitors.reviewStatus, reason: uptimeMonitors.reviewReason, appName: apps.name })
+    .select({ id: uptimeMonitors.id, name: uptimeMonitors.name, status: uptimeMonitors.reviewStatus, reason: uptimeMonitors.reviewReason, appName: apps.name, app: runStateColumns })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .where(and(eq(uptimeMonitors.organizationId, orgId), eq(uptimeMonitors.enabled, true), isNotNull(uptimeMonitors.reviewStatus), isNull(uptimeMonitors.reviewAnswer)));
-  return rows.map((r) => ({ monitorId: r.id, name: r.name, appName: r.appName, status: r.status!, reason: r.reason === "login" ? "login" : "status" }));
+  return rows.filter((r) => !appNotRunning(r.app)).map((r) => ({ monitorId: r.id, name: r.name, appName: r.appName, status: r.status!, reason: r.reason === "login" ? "login" : "status" }));
 }
 
 type Offer = { service: string; port: number; path: string };
@@ -311,35 +395,50 @@ export async function adoptContainerHealthcheck(orgId: string, appId: string): P
 }
 
 export type ReviewInput =
-  | { kind: "status"; status: number }
+  | { kind: "status"; status: number; method?: HttpMethod }
   | ({ kind: "headers"; shareHeaders?: boolean } & HeaderPatch)
-  | { kind: "path"; path: string }
+  | { kind: "path"; path: string; method?: HttpMethod; status?: number }
   | { kind: "skip" };
 
 const SAFE_PATH = /^\/[A-Za-z0-9._~/%-]{0,199}$/;
+
+const validStatus = (status: number) => Number.isInteger(status) && status >= 100 && status <= 499;
+
+function methodOf(method: string | undefined): HttpMethod | undefined {
+  if (method === undefined || method === "GET") return undefined;
+  if (!(HTTP_METHODS as readonly string[]).includes(method)) throw new UptimeInputError("Use GET, HEAD or POST.");
+  return method as HttpMethod;
+}
 
 /** Stores the operator's answer to the review question. Answers survive detection and auto-sync. */
 export async function answerReview(scope: Scope, id: string, input: ReviewInput, deps?: { fetch?: typeof fetch }): Promise<boolean> {
   const row = await ownedRow(scope, id);
   if (!row || row.source !== "auto" || row.check.type !== "http") return false;
   const clear = { reviewStatus: null, reviewReason: null, updatedAt: new Date() };
+  const base = baseUrlOf(row)!;
 
   if (input.kind === "status") {
-    if (!Number.isInteger(input.status) || input.status < 100 || input.status > 499) throw new UptimeInputError("Enter a status from 100 to 499.");
-    const answer: ReviewAnswer = { kind: "status", status: input.status };
-    await db.update(uptimeMonitors).set({ ...clear, reviewAnswer: answer, check: { ...row.check, expectedStatus: expectedStatusFor({ reviewAnswer: answer }) } }).where(eq(uptimeMonitors.id, id));
+    if (!validStatus(input.status)) throw new UptimeInputError("Enter a status from 100 to 499.");
+    const method = methodOf(input.method);
+    const answer: ReviewAnswer = { kind: "status", status: input.status, ...(method ? { method } : {}) };
+    const check = withAutoFields(row.check, autoCheckFor({ healthPath: row.healthPath, reviewAnswer: answer, overrides: row.overrides }, base));
+    await db.update(uptimeMonitors).set({ ...clear, reviewAnswer: answer, check }).where(eq(uptimeMonitors.id, id));
   } else if (input.kind === "skip") {
     await db.update(uptimeMonitors).set({ ...clear, reviewAnswer: { kind: "skip" }, enabled: false }).where(eq(uptimeMonitors.id, id));
   } else if (input.kind === "path") {
     if (!SAFE_PATH.test(input.path)) throw new UptimeInputError("Enter a path that starts with /.");
-    const base = baseUrlOf(row)!;
+    if (input.status !== undefined && !validStatus(input.status)) throw new UptimeInputError("Enter a status from 100 to 499.");
+    const method = methodOf(input.method);
     const level = levelOf(row);
-    const probe = await fetchSample(deps?.fetch ?? (await checkDeps(level)).fetch, join(base, input.path), openHeaders(row.headersEncrypted, row));
-    if (!probe || probe.sample.status < 200 || probe.sample.status > 299) throw new UptimeInputError(`${input.path} didn't answer 2xx. Run Detect or try another path.`);
-    const answer: ReviewAnswer = { kind: "path", path: input.path };
+    const probe = await fetchSample(deps?.fetch ?? (await checkDeps(level)).fetch, join(base, input.path), openHeaders(row.headersEncrypted, row), method, true);
+    const want = input.status;
+    const answered = probe && !probe.sample.noRoute && (want !== undefined ? probe.sample.status === want : probe.sample.status >= 200 && probe.sample.status <= 299);
+    if (!answered) throw new UptimeInputError(`${method ?? "GET"} ${input.path} didn't answer ${want ?? "2xx"}. Run Detect or try another path.`);
+    const answer: ReviewAnswer = { kind: "path", path: input.path, ...(method ? { method } : {}), ...(want !== undefined ? { status: want } : {}) };
+    const check = withAutoFields(row.check, autoCheckFor({ healthPath: input.path, reviewAnswer: answer, overrides: row.overrides }, base));
     await db
       .update(uptimeMonitors)
-      .set({ ...clear, reviewAnswer: answer, healthPath: input.path, healthSource: "probe", healthDueAt: null, check: { ...row.check, url: join(base, input.path), expectedStatus: { ...AUTO_EXPECTED_STATUS } } })
+      .set({ ...clear, reviewAnswer: answer, healthPath: input.path, healthSource: "probe", intervalSec: autoIntervalFor({ healthSource: "probe", overrides: row.overrides }), healthDueAt: null, check })
       .where(eq(uptimeMonitors.id, id));
   } else {
     const { sealed, names } = applyHeaderPatch(row.headersEncrypted, row, input);

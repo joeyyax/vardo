@@ -3,7 +3,7 @@
 import { and, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import { alertHistory, appRecaps, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains, projects } from "@/lib/db/schema";
+import { activities, alertHistory, appRecaps, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains, projects } from "@/lib/db/schema";
 import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
 import { ALERTS, isAlertType } from "@/lib/notifications/registry";
 import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
@@ -105,6 +105,30 @@ export function staleByApp(rows: { appId: string | null; appName: string }[]): N
     byApp.set(key, entry);
   }
   return [...byApp.values()].sort((a, b) => b.volumes - a.volumes);
+}
+
+/** How far back a start looks for the stop before it. */
+export const LIFECYCLE_LOOKBACK_MS = 365 * DAY_MS;
+
+type LifecycleRow = { appId: string; action: string; at: Date };
+
+/** Each app's last start or stop in the window, oldest first. A start says how long the app was stopped before it. */
+export function lifecycleChanges(rows: LifecycleRow[], window: Pick<DigestWindow, "since" | "until">): { appId: string; kind: "started" | "stopped"; at: string; stoppedMs: number | null }[] {
+  const byApp = new Map<string, LifecycleRow[]>();
+  for (const r of [...rows].sort((a, b) => a.at.getTime() - b.at.getTime())) byApp.set(r.appId, [...(byApp.get(r.appId) ?? []), r]);
+  const out: { appId: string; kind: "started" | "stopped"; at: string; stoppedMs: number | null }[] = [];
+  for (const [appId, list] of byApp) {
+    const inside = list.filter((r) => r.at >= window.since && r.at < window.until);
+    const last = inside.at(-1);
+    if (!last) continue;
+    if (last.action === "app.stopped") {
+      out.push({ appId, kind: "stopped", at: last.at.toISOString(), stoppedMs: null });
+      continue;
+    }
+    const before = list.slice(0, list.indexOf(last)).at(-1);
+    out.push({ appId, kind: "started", at: last.at.toISOString(), stoppedMs: before?.action === "app.stopped" ? last.at.getTime() - before.at.getTime() : null });
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 type SeenItem = { kind: "port" | "process"; item: string; state: string; first: number };
@@ -388,6 +412,26 @@ export async function collectDigestData(
     .sort((a, b) => a.deployedAt.getTime() - b.deployedAt.getTime())
     .map((r) => ({ appId: r.appId, appName: label(appById.get(r.appId)!), deployedAt: r.deployedAt.toISOString(), monthRecapAt: r.dueAt >= now ? r.dueAt.toISOString() : null }));
 
+  const lifecycleRows = appIds.length
+    ? await db
+        .select({ appId: activities.appId, action: activities.action, at: activities.createdAt })
+        .from(activities)
+        .where(
+          and(
+            eq(activities.organizationId, orgId),
+            inArray(activities.appId, appIds),
+            inArray(activities.action, ["app.started", "app.stopped"]),
+            gte(activities.createdAt, new Date(window.since.getTime() - LIFECYCLE_LOOKBACK_MS)),
+            lt(activities.createdAt, window.until),
+          ),
+        )
+        .catch(() => [])
+    : [];
+  const lifecycle = lifecycleChanges(lifecycleRows.filter((r): r is LifecycleRow => !!r.appId), window).flatMap((c) => {
+    const app = appById.get(c.appId);
+    return app && !app.isSystemManaged ? [{ ...c, appName: label(app) }] : [];
+  });
+
   const changes = await seenChanges(
     topLevel.map((a) => ({ id: a.id, name: label(a), firstDeployAt: firstDeploy.get(a.id)?.deployedAt ?? null })),
     window,
@@ -433,6 +477,7 @@ export async function collectDigestData(
     alerts: { fired: fired.length, resolved: resolvedCount[0]?.n ?? 0, open: openCount[0]?.n ?? 0, top: topAlerts(fired) },
     resources,
     newApps,
+    lifecycle,
     changes,
     certs,
     ...updates,

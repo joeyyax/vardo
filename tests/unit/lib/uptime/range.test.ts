@@ -92,9 +92,18 @@ describe("figureTiles and rangeSlots", () => {
   it("collapses the tiles a young history doesn't fill into one 'Since' tile", async () => {
     const { figureTiles } = await import("@/lib/uptime/format");
     const v = { h24: 100, d30: 99.5, d90: 99.5 };
-    expect(figureTiles(NOW - 3 * HOUR_MS, NOW, v)).toEqual([{ label: expect.stringMatching(/^Since Oct 17/), value: "100.00%" }]);
-    expect(figureTiles(NOW - 7 * DAY_MS, NOW, v).map((t) => t.label)).toEqual(["24 hours", expect.stringMatching(/^Since Oct 10/)]);
-    expect(figureTiles(NOW - 200 * DAY_MS, NOW, v).map((t) => t.label)).toEqual(["24 hours", "30 days", "90 days"]);
+    expect(figureTiles(NOW - 3 * HOUR_MS, NOW, v)).toEqual([{ label: expect.stringMatching(/^Uptime since Oct 17/), value: "100.00%", pending: false }]);
+    expect(figureTiles(NOW - 7 * DAY_MS, NOW, v).map((t) => t.label)).toEqual(["Uptime, 24 hours", expect.stringMatching(/^Uptime since Oct 10/)]);
+    expect(figureTiles(NOW - 200 * DAY_MS, NOW, v).map((t) => t.label)).toEqual(["Uptime, 24 hours", "Uptime, 30 days", "Uptime, 90 days"]);
+  });
+
+  it("names the figure in the org's zone and says what an empty one waits for", async () => {
+    const { figureTiles, FIGURE_PENDING } = await import("@/lib/uptime/format");
+    const created = NOW - 3 * HOUR_MS;
+    const [tile] = figureTiles(created, NOW, { h24: null, d30: null, d90: null }, "America/Los_Angeles");
+    const local = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }).format(created);
+    expect(tile).toEqual({ label: expect.stringContaining(local), value: FIGURE_PENDING, pending: true });
+    expect(tile.label).toMatch(/^Uptime since /);
   });
 
   it("gives each range its full bar count", async () => {
@@ -106,13 +115,15 @@ describe("figureTiles and rangeSlots", () => {
 describe("since wording", () => {
   it("names the time for a history under two days and the date beyond", () => {
     const created = Date.UTC(2026, 9, 16, 22, 14);
-    expect(sinceLabel(created, Date.UTC(2026, 9, 17, 3, 0))).toBe("Oct 16, 22:14");
+    expect(sinceLabel(created, Date.UTC(2026, 9, 17, 3, 0))).toBe("Oct 16, 10:14 PM");
+    expect(sinceLabel(created, Date.UTC(2026, 9, 17, 3, 0), "America/Los_Angeles")).toBe("Oct 16, 3:14 PM");
+    expect(sinceLabel(created, Date.UTC(2026, 9, 22, 3, 0), "Asia/Tokyo")).toBe("Oct 17");
     expect(sinceLabel(created, Date.UTC(2026, 9, 22, 3, 0))).toBe("Oct 16");
   });
 
   it("claims the range only when the history covers it", () => {
     const created = Date.UTC(2026, 9, 16, 22, 14);
-    expect(coverage(30 * DAY_MS, created, NOW, "30 days")).toEqual({ label: "since Oct 16, 22:14", since: true });
+    expect(coverage(30 * DAY_MS, created, NOW, "30 days")).toEqual({ label: "since Oct 16, 10:14 PM", since: true });
     expect(coverage(30 * DAY_MS, NOW - 60 * DAY_MS, NOW, "30 days")).toEqual({ label: "30 days", since: false });
     expect(coverage(30 * DAY_MS, null, NOW, "30 days")).toEqual({ label: "30 days", since: false });
   });

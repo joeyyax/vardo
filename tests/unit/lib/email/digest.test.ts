@@ -30,6 +30,19 @@ describe("digest email", () => {
     expect(html).toContain('href="https://vardo.example.com/projects/proj_wizarr"');
   });
 
+  it("says which apps were started and stopped, and how long a started one was off", async () => {
+    const event: DigestHealthEvent = {
+      ...monthly,
+      lifecycle: [
+        { appId: "app_jellyfin", appName: "jellyfin", kind: "stopped", at: "2026-10-15T18:00:00Z", stoppedMs: null },
+        { appId: "app_lonvr", appName: "lonvr", kind: "started", at: "2026-10-17T18:00:00Z", stoppedMs: 44 * 86_400_000 },
+      ],
+    };
+    const { text } = (await renderNotificationEmail(event, ctx))!;
+    expect(text).toContain("jellyfin: Stopped Oct 15");
+    expect(text).toContain("lonvr: Started Oct 17 after 44 days stopped");
+  });
+
   it("shows new apps and what deploys changed", async () => {
     const { text } = (await renderNotificationEmail(monthly, ctx))!;
     expect(text).toContain("scrypted: Deployed Oct 11 · 30-day recap on Nov 10");

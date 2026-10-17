@@ -2,6 +2,7 @@
 
 import { RangePicker } from "@/components/range-picker";
 import { RANGE_LABELS, UPTIME_RANGES, rangeSlots, sinceLabel, type UptimeRange } from "@/lib/uptime/core/range";
+import { useUptimeTimeZone } from "./time-zone";
 
 const OPTIONS = UPTIME_RANGES.map((value) => ({ value, label: value }));
 
@@ -12,11 +13,12 @@ export function UptimeRangePicker({ value, onChange }: { value: UptimeRange; onC
 
 /** Under the bars: where they start, and "Now" at the end. A young monitor's bars start at its history. */
 export function BarsCaption({ range, since, now, bars }: { range: UptimeRange; since: number | null; now: number; bars?: number }) {
+  const timeZone = useUptimeTimeZone();
   // The "Since" label sits at the left end of the drawn bars.
-  const indent = since !== null && bars ? `${(1 - bars / rangeSlots(range)) * 100}%` : undefined;
+  const indent = since !== null && bars ? `min(${(1 - bars / rangeSlots(range)) * 100}%, calc(100% - 13rem))` : undefined;
   return (
-    <div className="flex justify-between text-xs text-muted-foreground" style={{ marginLeft: indent }}>
-      <span>{since !== null ? `Since ${sinceLabel(since, now)}` : `${RANGE_LABELS[range]} ago`}</span>
+    <div className="flex justify-between gap-3 whitespace-nowrap text-xs text-muted-foreground" style={{ marginLeft: indent }}>
+      <span>{since !== null ? `Since ${sinceLabel(since, now, timeZone)}` : `${RANGE_LABELS[range]} ago`}</span>
       <span>Now</span>
     </div>
   );

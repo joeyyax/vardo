@@ -3,10 +3,53 @@
 import { createHash } from "node:crypto";
 
 /** Paths tried, in order, when the app's own healthcheck names none. */
-export const HEALTH_PATHS = ["/healthz", "/health", "/api/health", "/up", "/livez", "/readyz", "/ping", "/status", "/_health"] as const;
+export const HEALTH_PATHS = ["/healthz", "/health", "/api/health", "/api/healthz", "/up", "/livez", "/readyz", "/ping", "/status", "/_health"] as const;
+
+/** A path a known image serves when up, and the statuses it answers then. */
+export type ImageHealthPath = { path: string; status: number[] };
+
+const OK = [200];
+
+/** Health paths of common self-hosted images, by repository without registry or tag. Each is read from the app's own source. */
+const IMAGE_HEALTH_PATHS: { repos: string[]; path: string; status: number[] }[] = [
+  { repos: ["goauthentik/server"], path: "/-/health/live/", status: OK },
+  { repos: ["immich-app/immich-server", "altran1502/immich-server"], path: "/api/server/ping", status: OK },
+  { repos: ["gitea/gitea", "go-gitea/gitea"], path: "/api/healthz", status: OK },
+  { repos: ["binwiederhier/ntfy"], path: "/v1/health", status: OK },
+  { repos: ["syncthing/syncthing", "linuxserver/syncthing"], path: "/rest/noauth/health", status: OK },
+  { repos: ["amir20/dozzle"], path: "/healthcheck", status: OK },
+  { repos: ["stirlingtools/stirling-pdf", "frooodle/s-pdf", "stirling-tools/stirling-pdf"], path: "/api/v1/info/status", status: OK },
+  { repos: ["louislam/uptime-kuma"], path: "/api/entry-page", status: OK },
+  { repos: ["linuxserver/transmission", "haugene/transmission-openvpn", "transmission/transmission"], path: "/transmission/rpc", status: [409, 401] },
+  { repos: ["ollama/ollama"], path: "/api/version", status: OK },
+  { repos: ["registry", "distribution/distribution"], path: "/v2/", status: [200, 401] },
+];
+
+/** The repository of an image reference: no registry host, tag, digest or `library/`. */
+export function imageRepo(image: string): string {
+  let ref = image.trim().toLowerCase().split("@")[0];
+  const parts = ref.split("/");
+  if (parts.length > 1 && (parts[0].includes(".") || parts[0].includes(":") || parts[0] === "localhost")) parts.shift();
+  ref = parts.join("/");
+  const colon = ref.lastIndexOf(":");
+  if (colon > ref.lastIndexOf("/")) ref = ref.slice(0, colon);
+  return ref.startsWith("library/") ? ref.slice("library/".length) : ref;
+}
+
+/** Known health paths for these images, at most one per image, in the order given. */
+export function imageHealthPaths(images: (string | null | undefined)[]): ImageHealthPath[] {
+  const out: ImageHealthPath[] = [];
+  for (const image of images) {
+    if (!image) continue;
+    const repo = imageRepo(image);
+    const hit = IMAGE_HEALTH_PATHS.find((e) => e.repos.includes(repo));
+    if (hit && !out.some((p) => p.path === hit.path)) out.push({ path: hit.path, status: hit.status });
+  }
+  return out;
+}
 
 /** How the checked path was found. */
-export const HEALTH_SOURCES = ["healthcheck", "probe", "homepage"] as const;
+export const HEALTH_SOURCES = ["healthcheck", "image", "probe", "homepage"] as const;
 export type HealthSource = (typeof HEALTH_SOURCES)[number];
 
 /** A body this small qualifies whatever its content type. */
@@ -90,6 +133,10 @@ export type Sample = {
   bytes: number;
   /** SHA-256 of the bytes read. */
   hash: string;
+  /** Vardo's catch-all answered: the host has no route. */
+  noRoute?: boolean;
+  /** The cache that answered instead of the origin. */
+  cache?: string | null;
 };
 
 export const hashBody = (body: Uint8Array | string): string => createHash("sha256").update(body).digest("hex");
@@ -105,10 +152,19 @@ const isJsonOrText = (contentType: string) => {
  * so a catch-all route serving the homepage everywhere doesn't qualify.
  */
 export function qualifiesAsHealth(probe: Sample, homepage: Sample | null): boolean {
-  if (probe.status < 200 || probe.status > 299) return false;
+  if (probe.noRoute || probe.status < 200 || probe.status > 299) return false;
   if (!isJsonOrText(probe.contentType) && probe.bytes > SMALL_BODY_BYTES) return false;
-  if (homepage && probe.status === homepage.status && baseType(probe.contentType) === baseType(homepage.contentType) && probe.hash === homepage.hash) return false;
-  return true;
+  return !sameAsHomepage(probe, homepage);
+}
+
+/** Whether a known image path answered as that image does when up, and not with the homepage. */
+export function qualifiesAsImageHealth(probe: Sample, homepage: Sample | null, statuses: number[]): boolean {
+  if (probe.noRoute || !statuses.includes(probe.status)) return false;
+  return !sameAsHomepage(probe, homepage);
+}
+
+function sameAsHomepage(probe: Sample, homepage: Sample | null): boolean {
+  return !!homepage && probe.status === homepage.status && baseType(probe.contentType) === baseType(homepage.contentType) && probe.hash === homepage.hash;
 }
 
 const LOGIN_PATH = /(^|\/)(log-?in|sign-?in|sso|auth|oauth|account\/login|session)(\/|$|\?)/i;

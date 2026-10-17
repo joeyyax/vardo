@@ -114,7 +114,7 @@ describe.skipIf(!conn)("uptime health detection on Postgres", { timeout: MIGRATE
     const row = await autoMonitor();
     expect(row).toMatchObject({ health_path: null, health_source: "homepage", review_status: null });
     expect(row.check.url).toBe("https://shop.example.com");
-    expect(seen).toHaveLength(1 + 9);
+    expect(seen).toHaveLength(1 + 10);
   });
 
   it("does not take a large HTML page, a 404 or a redirect to the homepage as a health endpoint", async () => {
@@ -208,7 +208,7 @@ describe.skipIf(!conn)("uptime health detection on Postgres", { timeout: MIGRATE
     });
 
     it("keeps counting 500 and up as down", async () => {
-      await sql`update uptime_monitor set review_status = null, review_reason = null where domain_id = 'dom1'`;
+      await sql`update uptime_monitor set review_status = null, review_reason = null, interval_sec = 60 where domain_id = 'dom1'`;
       respond = () => new Response("boom", { status: 503 });
       for (let i = 0; i < 4; i++) await pass();
       expect((await client.uptimeClient.listMonitors(org)).find((m) => m.domainId === "dom1")!.state).toBe("down");
@@ -228,7 +228,7 @@ describe.skipIf(!conn)("uptime health detection on Postgres", { timeout: MIGRATE
       expect(await autoMonitor()).toMatchObject({ health_path: null, review_answer: { kind: "status", status: 401 } });
       expect((await autoMonitor()).check.expectedStatus).toEqual({ min: 401, max: 401 });
 
-      for (let i = 0; i < 3; i++) await pass();
+      for (let i = 0; i < 11; i++) await pass();
       expect((await client.uptimeClient.listMonitors(org)).find((m) => m.domainId === "dom1")!.state).toBe("up");
     });
 

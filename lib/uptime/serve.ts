@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { apps, meshPeers, uptimeMonitors, uptimeRecords, uptimeResults, uptimeVantages, type UptimeVantageRow } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { HOUR_MS, phaseOf, signRecord, staggerOf, verifyRecord, watchList, type CheckResult, type WatchEntry } from "./core";
+import { appNotRunning, runStateColumns } from "./auto";
 import { checkWatchedBatch } from "./batch";
 import { syncAlertsFor } from "./engine";
 import { localIdentity } from "./identity";
@@ -24,17 +25,17 @@ export const externalVantageId = (peerId: string) => `ext_${peerId}`;
 
 /**
  * Every enabled monitor with a public address, as a public-path check. Private monitors are reported to peers instead.
- * Monitors of stopped apps stay out, as they do from local checks. Monitors of the peers themselves stay out.
+ * Monitors of stopped or missing apps stay out, as they do from local checks. Monitors of the peers themselves stay out.
  * A monitor with private headers stays out unless the owner shares them; shared headers travel with the entry.
  */
 export async function buildWatchEntries(resolve?: Resolver): Promise<WatchEntry[]> {
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status })
+    .select({ monitor: uptimeMonitors, app: runStateColumns })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .where(eq(uptimeMonitors.enabled, true));
   const live = rows
-    .filter(({ monitor, appStatus }) => !(monitor.appId && appStatus === "stopped") && !monitor.meshPeerId)
+    .filter(({ monitor, app }) => !(monitor.appId && appNotRunning(app)) && !monitor.meshPeerId)
     .map((r) => r.monitor)
     .filter((m) => m.headerNames.length === 0 || m.shareHeaders);
   const shared = new Map(live.filter((m) => m.headersEncrypted && m.shareHeaders).map((m) => [m.id, openHeaders(m.headersEncrypted, m)]));

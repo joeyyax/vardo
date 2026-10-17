@@ -40,7 +40,7 @@ import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
 import { syncPeerAlerts, syncPeerMonitors } from "./peers";
 import { queueNotice, flushNotices } from "./notices";
-import { autoCheckFor } from "./auto";
+import { appNotRunning, runStateColumns, autoCheckFor, autoIntervalFor, sameAutoFields, withAutoFields } from "./auto";
 import { runHealthDetection } from "./health";
 import { openHeaders } from "./secrets";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
@@ -92,13 +92,14 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
       sslEnabled: domains.sslEnabled,
       appId: domains.appId,
       orgId: apps.organizationId,
+      app: runStateColumns,
     })
     .from(domains)
     .innerJoin(apps, eq(apps.id, domains.appId))
     .where(eq(domains.enabled, true));
 
   const previewRows = await db
-    .select({ id: environments.id, domain: environments.domain, appId: environments.appId, orgId: apps.organizationId })
+    .select({ id: environments.id, domain: environments.domain, appId: environments.appId, orgId: apps.organizationId, app: runStateColumns })
     .from(environments)
     .innerJoin(apps, eq(apps.id, environments.appId))
     .where(and(eq(environments.type, "preview"), isNotNull(environments.domain), eq(apps.isSystemManaged, false)));
@@ -107,18 +108,20 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
   const byDomain = new Map(existing.filter((m) => m.domainId).map((m) => [m.domainId!, m]));
   const byEnv = new Map(existing.filter((m) => m.environmentId).map((m) => [m.environmentId!, m]));
 
-  const wanted: { key: string; row: typeof uptimeMonitors.$inferInsert }[] = [];
+  const wanted: { key: string; running: boolean; row: typeof uptimeMonitors.$inferInsert }[] = [];
   // Domains that can't be public get no monitor, and lose the one they had.
   for (const d of domainRows.filter((r) => !isNeverPublic(r.domain))) {
     const url = domainUrl(d);
     wanted.push({
       key: `d:${d.id}`,
+      running: !appNotRunning(d.app),
       row: { id: `mon_${nanoid(16)}`, organizationId: d.orgId, name: d.domain + (d.pathPrefix ?? ""), check: httpCheck(url), source: "auto", appId: d.appId, domainId: d.id },
     });
   }
   for (const p of previewRows.filter((r) => !isNeverPublic(r.domain!))) {
     wanted.push({
       key: `e:${p.id}`,
+      running: !appNotRunning(p.app),
       row: { id: `mon_${nanoid(16)}`, organizationId: p.orgId, name: p.domain!, check: httpCheck(`https://${p.domain}`), source: "auto", appId: p.appId, environmentId: p.id, preview: true },
     });
   }
@@ -136,12 +139,22 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
     // The base address follows the domain; the detected path, the operator's answer and their edits stay.
     const check = autoCheckFor(current, (w.row.check as HttpCheck).url);
     const name = current.overrides?.name ?? (w.row.name as string);
+    const intervalSec = autoIntervalFor(current);
     const prev = current.check.type === "http" ? current.check : null;
-    const same = prev && prev.url === check.url && sameStatus(prev.expectedStatus, check.expectedStatus) && prev.timeoutMs === check.timeoutMs && prev.keyword === check.keyword;
-    if (!same || current.name !== name || current.organizationId !== w.row.organizationId) {
+    const same = prev && sameAutoFields(prev, check);
+    // A question asked while the app wasn't running is about Vardo's catch-all, not the app; detection asks again once it runs.
+    const staleReview = !w.running && current.reviewStatus !== null && current.reviewAnswer === null;
+    if (!same || current.name !== name || current.organizationId !== w.row.organizationId || current.intervalSec !== intervalSec || staleReview) {
       await db
         .update(uptimeMonitors)
-        .set({ check: prev ? { ...prev, url: check.url, expectedStatus: check.expectedStatus, timeoutMs: check.timeoutMs, keyword: check.keyword } : check, name, organizationId: w.row.organizationId, updatedAt: new Date() })
+        .set({
+          check: prev ? withAutoFields(prev, check) : check,
+          name,
+          intervalSec,
+          organizationId: w.row.organizationId,
+          ...(staleReview ? { reviewStatus: null, reviewReason: null, healthDueAt: null } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(uptimeMonitors.id, current.id));
     }
   }
@@ -202,17 +215,17 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   await seedLastRun();
   const local = await ensureLocalVantage();
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status, peerIp: meshPeers.internalIp })
+    .select({ monitor: uptimeMonitors, app: runStateColumns, peerIp: meshPeers.internalIp })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
     .leftJoin(meshPeers, eq(meshPeers.id, uptimeMonitors.meshPeerId))
     .where(eq(uptimeMonitors.enabled, true));
 
-  // A stopped app is expected to be down. Vantage points sharing a monitor take turns, so this one runs it every interval x N.
+  // A stopped or missing app is expected to be down. Vantage points sharing a monitor take turns, so this one runs it every interval x N.
   const watchers = await externalWatchers();
   const domainsOn = isFeatureEnabled("domain-monitoring");
-  const due = rows.filter(({ monitor, appStatus }) => {
-    if (monitor.appId && appStatus === "stopped") return false;
+  const due = rows.filter(({ monitor, app }) => {
+    if (monitor.appId && appNotRunning(app)) return false;
     if (!domainsOn && monitor.source === "auto" && monitor.domainId) return false;
     const slot = staggerOf(monitor.id, monitor.intervalSec, sharing(watchers, monitor.id), LOCAL_VANTAGE_ID);
     return isDueAt(slot.periodSec * 1000, slot.offsetMs, lastRun.get(monitor.id), now);
@@ -251,6 +264,8 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
         status: r.status ?? null,
         error: r.error ?? null,
         certDaysLeft: r.certDaysLeft ?? null,
+        cache: r.cache ?? null,
+        bytes: r.bytes ?? null,
       })),
     );
     await syncAlerts(due.map((d) => d.monitor).filter((m) => fresh.some((r) => r.monitorId === m.id)), now);
@@ -283,10 +298,25 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   }
 
   const impaired = await loadImpaired(now);
+  const appIds = [...new Set(monitors.map((m) => m.appId).filter((id): id is string => !!id))];
+  const stopped = new Set(
+    appIds.length ? (await db.select({ id: apps.id, ...runStateColumns }).from(apps).where(inArray(apps.id, appIds))).filter((a) => appNotRunning(a)).map((a) => a.id) : [],
+  );
   for (const m of monitors) {
     if (m.meshPeerId) continue;
     // Waiting on an answer: no alerts, and none opened from the checks that ran meanwhile.
     if (m.reviewStatus !== null && m.reviewAnswer === null) continue;
+    // Stopped on purpose: close what was open without a notice, and start fresh when the app runs again.
+    if (m.appId && stopped.has(m.appId)) {
+      if (damping.get(m.id)?.announced !== null) {
+        const closed = await resolveUptimeIncident({ about: m.id, orgIds: m.organizationId ? [m.organizationId] : operator }, "", { notify: false }).then(
+          () => true,
+          (err) => (log.error(`Closing the incident of stopped ${m.id} failed:`, err), false),
+        );
+        if (closed) damping.set(m.id, { ...newMemory(), announced: null });
+      }
+      continue;
+    }
     try {
       const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
       if (silent) continue;

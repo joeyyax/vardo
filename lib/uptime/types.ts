@@ -2,12 +2,13 @@
 
 import { z } from "zod";
 import type { UptimeRange } from "./core";
+import type { CacheName, Weight } from "./core";
 import type { Check, CheckPath, ErrorKind, AutoOverrides, HealthSource, IntervalSec, MaintenanceWindow, MonitorState, Reading, ReviewAnswer } from "./core";
 
 export type { AutoOverrides, Check, CheckPath, ErrorKind, HealthSource, IntervalSec, MaintenanceWindow, MonitorState, Reading, ReviewAnswer };
 
-/** A monitor state, or "review" while the operator hasn't said what counts as up. Review doesn't alert and counts as unknown. */
-export type DisplayState = MonitorState | "review";
+/** A monitor state, "review" while the operator hasn't said what counts as up, or "stopped" while its app isn't running. Neither alerts; both count as unknown. */
+export type DisplayState = MonitorState | "review" | "stopped";
 
 /** The question for an automatic monitor whose best answer is a non-2xx below 500. */
 export type ReviewQuestion = { status: number; reason: "status" | "login" };
@@ -108,6 +109,8 @@ export type MonitorSummary = {
   /** Uptime over the history inside the range. */
   rangeUptime: number | null;
   latencyMs: number | null;
+  /** The cache that answered the newest check instead of the origin, such as "cloudflare". */
+  cachedBy: CacheName | null;
   lastCheckedAt: number | null;
 };
 
@@ -146,6 +149,9 @@ export type LatencySeries = { vantageId: string; name: string; points: { at: num
 
 export type OutageView = { start: number; end: number | null; durationMs: number; incidentId: string | null };
 
+/** The page a check loads is heavy or slow, and the lighter path Vardo knows of. */
+export type HeavyNotice = Weight & { offer: { path: string; source: "healthcheck" | "detected" } | null };
+
 export type MonitorDetail = MonitorSummary & {
   uptime24h: number | null;
   uptime90d: number | null;
@@ -154,6 +160,8 @@ export type MonitorDetail = MonitorSummary & {
   latency24h: LatencySeries[];
   vantages: VantageStateView[];
   outages: OutageView[];
+  /** Set when each check loads a heavy or slow page and the operator hasn't dismissed it. */
+  heavy: HeavyNotice | null;
   /** Names of the org's notification channels that hear about outages. */
   channels: string[];
 };
@@ -167,7 +175,8 @@ export type AppUptime = {
   rangeUptime: number | null;
   /** Epoch ms the oldest monitor was created. */
   historyStart: number | null;
-  state: MonitorState;
+  /** "stopped" when every monitor's app is stopped or missing. */
+  state: MonitorState | "stopped";
   /** Monitors waiting on an answer. */
   reviews: MonitorSummary[];
   localOnly: boolean;
@@ -246,6 +255,7 @@ export const createMonitorSchema = z
     type: z.enum(["http", "tcp", "tls"]),
     name: z.string().trim().max(80).optional(),
     url: httpUrl.optional(),
+    method: z.enum(["GET", "HEAD", "POST"]).optional(),
     host: hostSchema.optional(),
     port: portSchema.optional(),
     expectedStatus: z.object({ min: z.number().int().min(100).max(599), max: z.number().int().min(100).max(599) }).optional(),
@@ -271,6 +281,8 @@ export const updateMonitorSchema = createMonitorSchema
     maintenance: z.array(windowSchema).max(50).optional(),
     /** An automatic monitor's path under its domain. Empty checks the homepage. */
     path: z.string().max(200).optional(),
+    /** Hides the notice that each check loads a heavy or slow page. */
+    heavyNoticeDismissed: z.boolean().optional(),
     /** Clears what was edited on an automatic monitor and runs it as detected. */
     resetOverrides: z.boolean().optional(),
     /** Null clears the keyword. */
@@ -279,8 +291,8 @@ export const updateMonitorSchema = createMonitorSchema
   .strict();
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("status"), status: z.number().int().min(100).max(499) }).strict(),
-  z.object({ kind: z.literal("path"), path: z.string().trim().min(1).max(200) }).strict(),
+  z.object({ kind: z.literal("status"), status: z.number().int().min(100).max(499), method: z.enum(["GET", "HEAD", "POST"]).optional() }).strict(),
+  z.object({ kind: z.literal("path"), path: z.string().trim().min(1).max(200), method: z.enum(["GET", "HEAD", "POST"]).optional(), status: z.number().int().min(100).max(499).optional() }).strict(),
   z.object({ kind: z.literal("skip") }).strict(),
   z.object({ kind: z.literal("headers"), headers: z.array(headerSchema).max(10).optional(), basicAuth: basicAuthSchema.optional(), shareHeaders: z.boolean().optional() }).strict(),
 ]);

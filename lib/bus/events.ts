@@ -540,6 +540,8 @@ export type DigestHealthEvent = {
   resources?: { label: string; values: number[]; latest: number; peak: number; unit: "percent" | "per-core" }[];
   /** First production deploys in the window. */
   newApps?: { appId: string; appName: string; deployedAt: string; monthRecapAt: string | null }[];
+  /** Each app's last start or stop in the window. `stoppedMs` is how long a started app had been stopped. */
+  lifecycle?: { appId: string; appName: string; kind: "started" | "stopped"; at: string; stoppedMs: number | null }[];
   /** Ports and processes deploys added to apps past their first three days. */
   changes?: { appId: string; appName: string; kind: "port" | "process"; item: string; since: string }[];
   /** Live at send time, not part of the window. */

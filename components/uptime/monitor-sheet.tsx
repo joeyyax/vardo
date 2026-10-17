@@ -34,6 +34,7 @@ export type CheckLink = { appId: string; domains: { id: string; host: string }[]
 type Form = {
   type: CheckType;
   url: string;
+  method: "GET" | "HEAD" | "POST";
   /** An automatic monitor's path under its domain. */
   path: string;
   host: string;
@@ -54,6 +55,7 @@ function initial(monitor?: MonitorSummary, link?: CheckLink): Form {
   return {
     type: c?.type ?? "http",
     url: c?.type === "http" ? c.url : domain ? `https://${domain.host}` : "https://",
+    method: c?.type === "http" ? (c.method ?? "GET") : "GET",
     path: monitor?.healthPath ?? "",
     host: c && c.type !== "http" ? c.host : (domain?.host ?? ""),
     port: c && c.type !== "http" ? String(c.port) : "",
@@ -198,6 +200,7 @@ export function MonitorSheet({
         ...headerFields(headers, true),
         type: "http",
         url: form.url.trim(),
+        method: form.method,
         expectedStatus: { min: Number(form.statusMin), max: Number(form.statusMax) },
         timeoutMs: Math.round(Number(form.timeout) * 1000),
         keyword: monitor ? form.keyword.trim() || null : form.keyword.trim() || undefined,
@@ -320,6 +323,20 @@ export function MonitorSheet({
 
           {(auto || form.type === "http") && (
             <>
+              {!auto && (
+                <Field id="uptime-method" label="Method">
+                  <Select value={form.method} onValueChange={(v) => set("method", v as Form["method"])}>
+                    <SelectTrigger id="uptime-method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GET">GET</SelectItem>
+                      <SelectItem value="HEAD">HEAD</SelectItem>
+                      <SelectItem value="POST">POST, no body</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 <Field id="uptime-min" label="Status from" edited={edits.expectedStatus !== undefined}>
                   <Input id="uptime-min" inputMode="numeric" value={form.statusMin} onChange={(e) => set("statusMin", e.target.value)} />

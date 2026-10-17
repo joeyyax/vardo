@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { MonitorSummary } from "@/lib/uptime/types";
+import { cacheNote, formatBytes } from "@/lib/uptime/format";
+import type { MonitorDetail, MonitorSummary } from "@/lib/uptime/types";
 
 const SOURCE_NOTE = {
   healthcheck: "from the app's healthcheck",
+  image: "a known path for the app's image",
   probe: "found by probing common paths",
   homepage: "the homepage",
 } as const;
@@ -19,22 +22,29 @@ const SOURCE_NOTE = {
 export const HOMEPAGE_HINT = "Checking the homepage. A health endpoint like /healthz is lighter and skips caches.";
 
 /** "Checking /healthz", or the homepage hint, for an automatic monitor. Manual monitors show their URL instead. */
-export function CheckNote({ monitor }: { monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check"> }) {
+export function CheckNote({
+  monitor,
+  homepageHint = true,
+}: {
+  monitor: Pick<MonitorSummary, "source" | "healthPath" | "healthSource" | "privateHeader" | "check" | "cachedBy" | "state">;
+  /** False where a heavy-check notice already gives the advice. */
+  homepageHint?: boolean;
+}) {
+  if (monitor.state === "stopped") return <p className="text-xs text-muted-foreground">Not checked while the app is stopped.</p>;
   const note = [];
+  if (monitor.cachedBy) note.push(<span key="cache" className="text-status-warning">{cacheNote(monitor.cachedBy)}</span>);
   if (monitor.source === "auto" && monitor.check.type === "http" && monitor.healthSource) {
-    note.push(
-      monitor.healthPath ? (
+    if (monitor.healthPath) {
+      note.push(
         <span key="path">
           Checking <code className="font-mono">{monitor.healthPath}</code> · {SOURCE_NOTE[monitor.healthSource]}
-        </span>
-      ) : (
-        <span key="home">{HOMEPAGE_HINT}</span>
-      ),
-    );
+        </span>,
+      );
+    } else if (homepageHint) note.push(<span key="home">{HOMEPAGE_HINT}</span>);
   }
   if (monitor.privateHeader) note.push(<span key="private">Checked from this instance only: it uses a private header.</span>);
   if (note.length === 0) return null;
-  return <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">{note}</p>;
+  return <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground [&>span]:max-w-full">{note}</p>;
 }
 
 export type HeaderRow = { name: string; value: string; stored: boolean };
@@ -134,6 +144,8 @@ export function ReviewCard({ monitor, apiBase, canManage, onAnswered }: { monito
   const review = monitor.review;
   const [mode, setMode] = useState<"status" | "path" | "header" | null>(null);
   const [path, setPath] = useState("/healthz");
+  const [method, setMethod] = useState<"GET" | "HEAD" | "POST">("GET");
+  const [upStatus, setUpStatus] = useState("");
   const [draft, setDraft] = useState<HeaderDraft>(() => draftOf());
   const [busy, setBusy] = useState(false);
   const [found, setFound] = useState<string | null>(null);
@@ -203,13 +215,44 @@ export function ReviewCard({ monitor, apiBase, canManage, onAnswered }: { monito
           </div>
         )}
         {mode === "path" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Input aria-label="Health path" className="max-w-56 font-mono" value={path} onChange={(e) => setPath(e.target.value)} />
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor={`review-${monitor.id}-method`} className="text-xs text-muted-foreground">
+                Method
+              </Label>
+              <Select value={method} onValueChange={(v) => setMethod(v as typeof method)}>
+                <SelectTrigger id={`review-${monitor.id}-method`} className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GET">GET</SelectItem>
+                  <SelectItem value="HEAD">HEAD</SelectItem>
+                  <SelectItem value="POST">POST</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid min-w-40 flex-1 gap-1.5 sm:max-w-56 sm:flex-none">
+              <Label htmlFor={`review-${monitor.id}-path`} className="text-xs text-muted-foreground">
+                Path
+              </Label>
+              <Input id={`review-${monitor.id}-path`} className="font-mono" value={path} onChange={(e) => setPath(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`review-${monitor.id}-status`} className="text-xs text-muted-foreground">
+                Up when it answers
+              </Label>
+              <Input id={`review-${monitor.id}-status`} className="w-28" inputMode="numeric" placeholder="Any 2xx" value={upStatus} onChange={(e) => setUpStatus(e.target.value.replace(/\D/g, "").slice(0, 3))} />
+            </div>
             <Button size="sm" variant="outline" disabled={busy} onClick={detect}>
               {busy && <Loader2 className="animate-spin" />} Detect
             </Button>
-            <Button size="sm" disabled={busy || !path.startsWith("/")} onClick={() => send({ kind: "path", path }, `Checking ${path}`)}>
-              Use {path}
+            <Button
+              size="sm"
+              disabled={busy || !path.startsWith("/")}
+              onClick={() => send({ kind: "path", path, ...(method !== "GET" ? { method } : {}), ...(upStatus ? { status: Number(upStatus) } : {}) }, `Checking ${method} ${path}`)}
+            >
+              Use {method === "GET" ? "" : `${method} `}
+              {path}
             </Button>
             {found && <span className="text-xs text-muted-foreground">Found {found}.</span>}
           </div>
@@ -222,6 +265,69 @@ export function ReviewCard({ monitor, apiBase, canManage, onAnswered }: { monito
                 Save headers
               </Button>
             </div>
+          </div>
+        )}
+      </div>
+    </Callout>
+  );
+}
+
+/** Says each check loads a heavy or slow page, and offers the lighter path Vardo knows of. */
+export function HeavyNoticeCard({ monitor, apiBase, canManage, onChanged }: { monitor: MonitorDetail; apiBase: string; canManage: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const heavy = monitor.heavy;
+  if (!heavy || monitor.check.type !== "http") return null;
+  const check = monitor.check;
+  const page = new URL(check.url).pathname.replace(/\/+$/, "") === "" ? "homepage" : "page";
+  const what =
+    heavy.heavy && heavy.bytes !== null ? `Each check loads the whole ${formatBytes(heavy.bytes, heavy.atLeast)} ${page}` : `Each check waits about ${heavy.medianMs} ms for the ${page}`;
+  const offer = heavy.offer;
+
+  async function call(url: string, method: string, body: Record<string, unknown>, done: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) {
+        toast.error((await res.json().catch(() => ({}))).error || "Couldn't save");
+        return;
+      }
+      toast.success(done);
+      onChanged();
+    } catch {
+      toast.error("Couldn't save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchToOffer() {
+    if (!offer) return;
+    if (monitor.source === "auto") return call(`${apiBase}/${monitor.id}/review`, "POST", { kind: "path", path: offer.path }, `Checking ${offer.path}`);
+    return call(`${apiBase}/${monitor.id}`, "PATCH", { url: `${new URL(check.url).origin}${offer.path}` }, `Checking ${offer.path}`);
+  }
+
+  return (
+    <Callout variant="info" label="Heavy check" className="flex-wrap">
+      <div className="grid gap-3">
+        <p>
+          {what}. That&apos;s fine if you meant it, but a small, fast, uncached health endpoint makes a better check.
+          {offer && (
+            <span className="text-muted-foreground">
+              {" "}
+              {offer.source === "healthcheck" ? "The app's container healthcheck uses" : "Detection found"} <code className="font-mono">{offer.path}</code>.
+            </span>
+          )}
+        </p>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            {offer && (
+              <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={busy} onClick={switchToOffer}>
+                Check {offer.path} instead
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="w-full sm:w-auto" disabled={busy} onClick={() => call(`${apiBase}/${monitor.id}`, "PATCH", { heavyNoticeDismissed: true }, "Notice dismissed")}>
+              Keep checking this {page}
+            </Button>
           </div>
         )}
       </div>
