@@ -15,6 +15,7 @@ import type {
   SlotHolder,
 } from "./types";
 import { gateTokenDeployment } from "./events";
+import { SHARED_STAGE_LABELS, sharedStage } from "@/lib/ui/deploy-stage";
 
 export type DeployRow = {
   id: string;
@@ -186,7 +187,17 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
   };
 }
 
-type DescribeContext = { appNames: Map<string, string>; builderName: Map<string, string>; instanceName: string };
+const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+
+/** " (needs 6.0 GiB, 2.1 GiB free)", " (busy with its own builds)", or nothing. */
+function refusalWhy(e: Extract<PipelineEntry, { kind: "refused" }>): string {
+  if (e.reason === "memory" && e.needBytes !== null && e.freeBytes !== null) return ` (needs ${gib(e.needBytes)}, ${gib(e.freeBytes)} free)`;
+  if (e.busy) return " (busy with its own builds)";
+  if (e.reason === "memory") return " (not enough memory)";
+  return e.reason === "full" ? " (its builder is full)" : "";
+}
+
+type DescribeContext ={ appNames: Map<string, string>; builderName: Map<string, string>; instanceName: string };
 
 /** An activity line for an event, or null for one too routine to list. */
 export function describeEvent(e: PipelineEntry, ctx: DescribeContext): Omit<ActivityItem, "id" | "at"> | null {
@@ -207,12 +218,15 @@ export function describeEvent(e: PipelineEntry, ctx: DescribeContext): Omit<Acti
       return e.builder === "local" ? null : { text: `${app(e.deploymentId)} is building on ${where(e.builder)}`, tone: "default" };
     case "fallback":
       return { text: `${app(e.deploymentId)}: ${e.name} couldn't build (${e.reason}); building on ${ctx.instanceName} instead`, tone: "warning" };
+    case "refused":
+      return { text: `${app(e.deploymentId)}: ${e.name} turned the build down${refusalWhy(e)}; waiting for a builder`, tone: "warning" };
     case "stage":
       if (e.stage === "done" && e.status === "success") return { text: `${app(e.deploymentId)} is live`, tone: "success" };
       if (e.status === "failed") {
+        const shared = sharedStage(e.stage);
         return e.stage === "healthcheck"
           ? { text: `${app(e.deploymentId)} failed its health check; the old version kept serving`, tone: "error" }
-          : { text: `${app(e.deploymentId)} failed at ${e.stage}`, tone: "error" };
+          : { text: `${app(e.deploymentId)} failed at ${shared ? SHARED_STAGE_LABELS[shared].toLowerCase() : e.stage}`, tone: "error" };
       }
       if (e.status === "cancelled") return { text: `${app(e.deploymentId)} was cancelled`, tone: "default" };
       return null;

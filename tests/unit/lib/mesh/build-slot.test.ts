@@ -40,7 +40,7 @@ beforeEach(() => {
 describe("peer build slots", () => {
   it("claims, renews and releases a slot on the peer", async () => {
     const peer = fakePeer();
-    expect(await claimPeerSlot("lh", "dep-a-x1", peer.post)).toBe("granted");
+    expect((await claimPeerSlot("lh", "dep-a-x1", peer.post)).claim).toBe("granted");
     expect(peer.held.has("dep-a-x1")).toBe(true);
     expect(await renewPeerSlot("lh", "dep-a-x1", peer.post)).toBe(true);
     await releasePeerSlot("lh", "dep-a-x1", peer.post);
@@ -54,8 +54,8 @@ describe("peer build slots", () => {
 
   it("says the peer is full when its gate refuses", async () => {
     const peer = fakePeer(1);
-    expect(await claimPeerSlot("lh", "own-build", peer.post)).toBe("granted");
-    expect(await claimPeerSlot("lh", "dep-b-x2", peer.post)).toBe("full");
+    expect((await claimPeerSlot("lh", "own-build", peer.post)).claim).toBe("granted");
+    expect((await claimPeerSlot("lh", "dep-b-x2", peer.post)).claim).toBe("full");
     expect(peer.held.has("dep-b-x2")).toBe(false);
   });
 
@@ -70,15 +70,15 @@ describe("peer build slots", () => {
 
   it("treats an older peer without the endpoint as before and doesn't ask it again for a while", async () => {
     const old = vi.fn(async () => { throw new MeshClientError("Peer returned 404", "PEER_ERROR", 404); });
-    expect(await claimPeerSlot("old", "dep-a-x1", old)).toBe("unsupported");
-    expect(await claimPeerSlot("old", "dep-b-x2", old)).toBe("unsupported");
+    expect((await claimPeerSlot("old", "dep-a-x1", old)).claim).toBe("unsupported");
+    expect((await claimPeerSlot("old", "dep-b-x2", old)).claim).toBe("unsupported");
     expect(old).toHaveBeenCalledTimes(1);
   });
 
   it("builds without a slot when the peer doesn't answer, and asks again next time", async () => {
     const down = vi.fn(async () => { throw new MeshClientError("Peer returned 503", "PEER_ERROR", 503); });
-    expect(await claimPeerSlot("lh", "dep-a-x1", down)).toBe("unreachable");
-    expect(await claimPeerSlot("lh", "dep-a-x1", down)).toBe("unreachable");
+    expect((await claimPeerSlot("lh", "dep-a-x1", down)).claim).toBe("unreachable");
+    expect((await claimPeerSlot("lh", "dep-a-x1", down)).claim).toBe("unreachable");
     expect(down).toHaveBeenCalledTimes(2);
   });
 
@@ -97,6 +97,23 @@ describe("peer build slots", () => {
     const old = vi.fn(async () => { throw new MeshClientError("Peer returned 400", "PEER_ERROR", 400); });
     expect(await peerBuilderStats("old", "dep-a-x1", old)).toBeNull();
     expect(await peerBuilderStats("lh", "dep-a-x1", vi.fn(async () => ({ data: { held: false } })))).toBeNull();
+  });
+
+  it("reads why the peer refused, keeping only fields it can trust", async () => {
+    const post = vi.fn(async () => ({ data: { held: false, refusal: { reason: "memory", needBytes: 6e9, freeBytes: "2e9", busy: true } } }));
+    expect(await claimPeerSlot("lh", "dep-a-x1", post)).toEqual({ claim: "full", refusal: { reason: "memory", needBytes: 6e9, freeBytes: null, busy: true } });
+  });
+
+  it("has no refusal detail from a peer that predates it", async () => {
+    const old = vi.fn(async () => ({ data: { held: false } }));
+    expect(await claimPeerSlot("lh", "dep-a-x1", old)).toEqual({ claim: "full", refusal: null });
+    const odd = vi.fn(async () => ({ data: { held: false, refusal: { reason: "tired" } } }));
+    expect((await claimPeerSlot("lh", "dep-a-x1", odd)).refusal).toBeNull();
+  });
+
+  it("reads whether the peer's own builds run from its builder reply", async () => {
+    const post = vi.fn(async () => ({ data: { builder: { oomKills: 0, limitBytes: 1 }, busy: true } }));
+    expect(await peerBuilderStats("lh", "dep-a-x1", post)).toEqual({ oomKills: 0, limitBytes: 1, busy: true });
   });
 
   it("never throws on release", async () => {

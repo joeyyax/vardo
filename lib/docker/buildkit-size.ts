@@ -57,8 +57,16 @@ export function pinnedMeshBuilderMem(env: Record<string, string | undefined>, to
   return mb ? mb * MiB : null;
 }
 
+type RoomInput = { totalBytes: number; availableBytes: number; meshHeadroomBytes: number; buildkitHeadroomBytes: number };
+
+/** What both builders can still grow into, and free memory less the apps' reserve. */
+export function buildersRoom(input: RoomInput): { needBytes: number; freeBytes: number } {
+  const reserveBytes = Math.max(BUILDKIT_SIZE.reserveMinBytes, input.totalBytes * BUILDKIT_SIZE.reserveShare);
+  return { needBytes: input.meshHeadroomBytes + input.buildkitHeadroomBytes, freeBytes: Math.max(0, input.availableBytes - reserveBytes) };
+}
+
 /** Whether both builders fit: what they can still grow into stays within free memory less the apps' reserve. */
-export function buildersFit(input: { totalBytes: number; availableBytes: number; meshHeadroomBytes: number; buildkitHeadroomBytes: number }): boolean {
+export function buildersFit(input: RoomInput): boolean {
   const reserveBytes = Math.max(BUILDKIT_SIZE.reserveMinBytes, input.totalBytes * BUILDKIT_SIZE.reserveShare);
   return input.meshHeadroomBytes + input.buildkitHeadroomBytes <= input.availableBytes - reserveBytes;
 }

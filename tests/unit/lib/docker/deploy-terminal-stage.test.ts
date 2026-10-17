@@ -444,7 +444,7 @@ describe("runDeployment in-flight stage timings", () => {
   it("writes a wait for the builder when it opens, not only when it ends", async () => {
     vi.mocked(build).mockImplementation(async (ctx) => {
       ctx.stage("build", "running");
-      void ctx.wait("build-slot", { ahead: 1 });
+      void ctx.wait?.("build-slot", { ahead: 1 });
       return new Promise(() => {});
     });
 
