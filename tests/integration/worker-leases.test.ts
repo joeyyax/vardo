@@ -56,18 +56,20 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
 
   describe("leader_lease", () => {
     it("acquires, renews, refuses a second holder and is stolen after expiry with a higher epoch", async () => {
-      const a = await lease.acquireLease("t1", 300, "A");
+      const a = await lease.acquireLease("t1", 60_000, "A");
       expect(a).toEqual({ name: "t1", holder: "A", epoch: 1 });
-      expect(await lease.acquireLease("t1", 300, "B")).toBeNull();
+      expect(await lease.acquireLease("t1", 60_000, "B")).toBeNull();
 
+      await sql`update leader_lease set expires_at = now() + interval '1 second' where name = 't1'`;
       const [before] = await sql`select expires_at from leader_lease where name = 't1'`;
-      const renewed = await lease.acquireLease("t1", 300, "A");
+      const renewed = await lease.acquireLease("t1", 60_000, "A");
       const [after] = await sql`select expires_at from leader_lease where name = 't1'`;
       expect(renewed?.epoch).toBe(1);
-      expect(after.expires_at.getTime()).toBeGreaterThanOrEqual(before.expires_at.getTime());
+      expect(after.expires_at.getTime()).toBeGreaterThan(before.expires_at.getTime());
 
-      await sleep(500);
-      const b = await lease.acquireLease("t1", 300, "B");
+      // Expiry is set on the database clock, so no stall can change what this checks.
+      await sql`update leader_lease set expires_at = now() - interval '1 second' where name = 't1'`;
+      const b = await lease.acquireLease("t1", 60_000, "B");
       expect(b).toEqual({ name: "t1", holder: "B", epoch: 2 });
       expect(await lease.checkFence(a!)).toBe(false);
       expect(await lease.checkFence(b!)).toBe(true);
@@ -88,24 +90,26 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
         name: "t3",
         intervalMs: 60_000,
         run: async (ctx) => {
-          for (let i = 0; i < 60; i++) {
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline) {
             if (!ctx.active) {
               fencedAfterLoss = await fence.holdsFence();
               return;
             }
             rows++;
-            await sleep(50);
+            await sleep(20);
           }
         },
       });
-      loop.start({ singleton: true, leaseTtlMs: 300 });
+      // The keepalive renews every TTL/3, which is how the pass notices the loss.
+      loop.start({ singleton: true, leaseTtlMs: 3_000 });
       const pass = loop.tick();
-      await sleep(250);
+      for (let i = 0; i < 400 && rows < 1; i++) await sleep(25);
+      expect(rows).toBeGreaterThan(0);
       // Another process takes over, as after a stall long enough to expire the lease.
       await sql`update leader_lease set holder = 'proc-b', epoch = epoch + 1, expires_at = now() + interval '1 minute' where name = 't3'`;
       await pass;
       await loop.stop();
-      expect(rows).toBeLessThan(60);
       expect(fencedAfterLoss).toBe(false);
       // The stop left the other holder's lease alone.
       const [row] = await sql`select holder from leader_lease where name = 't3'`;
