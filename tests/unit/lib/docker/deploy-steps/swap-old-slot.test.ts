@@ -449,7 +449,7 @@ describe("swap — hold pin on the old slot", () => {
     expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
   });
 
-  it("releases the hold when the deploy is cancelled before the health wait", async () => {
+  it("tears down the new slot and releases the hold when the deploy is cancelled before the health wait", async () => {
     dockerRecording("running");
     const ctx = context();
     ctx.checkAbort = () => {
@@ -457,7 +457,7 @@ describe("swap — hold pin on the old slot", () => {
     };
     await expect(swap(ctx)).rejects.toThrow("aborted");
 
-    expect(order).toEqual(["clear-pin", "hold", "up", "release-hold"]);
+    expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
   });
 
   it("does not hold when the slots can't overlap", async () => {

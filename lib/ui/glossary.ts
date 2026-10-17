@@ -490,6 +490,10 @@ const entries = {
     term: "Build cache",
     what: "Vardo reuses an earlier image when nothing about the build changed, and reuses unchanged build steps otherwise. Turn this off for an app when a build keeps picking up stale results.",
   },
+  "deploy-strategy": {
+    term: "Deploy strategy",
+    what: "Blue/green runs the new version next to the old one until it's healthy. Stop first stops the old one first, for data only one copy can open at a time, with downtime while it starts.",
+  },
   "core-buildkit": {
     term: "BuildKit",
     label: "Builder",

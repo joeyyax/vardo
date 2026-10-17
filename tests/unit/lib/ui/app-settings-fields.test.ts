@@ -163,6 +163,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
       "buildOverrides",
       "buildProvider",
       "composeFilePath",
+      "deployStrategy",
       "deployType",
       "gitSource",
       "githubFeedback",
@@ -178,6 +179,12 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
     expect(appSettingsFields(context({ deployType: "compose" })).buildCache).toBe(true);
     expect(appSettingsFields(context({ deployType: "nixpacks" })).buildProvider).toBe(false);
     expect(appSettingsFields(context({ deployType: "dockerfile" })).buildOverrides).toBe(false);
+  });
+
+  it("offers the deploy strategy on any app that deploys itself, not on a child service", () => {
+    expect(appSettingsFields(context({ source: "direct" })).deployStrategy).toBe(true);
+    expect(appSettingsFields(composeParent).deployStrategy).toBe(true);
+    expect(appSettingsFields(childService).deployStrategy).toBe(false);
   });
 
   it("hides build overrides without a repo, on a compose parent and on a child service", () => {

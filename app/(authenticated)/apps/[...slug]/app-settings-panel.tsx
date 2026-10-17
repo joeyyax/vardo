@@ -112,6 +112,7 @@ export function AppSettingsPanel({
   const [anomalyAlerts, setAnomalyAlerts] = useState(app.anomalyAlerts ?? true);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
+  const [deployStrategy, setDeployStrategy] = useState<"blue-green" | "stop-first">(app.deployStrategy ?? "blue-green");
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
   const fields = appSettingsPageFields(page, {
@@ -175,6 +176,7 @@ export function AppSettingsPanel({
       }
       if (fields.buildProvider) body.buildProvider = buildProvider === "auto" ? null : buildProvider;
       if (fields.buildCache && buildCache !== (app.buildCache ?? "use")) body.buildCache = buildCache;
+      if (fields.deployStrategy && deployStrategy !== (app.deployStrategy ?? "blue-green")) body.deployStrategy = deployStrategy;
       if (fields.gitSource) {
         body.gitBranch = gitBranch;
         body.rootDirectory = rootDirectory.trim() || null;
@@ -653,6 +655,26 @@ export function AppSettingsPanel({
 
       {fields.healthCheckTimeout && !isChildService && (
         <AppHealthSection orgId={orgId} appId={app.id} canManage={can(userRole, "uptime.manage") && can(userRole, "app.config")} />
+      )}
+
+      {fields.deployStrategy && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label htmlFor="edit-deploy-strategy"><Term id="deploy-strategy">Deploy strategy</Term></Label>
+          <Select value={deployStrategy} onValueChange={(v) => setDeployStrategy(v as typeof deployStrategy)}>
+            <SelectTrigger id="edit-deploy-strategy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="blue-green">Blue/green</SelectItem>
+              <SelectItem value="stop-first">Stop first</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {deployStrategy === "stop-first"
+              ? "Stops the running version before starting the new one. The app is down while it starts, and the old version comes back if it fails."
+              : "Starts the new version next to the running one and switches over once it's healthy."}
+          </p>
+        </div>
       )}
 
       {/* Toggles */}

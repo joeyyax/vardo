@@ -54,6 +54,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { contextBytesFromBuildOutput, exportMsFromBuildOutput } from "../stage-timings";
 import { imagesBytes } from "../image-size";
 import { DeployClosedElsewhereError } from "../errors";
+import { lockConflictHint } from "../deploy-strategy";
 
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
@@ -442,6 +443,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(slotted);
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
+  // The app's stop-first setting. Never for Vardo itself: its old slot runs this deploy.
+  const stopFirst = mustStopOldSlot && app.deployStrategy === "stop-first" && !isSelfApp(app.name);
+
   // A self-deploy's old slot runs this process, so its stop waits until post-deploy writes are durable.
   const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
   let pinCutover = canPinCutover(canOverlapSlots);
@@ -455,18 +459,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Clear a pin left by a deploy killed mid-cutover.
   await clearCutoverPin(app.name, ctx.envName).catch(() => {});
 
-  // Remove leftovers from a previous failed deploy in the new slot.
-  try {
-    await execFileAsync(
+  // Best effort.
+  const tearDownNewSlot = () =>
+    execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
       { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-    );
-  } catch {
-    // Nothing to clean up.
-  }
+    ).then(() => {}, () => {});
+
+  // Remove leftovers from a previous failed deploy in the new slot.
+  await tearDownNewSlot();
 
   // Step 6a: build and pull new-slot images while the old slot keeps serving.
+  const stillServing = activeSlot ? " (old slot still serving)" : "";
   const { buildServices, pullServices } = classifyComposeServices(
     compose.services,
     ctx.builtImageRefs,
@@ -493,7 +498,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     // Builds pull base images too, so both phases use registry credentials.
     await withRegistryAuth(async (env) => {
       if (buildServices.length > 0) {
-        log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
+        log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""}${stillServing}...`);
         const bounded = await boundedBuild(undefined, ctx.signal);
         const registry = ctx.gitSha ? await buildRegistryOps(log, ctx.signal) : null;
         const buildBegan = Date.now();
@@ -549,7 +554,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       if (pullServices.length > 0) {
         // Read engine majors before the pull moves the tag.
         majorGate = await majorGateBefore(ctx, pullServices);
-        log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
+        log(`[deploy] Pre-pulling ${newSlot} slot images${stillServing}...`);
         const { stdout, stderr } = await ctx.timer.span("pull", () => execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
@@ -563,7 +568,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         }
       }
       if (sharedPulls.length > 0) {
-        log(`[deploy] Pre-pulling shared images: ${sharedPulls.join(", ")} (old slot still serving)...`);
+        log(`[deploy] Pre-pulling shared images: ${sharedPulls.join(", ")}${stillServing}...`);
         const { stdout, stderr } = await ctx.timer.span("pull", () => execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", sharedProject, "pull", ...sharedPulls],
@@ -581,7 +586,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       [...pullServices, ...sharedPulls].map((name) => compose.services[name]?.image),
     );
     throw new Error(
-      `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}` +
+      `Pre-build/pre-pull for ${newSlot} failed${activeSlot ? " (old slot unaffected)" : ""}: ${message}` +
         (hint ? `\n${hint}` : "")
     );
   }
@@ -722,11 +727,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   // A rotating service on a directory both slots address turns overlap off for the whole app. Self-deploy exempt.
   const slotBound =
-    canOverlapSlots && !deferStopToPostDeploy ? slotBoundServices(compose, slotted) : [];
+    canOverlapSlots && !stopFirst && !deferStopToPostDeploy ? slotBoundServices(compose, slotted) : [];
 
   // Overlap runs two copies of the app; check memory after the build. Self-deploy exempt.
   const overlapFitsMemory =
     canOverlapSlots &&
+    !stopFirst &&
     !deferStopToPostDeploy &&
     !oldSlotHoldsShared &&
     slotBound.length === 0
@@ -734,11 +740,15 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       : true;
 
   if (
+    stopFirst ||
     stopOldBeforeUp ||
     oldSlotHoldsShared ||
     slotBound.length > 0 ||
     !overlapFitsMemory
   ) {
+    if (stopFirst) {
+      log(`[deploy] Stop-first deploy: stopping ${activeSlot} before ${newSlot} starts. The app is down until ${newSlot} is healthy`);
+    }
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
     }
@@ -773,9 +783,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   // Restart the old slot after a failed cutover. Best-effort, never throws.
   // Uses `up --no-recreate`, not `start`, so containers removed since the stop come back.
-  const restoreOldSlot = async (reason: string) => {
-    if (!oldSlotDir || !oldProjectName) return;
-    if (stoppedOldServices.length === 0 && !demotedOldSlot) return;
+  const restoreOldSlot = async (reason: string): Promise<boolean> => {
+    if (!oldSlotDir || !oldProjectName) return false;
+    if (stoppedOldServices.length === 0 && !demotedOldSlot) return false;
     const serviceNames = stoppedOldServices.filter((s) => s !== "__all__");
     log(`[deploy] Restoring old-slot services after ${reason}: ${serviceNames.length > 0 ? serviceNames.join(", ") : "all"}`);
     try {
@@ -798,9 +808,20 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       );
       await restoreSlotRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       // Idempotent.
+      log(`[deploy] ${activeSlot} restarted on the previous version`);
+      return true;
     } catch (err) {
       log(`[deploy] Warning: failed to restore old-slot services — ${err instanceof Error ? err.message : err}`);
+      return false;
     }
+  };
+
+  // Says what serves now when the old slot was stopped before the new one failed.
+  const restoreNote = (restored: boolean): string | null => {
+    if (!stoppedOldSlot) return null;
+    return restored
+      ? `${activeSlot} was restarted on the previous version`
+      : `${activeSlot} could not be restarted, so the app is down until it is started or redeployed`;
   };
 
   // A failed recreate puts the service back on the old slot's definition.
@@ -938,21 +959,24 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log(`[deploy] Tearing down half-started ${newSlot} slot`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
-      await restoreOldSlot("compose up failure");
+      await tearDownNewSlot();
+      const restored = await restoreOldSlot("compose up failure");
       throw new Error(
-        [`docker compose up (${newSlot}) failed: ${message}`, overlapDiagnosis()]
+        [`docker compose up (${newSlot}) failed: ${message}`, restoreNote(restored), overlapDiagnosis()]
           .filter(Boolean)
           .join("\n"),
       );
     }
 
-    // Step 8: health check.
-    ctx.checkAbort();
+    // Step 8: health check. A cancel here drops the new slot and restarts an old slot that already stopped.
+    try {
+      ctx.checkAbort();
+    } catch (err) {
+      log(`[deploy] Cancelled after ${newSlot} started; tearing it down`);
+      await tearDownNewSlot();
+      await restoreOldSlot("the deploy being cancelled");
+      throw err;
+    }
     ctx.stage("deploy", "success");
     ctx.stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
@@ -993,12 +1017,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const crashed = verdict.kind === "crashed";
       const prefix = crashed ? "[deploy][crash]" : verdict.kind === "unhealthy" ? "[deploy][unhealthy]" : "[deploy][logs]";
       log(`[deploy] Health check ${crashed ? "failed" : "timed out"} — fetching container logs...`);
+      let tail = "";
       try {
         const { stdout } = await execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
           { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
         );
+        tail = stdout;
         if (stdout.trim()) {
           for (const line of stdout.trim().split("\n")) {
             log(`${prefix} ${line}`);
@@ -1007,14 +1033,18 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       } catch { /* no logs */ }
 
       log(`[deploy] Tearing down ${newSlot}`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
-      await restoreOldSlot("health check failure");
+      await tearDownNewSlot();
+      const lockHint = lockConflictHint({
+        logs: tail,
+        compose,
+        slotted,
+        overlapped: canOverlapSlots && !stoppedOldSlot,
+        activeSlot: activeSlot ?? "",
+        newSlot,
+      });
+      const restored = await restoreOldSlot("health check failure");
       throw new Error(
-        [healthFailureMessage(verdict, newSlot), overlapDiagnosis()]
+        [healthFailureMessage(verdict, newSlot), restoreNote(restored), lockHint, overlapDiagnosis()]
           .filter(Boolean)
           .join("\n"),
       );
@@ -1024,11 +1054,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const status = await deploymentStatus(ctx.deploymentId);
     if (status !== null && status !== "running") {
       log(`[deploy] The deployment was closed as ${status} while ${newSlot} warmed up; tearing it down`);
-      await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      ).catch(() => {});
+      await tearDownNewSlot();
       await restoreOldSlot("the deployment closing elsewhere");
       throw new DeployClosedElsewhereError(status);
     }

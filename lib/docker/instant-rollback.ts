@@ -45,6 +45,8 @@ export type InstantRollbackOpts = {
   organizationId: string;
   userId: string;
   env: ResolvedEnv;
+  /** The app's stop-first setting: stop the active slot before the standby starts. */
+  stopFirst?: boolean;
 };
 
 export type InstantRollbackResult = {
@@ -195,17 +197,18 @@ async function rollbackClaimed(
   // Drop the cutover pin first: it names the outgoing slot and would 502 the app after the flip.
   await clearCutoverPin(appName, env.name).catch(() => {});
 
-  // A service on a directory both slots address must never run twice, so the active slot stops first.
+  // A service on a directory both slots address must never run twice, so the active slot stops first. Stop-first apps too.
   const slotBound = await readSlotBound(standbyDir);
+  const stopActiveFirst = slotBound.length > 0 || opts.stopFirst === true;
   const restartActive = async () => {
-    if (slotBound.length === 0) return;
+    if (!stopActiveFirst) return;
     await execFileAsync(
       "docker",
       ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "start"],
       { env: dockerEnv(), cwd: activeDir, timeout: COMPOSE_UP_TIMEOUT },
     ).catch(() => {});
   };
-  if (slotBound.length > 0) {
+  if (stopActiveFirst) {
     try {
       await execFileAsync(
         "docker",
@@ -217,7 +220,7 @@ async function rollbackClaimed(
       return {
         success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
         durationMs: Date.now() - startTime,
-        error: `Couldn't stop ${activeSlot} before starting ${slotBound.join(", ")} on the standby`,
+        error: `Couldn't stop ${activeSlot} before starting ${slotBound.length > 0 ? slotBound.join(", ") : standbySlot} on the standby`,
       };
     }
   }
