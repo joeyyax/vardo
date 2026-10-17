@@ -10,6 +10,7 @@ import type { RollbackTarget } from "./rollback-target";
 import type { StageTimer } from "./stage-timings";
 import type { BuildPlacementRecorder } from "./build-placement";
 import type { BuildCacheMode, RebuildMode } from "./build-key";
+import type { DeployStrategy } from "./deploy-strategy";
 import type { DeploySlot } from "./build-gate";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
@@ -39,6 +40,7 @@ export type DeployApp = {
   startCommand?: string | null;
   buildProvider?: "railpack" | "nixpacks" | null;
   buildCache?: BuildCacheMode | null;
+  deployStrategy?: DeployStrategy | null;
   autoTraefikLabels: boolean | null;
   containerPort: number | null;
   autoDeploy: boolean | null;
