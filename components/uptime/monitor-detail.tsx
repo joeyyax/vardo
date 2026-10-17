@@ -38,6 +38,8 @@ const ERROR_TEXT: Record<ErrorKind, string> = {
   status: "unexpected status",
   keyword: "keyword missing",
   invalid: "invalid target",
+  "private-address": "private address, not checked",
+  blocked: "address not allowed",
   unknown: "check failed",
 };
 
@@ -180,7 +182,7 @@ export function MonitorDetail({
                 <th className="px-5 py-2 font-medium">Where</th>
                 <th className="py-2 pr-3 font-medium">State</th>
                 <th className="py-2 pr-3 font-medium">Last result</th>
-                <th className="py-2 pr-5 font-medium">Signed summary</th>
+                <th className="py-2 pr-5 font-medium">Summary</th>
               </tr>
             </thead>
             <tbody>
@@ -200,7 +202,7 @@ export function MonitorDetail({
                       "—"
                     )}
                   </td>
-                  <td className="py-2.5 pr-5 text-muted-foreground">{v.signedAt ? <RelativeTime date={v.signedAt} /> : "—"}</td>
+                  <td className="py-2.5 pr-5 text-muted-foreground">{v.signedAt ? <>Summary <RelativeTime date={v.signedAt} /></> : "—"}</td>
                 </tr>
               ))}
             </tbody>

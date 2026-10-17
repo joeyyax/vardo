@@ -2,6 +2,8 @@
 // mirrors the REST API. Today it calls the service in process; later an HTTP implementation can replace it.
 
 import * as engine from "./engine";
+import type { LinkPatch } from "./link";
+import * as links from "./links";
 import * as service from "./service";
 import type {
   AppUptime,
@@ -10,6 +12,7 @@ import type {
   MonitorSummary,
   Scope,
   UpdateMonitorInput,
+  VantageLinkView,
   VantageView,
 } from "./types";
 
@@ -23,6 +26,9 @@ export interface UptimeClient {
   deleteMonitor(scope: Scope, monitorId: string): Promise<"deleted" | "auto" | "missing">;
   getAppUptime(orgId: string, appId: string): Promise<AppUptime>;
   listVantages(): Promise<VantageView[]>;
+  /** Linked instances with their two uptime switches. */
+  listVantageLinks(): Promise<VantageLinkView[]>;
+  setVantageLink(peerId: string, patch: LinkPatch): Promise<VantageLinkView | null>;
   /** Matches automatic monitors to the apps' domains and previews. */
   syncAutoMonitors(): Promise<{ added: number; removed: number }>;
   /** One worker pass: due checks, rollups, alerts and retention. */
@@ -38,6 +44,8 @@ export const inProcessUptimeClient: UptimeClient = {
   deleteMonitor: (scope, id) => service.deleteMonitor(scope, id),
   getAppUptime: (orgId, appId) => service.getAppUptime(orgId, appId),
   listVantages: () => service.listVantages(),
+  listVantageLinks: () => links.listVantageLinks(),
+  setVantageLink: (peerId, patch) => links.setVantageLink(peerId, patch),
   syncAutoMonitors: () => engine.syncAutoMonitors(),
   tick: () => engine.tickUptime(),
 };

@@ -49,6 +49,22 @@ export type VantageView = {
   location: string | null;
 };
 
+/** A linked instance and the two uptime switches on its link. */
+export type VantageLinkView = {
+  peerId: string;
+  name: string;
+  online: boolean;
+  /** The peer checks this instance. */
+  checksThisInstance: boolean;
+  /** This instance checks the peer. */
+  thisInstanceChecks: boolean;
+  /** The peer's vantage point here, once it has announced itself. */
+  vantage: VantageView | null;
+  /** Monitors this instance checks for the peer. */
+  watching: number;
+  lastFetchedAt: number | null;
+};
+
 export type VantageStateView = VantageView & {
   state: "up" | "failing" | "unknown";
   lastResult: { at: number; ok: boolean; latencyMs: number; status: number | null; error: ErrorKind | null } | null;

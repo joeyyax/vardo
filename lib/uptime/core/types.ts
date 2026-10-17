@@ -53,9 +53,19 @@ export const ERROR_KINDS = [
   "status",
   "keyword",
   "invalid",
+  "private-address",
+  "blocked",
   "unknown",
 ] as const;
 export type ErrorKind = (typeof ERROR_KINDS)[number];
+
+/** A check a prober runs for another instance's monitor. */
+export type WatchEntry = { monitorId: string; check: Check; intervalSec: IntervalSec };
+
+/** A result that says nothing about the target, such as a check skipped for a private address or refused by the outbound policy. It counts as no data. */
+export function isUnknownResult(r: Pick<CheckResult, "error">): boolean {
+  return r.error === "private-address" || r.error === "blocked";
+}
 
 export type CheckResult = {
   monitorId: string;

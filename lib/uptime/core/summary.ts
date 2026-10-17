@@ -1,6 +1,6 @@
 // Rolls raw results into hourly and daily buckets of minutes up, down and unknown. Missing data is unknown, never up.
 
-import type { Bucket, CheckResult, VantagePoint } from "./types";
+import { isUnknownResult, type Bucket, type CheckResult, type VantagePoint } from "./types";
 
 export const MINUTE_MS = 60_000;
 export const HOUR_MS = 3_600_000;
@@ -67,7 +67,7 @@ export function summarize(args: {
   const kinds = new Map(args.vantages.map((v) => [v.id, v.kind]));
   const byVantage = new Map<string, CheckResult[]>();
   for (const r of args.results) {
-    if (!kinds.has(r.vantageId)) continue;
+    if (!kinds.has(r.vantageId) || isUnknownResult(r)) continue;
     const list = byVantage.get(r.vantageId);
     if (list) list.push(r);
     else byVantage.set(r.vantageId, [r]);
