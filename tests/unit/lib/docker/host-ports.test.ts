@@ -1,39 +1,59 @@
 import { describe, it, expect } from "vitest";
 
-import { publishesHostPorts } from "@/lib/docker/host-ports";
+import { describeHostPortHolders, hostPortHolders } from "@/lib/docker/host-ports";
 
-describe("publishesHostPorts", () => {
-  it("is false for a Traefik-routed service that publishes nothing", () => {
-    expect(publishesHostPorts({ web: { image: "nginx" } } as never)).toBe(false);
+const holds = (services: unknown) => hostPortHolders(services as never).map((h) => h.service);
+
+describe("hostPortHolders", () => {
+  it("is empty for a Traefik-routed service that publishes nothing", () => {
+    expect(holds({ web: { image: "nginx" } })).toEqual([]);
   });
 
-  it("is true for the host:container short form", () => {
-    expect(publishesHostPorts({ web: { image: "nginx", ports: ["8080:80"] } } as never)).toBe(true);
+  it("counts the host:container short form", () => {
+    expect(holds({ web: { image: "nginx", ports: ["8080:80"] } })).toEqual(["web"]);
   });
 
-  // A bare port still takes an ephemeral host port, so it is exclusive too.
-  it("is true for the bare-port short form", () => {
-    expect(publishesHostPorts({ web: { image: "nginx", ports: ["80"] } } as never)).toBe(true);
+  it("counts the bare-port short form", () => {
+    expect(holds({ web: { image: "nginx", ports: ["80"] } })).toEqual(["web"]);
   });
 
-  it("is true for the long form", () => {
+  it("counts the long form", () => {
+    expect(holds({ web: { image: "nginx", ports: [{ target: 80, published: 8080 }] } })).toEqual(["web"]);
+  });
+
+  it("counts a service on the host network", () => {
+    expect(hostPortHolders({ scrypted: { image: "koush/scrypted", network_mode: "host" } } as never)).toEqual([
+      { service: "scrypted", via: "host-network" },
+    ]);
+  });
+
+  it("leaves out other network modes", () => {
+    expect(holds({ a: { network_mode: "none" }, b: { network_mode: "service:a" }, c: { network_mode: "bridge" } })).toEqual([]);
+  });
+
+  it("names only the services that hold ports", () => {
     expect(
-      publishesHostPorts({ web: { image: "nginx", ports: [{ target: 80, published: 8080 }] } } as never),
-    ).toBe(true);
-  });
-
-  it("is true when any one service of several publishes", () => {
-    expect(
-      publishesHostPorts({
+      holds({
         web: { image: "nginx" },
         db: { image: "postgres", ports: ["5432:5432"] },
-      } as never),
-    ).toBe(true);
+      }),
+    ).toEqual(["db"]);
   });
 
   it("survives an empty or malformed service map", () => {
-    expect(publishesHostPorts({} as never)).toBe(false);
-    expect(publishesHostPorts(undefined as never)).toBe(false);
-    expect(publishesHostPorts({ web: { image: "nginx", ports: [] } } as never)).toBe(false);
+    expect(holds({})).toEqual([]);
+    expect(holds(undefined)).toEqual([]);
+    expect(holds({ web: { image: "nginx", ports: [] } })).toEqual([]);
+  });
+});
+
+describe("describeHostPortHolders", () => {
+  it("says how each service holds its ports", () => {
+    expect(
+      describeHostPortHolders([
+        { service: "web", via: "ports" },
+        { service: "scrypted", via: "host-network" },
+      ]),
+    ).toBe("web (published ports), scrypted (host network)");
   });
 });
