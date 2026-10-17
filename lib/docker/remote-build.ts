@@ -21,12 +21,58 @@ export const TARGET_BUILD: BoundedBuild = { env: {}, loadArgs: [], limitBytes: n
 type Exec = (cmd: string, args: string[], opts: Record<string, unknown>) => Promise<unknown>;
 type Spawn = (cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv; stdio: ("ignore" | "pipe")[]; detached: boolean }) => ChildProcess;
 
+/** Layers smaller than this never set a target's push ceiling. */
+export const MIN_CEILING_BYTES = 64 * 1024 ** 2;
+/** How long a learned push ceiling holds. */
+export const CEILING_TTL_MS = 7 * 24 * 60 * 60_000;
+/** How a push cut off mid-upload reads, as opposed to one the registry refused. */
+const CUT_OFF = /EOF|broken pipe|connection reset|closed|timed? ?out|deadline|\b408\b/i;
+
+/** Per target, the largest uncompressed layer whose push was cut off. Kept in memory; a restart relearns it. */
+const pushCeilings = new Map<string, { bytes: number; at: number }>();
+
+export function resetPushCeilings(): void {
+  pushCeilings.clear();
+}
+
+function ceilingFor(target: string, now = Date.now()): number | null {
+  const c = pushCeilings.get(target);
+  if (!c) return null;
+  if (now - c.at > CEILING_TTL_MS) {
+    pushCeilings.delete(target);
+    return null;
+  }
+  return c.bytes;
+}
+
+/** The image's largest uncompressed layer on the target, or null when docker can't say. */
+async function largestLayer(image: string, exec: Exec, there: NodeJS.ProcessEnv): Promise<number | null> {
+  try {
+    const { stdout } = (await exec("docker", ["history", "--no-trunc", "--human=false", "--format", "{{.Size}}", image], { env: there, timeout: TAG_TIMEOUT })) as { stdout: string };
+    const sizes = String(stdout).split("\n").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    return sizes.length > 0 ? Math.max(...sizes) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** An image on the target, and its build registry ref when it has one. */
 export type BroughtImage = { image: string; ref: string | null };
 
 function firstLine(err: unknown): string {
   const e = err as { stderr?: string; message?: string };
   return (e?.stderr?.trim() || e?.message || String(err)).split("\n")[0];
+}
+
+function errorText(err: unknown): string {
+  const e = err as { stderr?: string; message?: string };
+  return `${e?.message ?? String(err)}\n${e?.stderr ?? ""}`;
+}
+
+class PushError extends Error {
+  constructor(message: string, readonly cutOff: boolean, cause: unknown) {
+    super(message, { cause });
+  }
 }
 
 function seconds(began: number): string {
@@ -39,7 +85,7 @@ async function viaRegistry(image: string, ref: string, exec: Exec, there: NodeJS
     await exec("docker", ["tag", image, ref], { env: there, timeout: TAG_TIMEOUT, signal });
     await exec("docker", ["push", "--quiet", ref], { env: there, timeout: REGISTRY_TRANSFER_TIMEOUT, signal });
   } catch (err) {
-    throw new Error(`couldn't push ${ref} from the target: ${firstLine(err)}`, { cause: err });
+    throw new PushError(`couldn't push ${ref} from the target: ${firstLine(err)}`, CUT_OFF.test(errorText(err)), err);
   } finally {
     await exec("docker", ["image", "rm", ref], { env: there, timeout: TAG_TIMEOUT }).catch(() => {});
   }
@@ -159,19 +205,32 @@ export async function bringBack(
   let registryDown = false;
   try {
     for (const { image, ref } of images) {
+      let skipped = false;
       if (ref && !registryDown) {
-        const began = Date.now();
-        try {
-          await viaRegistry(image, ref, exec, there, here, opts.signal);
-          opts.log(`[build] Pulled ${ref} from the build registry as ${image} (${seconds(began)})`);
-          continue;
-        } catch (err) {
-          if (opts.signal?.aborted) throw err;
-          registryDown = true;
-          opts.log(`[build] Couldn't use the build registry: ${(err as Error).message}`);
+        const largest = await largestLayer(image, exec, there);
+        const ceiling = ceilingFor(opts.from);
+        if (largest !== null && ceiling !== null && largest >= ceiling) {
+          skipped = true;
+          opts.log(`[build] Skipping the build registry for ${image}: its ${formatBytes(largest)} layer is at least the ${formatBytes(ceiling)} one cut off pushing from ${opts.from}`);
+        } else {
+          const began = Date.now();
+          try {
+            await viaRegistry(image, ref, exec, there, here, opts.signal);
+            opts.log(`[build] Pulled ${ref} from the build registry as ${image} (${seconds(began)})`);
+            continue;
+          } catch (err) {
+            if (opts.signal?.aborted) throw err;
+            if (err instanceof PushError && err.cutOff && largest !== null && largest >= MIN_CEILING_BYTES) {
+              // Only this size and up skips the registry; smaller images keep trying it.
+              pushCeilings.set(opts.from, { bytes: Math.min(largest, ceiling ?? largest), at: Date.now() });
+            } else {
+              registryDown = true;
+            }
+            opts.log(`[build] Couldn't use the build registry: ${(err as Error).message}`);
+          }
         }
       }
-      opts.log(`[build] ${ref ? "Registry unavailable; copying" : "Copying"} ${image} from ${opts.from} over SSH`);
+      opts.log(`[build] ${ref && !skipped ? "Registry unavailable; copying" : "Copying"} ${image} from ${opts.from} over SSH`);
       const began = Date.now();
       try {
         const bytes = await copyImage(image, { fromEnv: there, toEnv: here, signal: opts.signal, spawn: opts.spawn });

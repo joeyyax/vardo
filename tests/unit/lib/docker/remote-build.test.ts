@@ -1,18 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { spawn } from "child_process";
-import { bringBack, copyImage } from "@/lib/docker/remote-build";
+import { bringBack, copyImage, resetPushCeilings, MIN_CEILING_BYTES } from "@/lib/docker/remote-build";
 import { BuilderError } from "@/lib/docker/build-targets";
 
 // Bringing a target's image here: the build registry first, then `docker save | docker load` over SSH.
 
 const session = { env: { DOCKER_HOST: "ssh://vardo@lh:22", PATH: "/tmp/s/bin:/usr/bin" }, close: async () => {} };
 
-function recorder(fail?: (args: string[]) => boolean) {
+/** Records docker calls other than `history`, which answers with `layers`. */
+function recorder(fail?: (args: string[]) => boolean, opts: { layers?: number[]; stderr?: string } = {}) {
   const calls: { args: string[]; where: string }[] = [];
-  const exec = async (_cmd: string, args: string[], opts: Record<string, unknown>) => {
-    const env = opts.env as NodeJS.ProcessEnv;
+  const exec = async (_cmd: string, args: string[], o: Record<string, unknown>) => {
+    if (args[0] === "history") return { stdout: (opts.layers ?? []).join("\n") };
+    const env = o.env as NodeJS.ProcessEnv;
     calls.push({ args, where: env.DOCKER_HOST ? "there" : "here" });
-    if (fail?.(args)) throw Object.assign(new Error("failed"), { stderr: "unauthorized: authentication required" });
+    if (fail?.(args)) throw Object.assign(new Error("failed"), { stderr: opts.stderr ?? "unauthorized: authentication required" });
     return { stdout: "" };
   };
   return { calls, exec };
@@ -77,6 +79,7 @@ describe("copyImage", () => {
 
 describe("bringBack", () => {
   const authEnv = { DOCKER_CONFIG: "/tmp/auth" } as unknown as NodeJS.ProcessEnv;
+  beforeEach(() => resetPushCeilings());
 
   it("pushes from the target, pulls here under the image's name and untags the ref on both", async () => {
     const { calls, exec } = recorder();
@@ -113,6 +116,47 @@ describe("bringBack", () => {
       "[build] Registry unavailable; copying shop:d from Long House over SSH",
       expect.stringMatching(/^\[build\] Copied shop:d from Long House over SSH \(2 MB, \d+\.\ds\)$/),
     ]);
+  });
+
+  describe("a push cut off on a big layer", () => {
+    const big = MIN_CEILING_BYTES * 4;
+    const cut = "write: broken pipe";
+
+    it("skips the registry next time for a layer that big, and copies over SSH", async () => {
+      const first = recorder((args) => args[0] === "push", { layers: [1000, big], stderr: cut });
+      const { spawn } = shells({ save: "true", load: "true" });
+      await bringBack([{ image: "shop:d1", ref: "reg/shop:k1" }], { authEnv, session, from: "lh", log: () => {}, exec: first.exec, spawn });
+
+      const second = recorder(undefined, { layers: [big * 2] });
+      const lines: string[] = [];
+      await bringBack([{ image: "shop:d2", ref: "reg/shop:k2" }], { authEnv, session, from: "lh", log: (l) => lines.push(l), exec: second.exec, spawn });
+      expect(second.calls.some((c) => c.args[0] === "push")).toBe(false);
+      expect(lines[0]).toBe("[build] Skipping the build registry for shop:d2: its 512 MB layer is at least the 256 MB one cut off pushing from lh");
+      expect(lines[1]).toBe("[build] Copying shop:d2 from lh over SSH");
+    });
+
+    it("keeps pushing smaller images and other targets", async () => {
+      const { spawn } = shells({ save: "true", load: "true" });
+      await bringBack([{ image: "shop:d1", ref: "reg/shop:k1" }], { authEnv, session, from: "lh", log: () => {}, exec: recorder((a) => a[0] === "push", { layers: [big], stderr: cut }).exec, spawn });
+
+      const small = recorder(undefined, { layers: [big / 2] });
+      await bringBack([{ image: "shop:d2", ref: "reg/shop:k2" }], { authEnv, session, from: "lh", log: () => {}, exec: small.exec, spawn });
+      expect(small.calls.some((c) => c.args[0] === "push")).toBe(true);
+
+      const other = recorder(undefined, { layers: [big] });
+      await bringBack([{ image: "shop:d3", ref: "reg/shop:k3" }], { authEnv, session, from: "box", log: () => {}, exec: other.exec, spawn });
+      expect(other.calls.some((c) => c.args[0] === "push")).toBe(true);
+    });
+
+    it("learns nothing from a refused push or a small layer", async () => {
+      const { spawn } = shells({ save: "true", load: "true" });
+      await bringBack([{ image: "a:1", ref: "reg/a:1" }], { authEnv, session, from: "lh", log: () => {}, exec: recorder((a) => a[0] === "push", { layers: [big] }).exec, spawn });
+      await bringBack([{ image: "b:1", ref: "reg/b:1" }], { authEnv, session, from: "lh", log: () => {}, exec: recorder((a) => a[0] === "push", { layers: [1000], stderr: cut }).exec, spawn });
+
+      const next = recorder(undefined, { layers: [big] });
+      await bringBack([{ image: "c:1", ref: "reg/c:1" }], { authEnv, session, from: "lh", log: () => {}, exec: next.exec, spawn });
+      expect(next.calls.some((c) => c.args[0] === "push")).toBe(true);
+    });
   });
 
   it("copies over SSH when the pull here fails", async () => {
