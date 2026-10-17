@@ -161,7 +161,7 @@ export function inMaintenance(m: Pick<Monitor, "maintenance">, now: number): boo
 }
 
 /** Runs the checks that are due, stores them, and opens or resolves incidents. */
-export async function runDueChecks(now = Date.now()): Promise<number> {
+export async function runDueChecks(now = Date.now(), clock?: () => number): Promise<number> {
   await seedLastRun();
   const local = await ensureLocalVantage();
   const rows = await db
@@ -181,7 +181,7 @@ export async function runDueChecks(now = Date.now()): Promise<number> {
   await pool(due, CONCURRENCY, async ({ monitor }) => {
     lastRun.set(monitor.id, now);
     try {
-      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id));
+      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, { now: clock }));
     } catch (err) {
       log.warn(`Check for ${monitor.id} threw:`, err);
     }

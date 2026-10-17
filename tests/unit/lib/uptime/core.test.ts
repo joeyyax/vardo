@@ -5,6 +5,7 @@ import {
   HOUR_MS,
   combine,
   evaluate,
+  findOutages,
   fillDays,
   generateKeyPair,
   hourlySummary,
@@ -108,6 +109,14 @@ describe("summaries", () => {
     const data = [0, 5, 10].map((m) => ({ monitorId: "m", vantageId: "local", at: start + m * 60_000, ok: true, latencyMs: 50 }) as CheckResult);
     const [b] = summarize({ results: data, vantages: [LOCAL], intervalSec: 300, from: start, to: start + 15 * 60_000, bucketMs: 15 * 60_000 });
     expect(b.minutesUp).toBe(15);
+  });
+
+  it("finds outages as runs of down minutes", () => {
+    const data = results((i) => (i >= 10 && i < 20 ? false : true), 31);
+    const found = findOutages({ results: data, vantages: [LOCAL], intervalSec: 60, from: start, to: start + 31 * 60_000 });
+    expect(found).toEqual([{ start: start + 10 * 60_000, end: start + 20 * 60_000 }]);
+    const ongoing = findOutages({ results: results((i) => i < 10, 25), vantages: [LOCAL], intervalSec: 60, from: start, to: start + 25 * 60_000 });
+    expect(ongoing).toEqual([{ start: start + 10 * 60_000, end: null }]);
   });
 
   it("combines hours into a day and fills gaps as unknown", () => {
