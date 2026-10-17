@@ -10,6 +10,7 @@ import { parse } from "yaml";
 import { injectNetwork, vardoNetworkServices } from "@/lib/docker/compose-inject";
 import { parseCompose } from "@/lib/docker/compose";
 import { CONSOLE_NETWORK, NETWORK_NAME } from "@/lib/docker/constants";
+import { sharedNetworkName, sharedNetworks } from "@/lib/docker/shared-networks";
 
 type Service = { networks?: string[] | Record<string, unknown>; labels?: string[]; network_mode?: string };
 
@@ -43,6 +44,12 @@ describe("console network", () => {
     expect(vardoNetworkServices(parsed).has("frontend")).toBe(false);
     const injected = injectNetwork(parsed, NETWORK_NAME, { attachTo: vardoNetworkServices(parsed) });
     expect(injected.services.frontend.networks).not.toContain(NETWORK_NAME);
+  });
+
+  it("is one network across slots, created by the deploy as a shared one", () => {
+    const parsed = parseCompose(raw);
+    expect(sharedNetworks(parsed).has("console")).toBe(true);
+    expect(sharedNetworkName(parsed, "console", "unused")).toBe(CONSOLE_NETWORK);
   });
 
   it("still puts an app's routed service on vardo-network", () => {
