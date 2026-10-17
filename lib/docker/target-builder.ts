@@ -10,6 +10,7 @@ import { formatGiB, type BoundedBuild } from "./build-memory";
 import type { BuildTarget } from "./build-targets";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { TARGET_BUILD } from "./remote-build";
+import type { PushCompression } from "./direct-export";
 
 /** The buildx builder registered per session against the peer's BuildKit. */
 export const TARGET_BUILDER = "vardo-target";
@@ -23,6 +24,9 @@ function firstLine(err: unknown): string {
   return (String(e?.stderr ?? "").trim() || e?.message || String(err)).split("\n")[0];
 }
 
+/** A target's builder. `compression` is set when it's the peer's BuildKit, which then exports straight here. */
+export type TargetBuilder = { build: BoundedBuild; close: () => Promise<void>; compression: PushCompression | null };
+
 /**
  * The builder for a build on `target`, whose daemon `there` reaches. A mesh target's runs in its vardo-buildkit
  * under a session-private buildx config; anything else, or a peer without one, builds on the daemon.
@@ -32,8 +36,8 @@ export async function targetBuilder(
   there: NodeJS.ProcessEnv,
   log: (line: string) => void,
   { exec = execFileAsync as unknown as Exec, signal }: { exec?: Exec; signal?: AbortSignal } = {},
-): Promise<{ build: BoundedBuild; close: () => Promise<void> }> {
-  const daemon = { build: TARGET_BUILD, close: async () => {} };
+): Promise<TargetBuilder> {
+  const daemon: TargetBuilder = { build: TARGET_BUILD, close: async () => {}, compression: null };
   if (target.kind !== "mesh") return daemon;
 
   const container = buildKitContainerName(DEFAULT_BUILDKIT_HOST)!;
@@ -76,6 +80,7 @@ export async function targetBuilder(
   return {
     build: { env: { BUILDX_CONFIG: dir, BUILDX_BUILDER: TARGET_BUILDER }, loadArgs: exportArgs(store), output: exportOutput(store), limitBytes },
     close,
+    compression: store === "containerd" ? "zstd" : "gzip",
   };
 }
 
@@ -84,12 +89,12 @@ export async function withTargetBuilder<T>(
   target: Pick<BuildTarget, "kind" | "name">,
   there: NodeJS.ProcessEnv,
   log: (line: string) => void,
-  run: (build: BoundedBuild) => Promise<T>,
+  run: (builder: Omit<TargetBuilder, "close">) => Promise<T>,
   opts: { exec?: Exec; signal?: AbortSignal } = {},
 ): Promise<T> {
   const builder = await targetBuilder(target, there, log, opts);
   try {
-    return await run(builder.build);
+    return await run(builder);
   } finally {
     await builder.close();
   }

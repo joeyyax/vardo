@@ -63,6 +63,7 @@ import { withBuildSlot, type BuildGate } from "../build-gate";
 import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../build-targets";
 import { bringBack } from "../remote-build";
 import { withTargetBuilder } from "../target-builder";
+import { bringDirect } from "../direct-export";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -503,11 +504,20 @@ async function dockerBuild(
       await onTarget(target, async (session) => {
         const there = remoteEnv(authEnv, session);
         const log = (line: string) => void logs.push(line);
-        await withTargetBuilder(target, there, log, async (targetBuild) => {
+        await withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
           ran = targetBuild;
-          const remoteArgs = dockerfileBuildArgs({ ...argsInput, loadArgs: targetBuild.loadArgs });
-          await spawnStream("docker", remoteArgs, { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
-          await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, from: target.name, log, placement: build.gate.placement, signal });
+          const run = (loadArgs: string[]) =>
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, loadArgs }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+          const image = { image: build.imageName, ref: remote.ref };
+          if (!compression) {
+            await run(targetBuild.loadArgs);
+            await bringBack([image], { authEnv, session, from: target.name, log, placement: build.gate.placement, signal });
+            return;
+          }
+          await bringDirect([image], {
+            authEnv, from: target.name, log, placement: build.gate.placement, signal, compression,
+            build: ([output]) => run(["--output", output, "--provenance=false", "--sbom=false"]),
+          });
         }, { signal });
       });
     });

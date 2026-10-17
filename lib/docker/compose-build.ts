@@ -15,6 +15,7 @@ import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
 import { bringBack } from "./remote-build";
 import type { BuildPlacementRecorder } from "./build-placement";
 import { withTargetBuilder } from "./target-builder";
+import { bringDirect } from "./direct-export";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -73,6 +74,15 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
   return [
     "buildx", "bake", "-f", file, "--progress=plain",
     "--set", `*.output=${output}`, "--provenance=false", "--sbom=false", ...services,
+  ];
+}
+
+/** As bakeArgs, with each service's own output. */
+export function serviceBakeArgs(file: string, outputs: Record<string, string>, services: string[]): string[] {
+  return [
+    "buildx", "bake", "-f", file, "--progress=plain",
+    ...Object.entries(outputs).flatMap(([service, output]) => ["--set", `${service}.output=${output}`]),
+    "--provenance=false", "--sbom=false", ...services,
   ];
 }
 
@@ -144,10 +154,21 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<ComposeBuild
     }
     return onTarget(target, async (session) => {
       const there = remoteEnv(opts.env, session);
-      return withTargetBuilder(target, there, log, async (targetBuild) => {
-        const out = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there);
+      return withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
+        if (compression && (await bakes(opts, exec, services, keyFileArgs, { ...there, ...targetBuild.env }))) {
+          let built!: Output;
+          await bringDirect(remote, {
+            authEnv: opts.env, from: target.name, log, placement: opts.placement, signal: opts.signal, exec, compression,
+            build: async (outputs) => {
+              const byService = Object.fromEntries(services.map((name, i) => [name, outputs[i]]));
+              built = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there, byService);
+            },
+          });
+          return built;
+        }
+        const built = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there);
         await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, placement: opts.placement, signal: opts.signal, exec });
-        return out;
+        return built;
       }, { signal: opts.signal });
     });
   });
@@ -161,28 +182,40 @@ async function runComposeBuild(
   keyFileArgs: string[],
   bounded: BoundedBuild,
   baseEnv: NodeJS.ProcessEnv,
+  /** Each service's own `--output`, for a bake straight from a peer's BuildKit. */
+  outputs?: Record<string, string>,
 ): Promise<Output> {
   const { slotDir, project } = opts;
-  const files = [...opts.composeFileArgs, ...keyFileArgs];
+  const { files, noCache, named } = composeArgs(opts, services, keyFileArgs);
   const env = { ...baseEnv, ...bounded.env };
   const run = { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: MAX_BUFFER, signal: opts.signal };
-  const noCache = opts.noCache ? ["--no-cache"] : [];
-  const reused = services.length < opts.services.length;
-  // Name services only when some were reused; a bare build also builds what `up` would.
-  const named = reused ? services : [];
 
-  if (bounded.output) {
+  if (bounded.output || outputs) {
     const bake = await printBake(exec, files, project, noCache, named, { ...run, env });
     if (bake) {
       const file = join(slotDir, BAKE_FILE);
       await writeFile(file, bake);
+      const args = outputs ? serviceBakeArgs(file, outputs, named) : bakeArgs(file, bounded.output!, named);
       // Compose grants read access to every build context; bake would ask for each.
-      return asOutput(await exec("docker", bakeArgs(file, bounded.output, named), { ...run, env: { ...env, BUILDX_BAKE_ENTITLEMENTS_FS: "0" } }));
+      return asOutput(await exec("docker", args, { ...run, env: { ...env, BUILDX_BAKE_ENTITLEMENTS_FS: "0" } }));
     }
+    if (outputs) throw new Error("This compose file can't be built with bake");
   }
   return asOutput(
     await exec("docker", ["compose", "--progress=plain", ...files, "-p", project, "build", ...noCache, ...named], { ...run, env }),
   );
+}
+
+function composeArgs(opts: ComposeBuildOpts, services: string[], keyFileArgs: string[]) {
+  const reused = services.length < opts.services.length;
+  // Name services only when some were reused; a bare build also builds what `up` would.
+  return { files: [...opts.composeFileArgs, ...keyFileArgs], noCache: opts.noCache ? ["--no-cache"] : [], named: reused ? services : [] };
+}
+
+/** Whether these services build with bake, which a per-service output needs. */
+async function bakes(opts: ComposeBuildOpts, exec: Exec, services: string[], keyFileArgs: string[], env: NodeJS.ProcessEnv): Promise<boolean> {
+  const { files, noCache, named } = composeArgs(opts, services, keyFileArgs);
+  return (await printBake(exec, files, opts.project, noCache, named, { cwd: opts.slotDir, maxBuffer: MAX_BUFFER, signal: opts.signal, env })) !== null;
 }
 
 /** Compose's bake definition, or null when this compose can't print one or it needs secrets. */

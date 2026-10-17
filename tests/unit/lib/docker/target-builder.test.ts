@@ -41,16 +41,18 @@ describe("targetBuilder", () => {
 
   it("builds on a plain SSH target's daemon without asking it anything", async () => {
     const docker = fakeDocker();
-    const { build } = await targetBuilder({ kind: "ssh", name: "builder" }, there, log, { exec: docker.exec });
+    const { build, compression } = await targetBuilder({ kind: "ssh", name: "builder" }, there, log, { exec: docker.exec });
     expect(build).toBe(TARGET_BUILD);
+    expect(compression).toBeNull();
     expect(docker.calls).toEqual([]);
     expect(lines).toEqual([]);
   });
 
   it("builds in a linked instance's vardo-buildkit, exporting for its image store, and names the limit", async () => {
     const docker = fakeDocker();
-    const { build, close } = await targetBuilder({ kind: "mesh", name: "Long House" }, there, log, { exec: docker.exec });
+    const { build, close, compression } = await targetBuilder({ kind: "mesh", name: "Long House" }, there, log, { exec: docker.exec });
     const dir = build.env.BUILDX_CONFIG;
+    expect(compression).toBe("zstd");
     expect(build.env).toEqual({ BUILDX_CONFIG: expect.stringContaining("vardo-buildx-"), BUILDX_BUILDER: TARGET_BUILDER });
     expect(build.loadArgs).toEqual(["--output", "type=docker,compression=zstd", "--provenance=false", "--sbom=false"]);
     expect(build.limitBytes).toBe(6 * GiB);
@@ -66,10 +68,11 @@ describe("targetBuilder", () => {
     expect(await exists(dir)).toBe(false);
   });
 
-  it("exports uncompressed for a classic image store", async () => {
+  it("exports uncompressed and pushes gzip for a classic image store", async () => {
     const docker = fakeDocker({ info: "overlay2|[]" });
-    const { build, close } = await targetBuilder({ kind: "mesh", name: "Long House" }, there, log, { exec: docker.exec });
+    const { build, close, compression } = await targetBuilder({ kind: "mesh", name: "Long House" }, there, log, { exec: docker.exec });
     expect(build.output).toBe("type=docker,compression=uncompressed");
+    expect(compression).toBe("gzip");
     await close();
   });
 
@@ -99,7 +102,7 @@ describe("withTargetBuilder", () => {
     const docker = fakeDocker();
     let dir = "";
     await expect(
-      withTargetBuilder({ kind: "mesh", name: "Long House" }, there, () => {}, async (build) => {
+      withTargetBuilder({ kind: "mesh", name: "Long House" }, there, () => {}, async ({ build }) => {
         dir = build.env.BUILDX_CONFIG;
         expect(await exists(dir)).toBe(true);
         throw new Error("failed to solve");
