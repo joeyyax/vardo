@@ -1,10 +1,9 @@
-// The probing side of a link: fetches a peer's watch list, checks its monitors and delivers signed results. Public monitors are checked over the
-// internet; private ones over the mesh, connecting only to that peer's tunnel address.
+// The probing side of a link: fetches a peer's watch list, checks its public monitors over the internet and delivers signed results.
 
 import { and, asc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { decryptSystem, encryptSystem } from "@/lib/crypto/encrypt";
 import { db } from "@/lib/db";
-import { meshPeers, uptimeProbeResults, uptimeProbeSummaries, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
+import { meshPeers, uptimePeerReports, uptimeProbeResults, uptimeProbeSummaries, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { MeshClientError, meshSignedPost } from "@/lib/mesh/client";
 import {
@@ -31,7 +30,6 @@ import {
   watchEntrySchema,
   watchResponseSchema,
 } from "./link";
-import { tunnelAddress } from "./mesh-path";
 import { probeEntry, type ProbeDeps } from "./probe-entry";
 import { checkDeps } from "./outbound";
 import { localSigningKey } from "./vantage";
@@ -82,6 +80,15 @@ async function storeWatch(peerId: string, entries: WatchEntry[], now: number): P
   });
 }
 
+/** The signing key a peer already announced here, as a vantage point or in a report. */
+export async function knownKey(peerId: string): Promise<string | null> {
+  const [vantage, report] = await Promise.all([
+    db.query.uptimeVantages.findFirst({ where: eq(uptimeVantages.meshPeerId, peerId), columns: { publicKey: true } }),
+    db.query.uptimePeerReports.findFirst({ where: eq(uptimePeerReports.peerId, peerId), columns: { publicKey: true } }),
+  ]);
+  return vantage?.publicKey ?? report?.publicKey ?? null;
+}
+
 /** Fetches one peer's watch list and verifies its signature. Returns the entries, or null when the peer refuses or sends junk. */
 async function fetchWatch(peer: LinkedPeer): Promise<WatchEntry[] | null> {
   const identity = await localIdentity();
@@ -95,9 +102,9 @@ async function fetchWatch(peer: LinkedPeer): Promise<WatchEntry[] | null> {
   const parsed = watchResponseSchema.safeParse(data);
   if (!parsed.success) throw new Error("Malformed watch list");
 
-  // A peer that already checks us announced a key; the same peer must keep using it.
-  const known = await db.query.uptimeVantages.findFirst({ where: eq(uptimeVantages.meshPeerId, peer.id), columns: { publicKey: true } });
-  if (known && known.publicKey !== parsed.data.vantage.publicKey) throw new Error("Vantage key changed");
+  // A peer that already checks us or reports to us announced a key; the same peer must keep using it.
+  const known = await knownKey(peer.id);
+  if (known && known !== parsed.data.vantage.publicKey) throw new Error("Vantage key changed");
 
   const payload = verifyRecord(parsed.data.watch, parsed.data.vantage.publicKey);
   if (!payload || payload.kind !== "watch" || payload.vantageId !== parsed.data.vantage.id) throw new Error("Bad watch list signature");
@@ -105,30 +112,45 @@ async function fetchWatch(peer: LinkedPeer): Promise<WatchEntry[] | null> {
   const entries: WatchEntry[] = [];
   for (const raw of payload.monitors.slice(0, MAX_WATCH_ENTRIES)) {
     const entry = watchEntrySchema.safeParse(raw);
-    if (entry.success) entries.push(entry.data as WatchEntry);
+    // Mesh entries from an older owner would need the tunnel to reach its sites; they're dropped.
+    if (entry.success && entry.data.path !== "mesh") entries.push(entry.data as WatchEntry);
   }
   return entries;
 }
 
-/** Refreshes each checking peer's watch list every five minutes and clears the lists of peers switched off. */
+/** Fetches and stores one peer's watch list. A peer that refuses us has its list and its report dropped. */
+async function refreshOne(peer: LinkedPeer, now: number): Promise<"ok" | "refused" | "failed"> {
+  lastFetch.set(peer.id, now);
+  try {
+    const entries = await fetchWatch(peer);
+    await storeWatch(peer.id, entries ?? [], now);
+    if (entries) return "ok";
+    await db.delete(uptimePeerReports).where(eq(uptimePeerReports.peerId, peer.id));
+    return "refused";
+  } catch (err) {
+    log.warn(`Watch list from ${peer.name} unavailable: ${err instanceof Error ? err.message : err}`);
+    return "failed";
+  }
+}
+
+/** Refreshes each checking peer's watch list every five minutes and clears the lists and reports of peers switched off. */
 export async function refreshWatchLists(now = Date.now(), force = false): Promise<void> {
   const peers = await checkingPeers();
   const active = new Set(peers.map((p) => p.id));
   const stale = await db.selectDistinct({ peerId: uptimeWatchEntries.peerId }).from(uptimeWatchEntries);
   for (const s of stale) if (!active.has(s.peerId)) await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, s.peerId));
+  const reporting = await db.select({ peerId: uptimePeerReports.peerId }).from(uptimePeerReports);
+  for (const r of reporting) if (!active.has(r.peerId)) await db.delete(uptimePeerReports).where(eq(uptimePeerReports.peerId, r.peerId));
 
   const due = peers.filter((p) => force || now - (lastFetch.get(p.id) ?? 0) >= WATCH_REFRESH_MS);
-  await Promise.all(
-    due.map(async (peer) => {
-      lastFetch.set(peer.id, now);
-      try {
-        const entries = await fetchWatch(peer);
-        await storeWatch(peer.id, entries ?? [], now);
-      } catch (err) {
-        log.warn(`Watch list from ${peer.name} unavailable: ${err instanceof Error ? err.message : err}`);
-      }
-    }),
-  );
+  await Promise.all(due.map((peer) => refreshOne(peer, now)));
+}
+
+/** Asks one peer for its watch list now, to tell a peer that stopped reporting from one that no longer lets us watch it. */
+export async function confirmWatched(peerId: string, now = Date.now()): Promise<"ok" | "refused" | "failed"> {
+  const peer = (await checkingPeers()).find((p) => p.id === peerId);
+  if (!peer) return "refused";
+  return refreshOne(peer, now);
 }
 
 async function seedLastProbe(): Promise<void> {
@@ -165,7 +187,7 @@ function withHeaders<E extends { check: WatchEntry["check"]; headersEncrypted: s
 export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<number> {
   await seedLastProbe();
   const rows = await db
-    .select({ entry: uptimeWatchEntries, internalIp: meshPeers.internalIp })
+    .select({ entry: uptimeWatchEntries })
     .from(uptimeWatchEntries)
     .innerJoin(meshPeers, eq(meshPeers.id, uptimeWatchEntries.peerId))
     .where(eq(meshPeers.uptimeChecksPeer, true));
@@ -180,10 +202,10 @@ export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<
   const identity = await localIdentity();
   const strict = await checkDeps("strict");
   const fresh: { peerId: string; result: CheckResult }[] = [];
-  await pool(due, CONCURRENCY, async ({ entry: e, internalIp }) => {
+  await pool(due, CONCURRENCY, async ({ entry: e }) => {
     lastProbe.set(`${e.peerId}:${e.monitorId}`, now);
     try {
-      const result = await probeEntry(withHeaders(e), { vantageId: identity.id, peerAddress: tunnelAddress(internalIp), strict, deps });
+      const result = await probeEntry(withHeaders(e), { vantageId: identity.id, strict, deps });
       fresh.push({ peerId: e.peerId, result });
     } catch (err) {
       log.warn(`Probe of ${e.monitorId} threw:`, err);

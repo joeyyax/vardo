@@ -2,9 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { meshPeers, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
-import { reconcileTraefikForward } from "@/lib/mesh/traefik-forward";
-import { logger } from "@/lib/logger";
+import { meshPeers, uptimePeerReports, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
 import type { LinkPatch } from "./link";
 import type { VantageLinkView } from "./types";
 
@@ -40,7 +38,7 @@ export async function listVantageLinks(): Promise<VantageLinkView[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Applies the switches. Turning one off takes effect now: the peer's results stop counting, or our probing of it stops. */
+/** Applies the switches. Turning one off takes effect now: the peer's results stop counting, or our probing of it and its reports stop. */
 export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<VantageLinkView | null> {
   const [peer] = await db
     .update(meshPeers)
@@ -52,11 +50,12 @@ export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<
     .where(eq(meshPeers.id, peerId))
     .returning({ id: meshPeers.id });
   if (!peer) return null;
-  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [], meshWatching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
-  // The tunnel's route to Traefik exists only while a peer may check this instance.
-  if (patch.checksThisInstance !== undefined) {
-    await reconcileTraefikForward().catch((err) => logger.child("uptime-links").warn("Traefik forward update failed:", err));
+  if (patch.checksThisInstance === false) {
+    await db.update(uptimeVantages).set({ watching: [], reporting: [], reportedAt: null }).where(eq(uptimeVantages.meshPeerId, peerId));
   }
-  if (patch.thisInstanceChecks === false) await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
+  if (patch.thisInstanceChecks === false) {
+    await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
+    await db.delete(uptimePeerReports).where(eq(uptimePeerReports.peerId, peerId));
+  }
   return viewOf(peerId);
 }

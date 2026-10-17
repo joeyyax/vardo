@@ -15,9 +15,11 @@ export type Notice = {
   /** "pouch.email is down". */
   title: string;
   detail: string;
+  /** The linked instance that reported it. Absent for this instance's own monitors. */
+  instance?: string;
 };
 
-const groupOf = (n: Notice) => `${n.audience}\n${n.kind}`;
+const groupOf = (n: Notice) => `${n.audience}\n${n.kind}\n${n.instance ?? ""}`;
 
 /** Splits pending notices into groups whose oldest notice has waited the window, and the rest. */
 export function dueGroups(pending: Notice[], now: number, windowMs = GROUP_WINDOW_MS): { due: Notice[][]; rest: Notice[] } {
@@ -42,7 +44,7 @@ const VERB: Record<NoticeKind, string> = { down: "down", recovered: "recovered",
 export function describeGroup(instance: string, group: Notice[]): { subject: string; title: string; message: string } {
   if (group.length === 1) return { subject: group[0].title, title: group[0].title, message: group[0].detail };
   const kind = group[0].kind;
-  const title = `${instance}: ${group.length} monitors ${VERB[kind]}`;
+  const title = `${group[0].instance ?? instance}: ${group.length} monitors ${VERB[kind]}`;
   const names = [...new Set(group.map((n) => n.name))].sort((a, b) => a.localeCompare(b));
   return { subject: title, title, message: names.map((n) => `- ${n}`).join("\n") };
 }

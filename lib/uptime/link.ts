@@ -1,12 +1,27 @@
 // What linked instances send each other: paths and payload shapes. Shared by the serving and probing sides.
 
+import { createPublicKey } from "node:crypto";
 import { z } from "zod";
+
+/** What a link route answers: a status and a JSON body. */
+export type LinkReply = { status: number; json: unknown };
+
+/** True for an Ed25519 public key in PEM. */
+export function validKey(pem: string): boolean {
+  try {
+    return createPublicKey(pem).asymmetricKeyType === "ed25519";
+  } catch {
+    return false;
+  }
+}
 
 export const WATCH_PATH = "/api/v1/mesh/uptime/watch";
 export const RESULTS_PATH = "/api/v1/mesh/uptime/results";
+export const REPORTS_PATH = "/api/v1/mesh/uptime/reports";
 
 export const MAX_WATCH_BODY_BYTES = 16_384;
 export const MAX_RESULTS_BODY_BYTES = 4_000_000;
+export const MAX_REPORT_BODY_BYTES = 2_000_000;
 export const MAX_WATCH_ENTRIES = 5000;
 export const MAX_RECORDS_PER_PUSH = 200;
 export const MAX_RESULTS_PER_RECORD = 2000;
@@ -26,6 +41,9 @@ const signedSchema = z.object({ payload: z.string().min(1).max(2_000_000), sig: 
 export const watchResponseSchema = z.object({ vantage: identitySchema, watch: signedSchema });
 
 export const resultsRequestSchema = z.object({ records: z.array(signedSchema).min(1).max(MAX_RECORDS_PER_PUSH) });
+
+/** An owner's signed report on the monitors the peer doesn't check, and who signed it. */
+export const reportRequestSchema = z.object({ vantage: identitySchema, report: signedSchema });
 
 export const resultsResponseSchema = z.object({
   accepted: z.number().int(),

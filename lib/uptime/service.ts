@@ -12,8 +12,10 @@ import {
   uptimeMonitors,
   uptimeRecords,
   uptimeResults,
+  uptimeVantages,
   type UptimeMonitorRow,
 } from "@/lib/db/schema";
+import { getInstanceDisplayName } from "@/lib/system-settings";
 import { listUptimeIncidents } from "@/lib/incidents/uptime";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import {
@@ -25,6 +27,7 @@ import {
   DEFAULT_TLS_WARN_DAYS,
   HOUR_MS,
   RANGE_SPECS,
+  REPORT_ACCEPTED_FRESH_MS,
   bucketStarts,
   combine,
   defaultRange,
@@ -150,7 +153,20 @@ export type Loaded = {
   range: UptimeRange;
   /** Bars for the range, from where each monitor's history starts. */
   bars: Map<string, { buckets: Bucket[]; since: number | null }>;
+  /** This instance's name and the linked instances that took its last report, with the monitors in it. */
+  reports: { by: string; to: { name: string; ids: Set<string> }[] };
 };
+
+async function reportsTaken(now: number): Promise<Loaded["reports"]> {
+  const [rows, by] = await Promise.all([
+    db
+      .select({ name: uptimeVantages.name, reporting: uptimeVantages.reporting })
+      .from(uptimeVantages)
+      .where(and(eq(uptimeVantages.kind, "external"), gte(uptimeVantages.reportedAt, new Date(now - REPORT_ACCEPTED_FRESH_MS)))),
+    getInstanceDisplayName().catch(() => null),
+  ]);
+  return { by: by || "this instance", to: rows.map((r) => ({ name: r.name, ids: new Set(r.reporting) })) };
+}
 
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -237,7 +253,7 @@ export async function load(rows: UptimeMonitorRow[], now: number, range?: Uptime
   const ids = rows.map((r) => r.id);
   const appIds = [...new Set(rows.map((r) => r.appId).filter((id): id is string => !!id))];
   const linkedIds = [...new Set(rows.map((r) => r.linkDomainId).filter((id): id is string => !!id))];
-  const [vantages, resultRows, daily, appRows, watchers, impaired, domainRows] = await Promise.all([
+  const [vantages, resultRows, daily, appRows, watchers, impaired, domainRows, reports] = await Promise.all([
     listVantagePoints(),
     ids.length
       ? db
@@ -250,14 +266,20 @@ export async function load(rows: UptimeMonitorRow[], now: number, range?: Uptime
     externalWatchers(),
     loadImpaired(now),
     linkedIds.length ? db.select({ id: domains.id }).from(domains).where(inArray(domains.id, linkedIds)) : Promise.resolve([]),
+    reportsTaken(now),
   ]);
   const partial = { vantages, impaired, watchers, daily };
   const bars = await rangeBars(rows, effective, now, partial);
-  return { rows, range: effective, bars, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), liveDomains: new Set(domainRows.map((d) => d.id)), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
+  return { rows, range: effective, bars, reports, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), liveDomains: new Set(domainRows.map((d) => d.id)), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
 }
 
 /** How often each vantage point checks the monitor, counting those that share it. */
 const periodOf = (row: UptimeMonitorRow, ctx: Pick<Loaded, "watchers">) => effectiveIntervalSec(row.intervalSec, sharing(ctx.watchers, row.id).length);
+
+function reportOf(id: string, ctx: Loaded): MonitorSummary["report"] {
+  const to = [...new Set(ctx.reports.to.filter((v) => v.ids.has(id)).map((v) => v.name))];
+  return to.length > 0 ? { by: ctx.reports.by, to } : null;
+}
 
 export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorSummary {
   const results = ctx.recent.get(row.id) ?? [];
@@ -293,7 +315,7 @@ export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): M
     state: !row.enabled ? "unknown" : reviewing ? "review" : evaluation.state,
     openable: check.type === "http" && row.peerRole !== "link",
     reading: row.enabled && !reviewing ? (evaluation.reading ?? null) : null,
-    meshBy: [...new Set(evaluation.vantages.filter((s) => s.path === "mesh" && s.state !== "unknown").map((s) => s.vantage.name))],
+    report: reportOf(row.id, ctx),
     localOnly: evaluation.localOnly,
     downSince: evaluation.downSince ?? null,
     uptime30: rangeUptime(daily),

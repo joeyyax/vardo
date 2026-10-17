@@ -1,4 +1,4 @@
-// The mesh path's network allowance: checks connect to one peer's tunnel address and nowhere else.
+// The tunnel monitor's network allowance: checks connect to one peer's tunnel address, on the ports given, and nowhere else.
 // The address and the ports are fixed here. The check only supplies the Host header, the SNI name and the path.
 
 import http from "node:http";
@@ -8,7 +8,7 @@ import tls from "node:tls";
 import { Readable } from "node:stream";
 import { HUB_IP } from "@/lib/mesh/ip-allocator";
 import type { HostGuard } from "./core";
-import { MESH_PORTS, urlPort } from "./net";
+import { urlPort } from "./net";
 
 const MAX_REDIRECTS = 5;
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
@@ -90,7 +90,7 @@ function pinnedUrl(raw: string, ports: readonly number[], address: string): URL 
  * Fetch, sockets and a host guard that only ever connect to `address:<allowed port>`. Redirects are followed, each hop
  * pinned the same way, so a redirect to another host still lands on the same tunnel address.
  */
-export function tunnelDeps(address: string, ports: readonly number[] = MESH_PORTS): TunnelDeps {
+export function tunnelDeps(address: string, ports: readonly number[]): TunnelDeps {
   if (!tunnelAddress(address)) throw new Error(`Not a mesh address: ${address}`);
 
   const fetchPinned = (async (input: string | URL | Request, init: RequestInit = {}) => {

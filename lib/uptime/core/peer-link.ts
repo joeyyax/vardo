@@ -1,4 +1,4 @@
-// What a watching instance concludes about a linked peer from three signals: the console over the tunnel, its public URL and the heartbeat.
+// What a watching instance concludes about a linked peer from its signals: the console over the tunnel, its public URL, the heartbeat and its reports.
 
 export type Signal = "up" | "down" | "unknown";
 
@@ -11,9 +11,11 @@ export type PeerSignals = {
   publicUrl: Signal | "none";
   /** Whether the mesh heartbeat is recent; null when it can't tell. */
   heartbeatFresh: boolean | null;
+  /** Whether the peer's reports on its private monitors are arriving; none when it doesn't send them. */
+  reports?: "fresh" | "stale" | "none";
 };
 
-export type PeerVerdictKind = "ok" | "link-down" | "peer-down" | "unreachable" | "public-down";
+export type PeerVerdictKind = "ok" | "link-down" | "peer-down" | "unreachable" | "public-down" | "silent";
 
 export type PeerVerdict = {
   kind: PeerVerdictKind;
@@ -26,9 +28,24 @@ export type PeerVerdict = {
 /**
  * Tunnel down with the public URL answering is the link. Both down is the peer. A tunnel down with no public URL can't be told
  * apart, so it reads as unreachable. A stale heartbeat counts as the tunnel being down while the tunnel check has no data.
+ * Reports that stop while the tunnel isn't down are their own verdict; while it's down, the link or peer verdict says why.
  */
 export function judgePeerLink(s: PeerSignals): PeerVerdict {
   const tunnel: Signal = s.tunnel === "unknown" && s.heartbeatFresh === false ? "down" : s.tunnel;
+  const verdict = judgeReachability(s, tunnel);
+  if (s.reports !== "stale") return verdict;
+  if (tunnel !== "down") {
+    return {
+      kind: "silent",
+      state: "down",
+      title: `${s.peer} stopped reporting`,
+      detail: `${s.peer} answers, but its reports on its private monitors stopped reaching ${s.self}, so nothing here watches them.`,
+    };
+  }
+  return { ...verdict, detail: `${verdict.detail} Its private monitors go unwatched until it reports again.` };
+}
+
+function judgeReachability(s: PeerSignals, tunnel: Signal): PeerVerdict {
   if (tunnel === "unknown" && s.publicUrl === "none") return { kind: "ok", state: "unknown", title: "", detail: "" };
 
   if (tunnel === "up") {

@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
-import { reconcileTraefikForward } from "./traefik-forward";
 import { syncBuilderTls } from "./builder-tls";
 import { reconcileBuilderForward } from "./builder-forward";
 import { exchangeKeys } from "./key-exchange";
 import { retireMeshSsh } from "./retire-ssh";
+import { retireTraefikForward } from "./retire-traefik";
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 
@@ -20,16 +20,12 @@ async function reconcileForward(): Promise<void> {
     log.error("Mesh console forward check failed:", err);
   }
   await retireMeshSsh();
+  await retireTraefikForward();
   try {
     await syncBuilderTls();
     await reconcileBuilderForward();
   } catch (err) {
     log.error("Mesh builder check failed:", err);
-  }
-  try {
-    await reconcileTraefikForward();
-  } catch (err) {
-    log.error("Mesh Traefik forward check failed:", err);
   }
 }
 

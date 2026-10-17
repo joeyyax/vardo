@@ -1,3 +1,5 @@
+import { HUB_IP } from "./ip-allocator";
+
 /** Name of the Wireguard Docker container. */
 export const WG_CONTAINER = process.env.VARDO_WG_CONTAINER || "vardo-wireguard";
 
@@ -24,3 +26,6 @@ export const MESH_BUILDER_SERVER_NAME = "vardo-mesh-builder";
 
 /** The builder's TLS files, inside its cache volume. */
 export const MESH_BUILDER_TLS_DIR = "/home/user/.local/share/buildkit/vardo-tls";
+
+/** The WireGuard tunnel subnet. */
+export const MESH_SUBNET = `${HUB_IP.split(".").slice(0, 3).join(".")}.0/24`;

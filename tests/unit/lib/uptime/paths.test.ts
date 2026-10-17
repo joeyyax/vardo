@@ -14,10 +14,10 @@ import {
   type VantagePoint,
 } from "@/lib/uptime/core";
 import { checkWatchedBatch } from "@/lib/uptime/batch";
-import { incidentTitle, meshNote, pathLabel, readingDetail, readingLabel } from "@/lib/uptime/format";
+import { incidentTitle, pathLabel, readingDetail, readingLabel, reportNote } from "@/lib/uptime/format";
 import { tunnelAddress, tunnelDeps } from "@/lib/uptime/mesh-path";
 import { isNeverPublic } from "@/lib/uptime/core";
-import { meshCarries, privateEntries } from "@/lib/uptime/net";
+import { publicEntries } from "@/lib/uptime/net";
 import { probeEntry } from "@/lib/uptime/probe-entry";
 
 const LOCAL: VantagePoint = { id: "local", name: "This instance", kind: "local" };
@@ -135,12 +135,14 @@ describe("copy", () => {
     expect(incidentTitle("shop.example.com", "degraded", { kind: "vantage-failing", vantages: ["Oregon"] })).toBe("shop.example.com is failing from Oregon");
   });
 
-  it("labels the path of each vantage row and the mesh note", () => {
+  it("labels the path of each vantage row and the report note", () => {
     expect(pathLabel("external", "public")).toBe("External · public");
     expect(pathLabel("external", "mesh")).toBe("External · mesh");
     expect(pathLabel("local", "local")).toBe("Local");
-    expect(meshNote(["jy0"])).toBe("Checked over the mesh by jy0");
-    expect(meshNote([])).toBeNull();
+    expect(reportNote({ by: "Long House", to: ["jy0"] })).toBe("Reported by Long House · watched by jy0");
+    expect(reportNote({ by: "Long House", to: ["jy0", "Frankfurt"] })).toBe("Reported by Long House · watched by jy0 and Frankfurt");
+    expect(reportNote({ by: "Long House", to: [] })).toBeNull();
+    expect(reportNote(null)).toBeNull();
   });
 });
 
@@ -191,6 +193,21 @@ describe("peer link verdicts", () => {
     expect(judge({ publicUrl: "down" })).toMatchObject({ kind: "public-down", state: "degraded" });
   });
 
+  it("says the peer stopped reporting when its reports stop while it still answers", () => {
+    expect(judge({ reports: "stale" })).toMatchObject({ kind: "silent", state: "down", title: "jy0 stopped reporting" });
+    expect(judge({ reports: "stale", tunnel: "unknown", publicUrl: "none" })).toMatchObject({ kind: "silent" });
+    expect(judge({ reports: "fresh" })).toMatchObject({ kind: "ok" });
+    expect(judge({ reports: "none" })).toMatchObject({ kind: "ok" });
+  });
+
+  it("keeps the link-down and instance-down wording when reports stop with the tunnel down", () => {
+    const link = judge({ reports: "stale", tunnel: "down" });
+    expect(link).toMatchObject({ kind: "link-down", title: "Link to jy0 is down" });
+    expect(link.detail).toMatch(/private monitors go unwatched/);
+    expect(judge({ reports: "stale", tunnel: "down", publicUrl: "down" })).toMatchObject({ kind: "peer-down", title: "jy0 is down" });
+    expect(judge({ reports: "stale", tunnel: "unknown", heartbeatFresh: false })).toMatchObject({ kind: "link-down" });
+  });
+
   it("reads a stale heartbeat as a dead tunnel while the tunnel check has no data", () => {
     expect(judge({ tunnel: "unknown", heartbeatFresh: false })).toMatchObject({ kind: "link-down" });
     expect(judge({ tunnel: "unknown", heartbeatFresh: true }).state).toBe("unknown");
@@ -210,7 +227,7 @@ describe("watch list classification", () => {
     return dns[host];
   };
 
-  it("lists hosts that resolve only to private addresses, as mesh checks", async () => {
+  it("serves only hosts with public addresses, never one a peer would reach through the tunnel", async () => {
     const monitors = [
       { id: "private", check: http1("https://app.example.com/"), intervalSec: 60 },
       { id: "public", check: http1("https://shop.example.com/"), intervalSec: 60 },
@@ -218,25 +235,10 @@ describe("watch list classification", () => {
       { id: "gone", check: http1("https://gone.example.com/"), intervalSec: 60 },
       { id: "literal", check: http1("http://192.168.1.5/"), intervalSec: 60 },
       { id: "lan", check: http1("https://nas.lan/"), intervalSec: 60 },
-      { id: "port", check: http1("https://app.example.com:8443/"), intervalSec: 60 },
-      { id: "db", check: { type: "tcp" as const, host: "app.example.com", port: 5432 }, intervalSec: 60 },
       { id: "web", check: { type: "tcp" as const, host: "app.example.com", port: 443 }, intervalSec: 60 },
     ];
-    const entries = await privateEntries(monitors, resolve);
-    expect(entries.map((e) => [e.monitorId, e.path])).toEqual([
-      ["private", "mesh"],
-      ["lan", "mesh"],
-      ["web", "mesh"],
-    ]);
-  });
-
-  it("carries only names on the ports the tunnel forwards to Traefik", () => {
-    expect(meshCarries(http1("https://app.example.com/"))).toBe(true);
-    expect(meshCarries(http1("http://app.example.com/"))).toBe(true);
-    expect(meshCarries(http1("https://app.example.com:8443/"))).toBe(false);
-    expect(meshCarries(http1("https://192.168.1.5/"))).toBe(false);
-    expect(meshCarries(http1("https://localhost/"))).toBe(false);
-    expect(meshCarries({ type: "tls", host: "app.example.com", port: 443, warnDays: 14 })).toBe(true);
+    const entries = await publicEntries(monitors, resolve);
+    expect(entries.map((e) => [e.monitorId, e.path ?? "public"])).toEqual([["public", "public"]]);
   });
 });
 
@@ -249,17 +251,15 @@ describe("names that can't be public", () => {
 
 describe("batch path check", () => {
   const okResult = (path: CheckPath): CheckResult => ({ ...r("ore", path, true), at: NOW });
-  it("accepts a result only on the path it was served for", () => {
+  it("accepts results on the public path only", () => {
     const watching = new Set(["m"]);
     expect(checkWatchedBatch([okResult("public")], "ore", watching, NOW)).toBeNull();
     expect(checkWatchedBatch([okResult("mesh")], "ore", watching, NOW)).toBe("wrong path");
-    expect(checkWatchedBatch([okResult("mesh")], "ore", watching, NOW, new Set(["m"]))).toBeNull();
-    expect(checkWatchedBatch([okResult("public")], "ore", watching, NOW, new Set(["m"]))).toBe("wrong path");
     expect(checkWatchedBatch([okResult("local")], "ore", watching, NOW)).toBe("wrong path");
   });
 });
 
-describe("mesh path allowance", () => {
+describe("tunnel allowance", () => {
   afterEach(() => vi.restoreAllMocks());
   const PEER = "10.99.0.7";
 
@@ -305,71 +305,37 @@ describe("mesh path allowance", () => {
     expect(tunnelAddress("10.99.0.7")).toBe("10.99.0.7");
     expect(tunnelAddress("10.99.0.7/32")).toBe("10.99.0.7");
     for (const bad of ["192.168.1.5", "10.99.0.0", "10.99.0.255", "10.99.0.7/24", "10.98.0.7", "app.lan", "", null]) expect(tunnelAddress(bad)).toBeNull();
-    expect(() => tunnelDeps("192.168.1.5")).toThrow();
+    expect(() => tunnelDeps("192.168.1.5", [3000])).toThrow();
   });
 
-  it("connects an http check to the peer's tunnel address with the original Host header", async () => {
-    const calls = fakeHttp();
-    const result = await probeEntry(entry(page), { vantageId: "v", peerAddress: PEER, strict });
-    expect(result).toMatchObject({ ok: true, path: "mesh", status: 200 });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ host: PEER, port: 80, headers: { host: "app.lan" } });
-  });
-
-  it("keeps every redirect hop on the tunnel address", async () => {
-    const calls: { host: string; headers: Record<string, string> }[] = [];
-    vi.spyOn(http, "request").mockImplementation(((options: Record<string, unknown>, cb: (res: unknown) => void) => {
-      calls.push({ host: String(options.host), headers: options.headers as Record<string, string> });
-      const req = new EventEmitter() as EventEmitter & { end: () => void };
-      req.end = () => {
-        const first = calls.length === 1;
-        const res = Object.assign(Readable.from(["ok"]), {
-          statusCode: first ? 302 : 200,
-          headers: first ? { location: "http://192.168.1.99/elsewhere" } : {},
-          statusMessage: "",
-        });
-        queueMicrotask(() => cb(res));
-      };
-      return req;
-    }) as never);
-    // A redirect to an address is refused outright; one to a name stays on the tunnel.
-    const refused = await probeEntry(entry(page), { vantageId: "v", peerAddress: PEER, strict });
-    expect(refused).toMatchObject({ ok: false, error: "blocked" });
-    expect(calls.every((c) => c.host === PEER)).toBe(true);
-  });
-
-  it("refuses a watch entry that points anywhere else", async () => {
+  it("refuses a mesh entry without connecting anywhere", async () => {
     const http1 = fakeHttp();
     const tcp = fakeTcp();
-    const refuse = async (check: unknown, peerAddress: string | null = PEER) =>
-      probeEntry(entry(check), { vantageId: "v", peerAddress, strict });
-
-    // A LAN address in the check.
-    expect(await refuse({ ...page, url: "http://192.168.1.50/" })).toMatchObject({ ok: false, error: "blocked", path: "mesh" });
-    expect(await refuse({ ...page, url: "http://[fd00::5]/" })).toMatchObject({ ok: false, error: "blocked" });
-    expect(await refuse({ type: "tcp", host: "192.168.1.50", port: 443 })).toMatchObject({ ok: false, error: "blocked" });
-    // A port the tunnel doesn't forward.
-    expect(await refuse({ ...page, url: "http://app.lan:8080/" })).toMatchObject({ ok: false, error: "blocked" });
-    expect(await refuse({ type: "tcp", host: "db.example.com", port: 5432 })).toMatchObject({ ok: false, error: "blocked" });
-    // No valid tunnel address for the peer.
-    expect(await refuse(page, null)).toMatchObject({ ok: false, error: "blocked" });
-    expect(await refuse(page, "192.168.1.1")).toMatchObject({ ok: false, error: "blocked" });
-
+    expect(await probeEntry(entry(page), { vantageId: "v", strict })).toMatchObject({ ok: false, error: "blocked", path: "mesh" });
+    expect(await probeEntry(entry({ type: "tcp", host: "db.example.com", port: 443 }), { vantageId: "v", strict })).toMatchObject({ ok: false, error: "blocked" });
     expect(http1).toHaveLength(0);
     expect(tcp).toHaveLength(0);
   });
 
-  it("connects a tcp check to the tunnel address and not the host in the entry", async () => {
-    const calls = fakeTcp();
-    const result = await probeEntry(entry({ type: "tcp", host: "db.example.com", port: 443 }), { vantageId: "v", peerAddress: PEER, strict });
-    expect(result).toMatchObject({ ok: true, path: "mesh" });
-    expect(calls).toEqual([{ host: PEER, port: 443 }]);
+  it("keeps every redirect hop on the tunnel address", async () => {
+    const calls: { host: string }[] = [];
+    vi.spyOn(http, "request").mockImplementation(((options: Record<string, unknown>, cb: (res: unknown) => void) => {
+      calls.push({ host: String(options.host) });
+      const req = new EventEmitter() as EventEmitter & { end: () => void };
+      req.end = () => {
+        const res = Object.assign(Readable.from(["ok"]), { statusCode: 302, headers: { location: "http://192.168.1.99:3000/elsewhere" }, statusMessage: "" });
+        queueMicrotask(() => cb(res));
+      };
+      return req;
+    }) as never);
+    await expect(tunnelDeps(PEER, [3000]).fetch(`http://${PEER}:3000/api/health`)).rejects.toMatchObject({ name: "BlockedUrlError" });
+    expect(calls.every((c) => c.host === PEER)).toBe(true);
   });
 
   it("pins the sockets and fetch it hands out, whatever they're asked", async () => {
     const calls = fakeHttp();
     const tcp = fakeTcp();
-    const deps = tunnelDeps(PEER);
+    const deps = tunnelDeps(PEER, [80, 443]);
     await deps.fetch("http://anything.lan/x");
     expect(calls[0].host).toBe(PEER);
     await expect(deps.fetch("http://10.0.0.5/")).rejects.toMatchObject({ name: "BlockedUrlError" });
@@ -383,11 +349,11 @@ describe("mesh path allowance", () => {
     const publicStrict = { fetch: (async (u: string) => (used.push(u), new Response("ok"))) as unknown as typeof fetch, guard: async () => null };
     const result = await probeEntry(
       entry({ ...page, url: "https://shop.example.com/" }, "public"),
-      { vantageId: "v", peerAddress: PEER, strict: publicStrict, deps: { resolve: async () => ["93.184.216.34"] } },
+      { vantageId: "v", strict: publicStrict, deps: { resolve: async () => ["93.184.216.34"] } },
     );
     expect(result).toMatchObject({ ok: true, path: "public" });
     expect(used).toEqual(["https://shop.example.com/"]);
-    const lan = await probeEntry(entry({ ...page, url: "https://app.lan/" }, "public"), { vantageId: "v", peerAddress: PEER, strict: publicStrict });
+    const lan = await probeEntry(entry({ ...page, url: "https://app.lan/" }, "public"), { vantageId: "v", strict: publicStrict });
     expect(lan).toMatchObject({ ok: false, error: "private-address", path: "public" });
   });
 });

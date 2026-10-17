@@ -12,3 +12,4 @@ export * from "./impaired";
 export * from "./health";
 export * from "./range";
 export * from "./headers";
+export * from "./report";

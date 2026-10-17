@@ -9,7 +9,7 @@ import {
   figureWithSince,
   formatMs,
   intervalLabel,
-  meshNote,
+  reportNote,
   readingLabel,
   stateLabel,
 } from "@/lib/uptime/format";
@@ -87,8 +87,8 @@ export function CheckCard({
             </span>
           </p>
           <CheckNote monitor={m} />
-          {(m.reading || m.meshBy.length > 0) && (
-            <p className="text-xs text-muted-foreground">{[m.reading && readingLabel(m.reading), meshNote(m.meshBy)].filter(Boolean).join(" · ")}</p>
+          {(m.reading || m.report) && (
+            <p className="text-xs text-muted-foreground">{[m.reading && readingLabel(m.reading), reportNote(m.report)].filter(Boolean).join(" · ")}</p>
           )}
         </div>
         <div className="text-right text-sm tabular-nums">

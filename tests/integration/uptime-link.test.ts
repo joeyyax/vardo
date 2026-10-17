@@ -1,5 +1,6 @@
 // Two instances' uptime layers on two scratch Postgres databases, linked in process:
-// B probes A's monitors over the public path and, for private ones, the mesh path, delivers signed results, and A decides from them.
+// B probes A's public monitors over the internet and delivers signed results, and A decides from them. Private monitors never reach B as checks:
+// A reports them, signed, and B alerts from the reports and when they stop.
 // Each instance also watches the other as a peer.
 // Skips without a Postgres it can create databases on.
 
@@ -39,7 +40,7 @@ vi.mock("@/lib/uptime/mesh-path", async (orig) => {
   const real = await orig<typeof import("@/lib/uptime/mesh-path")>();
   return {
     ...real,
-    tunnelDeps: (address: string, ports?: readonly number[]) => ((globalThis as G).__tunnel?.(address) ?? real.tunnelDeps(address, ports)) as ReturnType<typeof real.tunnelDeps>,
+    tunnelDeps: (address: string, ports: readonly number[]) => ((globalThis as G).__tunnel?.(address) ?? real.tunnelDeps(address, ports)) as ReturnType<typeof real.tunnelDeps>,
   };
 });
 vi.mock("@/lib/uptime/identity", async () => {
@@ -71,7 +72,11 @@ vi.mock("@/lib/mesh/client", async () => {
       (globalThis as G).__caller = route.to;
       let reply;
       try {
-        reply = path.endsWith("/watch") ? await target.serve.serveWatchList(route.asPeer, body) : await target.serve.receiveRecords(route.asPeer, body);
+        reply = path.endsWith("/watch")
+          ? await target.serve.serveWatchList(route.asPeer, body)
+          : path.endsWith("/reports")
+            ? await target.reports.receiveReport(route.asPeer, body)
+            : await target.serve.receiveRecords(route.asPeer, body);
       } finally {
         (globalThis as G).__caller = caller;
       }
@@ -84,18 +89,18 @@ vi.mock("@/lib/mesh/client", async () => {
 async function boot(name: string, url: string) {
   process.env.DATABASE_URL = url;
   process.env.ENCRYPTION_MASTER_KEY = "e".repeat(64);
-  process.env.VARDO_MESH_TRAEFIK_FORWARD = "true";
   g.vardoPgClient = undefined;
   g.__loading = name;
   vi.resetModules();
   const engine = await import("@/lib/uptime/engine");
   const serve = await import("@/lib/uptime/serve");
   const prober = await import("@/lib/uptime/prober");
+  const reports = await import("@/lib/uptime/reports");
   const client = await import("@/lib/uptime/client");
   const notices = await import("@/lib/uptime/notices");
   const vantage = await import("@/lib/uptime/vantage");
   const core = await import("@/lib/uptime/core");
-  return { engine, serve, prober, client, vantage, core, notices, pg: g.vardoPgClient!, sql: postgres(url, { max: 1, onnotice: () => {} }) };
+  return { engine, serve, prober, reports, client, vantage, core, notices, pg: g.vardoPgClient!, sql: postgres(url, { max: 1, onnotice: () => {} }) };
 }
 
 const conn = await connectScratchServer();
@@ -318,75 +323,34 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
     expect((await B.sql`select 1 from uptime_watch_entry`).length).toBe(1);
   });
 
-  describe("private monitors over the mesh path", () => {
+  describe("private monitors", () => {
     let privateId = "";
 
-    it("serves a monitor that resolves only to private addresses as a mesh check", async () => {
+    it("never serves a monitor that resolves only to private addresses as a check", async () => {
       await A.sql`insert into domain (id, app_id, domain, is_primary) values ('dom2', 'app1', 'intranet.example.com', false)`;
       await A.engine.syncAutoMonitors();
       privateId = (await A.client.uptimeClient.listMonitors(org)).find((m) => m.target.includes("intranet"))!.id;
 
-      // Without the tunnel's route to Traefik on this host, private monitors stay local and nothing errors.
-      process.env.VARDO_MESH_TRAEFIK_FORWARD = "false";
       await asB(() => B.prober.refreshWatchLists(t, true));
-      expect((await B.sql`select monitor_id from uptime_watch_entry`).map((w) => w.monitor_id)).toEqual([monitorId]);
-      process.env.VARDO_MESH_TRAEFIK_FORWARD = "true";
-      await asB(() => B.prober.refreshWatchLists(t, true));
+      expect((await B.sql`select monitor_id, path from uptime_watch_entry`).map((w) => `${w.monitor_id}:${w.path}`)).toEqual([`${monitorId}:public`]);
+      const [vantage] = await A.sql`select watching from uptime_vantage where mesh_peer_id = 'peer-b-on-a'`;
+      expect(vantage.watching).toEqual([monitorId]);
 
-      const watch = await B.sql`select monitor_id, path from uptime_watch_entry`;
-      expect(Object.fromEntries(watch.map((w) => [w.monitor_id, w.path]))).toEqual({ [monitorId]: "public", [privateId]: "mesh" });
-      const [vantage] = await A.sql`select watching, mesh_watching from uptime_vantage where mesh_peer_id = 'peer-b-on-a'`;
-      expect(vantage.mesh_watching).toEqual([privateId]);
-      expect(vantage.watching).toContain(monitorId);
-    });
-
-    it("has B check it through A's tunnel address and nowhere else, and decides from B's result", async () => {
       tunnelCalls.length = 0;
       await bProbes(2);
-      advance(1000);
-      await A.engine.runDueChecks(t, at);
-
-      const mesh = tunnelCalls.filter((c) => c.endsWith("intranet.example.com"));
-      expect(mesh.length).toBeGreaterThanOrEqual(2);
-      expect(tunnelCalls.filter((c) => !c.startsWith("10.99.0.2 ") && c.endsWith("intranet.example.com"))).toEqual([]);
-
-      const witness = await B.sql`select distinct path from uptime_probe_result where monitor_id = ${privateId}`;
-      expect(witness.map((w) => w.path)).toEqual(["mesh"]);
-      const stored = await A.sql`select distinct vantage_id, path from uptime_result where monitor_id = ${privateId} order by vantage_id`;
-      expect(stored.map((s) => `${s.vantage_id}:${s.path}`)).toEqual(["ext_peer-b-on-a:mesh", "local:local"]);
-
-      const detail = (await A.client.uptimeClient.getMonitor(org, privateId))!;
-      expect(detail).toMatchObject({ state: "up", localOnly: false, meshBy: ["Instance B"] });
-      expect(detail.vantages.map((v) => `${v.kind}:${v.path}`).sort()).toEqual(["external:mesh", "local:local"]);
-    });
-
-    it("is degraded, as a warning that notifies nobody, while the mesh fails and the app answers locally", async () => {
-      tunnelUp = false;
-      await cycle(6);
-      expect(await A.client.uptimeClient.getMonitor(org, privateId)).toMatchObject({ state: "degraded", reading: { kind: "unreachable-mesh" } });
-      await flushA();
-      expect(about("intranet.example.com")).toEqual([]);
-      expect(await A.sql`select title, severity from incident where state = 'open' and subject_id = ${privateId}`).toEqual([
-        { title: "intranet.example.com is unreachable over the mesh", severity: "warning" },
-      ]);
-
-      tunnelUp = true;
-      await cycle(6);
-      await flushA();
-      expect((await A.client.uptimeClient.getMonitor(org, privateId))!.state).toBe("up");
-      expect(await A.sql`select 1 from incident where state = 'open' and subject_id = ${privateId}`).toHaveLength(0);
-      expect(about("intranet.example.com")).toEqual([]);
+      expect(tunnelCalls.filter((c) => c.endsWith("intranet.example.com"))).toEqual([]);
+      expect(await B.sql`select 1 from uptime_probe_result where monitor_id = ${privateId}`).toHaveLength(0);
     });
 
     it("staggers the vantage points that share a monitor, each checking every interval x N", async () => {
       const period = async () => (await B.sql`select monitor_id, period_sec, offset_ms from uptime_watch_entry`) as unknown as { period_sec: number; offset_ms: number }[];
       await asB(() => B.prober.refreshWatchLists(t, true));
-      expect((await period()).map((r) => r.period_sec)).toEqual([60, 60]);
+      expect((await period()).map((r) => r.period_sec)).toEqual([60]);
 
       await A.sql`update mesh_peer set status = 'online' where id = 'peer-b-on-a'`;
       await asB(() => B.prober.refreshWatchLists(t, true));
       const shared = await period();
-      expect(shared.map((r) => r.period_sec)).toEqual([120, 120]);
+      expect(shared.map((r) => r.period_sec)).toEqual([120]);
       // Sorted ids are ext_peer-b-on-a, then local: B takes the first slot of each period.
       expect(shared.every((r) => Number(r.offset_ms) < 60_000)).toBe(true);
       const local = A.core.staggerOf(monitorId, 60, ["local", "ext_peer-b-on-a"], "local");
@@ -397,15 +361,12 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
       await asB(() => B.prober.refreshWatchLists(t, true));
     });
 
-    it("refuses a mesh result for a public monitor, and a public one for a mesh monitor", async () => {
+    it("refuses a mesh result, for a public monitor or a private one", async () => {
       const { signRecord, resultBatch } = A.core;
       const key = await B.vantage.localSigningKey();
-      const wrongPath = (monitor: string, path: "public" | "mesh") =>
-        signRecord(resultBatch("inst-B", [{ monitorId: monitor, vantageId: "inst-B", path, at: t, ok: true, latencyMs: 5 }], t), key);
-      const meshForPublic = await A.serve.receiveRecords("peer-b-on-a", { records: [wrongPath(monitorId, "mesh")] }, t);
-      expect(meshForPublic.json).toMatchObject({ accepted: 0, rejected: [{ reason: "wrong path" }] });
-      const publicForMesh = await A.serve.receiveRecords("peer-b-on-a", { records: [wrongPath(privateId, "public")] }, t);
-      expect(publicForMesh.json).toMatchObject({ accepted: 0, rejected: [{ reason: "wrong path" }] });
+      const meshResult = (monitor: string) => signRecord(resultBatch("inst-B", [{ monitorId: monitor, vantageId: "inst-B", path: "mesh", at: t, ok: true, latencyMs: 5 }], t), key);
+      expect((await A.serve.receiveRecords("peer-b-on-a", { records: [meshResult(monitorId)] }, t)).json).toMatchObject({ accepted: 0, rejected: [{ reason: "wrong path" }] });
+      expect((await A.serve.receiveRecords("peer-b-on-a", { records: [meshResult(privateId)] }, t)).json).toMatchObject({ accepted: 0, rejected: [{ reason: "monitor not watched" }] });
     });
   });
 
@@ -494,5 +455,120 @@ describe.skipIf(!conn)("uptime between linked instances", { timeout: MIGRATE_TIM
       await A.engine.runDueChecks(t, at);
     }
     expect(await stateOnA()).toMatchObject({ state: "down", localOnly: true });
+  });
+  describe("reports on private monitors", () => {
+    const linkId = "mon_peer_link_peer-a-on-b";
+    let privateId = "";
+    const reportAbout = () => `report:peer-a-on-b:${privateId}`;
+    const openOnB = async (like: string) =>
+      (await B.sql`select subject_id, title, severity from incident where state = 'open' and subject_id like ${like}`) as unknown as { subject_id: string; title: string; severity: string }[];
+    /** A minute passes: A checks itself and reports; B checks A's console and reads the report. */
+    async function minute(times = 1, { report = true } = {}) {
+      for (let i = 0; i < times; i++) {
+        advance(60_000);
+        await A.engine.runDueChecks(t, at);
+        if (report) await A.reports.pushReports(t, true);
+        await asB(() => B.engine.runDueChecks(t, at));
+        await asB(() => B.reports.syncReportAlerts(t));
+        await asB(() => B.engine.syncAllAlerts(t));
+      }
+    }
+
+    beforeAll(async () => {
+      // Past the flap window of the peer alerts above.
+      advance(31 * 60_000);
+      status = 200;
+      tunnelUp = true;
+      privateId = (await A.client.uptimeClient.listMonitors(org)).find((m) => m.target.includes("intranet"))!.id;
+    });
+
+    it("sends B the private monitor by host, signed, and shows who watches it", async () => {
+      await minute(2);
+      const [row] = await B.sql`select remote_id, payload, sig from uptime_peer_report where peer_id = 'peer-a-on-b'`;
+      expect(row.remote_id).toBe("inst-A");
+      const [key] = await A.sql`select public_key from uptime_vantage where id = 'local'`;
+      const payload = A.core.verifyRecord({ payload: row.payload, sig: row.sig }, key.public_key);
+      expect(payload).toMatchObject({ kind: "report", vantageId: "inst-A" });
+      const monitors = (payload as { monitors: { monitorId: string; host: string; state: string; quiet: boolean }[] }).monitors;
+      // The muted console on localhost goes out too, marked quiet so B never alerts on it.
+      expect(monitors.map((m) => [m.monitorId, m.host, m.state, m.quiet])).toEqual([
+        ["mon_console", "localhost", "up", true],
+        [privateId, "intranet.example.com", "up", false],
+      ]);
+      expect(row.payload).not.toContain("https://");
+      expect(row.payload).not.toContain(monitorId);
+
+      const summary = (await A.client.uptimeClient.listMonitors(org)).find((m) => m.id === privateId)!;
+      expect(summary.report).toEqual({ by: "Vardo", to: ["Instance B"] });
+      expect((await A.client.uptimeClient.listMonitors(org)).find((m) => m.id === monitorId)!.report).toBeNull();
+    });
+
+    it("refuses a report signed with another key, and one B didn't ask for", async () => {
+      const { signRecord, monitorReport, generateKeyPair } = A.core;
+      const other = generateKeyPair();
+      const forged = signRecord(monitorReport("inst-A", [], t + 1), other.privateKey);
+      const identity = { id: "inst-A", name: "Instance A", location: null, publicKey: other.publicKey };
+      expect(await B.reports.receiveReport("peer-a-on-b", { vantage: identity, report: forged }, t)).toMatchObject({ status: 403, json: { error: "Vantage key changed" } });
+      expect((await B.reports.receiveReport("nobody", { vantage: identity, report: forged }, t)).status).toBe(403);
+    });
+
+    it("alerts on B, as A's instance, once A has reported the monitor down for three minutes", async () => {
+      h.emitted.length = 0;
+      status = 503;
+      await minute(3);
+      expect(await openOnB(reportAbout())).toEqual([]);
+      await minute(3);
+      expect(await openOnB(reportAbout())).toEqual([{ subject_id: reportAbout(), title: "intranet.example.com on inst-A is down", severity: "critical" }]);
+      advance(61_000);
+      await asB(() => B.notices.flushNotices(t));
+      const down = h.emitted.filter((e) => e.orgId === "orgB" && e.type === "system.service-down" && (e.title ?? "").includes("intranet"));
+      expect(down).toEqual([expect.objectContaining({ title: "intranet.example.com on inst-A is down", message: "inst-A reports intranet.example.com isn't responding." })]);
+
+      status = 200;
+      await minute(5);
+      expect(await openOnB(reportAbout())).toEqual([]);
+    });
+
+    it("alerts that A stopped reporting while its console still answers, after the report goes stale and the state holds", async () => {
+      await minute(2, { report: false });
+      expect(await openOnB(`${linkId}%`)).toEqual([]);
+      await minute(4, { report: false });
+      expect(await openOnB(`${linkId}%`)).toEqual([{ subject_id: `${linkId}#silent`, title: "inst-A stopped reporting", severity: "critical" }]);
+
+      // With the tunnel down too, the verdict keeps the link and instance wording and says the monitors go unwatched.
+      tunnelUp = false;
+      await minute(7, { report: false });
+      const [open] = await B.sql`select subject_id, title from incident where state = 'open' and subject_id like ${linkId + "%"}`;
+      expect(open).toMatchObject({ subject_id: `${linkId}#unreachable`, title: "inst-A unreachable from Vardo" });
+      const said = h.emitted.filter((e) => e.type === "system.service-down" && e.title === "inst-A unreachable from Vardo").at(-1);
+      expect(said?.message).toMatch(/private monitors go unwatched until it reports again/);
+
+      tunnelUp = true;
+      await minute(6);
+      expect(await openOnB(`${linkId}%`)).toEqual([]);
+    });
+
+    it("alerts that A stopped reporting from the reports alone, with B's tunnel monitor for A turned off", async () => {
+      advance(31 * 60_000);
+      await B.sql`update uptime_monitor set enabled = false where id = ${linkId}`;
+      await minute(2);
+      expect(await openOnB(`${linkId}%`)).toEqual([]);
+      await minute(6, { report: false });
+      expect(await openOnB(`${linkId}%`)).toEqual([{ subject_id: `${linkId}#silent`, title: "inst-A stopped reporting", severity: "critical" }]);
+      await minute(5);
+      expect(await openOnB(`${linkId}%`)).toEqual([]);
+      await B.sql`update uptime_monitor set enabled = true where id = ${linkId}`;
+    });
+
+    it("drops the report, without an alert, when A stops letting B watch it", async () => {
+      advance(31 * 60_000);
+      await minute(1);
+      await A.client.uptimeClient.setVantageLink("peer-b-on-a", { checksThisInstance: false });
+      expect((await A.client.uptimeClient.listMonitors(org)).find((m) => m.id === privateId)!.report).toBeNull();
+      await minute(8);
+      expect(await B.sql`select 1 from uptime_peer_report`).toHaveLength(0);
+      expect(await openOnB(`${linkId}%`)).toEqual([]);
+      await A.client.uptimeClient.setVantageLink("peer-b-on-a", { checksThisInstance: true });
+    });
   });
 });

@@ -86,8 +86,12 @@ export const uptimeVantages = pgTable(
     remoteId: text("remote_id"),
     /** Monitor ids it may report on: the watch list last served to it. */
     watching: jsonb("watching").$type<string[]>().notNull().default([]),
-    /** The part of `watching` served as mesh-path checks. */
+    /** Unused since mesh checks were retired; kept so a rolled-back release can still read this table. */
     meshWatching: jsonb("mesh_watching").$type<string[]>().notNull().default([]),
+    /** Monitor ids in the last report it accepted from us. */
+    reporting: jsonb("reporting").$type<string[]>().notNull().default([]),
+    /** When it last accepted our report. Null while it doesn't take them. */
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("uptime_vantage_peer_uniq").on(t.meshPeerId).where(sql`${t.meshPeerId} is not null`)],
@@ -228,6 +232,20 @@ export const uptimeProbeSummaries = pgTable(
   },
   (t) => [primaryKey({ columns: [t.peerId, t.monitorId, t.start] })],
 );
+
+/** The latest signed report from a linked peer on the monitors this instance doesn't check, stored as received. */
+export const uptimePeerReports = pgTable("uptime_peer_report", {
+  peerId: text("peer_id")
+    .primaryKey()
+    .references(() => meshPeers.id, { onDelete: "cascade" }),
+  /** The id the peer signs with. */
+  remoteId: text("remote_id").notNull(),
+  publicKey: text("public_key").notNull(),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+  payload: text("payload").notNull(),
+  sig: text("sig").notNull(),
+});
 
 export type UptimeMonitorRow = typeof uptimeMonitors.$inferSelect;
 export type UptimeVantageRow = typeof uptimeVantages.$inferSelect;
