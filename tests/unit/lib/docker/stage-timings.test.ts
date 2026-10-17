@@ -113,3 +113,39 @@ describe("exportMsFromBuildOutput", () => {
     expect(exportMsFromBuildOutput("#1 DONE 1.0s")).toBe(0);
   });
 });
+
+describe("stage and wait spans", () => {
+  it("keeps an open stage in the snapshot and closes it on end", () => {
+    const t = createStageTimings();
+    t.stageBegin("clone", 1_000);
+    expect(t.snapshot().stages).toEqual({ clone: { start: 1_000 } });
+    t.stageEnd("clone", 4_000);
+    t.stageBegin("build", 4_000);
+    expect(t.snapshot().stages).toEqual({ clone: { start: 1_000, end: 4_000 }, build: { start: 4_000 } });
+  });
+
+  it("splits waits by reason and closes the open one on endAll", () => {
+    const t = createStageTimings();
+    t.waitSpan("checkout", 1_000);
+    t.waitSpan("checkout", 1_500);
+    t.waitSpan("build-slot", 2_000);
+    t.stageBegin("build", 2_000);
+    t.endAll(9_000);
+    expect(t.snapshot().waits).toEqual([
+      { reason: "checkout", start: 1_000, end: 2_000 },
+      { reason: "build-slot", start: 2_000, end: 9_000 },
+    ]);
+    expect(t.snapshot().stages?.build).toEqual({ start: 2_000, end: 9_000 });
+  });
+
+  it("calls onChange when the wait's reason changes, not on a place update", () => {
+    const t = createStageTimings();
+    let changes = 0;
+    const wait = timedWait(t, () => {}, () => changes++);
+    void wait("build-slot", { ahead: 2 });
+    void wait("build-slot", { ahead: 1 });
+    void wait(null);
+    expect(changes).toBe(2);
+    expect(t.snapshot().waits?.[0].end).toBeTypeOf("number");
+  });
+});
