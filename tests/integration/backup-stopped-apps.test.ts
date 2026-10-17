@@ -76,6 +76,15 @@ describe.skipIf(!conn)("stopped apps' backup jobs on Postgres", { timeout: MIGRA
     ]);
   });
 
+  it("raises no per-app backup condition for an app stopped outside Vardo, and keeps one for a vanished app", async () => {
+    const { clearAdvisoryCache, loadAdvisoryInputs } = await import("@/lib/docker/condition-inputs");
+    clearAdvisoryCache();
+    const inputs = await loadAdvisoryInputs(NOW.getTime());
+    expect(inputs.get("restream")?.backup).toBeNull();
+    expect(inputs.get("lonvr")?.backup).toBeNull();
+    expect(inputs.get("fabric")?.backup).toMatchObject({ configured: true });
+  });
+
   it("counts a restarted app's job from its start", async () => {
     const { overdue, stopped } = await staleness();
     expect([...overdue, ...stopped].some((o) => o.job.id === "j-wiki")).toBe(false);
