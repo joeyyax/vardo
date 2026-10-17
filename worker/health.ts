@@ -84,6 +84,7 @@ export function startHealthServer(port: number, workerId: string): Server {
       );
     });
   });
-  server.listen(port, () => log.info(`Health on :${port}/healthz`));
+  // Loopback only: Docker's healthcheck, the watchdog and the CLI read it from inside the container.
+  server.listen(port, "127.0.0.1", () => log.info(`Health on 127.0.0.1:${port}/healthz`));
   return server;
 }
