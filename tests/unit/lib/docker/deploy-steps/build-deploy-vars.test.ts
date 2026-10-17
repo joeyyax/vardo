@@ -191,7 +191,7 @@ describe("build — deploy variables", () => {
       bareCompose: { services: structuredClone(services) },
       repoDir: "/srv/apps/blog/repo",
     } as Partial<DeployContext>));
-    const args = (ctx.compose.services.web.build as { args: Record<string, string> }).args;
+    const args = (ctx.compose.services.web.build as unknown as { args: Record<string, string> }).args;
     expect(args).toEqual({ VARDO_GIT_SHA: NEW_SHA, VARDO_GIT_BRANCH: "main" });
   });
 });
