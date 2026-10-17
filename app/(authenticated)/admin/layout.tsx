@@ -69,7 +69,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   const groups: SettingsNavGroup[] = [
-    { items: [{ label: "Overview", href: "/admin", exact: true }] },
+    {
+      items: [
+        { label: "Overview", href: "/admin", exact: true },
+        { label: "Pipeline", href: "/admin/pipeline" },
+      ],
+    },
 {
     label: "Manage",
     items: [

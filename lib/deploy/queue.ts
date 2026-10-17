@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { deployments, environments, type DeployCancelReason, type DeployRequest } from "@/lib/db/schema";
 import { maxDeployConcurrency } from "@/lib/resources/host";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
+import { pipelineClaimed, pipelineQueued } from "@/lib/pipeline/events";
 import type { DeployOpts, DeployStage } from "@/lib/docker/deploy";
 import type { DeploySlot } from "@/lib/docker/build-gate";
 
@@ -154,7 +155,7 @@ export async function enqueueDeploy(opts: EnqueueOpts, { hold = false }: { hold?
     return { id, scopeKey, superseded: [], cancelRequested: [] };
   }
 
-  return db.transaction(async (tx) => {
+  const queued = await db.transaction(async (tx) => {
     const scopeKey = await scopeKeyFor(opts.appId, opts.environmentId, tx);
     await lockScope(tx, scopeKey);
 
@@ -173,6 +174,8 @@ export async function enqueueDeploy(opts: EnqueueOpts, { hold = false }: { hold?
 
     return { id, scopeKey, ...(await applySupersede(tx, id, scopeKey, opts)) };
   });
+  pipelineQueued(id);
+  return queued;
 }
 
 /** Gives a held or pre-queue deploy its scope so executors can claim it. False when it's no longer queued or a newer push replaced it. */
@@ -420,7 +423,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
           d.claim_slot = 'target' AS on_target`);
     });
 
-    return [...claimed]
+    const rows = [...claimed]
       .sort(
         (a, b) =>
           Number(b.is_self) - Number(a.is_self) ||
@@ -441,6 +444,8 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
         waited: r.waited,
         ...(r.on_target ? { onTarget: true, note: targetSlotNote(opts.targets?.names ?? [], capacity) } : {}),
       }));
+    pipelineClaimed(rows);
+    return rows;
   } catch (err) {
     // A row written as running outside the queue took a scope first; the next pass claims around it.
     if (isScopeConflict(err)) return [];
