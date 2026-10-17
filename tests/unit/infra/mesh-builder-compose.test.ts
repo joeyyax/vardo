@@ -58,7 +58,8 @@ describe("mesh-builder service", () => {
   });
 
   it("caps memory, CPU and processes", () => {
-    expect(svc.mem_limit).toBe("${VARDO_MESH_BUILDER_MEM:-4g}");
+    expect(svc.mem_limit).toBe("${VARDO_MESH_BUILDER_MEM:-${VARDO_BUILDKIT_MEM:-4g}}");
+    expect(svc.memswap_limit).toBe(svc.mem_limit);
     expect(String(svc.cpus)).toBe("${VARDO_MESH_BUILDER_CPUS:-2}");
     expect(svc.pids_limit).toBeGreaterThan(0);
   });

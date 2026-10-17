@@ -75,6 +75,18 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     expect(arg({})).toBe("");
   });
 
+  it("sizes the isolated builder like vardo-buildkit unless it has its own limit", () => {
+    const limits = (env: Record<string, string>) => {
+      const svc = resolve(env).services["mesh-builder"] as Service & { mem_limit?: string; memswap_limit?: string };
+      return [svc.mem_limit, svc.memswap_limit].map(Number);
+    };
+    const GiB = 1024 ** 3;
+    expect(limits({})).toEqual([4 * GiB, 4 * GiB]);
+    expect(limits({ VARDO_BUILDKIT_MEM: "12g" })).toEqual([12 * GiB, 12 * GiB]);
+    expect(limits({ VARDO_BUILDKIT_MEM: "4g", VARDO_MESH_BUILDER_MEM: "12g" })).toEqual([12 * GiB, 12 * GiB]);
+    expect(limits({ VARDO_BUILDKIT_MEM: "12g", VARDO_MESH_BUILDER_MEM: "" })).toEqual([12 * GiB, 12 * GiB]);
+  });
+
   it("never serves Traefik's API insecurely", () => {
     const command = resolve({}).services.traefik.command ?? [];
     expect(command).not.toContain("--api.insecure=true");

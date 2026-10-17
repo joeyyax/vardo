@@ -87,7 +87,7 @@ A linked instance can run another's builds when that one's builder is full. The 
 
 ### The isolated builder
 
-- Each instance runs `vardo-mesh-builder`: rootless BuildKit in a user namespace, with memory, CPU and process limits (`VARDO_MESH_BUILDER_MEM`, default `4g`, and `VARDO_MESH_BUILDER_CPUS`, default `2`). Its only volume is its own cache. It has no Docker socket and no host paths.
+- Each instance runs `vardo-mesh-builder`: rootless BuildKit in a user namespace, with memory, CPU and process limits (`VARDO_MESH_BUILDER_MEM`, default `VARDO_BUILDKIT_MEM`, and `VARDO_MESH_BUILDER_CPUS`, default `2`). Its only volume is its own cache. It has no Docker socket and no host paths.
 - It answers BuildKit over mutual TLS on port 1234 (`VARDO_MESH_BUILDER_PORT`). `vardo-wireguard` forwards that port on the tunnel address to it, only from the tunnel addresses of peers this instance accepts builds from.
 - Each instance keeps an Ed25519 CA for its builder, encrypted in its settings. The signed key exchange carries each side's builder client key. The side that accepts builds answers with its CA and a client certificate for that key, valid for 6 hours and renewed past half of that.
 - Turning **Accept builds** off or removing the peer drops its forward right away, and its certificate isn't renewed. A build already running there finishes.

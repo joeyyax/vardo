@@ -424,8 +424,9 @@ services:
       - production
     restart: unless-stopped
     entrypoint: ["sh", "/usr/local/bin/vardo-mesh-builder"]
-    mem_limit: ${VARDO_MESH_BUILDER_MEM:-4g}
-    memswap_limit: ${VARDO_MESH_BUILDER_MEM:-4g}
+    # vardo-buildkit's limit unless VARDO_MESH_BUILDER_MEM sets its own.
+    mem_limit: ${VARDO_MESH_BUILDER_MEM:-${VARDO_BUILDKIT_MEM:-4g}}
+    memswap_limit: ${VARDO_MESH_BUILDER_MEM:-${VARDO_BUILDKIT_MEM:-4g}}
     cpus: ${VARDO_MESH_BUILDER_CPUS:-2}
     pids_limit: 4096
     # rootlesskit needs unshare and mount for its user namespace, and an unmasked /proc to sandbox each build's processes from buildkitd.
