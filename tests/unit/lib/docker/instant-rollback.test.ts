@@ -317,6 +317,25 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
   });
 });
 
+describe("performInstantRollback — a stop-first app", () => {
+  it("stops the active slot before the standby starts", async () => {
+    const result = await performInstantRollback({ ...OPTS, stopFirst: true });
+
+    expect(result.success).toBe(true);
+    expect(calls.indexOf("stop:blog-production-blue")).toBeGreaterThan(-1);
+    expect(calls.indexOf("stop:blog-production-blue")).toBeLessThan(calls.indexOf("up:blog-production-green"));
+  });
+
+  it("brings the active slot back when the standby fails to start", async () => {
+    fakeDocker({ upFails: true });
+
+    const result = await performInstantRollback({ ...OPTS, stopFirst: true });
+
+    expect(result.success).toBe(false);
+    expect(calls).toContain("start:blog-production-blue");
+  });
+});
+
 describe("performInstantRollback — a database that can't run twice", () => {
   beforeEach(() => {
     h.readBound.mockResolvedValue(["postgres"]);

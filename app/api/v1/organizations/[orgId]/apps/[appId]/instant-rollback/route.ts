@@ -18,7 +18,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, isSystemManaged: true },
+      columns: { id: true, name: true, isSystemManaged: true, deployStrategy: true },
     });
 
     if (!app) return apiError.notFound("app");
@@ -38,6 +38,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       organizationId: orgId,
       userId: org.session.user.id,
       env,
+      stopFirst: app.deployStrategy === "stop-first",
     });
 
     if (!result.success) {
