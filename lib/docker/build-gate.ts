@@ -19,7 +19,7 @@ import { waitForFifoSlot, type SlotPlace, type SlotStore } from "./fifo-slots";
 import { buildKitLimit, formatGiB, type BoundedBuild } from "./build-memory";
 import { DEFAULT_BUILDKIT_HOST } from "./buildkit";
 import type { WaitWriter } from "./deploy-logger";
-import { builderLimitBytes, hostMemory, peerBuildFits, sizeBuildKit } from "./buildkit-size";
+import { builderLimitBytes, buildersFit, hostMemory, pinnedMeshBuilderMem, sizeBuildKit } from "./buildkit-size";
 import { MESH_BUILDER_CONTAINER } from "@/lib/mesh/constants";
 import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
 import { typicalBuildMs } from "@/lib/deploy/eta-history";
@@ -477,6 +477,16 @@ async function currentLimit(bounded: BoundedBuild) {
   });
 }
 
+/** As currentLimit, but no build of this host's joins a linked instance's here unless both builders fit. */
+async function admitLimit(bounded: BoundedBuild): Promise<Awaited<ReturnType<typeof currentLimit>> & { crowded: boolean }> {
+  const out = await currentLimit(bounded);
+  const running = bounded.container ? await buildsHere() : null;
+  if (!running?.peer || !bounded.container) return { ...out, crowded: false };
+  const limitBytes = (await builderLimitBytes(bounded.container)) ?? bounded.limitBytes;
+  const fits = await bothBuildersFit({ container: bounded.container, limitBytes });
+  return fits ? { ...out, crowded: false } : { ...out, limit: 1, crowded: true };
+}
+
 /** Anonymous memory in the container's cgroup, which leaves out the page cache a build fills. */
 async function builderMemory(container: string): Promise<number | null> {
   try {
@@ -683,8 +693,8 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     }
   }
 
-  let latest = await currentLimit(bounded);
-  const limit = async () => (latest = await currentLimit(bounded)).limit;
+  let latest = await admitLimit(bounded);
+  const limit = async () => (latest = await admitLimit(bounded)).limit;
 
   // One estimate at a time; reads during one are skipped.
   let estimating = false;
@@ -734,7 +744,8 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   if (!slot) {
     const running = local ? gateStores.local.runningCount() : await store.runningCount().catch(() => null);
     gate.log(
-      `[queue] Waiting for the builder: ${running ?? "?"} running, ${latest.limit} at a time` +
+      `[queue] Waiting for the builder: ${running ?? "?"} running, ` +
+        (latest.crowded ? "and a linked instance's build here needs the memory" : `${latest.limit} at a time`) +
         (latest.pressured ? " (host memory under pressure)" : "") +
         (targets.length > 0 && !local ? `, or a slot on ${targets.map((t) => t.name).join(", ")}` : ""),
     );
@@ -934,25 +945,56 @@ async function builderHeadroom(container: string, limitBytes: number | null): Pr
   return Math.max(0, limitBytes - ((await builderMemory(container)) ?? 0));
 }
 
-/** Whether the isolated builder can grow to its limit beside vardo-buildkit's running builds without eating the apps' reserve. True when unreadable. */
-async function peerBuildRoom(buildkit: BoundedBuild): Promise<boolean> {
+/** Whether linked instances' builds and this host's own hold slots here; null when Redis can't say. */
+async function buildsHere(): Promise<{ peer: boolean; local: boolean } | null> {
+  const snap = await gateStores.redis.snapshot().catch(() => null);
+  if (!snap) return null;
+  return {
+    peer: snap.running.some((r) => r.id.startsWith(PEER_TOKEN_PREFIX)),
+    local: snap.running.some((r) => !r.id.startsWith(PEER_TOKEN_PREFIX)),
+  };
+}
+
+/** Whether the isolated builder and `buildkit`, when given, can both grow to their limits without eating the apps' reserve. True when unreadable. */
+async function bothBuildersFit(buildkit: { container?: string; limitBytes?: number | null } | null): Promise<boolean> {
   const host = await hostMemory();
   const meshLimit = await builderLimitBytes(MESH_BUILDER_CONTAINER);
   if (!host || !meshLimit) return true;
-  const { running } = await gateStores.redis.snapshot();
-  const localBuilds = running.some((r) => !r.id.startsWith(PEER_TOKEN_PREFIX));
-  return peerBuildFits({
+  return buildersFit({
     ...host,
     meshHeadroomBytes: await builderHeadroom(MESH_BUILDER_CONTAINER, meshLimit),
-    buildkitHeadroomBytes: localBuilds && buildkit.container ? await builderHeadroom(buildkit.container, buildkit.limitBytes) : 0,
+    buildkitHeadroomBytes: buildkit?.container ? await builderHeadroom(buildkit.container, buildkit.limitBytes ?? null) : 0,
   });
+}
+
+/**
+ * Sizes the isolated builder like vardo-buildkit, leaving room for vardo-buildkit's running builds, and never down while a linked instance builds in it.
+ * Returns the new limit, or null when unchanged.
+ */
+async function sizeMeshBuilderBeside(buildkit: BoundedBuild, running: { peer: boolean; local: boolean } | null, logLine: (line: string) => void): Promise<number | null> {
+  const container = buildkit.container;
+  return sizeBuildKit(MESH_BUILDER_CONTAINER, {
+    builderBytes: () => builderMemory(MESH_BUILDER_CONTAINER),
+    log: logLine,
+    pinned: pinnedMeshBuilderMem,
+    shrink: running ? !running.peer : false,
+    otherHeadroomBytes: async () => (running?.local && container ? builderHeadroom(container, buildkit.limitBytes ?? null) : 0),
+  });
+}
+
+/** Sizes the isolated builder now; see sizeMeshBuilderBeside. */
+export async function sizeMeshBuilder(logLine: (line: string) => void = (line) => log.info(line)): Promise<number | null> {
+  const buildkit = await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST);
+  return sizeMeshBuilderBeside(buildkit, await buildsHere(), logLine);
 }
 
 /** Takes a slot here for a linked instance's build, now or not at all: never past builds waiting here, nor past the memory both builders could use. */
 export async function claimSlotForPeer(token: string): Promise<boolean> {
   const store = gateStores.redis;
   const buildkit = await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST);
-  if (!(await peerBuildRoom(buildkit))) return false;
+  const running = await buildsHere();
+  await sizeMeshBuilderBeside(buildkit, running, (line) => log.info(line)).catch((err) => log.warn("Couldn't size the isolated builder:", err));
+  if (!(await bothBuildersFit(running?.local ? buildkit : null))) return false;
   const { limit } = await currentLimit(buildkit);
   const slot = await store.tryAcquire(token, limit);
   if (!slot) {

@@ -16,6 +16,7 @@ const { state } = vi.hoisted(() => ({
     meminfo: null as string | null,
     meshLimit: 0,
     buildkitLimit: 0,
+    updates: [] as { path: string; body: { Memory: number } }[],
   },
 }));
 
@@ -73,7 +74,12 @@ vi.mock("@/lib/resources/host", () => ({
   hostCpuCount: (host: { cpus: number } | null) => host?.cpus ?? 1,
 }));
 vi.mock("@/lib/docker/client", () => ({
-  dockerRequest: vi.fn(async (_method: string, path: string) => {
+  dockerRequest: vi.fn(async (method: string, path: string, body?: { Memory: number }) => {
+    if (method === "POST" && path.endsWith("/update") && body) {
+      state.updates.push({ path, body });
+      if (path.includes("vardo-mesh-builder")) state.meshLimit = body.Memory;
+      return {};
+    }
     if (path.endsWith("/json")) {
       if (state.inspectFails) throw new Error("connect ECONNREFUSED /var/run/docker.sock");
       if (path.includes("vardo-mesh-builder") && state.meshLimit) return { HostConfig: { Memory: state.meshLimit } };
@@ -95,7 +101,7 @@ vi.mock("@/lib/utils/exec", () => ({
 }));
 
 const { createBuildPlacement, NO_PLACEMENT } = await import("@/lib/docker/build-placement");
-const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta, recordablePeak, claimSlotForPeer, targetSlotView } = await import(
+const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta, recordablePeak, claimSlotForPeer, releaseSlotForPeer, sizeMeshBuilder, targetSlotView } = await import(
   "@/lib/docker/build-gate"
 );
 
@@ -895,6 +901,64 @@ describe("claimSlotForPeer", () => {
     it("takes it with the same free memory once this host's builds are done", async () => {
       state.meminfo = meminfo(20);
       expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+    });
+
+    const ANON = 300 * MiB;
+    const step = (bytes: number) => Math.floor(bytes / (64 * MiB)) * 64 * MiB;
+    const meshUpdates = () => state.updates.filter((u) => u.path.includes("vardo-mesh-builder")).map((u) => u.body.Memory);
+    const big = { ...bounded, limitBytes: 12 * GiB };
+
+    it("sizes the isolated builder like vardo-buildkit without waiting for a peer's build", async () => {
+      state.updates = [];
+      state.meminfo = meminfo(30);
+      expect(await sizeMeshBuilder(() => {})).toBe(24 * GiB);
+      expect(meshUpdates()).toEqual([24 * GiB]);
+    });
+
+    it("sizes it on a claim beside this host's builds, leaving them their headroom", async () => {
+      state.updates = [];
+      state.meminfo = meminfo(30);
+      const first = deferred();
+      const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect(meshUpdates()).toEqual([step(30 * GiB + ANON - 4.8 * GiB - (12 * GiB - ANON))]);
+      first.resolve();
+      await running;
+    });
+
+    it("grows it during a peer's build but shrinks it only once that build is done", async () => {
+      state.updates = [];
+      state.meminfo = meminfo(30);
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect(meshUpdates()).toEqual([24 * GiB]);
+      state.meminfo = meminfo(10);
+      expect(await sizeMeshBuilder(() => {})).toBeNull();
+      expect(meshUpdates()).toEqual([24 * GiB]);
+      await releaseSlotForPeer("build:mesh-jy0-a");
+      expect(await sizeMeshBuilder(() => {})).toBe(step(10 * GiB + ANON - 4.8 * GiB));
+    });
+
+    it("holds this host's build while a peer's runs and both builders can't fit", async () => {
+      state.meminfo = meminfo(20);
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      const { gate, lines } = gateFor("dep-own");
+      let started = false;
+      const running = withBuildSlot(gate, big, async () => void (started = true));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(started).toBe(false);
+      expect(lines[0]).toBe("[queue] Waiting for the builder: 1 running, and a linked instance's build here needs the memory");
+      await releaseSlotForPeer("build:mesh-jy0-a");
+      await running;
+      expect(started).toBe(true);
+    });
+
+    it("lets it join a peer's build when both fit", async () => {
+      state.meminfo = meminfo(44);
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      let started = false;
+      await withBuildSlot(gateFor("dep-own").gate, big, async () => void (started = true));
+      expect(started).toBe(true);
     });
   });
 });

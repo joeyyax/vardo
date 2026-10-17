@@ -29,6 +29,16 @@ async function reconcileForward(): Promise<void> {
   }
 }
 
+/** Sizes vardo-mesh-builder at boot, since compose recreates it at its .env limit. */
+async function sizeIsolatedBuilder(): Promise<void> {
+  try {
+    const { sizeMeshBuilder } = await import("@/lib/docker/build-gate");
+    await sizeMeshBuilder();
+  } catch (err) {
+    log.error("Mesh builder sizing failed:", err);
+  }
+}
+
 /** Heartbeat, then trade keys with a peer that answered. */
 async function heartbeatAndKeys(peerId: string): Promise<boolean> {
   const ok = await sendHeartbeatToPeer(peerId);
@@ -68,7 +78,7 @@ export const meshHeartbeatLoop = new IntervalLoop({
     setTimeout(() => {
       retireMeshSsh()
         .then(() => db.query.meshPeers.findFirst({ columns: { id: true } }))
-        .then((peer) => (peer ? reconcileForward() : undefined))
+        .then((peer) => (peer ? reconcileForward().then(sizeIsolatedBuilder) : undefined))
         .catch(() => {});
     }, FIRST_FORWARD_CHECK_MS).unref?.();
   },
