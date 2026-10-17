@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatWhen } from "@/lib/uptime/core/range";
+import { formatWhen } from "@/lib/time-zone";
 import { formatDuration } from "@/lib/uptime/format";
 import type { MonitorDetail, OutageView } from "@/lib/uptime/types";
 import { ResponseChart } from "./response-chart";

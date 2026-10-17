@@ -21,7 +21,8 @@ import {
   stateLabel,
   ERROR_TEXT,
 } from "@/lib/uptime/format";
-import { RANGE_LABELS, formatWhen } from "@/lib/uptime/core/range";
+import { RANGE_LABELS } from "@/lib/uptime/core/range";
+import { formatWhen } from "@/lib/time-zone";
 import type { MonitorDetail as Detail, UptimeRange, VantageView } from "@/lib/uptime/types";
 import { CheckNote, HeavyNoticeCard, ReviewCard } from "./health-parts";
 import { MonitorActions } from "./monitor-actions";

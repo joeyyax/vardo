@@ -3,7 +3,7 @@
 import { Cron } from "croner";
 
 import { appNotRunning, type AppRunState } from "@/lib/apps/run-state";
-import { formatDay } from "@/lib/uptime/core/range";
+import { formatDay } from "@/lib/time-zone";
 
 /** Missed runs before a job counts as overdue. One late run is a slow night. */
 export const OVERDUE_INTERVALS = 2;

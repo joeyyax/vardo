@@ -1,6 +1,7 @@
 // Display helpers for uptime. Pure, so client components can import them.
 
-import { coverage, formatDay, formatWhen, sinceLabel } from "./core/range";
+import { formatDay, formatWhen } from "@/lib/time-zone";
+import { coverage, sinceLabel } from "./core/range";
 import type { Check, CheckPath, DayTick, DisplayState, ErrorKind, MonitorState, Reading, VantageView } from "./types";
 
 /** Why a check failed, in words. */
