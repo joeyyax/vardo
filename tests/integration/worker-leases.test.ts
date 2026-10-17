@@ -141,7 +141,9 @@ describe.skipIf(!conn)("worker coordination on Postgres", { timeout: MIGRATE_TIM
       // Waits on passes, not wall time: a starved process runs fewer slots per second.
       await until(() => ran.length >= 4);
       const elapsed = Date.now() - startedAt;
-      await Promise.all([a.stop(), b.stop()]);
+      // The standby stops first so it can't take the lease a releases.
+      await b.stop();
+      await a.stop();
 
       const [row] = await sql`select holder, epoch::int from leader_lease where name = 't4'`;
       expect(row).toMatchObject({ holder: "proc-a", epoch: 1 });
