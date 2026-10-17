@@ -47,10 +47,10 @@ ARG NIXPACKS_VERSION=1.41.0
 ARG RAILPACK_VERSION=v0.35.0
 ARG COMPOSE_VERSION=v5.3.1
 
-# Runtime dependencies — git for cloning, docker-cli for orchestrating builds/deploys
+# Runtime dependencies — git and ssh for cloning, docker-cli for orchestrating builds/deploys
 # Install Docker CLI from official Docker repo (docker.io from apt is too old for modern daemons)
 RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends git curl ca-certificates gnupg && \
+    apt-get install -y --no-install-recommends git openssh-client curl ca-certificates gnupg && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list && \
