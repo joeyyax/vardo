@@ -1,0 +1,1 @@
+ALTER TABLE "deployment" ADD COLUMN "claim_slot" text;
