@@ -166,6 +166,12 @@ function factsSection(title: string, facts: MailFact[]): MailBlock[] {
   return facts.length ? [{ kind: "section", title }, { kind: "facts", facts }] : [];
 }
 
+/** "44 days" or "3 hours" for how long an app was stopped. */
+export function stoppedFor(ms: number): string {
+  const hours = Math.round(ms / 3_600_000);
+  return hours < 48 ? plural(Math.max(1, hours), "hour") : plural(Math.round(ms / 86_400_000), "day");
+}
+
 function changeFacts(event: DigestHealthEvent, ctx: MailContext, tz: string): MailFact[] {
   const groups = new Map<string, { appId: string; appName: string; kind: "port" | "process"; items: string[]; since: string }>();
   for (const c of event.changes ?? []) {
@@ -375,6 +381,16 @@ export function digestMail(event: DigestHealthEvent, ctx: MailContext): Notifica
         label: a.appName,
         labelHref: appPage(ctx, a.appId),
         value: `Deployed ${day(a.deployedAt, tz)}${a.monthRecapAt ? ` · 30-day recap on ${day(a.monthRecapAt, tz)}` : ""}`,
+      })),
+    ),
+  );
+  blocks.push(
+    ...factsSection(
+      "Started and stopped",
+      (event.lifecycle ?? []).slice(-LIST_MAX).map((c) => ({
+        label: c.appName,
+        labelHref: appPage(ctx, c.appId),
+        value: c.kind === "stopped" ? `Stopped ${day(c.at, tz)}` : `Started ${day(c.at, tz)}${c.stoppedMs !== null ? ` after ${stoppedFor(c.stoppedMs)} stopped` : ""}`,
       })),
     ),
   );
