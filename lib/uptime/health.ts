@@ -257,6 +257,24 @@ async function detectDue(now: number, deps?: { fetch?: typeof fetch }): Promise<
   return decided;
 }
 
+/** A lighter path than the one a monitor checks: the app's container healthcheck, else the path detection found for its domain. */
+export async function lighterPathFor(row: UptimeMonitorRow): Promise<{ path: string; source: "healthcheck" | "detected" } | null> {
+  if (row.check.type !== "http" || !row.appId) return null;
+  let current: string;
+  try {
+    current = new URL(row.check.url).pathname;
+  } catch {
+    return null;
+  }
+  const domainId = row.domainId ?? row.linkDomainId;
+  const domain = domainId ? await db.query.domains.findFirst({ where: eq(domains.id, domainId), columns: { serviceName: true } }) : null;
+  const fromHealthcheck = await healthcheckPathFor(row.appId, domain?.serviceName ?? null);
+  if (fromHealthcheck && fromHealthcheck !== current) return { path: fromHealthcheck, source: "healthcheck" };
+  if (row.source === "auto" || !row.linkDomainId) return null;
+  const auto = await db.query.uptimeMonitors.findFirst({ where: and(eq(uptimeMonitors.domainId, row.linkDomainId), eq(uptimeMonitors.source, "auto")), columns: { healthPath: true } });
+  return auto?.healthPath && auto.healthPath !== current ? { path: auto.healthPath, source: "detected" } : null;
+}
+
 /** Runs detection for the app's automatic monitors on the next pass, such as after a deploy. */
 export async function requestHealthDetection(appId: string): Promise<void> {
   const stack = await db.select({ id: apps.id }).from(apps).where(or(eq(apps.id, appId), eq(apps.parentAppId, appId)));

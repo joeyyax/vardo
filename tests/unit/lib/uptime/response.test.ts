@@ -114,7 +114,7 @@ describe("runHttpCheck", () => {
       },
     });
     const res = await run(check, () => new Response(stream));
-    expect(res.bytes).toBeGreaterThanOrEqual(SIZE_READ_BYTES);
+    expect(res.bytes).toBe(SIZE_READ_BYTES);
     expect(pulled).toBeLessThan(SIZE_READ_BYTES * 3);
     const declared = await run(check, () => new Response("abc", { headers: { "content-length": "3" } }));
     expect(declared.bytes).toBe(3);

@@ -23,7 +23,8 @@ export type AppRunState = { status: string | null; parked: boolean | null; lastR
  */
 export function appNotRunning(app: AppRunState | null | undefined): boolean {
   if (!app?.status) return false;
-  if (app.parked && (app.status === "stopped" || app.status === "error" || app.status === "missing")) return true;
+  // Stop sets parked before the containers go; start and deploy clear it.
+  if (app.parked && app.status !== "deploying") return true;
   if (app.status === "stopped") return app.exitReason?.signal !== "SIGSEGV";
   return app.status === "missing" && !app.lastRunningAt;
 }

@@ -78,10 +78,11 @@ async function readCapped(res: Response, cap: number, decode: boolean): Promise<
   return { text, bytes };
 }
 
-/** Content-Length when the response sends one, else the bytes read. */
-function sizeOf(res: Response, read: number): number {
-  const declared = Number(res.headers.get("content-length"));
-  return Number.isInteger(declared) && declared >= 0 && res.headers.get("content-length")?.trim() !== "" ? Math.max(declared, read) : read;
+/** Content-Length when the response sends one, else the bytes read, held to the cap so a capped read reads as exactly the cap. */
+function sizeOf(res: Response, read: number, cap: number): number {
+  const header = res.headers.get("content-length")?.trim();
+  const declared = Number(header);
+  return header && Number.isInteger(declared) && declared >= 0 ? Math.max(declared, read) : Math.min(read, cap);
 }
 
 export async function runHttpCheck(check: HttpCheck, ctx: HttpContext): Promise<CheckResult> {
@@ -107,8 +108,9 @@ export async function runHttpCheck(check: HttpCheck, ctx: HttpContext): Promise<
       await res.body?.cancel().catch(() => {});
       return result(ctx, at, now(), { ok: false, ...seen, error: "status" });
     }
-    const body = await readCapped(res, check.keyword ? MAX_BODY_BYTES : SIZE_READ_BYTES, !!check.keyword);
-    const bytes = sizeOf(res, body.bytes);
+    const cap = check.keyword ? MAX_BODY_BYTES : SIZE_READ_BYTES;
+    const body = await readCapped(res, cap, !!check.keyword);
+    const bytes = sizeOf(res, body.bytes, cap);
     if (check.keyword && !body.text.includes(check.keyword)) return result(ctx, at, now(), { ok: false, ...seen, bytes, error: "keyword" });
     return result(ctx, at, now(), { ok: true, ...seen, bytes });
   } catch (err) {

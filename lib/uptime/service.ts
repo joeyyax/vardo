@@ -39,6 +39,7 @@ import {
   trimToHistory,
   type UptimeRange,
   markImpaired,
+  weighCheck,
   findOutages,
   median,
   rangeUptime,
@@ -66,7 +67,7 @@ import { vantageNames } from "./format";
 import { targetRefusal, type PolicyLevel } from "./outbound";
 import { appNotRunning, autoCheckFor, runStateColumns, autoEdit, baseUrlOf, editsAuto, withAutoFields } from "./auto";
 import { applyHeaderPatch } from "./secrets";
-import { listVantagePoints } from "./vantage";
+import { LOCAL_VANTAGE_ID, listVantagePoints } from "./vantage";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
 
 const MINUTE_MS = 60_000;
@@ -333,6 +334,7 @@ export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): M
     since: ctx.bars.get(row.id)?.since ?? null,
     rangeUptime: rangeUptime(ctx.bars.get(row.id)?.buckets ?? []),
     latencyMs: last?.ok ? last.latencyMs : null,
+    cachedBy: last?.cache ?? null,
     lastCheckedAt: last?.at ?? null,
   };
 }
@@ -431,8 +433,12 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now(), ran
     signedAt: s.vantage.kind === "local" ? signed : (received.get(s.vantage.id) ?? null),
   }));
 
+  const weight = row.check.type === "http" && !row.heavyNoticeDismissed ? weighCheck(results24.filter((r) => r.vantageId === LOCAL_VANTAGE_ID).slice(-12)) : null;
+  const heavy = weight ? { ...weight, offer: await (await import("./health")).lighterPathFor(row) } : null;
+
   return {
     ...summary,
+    heavy,
     uptime24h: rangeUptime(hourly.map(bucketOf)),
     uptime90d: rangeUptime(days90),
     daily90: days90.map(tick),
@@ -502,6 +508,7 @@ export async function updateMonitor(scope: Scope, id: string, patch: UpdateMonit
   if (patch.muted !== undefined) set.muted = patch.muted;
   if (patch.enabled !== undefined) set.enabled = patch.enabled;
   if (patch.maintenance !== undefined) set.maintenance = patch.maintenance;
+  if (patch.heavyNoticeDismissed !== undefined) set.heavyNoticeDismissed = patch.heavyNoticeDismissed;
 
   if (patch.headers !== undefined || patch.basicAuth !== undefined || patch.shareHeaders !== undefined) {
     if (row.check.type !== "http") throw new UptimeInputError("Headers apply to HTTP checks only.");

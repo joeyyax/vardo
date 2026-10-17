@@ -298,10 +298,25 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   }
 
   const impaired = await loadImpaired(now);
+  const appIds = [...new Set(monitors.map((m) => m.appId).filter((id): id is string => !!id))];
+  const stopped = new Set(
+    appIds.length ? (await db.select({ id: apps.id, ...runStateColumns }).from(apps).where(inArray(apps.id, appIds))).filter((a) => appNotRunning(a)).map((a) => a.id) : [],
+  );
   for (const m of monitors) {
     if (m.meshPeerId) continue;
     // Waiting on an answer: no alerts, and none opened from the checks that ran meanwhile.
     if (m.reviewStatus !== null && m.reviewAnswer === null) continue;
+    // Stopped on purpose: close what was open without a notice, and start fresh when the app runs again.
+    if (m.appId && stopped.has(m.appId)) {
+      if (damping.get(m.id)?.announced !== null) {
+        const closed = await resolveUptimeIncident({ about: m.id, orgIds: m.organizationId ? [m.organizationId] : operator }, "", { notify: false }).then(
+          () => true,
+          (err) => (log.error(`Closing the incident of stopped ${m.id} failed:`, err), false),
+        );
+        if (closed) damping.set(m.id, { ...newMemory(), announced: null });
+      }
+      continue;
+    }
     try {
       const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
       if (silent) continue;

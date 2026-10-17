@@ -23,7 +23,7 @@ import {
 } from "@/lib/uptime/format";
 import { RANGE_LABELS } from "@/lib/uptime/core/range";
 import type { MonitorDetail as Detail, UptimeRange, VantageView } from "@/lib/uptime/types";
-import { CheckNote, ReviewCard } from "./health-parts";
+import { CheckNote, HeavyNoticeCard, ReviewCard } from "./health-parts";
 import { MonitorActions } from "./monitor-actions";
 import { OutageList } from "./monitor-history";
 import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
@@ -120,6 +120,7 @@ export function MonitorDetail({
       </div>
 
       <ReviewCard monitor={m} apiBase={apiBase} canManage={canManage} onAnswered={refresh} />
+      <HeavyNoticeCard monitor={m} apiBase={apiBase} canManage={canManage} onChanged={refresh} />
 
       {m.reading && (
         <Card variant="surface" className="space-y-1 p-5">

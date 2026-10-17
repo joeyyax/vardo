@@ -86,6 +86,8 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
             <>
               Up · checked <RelativeTime date={data.lastCheckedAt} /> from {data.vantageName}
             </>
+          ) : data.state === "stopped" ? (
+            "Stopped · not checked until the app runs"
           ) : (
             "No data yet"
           )}

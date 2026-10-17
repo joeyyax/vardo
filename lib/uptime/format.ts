@@ -21,6 +21,25 @@ export const ERROR_TEXT: Record<ErrorKind, string> = {
   unknown: "check failed",
 };
 
+const CACHE_NAMES: Record<string, string> = {
+  cloudflare: "Cloudflare's cache",
+  vercel: "Vercel's cache",
+  cloudfront: "CloudFront's cache",
+  fastly: "Fastly's cache",
+  proxy: "a proxy cache",
+};
+
+/** "Answered from Cloudflare's cache, …" for a check a cache answered. */
+export function cacheNote(cache: string): string {
+  return `Answered from ${CACHE_NAMES[cache] ?? "a cache"}, so it can't tell whether the app is up.`;
+}
+
+/** A body size such as "412 KB", or "over 64 KB" when reading stopped at the cap. */
+export function formatBytes(bytes: number, atLeast = false): string {
+  const kb = Math.round(bytes / 1024);
+  return `${atLeast ? "over " : ""}${kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`}`;
+}
+
 export function intervalLabel(sec: number): string {
   return sec === 30 ? "30 seconds" : sec === 300 ? "5 minutes" : "1 minute";
 }
