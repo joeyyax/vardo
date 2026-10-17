@@ -189,6 +189,7 @@ export type App = {
   securityHeadersLive?: boolean;
   diskWriteAlertThreshold: number | null;
   anomalyAlerts?: boolean;
+  metadataEndpoint?: boolean;
   githubFeedback?: boolean | null;
   githubFeedbackError?: string | null;
   healthCheckTimeout: number | null;

@@ -84,6 +84,7 @@ const updateAppSchema = z.object({
   securityHeaders: securityHeadersInputSchema.optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   anomalyAlerts: z.boolean().optional(),
+  metadataEndpoint: z.boolean().optional(),
   // Null follows the org default.
   githubFeedback: z.boolean().nullable().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),

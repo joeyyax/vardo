@@ -110,6 +110,7 @@ export function AppSettingsPanel({
   const [kind, setKind] = useState<ServiceKind | "inferred">(app.kindOverride ?? "inferred");
   const inferredKind = effectiveKind({ ...app, kindOverride: null });
   const [anomalyAlerts, setAnomalyAlerts] = useState(app.anomalyAlerts ?? true);
+  const [metadataEndpoint, setMetadataEndpoint] = useState(app.metadataEndpoint ?? true);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [deployStrategy, setDeployStrategy] = useState<"blue-green" | "stop-first">(app.deployStrategy ?? "blue-green");
@@ -193,6 +194,7 @@ export function AppSettingsPanel({
           : null;
       }
       if (fields.anomalyAlerts) body.anomalyAlerts = anomalyAlerts;
+      if (fields.metadataEndpoint) body.metadataEndpoint = metadataEndpoint;
       if (fields.autoDeploy) body.autoDeploy = autoDeploy;
       if (fields.githubFeedback) {
         const next = githubFeedback === "inherit" ? null : githubFeedback === "on";
@@ -521,6 +523,19 @@ export function AppSettingsPanel({
             Protocol Traefik uses to reach {isComposeParent ? "a routed service" : "the container"}. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
           </p>
           <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+        </div>
+      )}
+
+      {/* Metadata endpoint */}
+      {fields.metadataEndpoint && (
+        <div className="flex items-start gap-3">
+          <Switch id="edit-metadata-endpoint" className="mt-0.5" checked={metadataEndpoint} onCheckedChange={setMetadataEndpoint} />
+          <div className="grid gap-0.5">
+            <Label htmlFor="edit-metadata-endpoint">Metadata endpoint</Label>
+            <p className="text-xs text-muted-foreground">
+              {isComposeParent ? "Services" : "The app"} can read {isComposeParent ? "their" : "its"} deploy, memory, uptime, certificate and backup status from <code className="font-mono">http://vardo.internal/v1/self</code>. No secrets or env values.
+            </p>
+          </div>
         </div>
       )}
 

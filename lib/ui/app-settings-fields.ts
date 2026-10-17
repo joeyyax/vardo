@@ -26,6 +26,8 @@ export type AppSettingsFields = {
   containerPort: boolean;
   backendProtocol: boolean;
   securityHeaders: boolean;
+  /** http://vardo.internal/v1/self for the app's containers. */
+  metadataEndpoint: boolean;
   restartPolicy: boolean;
   resourceLimits: boolean;
   diskWriteAlert: boolean;
@@ -70,6 +72,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     containerPort: ownsBuild,
     backendProtocol: ownsBuild,
     securityHeaders: ownsBuild,
+    metadataEndpoint: true,
     restartPolicy: true,
     resourceLimits: true,
     // Alerts match containers by name, which belong to child rows.
@@ -104,6 +107,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   containerPort: "networking",
   backendProtocol: "networking",
   securityHeaders: "networking",
+  metadataEndpoint: "networking",
   image: "build",
   gitSource: "build",
   deployType: "build",
