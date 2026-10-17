@@ -19,6 +19,17 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["lib/uptime/core/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["@/*", "!@/lib/uptime/core", "!@/lib/uptime/core/*", "../*"],
+          message: "The uptime core imports only node built-ins, npm packages and itself.",
+        }],
+      }],
+    },
+  },
+  {
     files: ["**/*.{ts,tsx,js,jsx,mjs}"],
     plugins: { vardo: vardoRules },
     rules: {

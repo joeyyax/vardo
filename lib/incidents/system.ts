@@ -14,10 +14,11 @@ export type HostProblemKind =
   | "host.peer-watchdog-silent";
 
 export type SystemProblem = {
-  kind: "system.service-down" | "system.cert-expiring" | "system.loop-failing" | HostProblemKind;
+  kind: "system.service-down" | "uptime.down" | "system.cert-expiring" | "system.loop-failing" | HostProblemKind;
   about: string;
   title: string;
   severity: IncidentSeverity;
+  appId?: string;
 };
 
 /** Emits the notice to each org with the incident it opens or updates there. */
@@ -25,7 +26,7 @@ export async function emitSystemIncident(orgIds: string[], event: BusEvent, prob
   for (const orgId of orgIds) {
     const incident = await safely(
       "open",
-      () => openIncident(orgId, { kind: problem.kind, about: problem.about, severity: problem.severity, title: problem.title }, now),
+      () => openIncident(orgId, { kind: problem.kind, about: problem.about, severity: problem.severity, title: problem.title, appId: problem.appId }, now),
       null,
     );
     emit(orgId, incident ? { ...event, incident } : event);

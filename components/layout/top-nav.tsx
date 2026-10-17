@@ -26,6 +26,7 @@ type TopNavProps = {
 const navItems: { label: string; href: string; requires?: "activity" | "cron" }[] = [
   { label: "Projects", href: "/projects" },
   { label: "Metrics", href: "/metrics" },
+  { label: "Uptime", href: "/uptime" },
   { label: "Backups", href: "/backups" },
   { label: "Cron", href: "/cron", requires: "cron" },
   { label: "Activity", href: "/activity", requires: "activity" },

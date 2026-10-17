@@ -37,6 +37,7 @@ import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
+import { AppUptimePanel } from "@/components/uptime/app-uptime";
 import { Card } from "@/components/ui/card";
 
 const AppTerminal = dynamic(
@@ -717,6 +718,7 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
                 {
                   label: "Observe",
                   items: [
+                    { value: "uptime", label: "Uptime" },
                     { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
@@ -760,6 +762,10 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
             deploying={deploy.deploying}
             deployed={{ [app.composeService ?? ""]: app.imageName }}
           />
+        </TabsContent>
+
+        <TabsContent value="uptime">
+          <AppUptimePanel orgId={orgId} appId={app.id} canManage={can(userRole, "uptime.manage")} />
         </TabsContent>
 
         <TabsContent value="stability">

@@ -60,6 +60,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "abuse-report", roles: BOTH, singleton: true, load: async () => (await import("@/lib/probe-guard/reporting/loop")).abuseReportLoop },
   { name: "cloudflare-only-sync", roles: BOTH, singleton: true, load: async () => (await import("@/lib/docker/cloudflare-only")).cloudflareOnlyLoop },
   { name: "trust-checks", roles: BOTH, singleton: true, load: async () => (await import("@/lib/trust/loop")).trustLoop },
+  { name: "uptime", roles: BOTH, singleton: true, load: async () => (await import("@/lib/uptime/loop")).uptimeLoop },
   { name: "cert-export", roles: BOTH, singleton: true, load: async () => (await import("@/lib/ssl/cert-export")).certExportLoop },
   { name: "image-update-sweep", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdateSweepLoop },
   { name: "image-update-prune", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdatePruneLoop },
