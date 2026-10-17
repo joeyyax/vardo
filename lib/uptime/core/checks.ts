@@ -2,7 +2,7 @@
 
 import net from "node:net";
 import tls from "node:tls";
-import type { CheckResult, ErrorKind, HttpCheck, TcpCheck, TlsCheck } from "./types";
+import type { CheckPath, CheckResult, ErrorKind, HttpCheck, TcpCheck, TlsCheck } from "./types";
 
 /** Resolves to a reason when the host must not be connected to, else null. */
 export type HostGuard = (host: string) => Promise<string | null>;
@@ -10,6 +10,7 @@ export type HostGuard = (host: string) => Promise<string | null>;
 export type RunContext = {
   monitorId: string;
   vantageId: string;
+  path: CheckPath;
   now?: () => number;
   /** Checked before a TCP or TLS connection; HTTP guards itself through the injected fetch. */
   guard?: HostGuard;
@@ -52,7 +53,7 @@ export function classifyError(err: unknown): ErrorKind {
 }
 
 function result(ctx: RunContext, at: number, end: number, rest: Partial<CheckResult> & { ok: boolean }): CheckResult {
-  return { monitorId: ctx.monitorId, vantageId: ctx.vantageId, at, latencyMs: Math.max(0, Math.round(end - at)), ...rest };
+  return { monitorId: ctx.monitorId, vantageId: ctx.vantageId, path: ctx.path, at, latencyMs: Math.max(0, Math.round(end - at)), ...rest };
 }
 
 async function readCapped(res: Response): Promise<string> {
@@ -169,20 +170,22 @@ type CheckDeps = { now?: () => number; fetch?: typeof fetch; netConnect?: typeof
 export async function runCheck(
   monitor: { id: string; check: HttpCheck | TcpCheck | TlsCheck },
   vantageId: string,
+  path: CheckPath,
   deps: CheckDeps = {},
 ): Promise<CheckResult> {
-  const first = await runOnce(monitor, vantageId, deps);
+  const first = await runOnce(monitor, vantageId, path, deps);
   if (first.ok || !first.error || !RETRYABLE.includes(first.error)) return first;
   await (deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(RETRY_DELAY_MS);
-  return runOnce(monitor, vantageId, deps);
+  return runOnce(monitor, vantageId, path, deps);
 }
 
 function runOnce(
   monitor: { id: string; check: HttpCheck | TcpCheck | TlsCheck },
   vantageId: string,
+  path: CheckPath,
   deps: CheckDeps,
 ): Promise<CheckResult> {
-  const base = { monitorId: monitor.id, vantageId, now: deps.now, guard: deps.guard };
+  const base = { monitorId: monitor.id, vantageId, path, now: deps.now, guard: deps.guard };
   switch (monitor.check.type) {
     case "http":
       return runHttpCheck(monitor.check, { ...base, fetch: deps.fetch });

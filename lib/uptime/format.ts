@@ -1,6 +1,6 @@
 // Display helpers for uptime. Pure, so client components can import them.
 
-import type { Check, DayTick, MonitorState, VantageView } from "./types";
+import type { Check, CheckPath, DayTick, MonitorState, Reading, VantageView } from "./types";
 
 export function intervalLabel(sec: number): string {
   return sec === 30 ? "30 seconds" : sec === 300 ? "5 minutes" : "1 minute";
@@ -44,7 +44,66 @@ export function formatDuration(ms: number): string {
 
 export function stateLabel(state: MonitorState, downSince: number | null, now = Date.now()): string {
   if (state === "down") return downSince ? `Down for ${formatDuration(now - downSince)}` : "Down";
-  return state === "up" ? "Up" : "No data";
+  return state === "up" ? "Up" : state === "degraded" ? "Degraded" : "No data";
+}
+
+/** The disagreement in a few words, such as "Unreachable from outside". */
+export function readingLabel(reading: Reading): string {
+  switch (reading.kind) {
+    case "unreachable-outside":
+      return "Unreachable from outside";
+    case "unreachable-mesh":
+      return "Unreachable over the mesh";
+    case "local-only":
+      return "Failing from this instance only";
+    case "vantage-failing":
+      return `Failing from ${joinNames(reading.vantages)}`;
+  }
+}
+
+/** What the disagreement points at. */
+export function readingDetail(reading: Reading): string {
+  switch (reading.kind) {
+    case "unreachable-outside":
+      return "Checks from outside fail while this instance reaches it. Look at DNS, the certificate, the CDN or a firewall; the app itself is up.";
+    case "unreachable-mesh":
+      return "The app answers on this instance but not over the mesh. Look at the link or the linked instance.";
+    case "local-only":
+      return "Other vantage points reach it. Look at this instance's network or DNS.";
+    case "vantage-failing":
+      return "The other vantage points reach it.";
+  }
+}
+
+/** The incident title for a monitor in a state. */
+export function incidentTitle(name: string, state: MonitorState, reading?: Reading): string {
+  if (!reading) return `${name} is down`;
+  switch (reading.kind) {
+    case "unreachable-outside":
+      return `${name} is unreachable from outside`;
+    case "unreachable-mesh":
+      return `${name} is unreachable over the mesh`;
+    case "local-only":
+      return `${name} is failing from this instance only`;
+    case "vantage-failing":
+      return `${name} is ${state === "down" ? "down" : "failing"} from ${joinNames(reading.vantages)}`;
+  }
+}
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "a vantage point";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** How a vantage point's results got to the target, such as "External · public". */
+export function pathLabel(kind: VantageView["kind"], path: CheckPath): string {
+  if (kind === "local") return "Local";
+  return path === "mesh" ? "External · mesh" : "External · public";
+}
+
+/** "Checked over the mesh by jy0". */
+export function meshNote(by: string[]): string | null {
+  return by.length > 0 ? `Checked over the mesh by ${joinNames(by)}` : null;
 }
 
 export type TickTone = "up" | "partial" | "down" | "none";

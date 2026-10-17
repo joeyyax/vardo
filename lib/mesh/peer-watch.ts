@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { syncHostProblem, type HostProblem } from "@/lib/incidents/host";
 import { logger } from "@/lib/logger";
+import { uptimeClient } from "@/lib/uptime/client";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { WATCHDOG_SILENT_AFTER_MS, WORKER_DOWN_AFTER_MS } from "@/lib/worker/mode";
 
@@ -39,11 +40,13 @@ export function judgePeer(p: PeerReading, now: Date): PeerVerdict {
 async function peerWatchPass(): Promise<void> {
   const peers = await db.query.meshPeers.findMany({
     where: and(eq(meshPeers.type, "persistent"), eq(meshPeers.connectionType, "direct")),
-    columns: { instanceId: true, name: true, lastSeenAt: true, consoleAt: true, workerAt: true, watchdogAt: true },
+    columns: { id: true, instanceId: true, name: true, lastSeenAt: true, consoleAt: true, workerAt: true, watchdogAt: true },
   });
   const now = new Date();
   for (const peer of peers) {
     const verdict = judgePeer(peer, now);
+    // Uptime raises the alert for a silent peer, with the cause, when it watches that peer.
+    const uptimeAlerts = await uptimeClient.watchesPeer(peer.id).catch(() => false);
     const about = `peer:${peer.instanceId}`;
     const problems: [HostProblem, boolean | null, string][] = [
       [
@@ -54,7 +57,7 @@ async function peerWatchPass(): Promise<void> {
           message: `${peer.name} hasn't answered a heartbeat in 5 minutes.`,
           severity: "critical",
         },
-        verdict.silent,
+        uptimeAlerts ? false : verdict.silent,
         `${peer.name} is answering again.`,
       ],
       [

@@ -28,7 +28,7 @@ const EXT_C: VantagePoint = { id: "c", name: "Tokyo", kind: "external" };
 const NOW = Date.UTC(2026, 0, 10, 12, 0, 30);
 
 function r(vantageId: string, ageSec: number, ok: boolean, latencyMs = 100): CheckResult {
-  return { monitorId: "m", vantageId, at: NOW - ageSec * 1000, ok, latencyMs, ...(ok ? { status: 200 } : { error: "timeout" as const }) };
+  return { monitorId: "m", vantageId, path: vantageId === "local" ? "local" : "public", at: NOW - ageSec * 1000, ok, latencyMs, ...(ok ? { status: 200 } : { error: "timeout" as const }) };
 }
 
 describe("agreement", () => {
@@ -56,15 +56,15 @@ describe("agreement", () => {
     const ok = (id: string) => [r(id, 60, true), r(id, 0, true)];
     const vantages = [LOCAL, EXT_A, EXT_B, EXT_C];
     expect(run(vantages, [...fail("a"), ...fail("b"), ...ok("c"), ...ok("local")])).toMatchObject({ state: "down", localOnly: false });
-    expect(run(vantages, [...fail("a"), ...ok("b"), ...ok("c"), ...fail("local")]).state).toBe("up");
+    expect(run(vantages, [...fail("a"), ...ok("b"), ...ok("c"), ...fail("local")]).state).toBe("degraded");
   });
 
-  it("ignores a failing local vantage point once externals report", () => {
+  it("doesn't let a failing local vantage point decide once externals report, but says so", () => {
     const e = run(
       [LOCAL, EXT_A],
       [r("local", 60, false), r("local", 0, false), r("a", 60, true), r("a", 0, true)],
     );
-    expect(e.state).toBe("up");
+    expect(e).toMatchObject({ state: "degraded", reading: { kind: "local-only" }, localOnly: false });
   });
 
   it("falls back to local when external vantage points are silent", () => {
@@ -78,7 +78,7 @@ describe("summaries", () => {
   const results = (okAt: (min: number) => boolean | null, minutes: number) =>
     Array.from({ length: minutes }, (_, i) => ({ i, ok: okAt(i) }))
       .filter((x) => x.ok !== null)
-      .map(({ i, ok }) => ({ monitorId: "m", vantageId: "local", at: start + i * 60_000, ok: ok!, latencyMs: 100 + i }) as CheckResult);
+      .map(({ i, ok }) => ({ monitorId: "m", vantageId: "local", path: "local", at: start + i * 60_000, ok: ok!, latencyMs: 100 + i }) as CheckResult);
 
   it("counts minutes up, down and unknown", () => {
     // 0-39 ok, 40-49 failing, 50-59 no data.
@@ -106,7 +106,7 @@ describe("summaries", () => {
   });
 
   it("covers a 5 minute interval with each result", () => {
-    const data = [0, 5, 10].map((m) => ({ monitorId: "m", vantageId: "local", at: start + m * 60_000, ok: true, latencyMs: 50 }) as CheckResult);
+    const data = [0, 5, 10].map((m) => ({ monitorId: "m", vantageId: "local", path: "local", at: start + m * 60_000, ok: true, latencyMs: 50 }) as CheckResult);
     const [b] = summarize({ results: data, vantages: [LOCAL], intervalSec: 300, from: start, to: start + 15 * 60_000, bucketMs: 15 * 60_000 });
     expect(b.minutesUp).toBe(15);
   });
@@ -156,7 +156,7 @@ describe("runners", () => {
     return () => (t += 25);
   };
   const http = { type: "http" as const, url: "https://example.com", expectedStatus: { min: 200, max: 399 }, timeoutMs: 1000 };
-  const ctx = { monitorId: "m", vantageId: "local" };
+  const ctx = { monitorId: "m", vantageId: "local", path: "local" as const };
 
   it("passes http on an expected status", async () => {
     const fetchFake = (async () => new Response(null, { status: 204 })) as typeof fetch;

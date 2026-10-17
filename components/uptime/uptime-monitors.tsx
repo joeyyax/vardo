@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
+import { EntityLink } from "@/components/entity-link";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageToolbar } from "@/components/page-toolbar";
 import { RangePicker } from "@/components/range-picker";
-import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, vantageNames } from "@/lib/uptime/format";
+import { averageUptime, checkLabel, formatMs, formatPct, intervalLabel, intervalPhrase, meshNote, readingLabel, vantageNames } from "@/lib/uptime/format";
 import type { MonitorSummary, VantageView } from "@/lib/uptime/types";
-import { DayTicks, StateMark, Tile } from "./parts";
+import { DayTicks, StateMark, TargetLink, Tile } from "./parts";
 import { MonitorSheet } from "./monitor-sheet";
 
 type Filter = "all" | "down" | "muted" | "previews";
@@ -50,7 +51,7 @@ export function UptimeMonitors({
   }, [refresh]);
 
   const active = monitors.filter((m) => m.enabled);
-  const down = active.filter((m) => m.state === "down").length;
+  const down = active.filter((m) => m.state === "down" || m.state === "degraded").length;
   const up = active.filter((m) => m.state === "up").length;
   const counts: Record<Filter, number> = {
     all: monitors.length,
@@ -62,7 +63,7 @@ export function UptimeMonitors({
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return monitors.filter((m) => {
-      if (filter === "down" && !(m.enabled && m.state === "down")) return false;
+      if (filter === "down" && !(m.enabled && (m.state === "down" || m.state === "degraded"))) return false;
       if (filter === "muted" && !m.muted) return false;
       if (filter === "previews" && !m.preview) return false;
       return !q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q);
@@ -150,7 +151,19 @@ export function UptimeMonitors({
                       {m.muted && <Chip tone="neutral" caps={false}>Muted</Chip>}
                       {!m.enabled && <Chip tone="neutral" caps={false}>Off</Chip>}
                     </Link>
-                    <p className="truncate font-mono text-xs text-muted-foreground">{m.target}</p>
+                    <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      <span className="flex min-w-0 font-mono">
+                        <TargetLink monitor={m} />
+                      </span>
+                      {m.appName && (
+                        <EntityLink href={`/apps/${m.appName}`} className="relative z-10 shrink-0">
+                          {m.appName}
+                        </EntityLink>
+                      )}
+                    </p>
+                    {(m.reading || m.meshBy.length > 0) && (
+                      <p className="truncate text-xs text-muted-foreground">{[m.reading && readingLabel(m.reading), meshNote(m.meshBy)].filter(Boolean).join(" · ")}</p>
+                    )}
                   </td>
                   <td className="hidden py-3 pr-3 lg:table-cell">
                     <DayTicks days={m.daily} />

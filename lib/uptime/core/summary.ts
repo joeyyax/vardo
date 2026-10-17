@@ -1,5 +1,6 @@
 // Rolls raw results into hourly and daily buckets of minutes up, down and unknown. Missing data is unknown, never up.
 
+import { tierOf, type Tier } from "./agreement";
 import { isUnknownResult, type Bucket, type CheckResult, type VantagePoint } from "./types";
 
 export const MINUTE_MS = 60_000;
@@ -48,7 +49,8 @@ function vantageMinutes(results: CheckResult[], intervalSec: number, fromMin: nu
 
 /**
  * Buckets of `bucketMs` covering [from, to), counting only minutes that have elapsed. A minute is down when most of the vantage points with data
- * for it are failing; external ones decide when any has data, else the local one.
+ * for it are failing. Public external results decide when any has data, then mesh, then local.
+ * `publicOnly` counts public-path results alone, for uptime shown publicly.
  */
 export function summarize(args: {
   results: CheckResult[];
@@ -57,6 +59,7 @@ export function summarize(args: {
   from: number;
   to: number;
   bucketMs: number;
+  publicOnly?: boolean;
 }): Bucket[] {
   const { bucketMs } = args;
   const first = Math.floor(args.from / bucketMs) * bucketMs;
@@ -68,12 +71,14 @@ export function summarize(args: {
   const byVantage = new Map<string, CheckResult[]>();
   for (const r of args.results) {
     if (!kinds.has(r.vantageId) || isUnknownResult(r)) continue;
-    const list = byVantage.get(r.vantageId);
+    if (args.publicOnly && (kinds.get(r.vantageId) === "local" || r.path !== "public")) continue;
+    const key = `${r.vantageId}\n${r.path}`;
+    const list = byVantage.get(key);
     if (list) list.push(r);
-    else byVantage.set(r.vantageId, [r]);
+    else byVantage.set(key, [r]);
   }
-  const minutes = [...byVantage].map(([id, list]) => ({
-    kind: kinds.get(id)!,
+  const minutes = [...byVantage.values()].map((list) => ({
+    tier: tierOf({ vantage: { kind: kinds.get(list[0].vantageId)! } as VantagePoint, path: list[0].path }),
     map: vantageMinutes(list, args.intervalSec, fromMin, toMin),
   }));
 
@@ -94,8 +99,8 @@ export function summarize(args: {
     const base = start / MINUTE_MS;
     for (let m = base; m < Math.min(base + perBucket, toMin); m++) {
       const present = minutes.filter((v) => v.map.has(m));
-      const external = present.filter((v) => v.kind === "external");
-      const deciding = external.length > 0 ? external : present.filter((v) => v.kind === "local");
+      const at = (t: Tier) => present.filter((v) => v.tier === t);
+      const deciding = at("public").length ? at("public") : at("mesh").length ? at("mesh") : at("local");
       if (deciding.length === 0) unknown++;
       else if (deciding.filter((v) => v.map.get(m) === false).length * 2 > deciding.length) down++;
       else up++;

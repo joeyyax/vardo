@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { peers, sync } = vi.hoisted(() => ({
+const { peers, sync, watches } = vi.hoisted(() => ({
   peers: { value: [] as Record<string, unknown>[] },
   sync: vi.fn(async () => "unchanged" as const),
+  watches: { ids: new Set<string>() },
 }));
 
 vi.mock("@/lib/db", () => ({ db: { query: { meshPeers: { findMany: vi.fn(async () => peers.value) } } } }));
 vi.mock("@/lib/incidents/host", () => ({ syncHostProblem: sync }));
+vi.mock("@/lib/uptime/client", () => ({ uptimeClient: { watchesPeer: async (id: string) => watches.ids.has(id) } }));
 
 import { judgePeer, peerWatchLoop } from "@/lib/mesh/peer-watch";
 
@@ -43,13 +45,16 @@ describe("judgePeer", () => {
 });
 
 describe("peer-watch pass", () => {
-  beforeEach(() => sync.mockClear());
+  beforeEach(() => {
+    sync.mockClear();
+    watches.ids.clear();
+  });
 
   it("raises each problem for the peer and skips the undecided ones", async () => {
     const t = new Date();
     peers.value = [
-      { instanceId: "i-1", name: "edge", lastSeenAt: new Date(t.getTime() - 10 * 60_000), consoleAt: t, workerAt: t, watchdogAt: t },
-      { instanceId: "i-2", name: "core", lastSeenAt: t, consoleAt: t, workerAt: new Date(t.getTime() - 5 * 60_000), watchdogAt: t },
+      { id: "p-1", instanceId: "i-1", name: "edge", lastSeenAt: new Date(t.getTime() - 10 * 60_000), consoleAt: t, workerAt: t, watchdogAt: t },
+      { id: "p-2", instanceId: "i-2", name: "core", lastSeenAt: t, consoleAt: t, workerAt: new Date(t.getTime() - 5 * 60_000), watchdogAt: t },
     ];
     await peerWatchLoop.tick();
     const calls = (sync.mock.calls as unknown as [{ kind: string; about: string }, boolean][]).map(([p, active]) => [p.about, p.kind, active]);
@@ -59,5 +64,14 @@ describe("peer-watch pass", () => {
       ["peer:i-2", "host.peer-worker-down", true],
       ["peer:i-2", "host.peer-watchdog-silent", false],
     ]);
+  });
+
+  it("leaves a silent peer to uptime when uptime watches it, so there is one alert", async () => {
+    const t = new Date();
+    peers.value = [{ id: "p-1", instanceId: "i-1", name: "edge", lastSeenAt: new Date(t.getTime() - 10 * 60_000), consoleAt: null, workerAt: null, watchdogAt: null }];
+    watches.ids.add("p-1");
+    await peerWatchLoop.tick();
+    const calls = (sync.mock.calls as unknown as [{ kind: string; about: string }, boolean][]).map(([p, active]) => [p.kind, active]);
+    expect(calls).toEqual([["host.peer-silent", false]]);
   });
 });

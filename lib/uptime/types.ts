@@ -1,9 +1,9 @@
 // What the uptime API returns and accepts. Safe to import from client components.
 
 import { z } from "zod";
-import type { Check, ErrorKind, IntervalSec, MaintenanceWindow, MonitorState } from "./core/types";
+import type { Check, CheckPath, ErrorKind, IntervalSec, MaintenanceWindow, MonitorState, Reading } from "./core/types";
 
-export type { Check, ErrorKind, IntervalSec, MaintenanceWindow, MonitorState };
+export type { Check, CheckPath, ErrorKind, IntervalSec, MaintenanceWindow, MonitorState, Reading };
 
 export type Scope = { kind: "org"; orgId: string } | { kind: "instance" };
 
@@ -28,9 +28,17 @@ export type MonitorSummary = {
   source: "auto" | "manual";
   preview: boolean;
   appId: string | null;
+  /** The app's name, which its page is addressed by. */
+  appName: string | null;
   domainId: string | null;
   maintenance: MaintenanceWindow[];
   state: MonitorState;
+  /** Why the vantage points disagree, when they do. */
+  reading: Reading | null;
+  /** Linked instances checking this monitor over the mesh. */
+  meshBy: string[];
+  /** The target is a site that opens in a browser. */
+  openable: boolean;
   /** Only the local vantage point decided. */
   localOnly: boolean;
   /** Epoch ms the monitor went down, while it's down. */
@@ -66,6 +74,7 @@ export type VantageLinkView = {
 };
 
 export type VantageStateView = VantageView & {
+  path: CheckPath;
   state: "up" | "failing" | "unknown";
   lastResult: { at: number; ok: boolean; latencyMs: number; status: number | null; error: ErrorKind | null } | null;
   /** Epoch ms of the newest signed hourly summary. */
@@ -93,6 +102,7 @@ export type AppUptime = {
   state: MonitorState;
   localOnly: boolean;
   downSince: number | null;
+  reading: Reading | null;
   lastCheckedAt: number | null;
   vantageName: string | null;
   uptime24h: number | null;

@@ -50,7 +50,7 @@ export async function setVantageLink(peerId: string, patch: LinkPatch): Promise<
     .where(eq(meshPeers.id, peerId))
     .returning({ id: meshPeers.id });
   if (!peer) return null;
-  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
+  if (patch.checksThisInstance === false) await db.update(uptimeVantages).set({ watching: [], meshWatching: [] }).where(eq(uptimeVantages.meshPeerId, peerId));
   if (patch.thisInstanceChecks === false) await db.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
   return viewOf(peerId);
 }

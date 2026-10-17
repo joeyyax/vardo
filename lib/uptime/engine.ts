@@ -2,10 +2,11 @@
 
 import { and, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, domains, environments, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
+import { apps, domains, environments, meshPeers, uptimeDaily, uptimeHourly, uptimeMonitors, uptimeRecords, uptimeResults } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { consoleBaseUrl } from "@/lib/incidents/key";
 import { openUptimeIncident, resolveUptimeIncident } from "@/lib/incidents/uptime";
+import { CONSOLE_PORT } from "@/lib/mesh/constants";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { nanoid } from "nanoid";
 import {
@@ -25,7 +26,10 @@ import {
   type HttpCheck,
   type Monitor,
 } from "./core";
+import { incidentTitle, readingDetail } from "./format";
+import { tunnelAddress, tunnelDeps } from "./mesh-path";
 import { checkDeps, levelOf } from "./outbound";
+import { syncPeerAlerts, syncPeerMonitors } from "./peers";
 import { pruneProbes, tickProber } from "./prober";
 import { toResult } from "./service";
 import { LOCAL_VANTAGE_ID, ensureLocalVantage, listVantagePoints, localSigningKey } from "./vantage";
@@ -39,7 +43,8 @@ const CONCURRENCY = 4;
 const CONSOLE_MONITOR_ID = "mon_console";
 
 const lastRun = new Map<string, number>();
-const alerted = new Set<string>();
+/** The state and reading each open alert was raised for. */
+const alerted = new Map<string, string>();
 const seenUp = new Set<string>();
 let seeded = false;
 let lastRollup = 0;
@@ -132,6 +137,10 @@ export async function syncAutoMonitors(): Promise<{ added: number; removed: numb
     await db.update(uptimeMonitors).set({ check: { ...consoleRow.check, url: consoleUrl }, updatedAt: new Date() }).where(eq(uptimeMonitors.id, CONSOLE_MONITOR_ID));
   }
 
+  const peers = await syncPeerMonitors(existing);
+  for (const id of peers.keep) keep.add(id);
+  added += peers.added;
+
   for (const m of existing) {
     if (keep.has(m.id)) continue;
     await db.delete(uptimeMonitors).where(eq(uptimeMonitors.id, m.id));
@@ -170,9 +179,10 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
   await seedLastRun();
   const local = await ensureLocalVantage();
   const rows = await db
-    .select({ monitor: uptimeMonitors, appStatus: apps.status })
+    .select({ monitor: uptimeMonitors, appStatus: apps.status, peerIp: meshPeers.internalIp })
     .from(uptimeMonitors)
     .leftJoin(apps, eq(apps.id, uptimeMonitors.appId))
+    .leftJoin(meshPeers, eq(meshPeers.id, uptimeMonitors.meshPeerId))
     .where(eq(uptimeMonitors.enabled, true));
 
   // A stopped app is expected to be down.
@@ -184,11 +194,18 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
 
   const deps = { strict: await checkDeps("strict"), operator: await checkDeps("operator") };
   const fresh: CheckResult[] = [];
-  await pool(due, CONCURRENCY, async ({ monitor }) => {
+  await pool(due, CONCURRENCY, async ({ monitor, peerIp }) => {
     lastRun.set(monitor.id, now);
     try {
-      const { fetch, guard } = deps[levelOf(monitor)];
-      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, { now: clock, fetch, guard }));
+      // The tunnel monitor of a peer connects to that peer's console and nowhere else.
+      if (monitor.peerRole === "link") {
+        const address = tunnelAddress(peerIp);
+        if (!address) return;
+        fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, "local", { now: clock, ...tunnelDeps(address, [Number(CONSOLE_PORT)]) }));
+        return;
+      }
+      const { fetch, guard } = deps[monitor.peerRole === "public" ? "strict" : levelOf(monitor)];
+      fresh.push(await runCheck({ id: monitor.id, check: monitor.check }, local.id, "local", { now: clock, fetch, guard }));
     } catch (err) {
       log.warn(`Check for ${monitor.id} threw:`, err);
     }
@@ -199,6 +216,7 @@ export async function runDueChecks(now = Date.now(), clock?: () => number): Prom
       fresh.map((r) => ({
         monitorId: r.monitorId,
         vantageId: r.vantageId,
+        path: r.path,
         at: new Date(r.at),
         ok: r.ok,
         latencyMs: r.latencyMs,
@@ -228,20 +246,37 @@ async function syncAlerts(monitors: (typeof uptimeMonitors.$inferSelect)[], now:
   const results: CheckResult[] = recent.map(toResult);
   const operator = monitors.some((m) => !m.organizationId) ? await adminOrgIds() : [];
 
+  // A peer's monitors are read together, so one verdict raises one alert.
+  const peerIds = [...new Set(monitors.map((m) => m.meshPeerId).filter((id): id is string => !!id))];
+  if (peerIds.length > 0) {
+    const silent = (row: typeof uptimeMonitors.$inferSelect) => row.muted || inMaintenance({ maintenance: row.maintenance }, now);
+    await syncPeerAlerts(peerIds, now, silent).catch((err) => log.error("Peer alert sync failed:", err));
+  }
+
   for (const m of monitors) {
+    if (m.meshPeerId) continue;
     try {
       const evaluation = evaluate({ vantages, results: results.filter((r) => r.monitorId === m.id), now, intervalSec: m.intervalSec });
+      const title = incidentTitle(m.name, evaluation.state, evaluation.reading);
       const outage = {
         about: m.id,
-        title: `${m.name} is down`,
+        title,
         orgIds: m.organizationId ? [m.organizationId] : operator,
         appId: m.appId ?? undefined,
+        severity: evaluation.state === "degraded" ? ("warning" as const) : ("critical" as const),
       };
-      if (evaluation.state === "down") {
+      if (evaluation.state === "down" || evaluation.state === "degraded") {
         const silent = m.muted || inMaintenance({ maintenance: m.maintenance }, now);
-        if (silent || alerted.has(m.id)) continue;
-        await openUptimeIncident(outage, `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`);
-        alerted.add(m.id);
+        const signature = `${evaluation.state}:${title}`;
+        const raised = alerted.get(m.id);
+        if (silent || raised === signature) continue;
+        // A new reading replaces the open incident, so its title is right.
+        if (raised) await resolveUptimeIncident(outage, "The reading changed.");
+        const detail = evaluation.reading
+          ? `${title}. ${readingDetail(evaluation.reading)}`
+          : `${m.name} isn't responding${evaluation.localOnly ? " from this instance" : ""}.`;
+        await openUptimeIncident(outage, detail);
+        alerted.set(m.id, signature);
       } else if (evaluation.state === "up" && (alerted.delete(m.id) || !seenUp.has(m.id))) {
         await resolveUptimeIncident(outage, `${m.name} is responding again.`);
       }

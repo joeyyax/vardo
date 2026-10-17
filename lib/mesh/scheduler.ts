@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
 import { reconcileSshForward } from "./ssh-forward";
+import { reconcileTraefikForward } from "./traefik-forward";
 import { syncAuthorizedKeys } from "./ssh-endpoint";
 import { exchangeSshKeys } from "./ssh-exchange";
 import { logger } from "@/lib/logger";
@@ -22,6 +23,11 @@ async function reconcileForward(): Promise<void> {
     await syncAuthorizedKeys();
   } catch (err) {
     log.error("Mesh SSH endpoint check failed:", err);
+  }
+  try {
+    await reconcileTraefikForward();
+  } catch (err) {
+    log.error("Mesh Traefik forward check failed:", err);
   }
 }
 

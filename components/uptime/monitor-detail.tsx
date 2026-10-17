@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BellOff, Bell, CalendarClock, Pencil, Trash2 } from "lucide-react";
+import { EntityLink } from "@/components/entity-link";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,12 +18,16 @@ import {
   formatMs,
   formatPct,
   intervalLabel,
+  meshNote,
+  pathLabel,
+  readingDetail,
+  readingLabel,
   stateLabel,
 } from "@/lib/uptime/format";
 import type { ErrorKind, MonitorDetail as Detail, VantageView } from "@/lib/uptime/types";
 import { MaintenanceDialog } from "./maintenance-dialog";
 import { MonitorSheet } from "./monitor-sheet";
-import { DayTicks, StatePill, Tile } from "./parts";
+import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
 import { ResponseChart } from "./response-chart";
 
 const POLL_MS = 30_000;
@@ -119,9 +124,27 @@ export function MonitorDetail({
             <StatePill state={m.enabled ? m.state : "unknown"}>{m.enabled ? stateLabel(m.state, m.downSince) : "Off"}</StatePill>
             {m.preview && <Chip tone="info" caps={false}>Preview</Chip>}
           </div>
-          <p className="break-all font-mono text-xs text-muted-foreground">
-            {m.target} · {checkLabel(m.check)} · {intervalLabel(m.intervalSec)} · {expectation(m.check)}
+          <p className="flex flex-wrap items-center gap-x-1 break-all font-mono text-xs text-muted-foreground">
+            <TargetLink monitor={m} />
+            <span>
+              · {checkLabel(m.check)} · {intervalLabel(m.intervalSec)} · {expectation(m.check)}
+            </span>
           </p>
+          {(m.appName || meshNote(m.meshBy)) && (
+            <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+              {m.appName && (
+                <span>
+                  App <EntityLink href={`/apps/${m.appName}`} className="text-foreground">{m.appName}</EntityLink>
+                </span>
+              )}
+              {m.appName && m.domainId && (
+                <EntityLink href={`/apps/${m.appName}/networking`} className="text-muted-foreground hover:text-foreground">
+                  Domain settings
+                </EntityLink>
+              )}
+              {meshNote(m.meshBy)}
+            </p>
+          )}
         </div>
         {canManage && (
           <div className="flex flex-wrap items-center gap-2">
@@ -149,6 +172,13 @@ export function MonitorDetail({
           </div>
         )}
       </div>
+
+      {m.reading && (
+        <Card variant="surface" className="space-y-1 p-5">
+          <p className="font-medium">{readingLabel(m.reading)}</p>
+          <p className="text-sm text-muted-foreground">{readingDetail(m.reading)}</p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="24 hours" value={formatPct(m.uptime24h)} />
@@ -187,10 +217,13 @@ export function MonitorDetail({
             </thead>
             <tbody>
               {m.vantages.map((v) => (
-                <tr key={v.id} className="border-b last:border-0">
+                <tr key={`${v.id}:${v.path}`} className="border-b last:border-0">
                   <td className="px-5 py-2.5">
                     <p className="font-medium">{v.name}</p>
-                    <p className="text-xs text-muted-foreground">{v.kind === "local" ? "Local · this instance" : `External${v.location ? ` · ${v.location}` : ""}`}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {pathLabel(v.kind, v.path)}
+                      {v.kind === "external" && v.location ? ` · ${v.location}` : ""}
+                    </p>
                   </td>
                   <td className="py-2.5 pr-3">{v.state === "up" ? "Up" : v.state === "failing" ? "Failing" : "No data"}</td>
                   <td className="py-2.5 pr-3 text-muted-foreground">
@@ -209,7 +242,7 @@ export function MonitorDetail({
           </table>
         </div>
         <p className="p-5 pt-3 text-xs text-muted-foreground">
-          Down when most external vantage points agree. Local results alert you but never count publicly.
+          Public results from outside decide first, then mesh results, then this instance. Mesh and local results never count as public uptime.
           {m.localOnly && " Only the local vantage point is reporting, so this state is local only."}
         </p>
       </Card>

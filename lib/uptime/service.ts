@@ -31,6 +31,7 @@ import {
   rangeUptime,
   type Bucket,
   type Check,
+  type CheckPath,
   type CheckResult,
   type Evaluation,
   type VantagePoint,
@@ -68,6 +69,7 @@ export function toResult(row: typeof uptimeResults.$inferSelect): CheckResult {
   return {
     monitorId: row.monitorId,
     vantageId: row.vantageId,
+    path: row.path as CheckPath,
     at: row.at.getTime(),
     ok: row.ok,
     latencyMs: row.latencyMs,
@@ -123,6 +125,7 @@ export async function ownedRow(scope: Scope, id: string): Promise<UptimeMonitorR
 
 type Loaded = {
   rows: UptimeMonitorRow[];
+  appNames: Map<string, string>;
   vantages: VantagePoint[];
   recent: Map<string, CheckResult[]>;
   daily: Map<string, Bucket[]>;
@@ -180,7 +183,8 @@ const tick = (b: Bucket): DayTick => ({
 
 async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
   const ids = rows.map((r) => r.id);
-  const [vantages, resultRows, daily] = await Promise.all([
+  const appIds = [...new Set(rows.map((r) => r.appId).filter((id): id is string => !!id))];
+  const [vantages, resultRows, daily, appRows] = await Promise.all([
     listVantagePoints(),
     ids.length
       ? db
@@ -189,8 +193,9 @@ async function load(rows: UptimeMonitorRow[], now: number): Promise<Loaded> {
           .where(and(inArray(uptimeResults.monitorId, ids), gte(uptimeResults.at, new Date(now - 15 * MINUTE_MS))))
       : Promise.resolve([]),
     dailyBuckets(ids, 30, now),
+    appIds.length ? db.select({ id: apps.id, name: apps.name }).from(apps).where(inArray(apps.id, appIds)) : Promise.resolve([]),
   ]);
-  return { rows, vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
+  return { rows, appNames: new Map(appRows.map((a) => [a.id, a.name])), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
 }
 
 function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorSummary {
@@ -210,9 +215,13 @@ function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): MonitorS
     source: row.source === "auto" ? "auto" : "manual",
     preview: row.preview,
     appId: row.appId,
+    appName: row.appId ? (ctx.appNames.get(row.appId) ?? null) : null,
     domainId: row.domainId,
     maintenance: row.maintenance,
     state: row.enabled ? evaluation.state : "unknown",
+    openable: check.type === "http" && row.peerRole !== "link",
+    reading: row.enabled ? (evaluation.reading ?? null) : null,
+    meshBy: [...new Set(evaluation.vantages.filter((s) => s.path === "mesh" && s.state !== "unknown").map((s) => s.vantage.name))],
     localOnly: evaluation.localOnly,
     downSince: evaluation.downSince ?? null,
     uptime30: rangeUptime(daily),
@@ -308,6 +317,7 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
     name: s.vantage.name,
     kind: s.vantage.kind,
     location: s.vantage.location ?? null,
+    path: s.path,
     state: s.state,
     lastResult: s.last
       ? { at: s.last.at, ok: s.last.ok, latencyMs: s.last.latencyMs, status: s.last.status ?? null, error: s.last.error ?? null }
@@ -444,14 +454,16 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
   );
   const lastOutage = outages.sort((a, b) => b.start - a.start)[0] ?? null;
   const downs = active.filter((m) => m.state === "down");
+  const degraded = active.filter((m) => m.state === "degraded");
   const known = active.filter((m) => m.state !== "unknown");
   const lastCheckedAt = active.reduce<number | null>((best, m) => (m.lastCheckedAt && (!best || m.lastCheckedAt > best) ? m.lastCheckedAt : best), null);
 
   return {
     monitors,
-    state: downs.length ? "down" : known.length ? "up" : "unknown",
+    state: downs.length ? "down" : degraded.length ? "degraded" : known.length ? "up" : "unknown",
     localOnly: active.every((m) => m.localOnly),
     downSince: downs.length ? Math.min(...downs.map((m) => m.downSince ?? now)) : null,
+    reading: (downs[0] ?? degraded[0])?.reading ?? null,
     lastCheckedAt,
     vantageName: vantageNames(ctx.vantages),
     uptime24h: rangeUptime(hourly.map(bucketOf)),

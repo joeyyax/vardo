@@ -9,7 +9,7 @@ import { runHttpCheck, runTcpCheck, runTlsCheck, type HttpCheck } from "@/lib/up
 import { checkDeps, levelOf, targetRefusal } from "@/lib/uptime/outbound";
 
 const http = (url: string): HttpCheck => ({ type: "http", url, expectedStatus: { min: 200, max: 399 }, timeoutMs: 2000 });
-const ctx = { monitorId: "m", vantageId: "v" };
+const ctx = { monitorId: "m", vantageId: "v", path: "public" as const };
 
 describe("target refusal at create and update", () => {
   it.each([

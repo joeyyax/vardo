@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
+import { quietLinkClass } from "@/components/entity-link";
 import { Chip } from "@/components/ui/chip";
 import { StatusMark } from "@/components/ui/status-dot";
 import { stateLabel, tickTitle, tickTone, type TickTone } from "@/lib/uptime/format";
-import type { DayTick, MonitorState } from "@/lib/uptime/types";
+import type { DayTick, MonitorState, MonitorSummary } from "@/lib/uptime/types";
 import { cn } from "@/lib/utils";
 
 const TICK_COLOR: Record<TickTone, string> = {
@@ -25,7 +27,24 @@ export function DayTicks({ days, className, tall = false }: { days: DayTick[]; c
   );
 }
 
-const TONE: Record<MonitorState, "good" | "issue" | "neutral"> = { up: "good", down: "issue", unknown: "neutral" };
+/** The monitor's target. An HTTP target opens the site in a new tab; host:port stays text. */
+export function TargetLink({ monitor, className }: { monitor: Pick<MonitorSummary, "check" | "target" | "openable">; className?: string }) {
+  if (monitor.check.type !== "http" || !monitor.openable) return <span className={cn("truncate", className)}>{monitor.target}</span>;
+  return (
+    <a
+      href={monitor.check.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(quietLinkClass, "relative z-10 inline-flex max-w-full items-center gap-1", className)}
+    >
+      <span className="truncate">{monitor.target}</span>
+      <ExternalLink className="size-3 shrink-0" aria-hidden />
+      <span className="sr-only">(opens in a new tab)</span>
+    </a>
+  );
+}
+
+const TONE: Record<MonitorState, "good" | "issue" | "neutral" | "warn"> = { up: "good", degraded: "warn", down: "issue", unknown: "neutral" };
 
 export function StateMark({ state }: { state: MonitorState }) {
   return <StatusMark tone={TONE[state]} />;
@@ -33,7 +52,7 @@ export function StateMark({ state }: { state: MonitorState }) {
 
 export function StatePill({ state, downSince, children }: { state: MonitorState; downSince?: number | null; children?: ReactNode }) {
   return (
-    <Chip tone={state === "up" ? "good" : state === "down" ? "issue" : "neutral"} caps={false}>
+    <Chip tone={state === "up" ? "good" : state === "down" ? "issue" : state === "degraded" ? "warn" : "neutral"} caps={false}>
       {children ?? stateLabel(state, downSince ?? null)}
     </Chip>
   );
