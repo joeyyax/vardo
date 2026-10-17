@@ -13,6 +13,9 @@ const { state } = vi.hoisted(() => ({
     inspectFails: false,
     clock: [] as string[],
     typical: {} as Record<string, number>,
+    meminfo: null as string | null,
+    meshLimit: 0,
+    buildkitLimit: 0,
   },
 }));
 
@@ -24,12 +27,16 @@ vi.mock("@/lib/docker/build-targets", async (original) => ({
 }));
 
 const { peerSlot } = vi.hoisted(() => ({
-  peerSlot: { reply: "granted" as string, calls: [] as string[] },
+  peerSlot: { reply: "granted" as string, calls: [] as string[], stats: [] as ({ oomKills: number | null; limitBytes: number | null } | null)[] },
 }));
 vi.mock("@/lib/mesh/build-slot", () => ({
   claimPeerSlot: async (peer: string) => {
     peerSlot.calls.push(`claim:${peer}`);
     return peerSlot.reply;
+  },
+  peerBuilderStats: async (peer: string) => {
+    peerSlot.calls.push(`builder:${peer}`);
+    return peerSlot.stats.shift() ?? null;
   },
   renewPeerSlot: async (peer: string) => void peerSlot.calls.push(`renew:${peer}`),
   releasePeerSlot: async (peer: string) => void peerSlot.calls.push(`release:${peer}`),
@@ -46,6 +53,7 @@ vi.mock("fs/promises", async (original) => ({
   ...(await original<typeof import("fs/promises")>()),
   readFile: vi.fn(async (path: string) => {
     if (path === "/proc/pressure/memory") return state.psi;
+    if (path === "/proc/meminfo" && state.meminfo) return state.meminfo;
     throw new Error("ENOENT");
   }),
 }));
@@ -68,6 +76,7 @@ vi.mock("@/lib/docker/client", () => ({
   dockerRequest: vi.fn(async (_method: string, path: string) => {
     if (path.endsWith("/json")) {
       if (state.inspectFails) throw new Error("connect ECONNREFUSED /var/run/docker.sock");
+      if (path.includes("vardo-mesh-builder") && state.meshLimit) return { HostConfig: { Memory: state.meshLimit } };
       return {};
     }
     return { memory_stats: { stats: { anon: state.anon.shift() ?? 300 * 1024 ** 2 } } };
@@ -80,6 +89,7 @@ vi.mock("@/lib/utils/exec", () => ({
       return { stdout: JSON.stringify(running.map((id) => ({ id, status: "running" }))), stderr: "" };
     }
     if (args.includes("kill")) state.killed.push(args[args.indexOf("kill") + 1]);
+    if (args[0] === "inspect" && state.buildkitLimit) return { stdout: `${state.buildkitLimit} ${state.buildkitLimit}`, stderr: "" };
     return { stdout: "", stderr: "" };
   }),
 }));
@@ -751,6 +761,64 @@ describe("withBuildSlot on a linked instance", () => {
     expect(peerSlot.calls).toEqual([]);
   });
 
+  describe("on the peer's isolated builder", () => {
+    const isolated = () => ({ ...mesh("lh"), builder: { host: "10.99.0.2", port: 1234, serverName: "vardo-mesh-builder", ca: "ca", cert: "cert", key: "key" } });
+    const pnpmKilled = new Error('docker failed (exit 1): #17 13.57  ELIFECYCLE  Command failed.\nERROR: failed to build: failed to solve: process "/bin/sh -c pnpm run build" did not complete successfully: exit code: 1');
+
+    beforeEach(() => {
+      peerSlot.stats.length = 0;
+    });
+
+    it("builds here when the peer's builder OOM-killed the build, and names the cause", async () => {
+      peerSlot.stats.push({ oomKills: 2, limitBytes: 4 * GiB }, { oomKills: 3, limitBytes: 4 * GiB });
+      const here = await busyHere();
+      const b = gateFor("dep-b");
+      const where: (string | null)[] = [];
+      const queued = withBuildSlot({ ...b.gate, targets: [isolated()] }, bounded, async ({ target }) => {
+        where.push(target?.id ?? null);
+        if (target) throw pnpmKilled;
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      here.resolve();
+      await Promise.all([here.running, queued]);
+      expect(where).toEqual(["mesh-lh", null]);
+      expect(b.lines).toContain("[build] Ran out of memory in Long House's isolated builder (4 GiB). Building on this server instead");
+      expect(peerSlot.calls).toEqual(["claim:lh", "builder:lh", "builder:lh", "release:lh"]);
+      expect(ready.get("mesh-lh")).toBeUndefined();
+    });
+
+    it("fails an ordinary build failure there without building again here", async () => {
+      peerSlot.stats.push({ oomKills: 2, limitBytes: 4 * GiB }, { oomKills: 2, limitBytes: 4 * GiB });
+      const here = await busyHere();
+      const b = gateFor("dep-b");
+      let runs = 0;
+      const queued = withBuildSlot({ ...b.gate, targets: [isolated()] }, bounded, async () => {
+        runs++;
+        throw new Error('failed to solve: process "/bin/sh -c pnpm run build" did not complete successfully: exit code: 137');
+      });
+      await expect(queued).rejects.toThrow(/exit code: 137/);
+      here.resolve();
+      await here.running;
+      expect(runs).toBe(1);
+      expect(b.lines.some((l) => l.includes("out of memory"))).toBe(false);
+    });
+
+    it("goes by BuildKit's error when the peer can't report its kills", async () => {
+      const here = await busyHere();
+      const b = gateFor("dep-b");
+      const where: (string | null)[] = [];
+      const queued = withBuildSlot({ ...b.gate, targets: [isolated()] }, bounded, async ({ target }) => {
+        where.push(target?.id ?? null);
+        if (target) throw new Error('failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 137');
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      here.resolve();
+      await Promise.all([here.running, queued]);
+      expect(where).toEqual(["mesh-lh", null]);
+      expect(b.lines).toContain("[build] Ran out of memory in Long House's isolated builder. Building on this server instead");
+    });
+  });
+
   it("leaves a full peer out of the queue's target slots", async () => {
     const lh = mesh("lh");
     const load = async () => [lh];
@@ -786,5 +854,47 @@ describe("claimSlotForPeer", () => {
     expect(store.running.has("build:mesh-jy0-a")).toBe(false);
     first.resolve();
     await running;
+  });
+
+  describe("with both builders at 12 GiB on a 48 GiB host", () => {
+    const meminfo = (availableGiB: number) => `MemTotal: ${48 * 1024 * 1024} kB\nMemAvailable: ${availableGiB * 1024 * 1024} kB\n`;
+
+    let skew = 0;
+    beforeEach(() => {
+      Object.assign(state, { meshLimit: 12 * GiB, buildkitLimit: 12 * GiB, peak: null });
+      // Past the builder limit cache.
+      skew += 60_000;
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + skew });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      Object.assign(state, { meminfo: null, meshLimit: 0, buildkitLimit: 0 });
+    });
+
+    it("takes a peer's build beside this host's while both fit in free memory", async () => {
+      state.meminfo = meminfo(30);
+      const first = deferred();
+      const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      first.resolve();
+      await running;
+    });
+
+    it("refuses a peer's build that could push both builders into the apps' reserve", async () => {
+      state.meminfo = meminfo(20);
+      const first = deferred();
+      const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(false);
+      expect(store.running.has("build:mesh-jy0-a")).toBe(false);
+      first.resolve();
+      await running;
+    });
+
+    it("takes it with the same free memory once this host's builds are done", async () => {
+      state.meminfo = meminfo(20);
+      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+    });
   });
 });

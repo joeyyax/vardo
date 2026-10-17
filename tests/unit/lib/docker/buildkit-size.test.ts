@@ -36,7 +36,7 @@ vi.mock("@/lib/docker/client", () => ({
   }),
 }));
 
-const { buildkitSize, pinnedBuildKitMem, sizeBuildKit } = await import("@/lib/docker/buildkit-size");
+const { buildkitSize, peerBuildFits, pinnedBuildKitMem, sizeBuildKit } = await import("@/lib/docker/buildkit-size");
 
 const meminfo = (totalBytes: number, availableBytes: number) =>
   `MemTotal:       ${Math.round(totalBytes / 1024)} kB\nMemFree:        1024 kB\nMemAvailable:   ${Math.round(availableBytes / 1024)} kB\n`;
@@ -69,6 +69,23 @@ describe("buildkitSize", () => {
   it("moves in 64 MiB steps", () => {
     const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 7 * GiB + 100 * MiB, builderBytes: 0 });
     expect(size.memoryBytes % (64 * MiB)).toBe(0);
+  });
+});
+
+describe("peerBuildFits", () => {
+  const host = { totalBytes: 48 * GiB, availableBytes: 20 * GiB };
+
+  it("takes a peer's 12 GiB build within free memory less a tenth of RAM", () => {
+    expect(peerBuildFits({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
+  });
+
+  it("refuses one that could grow with this host's own builds into the apps' reserve", () => {
+    expect(peerBuildFits({ ...host, meshHeadroomBytes: 12 * GiB, buildkitHeadroomBytes: 6 * GiB })).toBe(false);
+  });
+
+  it("keeps at least 1 GiB for the apps on a small host", () => {
+    expect(peerBuildFits({ totalBytes: 4 * GiB, availableBytes: 4.5 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(true);
+    expect(peerBuildFits({ totalBytes: 4 * GiB, availableBytes: 4.4 * GiB, meshHeadroomBytes: 3.5 * GiB, buildkitHeadroomBytes: 0 })).toBe(false);
   });
 });
 

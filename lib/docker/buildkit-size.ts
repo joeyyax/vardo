@@ -46,7 +46,13 @@ export function pinnedBuildKitMem(env: Record<string, string | undefined>, total
   return mb === buildkitMemGb(Math.floor(totalBytes / MiB)) * 1024 ? null : mb * MiB;
 }
 
-async function hostMemory(): Promise<{ totalBytes: number; availableBytes: number } | null> {
+/** Whether a linked instance's build fits: what both builders can still grow into stays within free memory less the apps' reserve. */
+export function peerBuildFits(input: { totalBytes: number; availableBytes: number; meshHeadroomBytes: number; buildkitHeadroomBytes: number }): boolean {
+  const reserveBytes = Math.max(BUILDKIT_SIZE.reserveMinBytes, input.totalBytes * BUILDKIT_SIZE.reserveShare);
+  return input.meshHeadroomBytes + input.buildkitHeadroomBytes <= input.availableBytes - reserveBytes;
+}
+
+export async function hostMemory(): Promise<{ totalBytes: number; availableBytes: number } | null> {
   try {
     const info = parseMeminfo(await readFile("/proc/meminfo", "utf-8"));
     return info.MemTotal > 0 && info.MemAvailable >= 0 ? { totalBytes: info.MemTotal, availableBytes: info.MemAvailable } : null;

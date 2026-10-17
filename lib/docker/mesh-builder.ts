@@ -5,6 +5,9 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { execFileAsync } from "@/lib/utils/exec";
 import type { MeshBuilderAccess } from "@/lib/mesh/build-peers";
+import { MESH_BUILDER_CONTAINER } from "@/lib/mesh/constants";
+import { dockerRequest } from "./client";
+import { readContainerOomKills } from "./oom-counter";
 
 /** The buildx builder registered per session against a peer's BuildKit. */
 export const TARGET_BUILDER = "vardo-target";
@@ -49,6 +52,23 @@ export async function openMeshBuilder(
     await close();
     throw err;
   }
+}
+
+/** This host's isolated builder as a peer sees it: its OOM kills since it was created, and its memory limit in bytes. */
+export type MeshBuilderStats = { oomKills: number | null; limitBytes: number | null };
+
+/** This host's isolated builder's OOM kills and limit; nulls for what can't be read. */
+export async function meshBuilderStats(
+  { inspect = inspectBuilder, oomKills = readContainerOomKills }: { inspect?: typeof inspectBuilder; oomKills?: (id: string) => Promise<number | null> } = {},
+): Promise<MeshBuilderStats> {
+  const info = await inspect().catch(() => null);
+  if (!info?.Id) return { oomKills: null, limitBytes: null };
+  const limit = info.HostConfig?.Memory;
+  return { oomKills: await oomKills(info.Id), limitBytes: typeof limit === "number" && limit > 0 ? limit : null };
+}
+
+function inspectBuilder(): Promise<{ Id?: string; HostConfig?: { Memory?: number } }> {
+  return dockerRequest("GET", `/containers/${encodeURIComponent(MESH_BUILDER_CONTAINER)}/json`, undefined, { timeoutMs: 5_000 });
 }
 
 /** Throws unless the peer's builder accepts this instance's certificate. */

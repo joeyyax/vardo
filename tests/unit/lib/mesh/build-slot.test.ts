@@ -12,7 +12,7 @@ vi.mock("@/lib/mesh/client", async () => {
 });
 
 const { MeshClientError } = await import("@/lib/mesh/client");
-const { BUILD_SLOT_PATH, claimPeerSlot, releasePeerSlot, renewPeerSlot, resetPeerSlots } = await import("@/lib/mesh/build-slot");
+const { BUILD_SLOT_PATH, claimPeerSlot, peerBuilderStats, releasePeerSlot, renewPeerSlot, resetPeerSlots } = await import("@/lib/mesh/build-slot");
 
 /** A peer gate with `limit` slots and leases that lapse when `lapse` is called. */
 function fakePeer(limit = 1) {
@@ -80,6 +80,23 @@ describe("peer build slots", () => {
     expect(await claimPeerSlot("lh", "dep-a-x1", down)).toBe("unreachable");
     expect(await claimPeerSlot("lh", "dep-a-x1", down)).toBe("unreachable");
     expect(down).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the peer's isolated builder's OOM kills and limit", async () => {
+    const post = vi.fn(async () => ({ data: { builder: { oomKills: 3, limitBytes: 4 * 1024 ** 3 } } }));
+    expect(await peerBuilderStats("lh", "dep-a-x1", post)).toEqual({ oomKills: 3, limitBytes: 4 * 1024 ** 3 });
+    expect(post).toHaveBeenCalledWith("lh", BUILD_SLOT_PATH, { action: "builder", token: "dep-a-x1" }, { timeoutMs: 10_000 });
+  });
+
+  it("keeps only counts it can trust from the reply", async () => {
+    const post = vi.fn(async () => ({ data: { builder: { oomKills: "3", limitBytes: -1 } } }));
+    expect(await peerBuilderStats("lh", "dep-a-x1", post)).toEqual({ oomKills: null, limitBytes: null });
+  });
+
+  it("has nothing from a peer that predates the action or doesn't answer", async () => {
+    const old = vi.fn(async () => { throw new MeshClientError("Peer returned 400", "PEER_ERROR", 400); });
+    expect(await peerBuilderStats("old", "dep-a-x1", old)).toBeNull();
+    expect(await peerBuilderStats("lh", "dep-a-x1", vi.fn(async () => ({ data: { held: false } })))).toBeNull();
   });
 
   it("never throws on release", async () => {

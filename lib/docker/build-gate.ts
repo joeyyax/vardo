@@ -16,16 +16,17 @@ import { dockerRequest } from "./client";
 import { dockerEnv } from "./docker-env";
 import { BUILD_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { waitForFifoSlot, type SlotPlace, type SlotStore } from "./fifo-slots";
-import { buildKitLimit, type BoundedBuild } from "./build-memory";
+import { buildKitLimit, formatGiB, type BoundedBuild } from "./build-memory";
 import { DEFAULT_BUILDKIT_HOST } from "./buildkit";
 import type { WaitWriter } from "./deploy-logger";
-import { builderLimitBytes, sizeBuildKit } from "./buildkit-size";
+import { builderLimitBytes, hostMemory, peerBuildFits, sizeBuildKit } from "./buildkit-size";
+import { MESH_BUILDER_CONTAINER } from "@/lib/mesh/constants";
 import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
 import { typicalBuildMs } from "@/lib/deploy/eta-history";
-import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTargetDown, type BuildTarget } from "./build-targets";
+import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTargetDown, peerBuildOom, type BuildTarget } from "./build-targets";
 import type { TargetSlots } from "@/lib/deploy/queue";
 import type { BuildPlacementRecorder } from "./build-placement";
-import { claimPeerSlot, releasePeerSlot, renewPeerSlot } from "@/lib/mesh/build-slot";
+import { claimPeerSlot, peerBuilderStats, releasePeerSlot, renewPeerSlot } from "@/lib/mesh/build-slot";
 import { pipelineFallback, pipelineSlot } from "@/lib/pipeline/events";
 
 const log = logger.child("build-gate");
@@ -776,15 +777,29 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       if (peer && claim === "granted") void renewPeerSlot(peer, peerToken);
     }, RENEW_MS);
     renew.unref?.();
+    const stats = () => (peer && claim === "granted" ? peerBuilderStats(peer, peerToken) : Promise.resolve(null));
+    const before = on.builder ? await stats() : null;
     try {
       return await build({ target: on });
     } catch (err) {
-      if (!(err instanceof BuilderError) || gate.signal?.aborted) throw err;
-      markTargetDown(on);
-      log.warn(`Build target ${on.name} failed: ${err.reason}`, err.cause);
-      gate.log(`[build] ${on.name} couldn't build: ${err.reason}. Building on this server instead`);
-      gate.placement?.fellBack(on, err.reason);
-      pipelineFallback(id, on, err.reason);
+      if (gate.signal?.aborted) throw err;
+      if (err instanceof BuilderError) {
+        markTargetDown(on);
+        log.warn(`Build target ${on.name} failed: ${err.reason}`, err.cause);
+        gate.log(`[build] ${on.name} couldn't build: ${err.reason}. Building on this server instead`);
+        gate.placement?.fellBack(on, err.reason);
+        pipelineFallback(id, on, err.reason);
+      } else {
+        const after = on.builder ? await stats() : null;
+        if (!on.builder || !peerBuildOom(err, before, after)) throw err;
+        const limitBytes = after?.limitBytes ?? before?.limitBytes;
+        const size = limitBytes ? ` (${formatGiB(limitBytes)})` : "";
+        const reason = `it ran out of memory in its isolated builder${size}`;
+        log.warn(`Build on ${on.name} ran out of memory${size}`);
+        gate.log(`[build] Ran out of memory in ${on.name}'s isolated builder${size}. Building on this server instead`);
+        gate.placement?.fellBack(on, reason);
+        pipelineFallback(id, on, reason);
+      }
     } finally {
       clearInterval(renew);
       await store.releaseTarget(id, on.id).catch(() => {});
@@ -908,13 +923,37 @@ export async function localBuildLimit(): Promise<number> {
 
 /** A linked instance's gate token here. Its deployment is unknown here, so estimates skip it. */
 export function peerSlotToken(peerId: string, token: string): string {
-  return `build:mesh-${peerId}-${token}`;
+  return `${PEER_TOKEN_PREFIX}${peerId}-${token}`;
 }
 
-/** Takes a slot here for a linked instance's build, now or not at all: never past builds waiting here. */
+const PEER_TOKEN_PREFIX = "build:mesh-";
+
+/** Unused memory under a builder's limit; 0 when it has none or can't be read. */
+async function builderHeadroom(container: string, limitBytes: number | null): Promise<number> {
+  if (!limitBytes) return 0;
+  return Math.max(0, limitBytes - ((await builderMemory(container)) ?? 0));
+}
+
+/** Whether the isolated builder can grow to its limit beside vardo-buildkit's running builds without eating the apps' reserve. True when unreadable. */
+async function peerBuildRoom(buildkit: BoundedBuild): Promise<boolean> {
+  const host = await hostMemory();
+  const meshLimit = await builderLimitBytes(MESH_BUILDER_CONTAINER);
+  if (!host || !meshLimit) return true;
+  const { running } = await gateStores.redis.snapshot();
+  const localBuilds = running.some((r) => !r.id.startsWith(PEER_TOKEN_PREFIX));
+  return peerBuildFits({
+    ...host,
+    meshHeadroomBytes: await builderHeadroom(MESH_BUILDER_CONTAINER, meshLimit),
+    buildkitHeadroomBytes: localBuilds && buildkit.container ? await builderHeadroom(buildkit.container, buildkit.limitBytes) : 0,
+  });
+}
+
+/** Takes a slot here for a linked instance's build, now or not at all: never past builds waiting here, nor past the memory both builders could use. */
 export async function claimSlotForPeer(token: string): Promise<boolean> {
   const store = gateStores.redis;
-  const { limit } = await currentLimit(await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST));
+  const buildkit = await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST);
+  if (!(await peerBuildRoom(buildkit))) return false;
+  const { limit } = await currentLimit(buildkit);
   const slot = await store.tryAcquire(token, limit);
   if (!slot) {
     await store.remove(token);
