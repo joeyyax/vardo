@@ -50,10 +50,8 @@ export type ComposeBuildOpts = {
   gate?: <T>(run: (placement?: BuildPlacement) => Promise<T>) => Promise<T>;
   /** Targets the build may run on when every service to build is keyed for the registry. */
   targets?: BuildTarget[];
-  /** Build registry: keyed images are pulled from it for reuse and pushed to it once built. */
+  /** Build registry: keyed images are pulled from it for reuse; only builds on a target push to it. */
   registry?: { ops: RegistryOps; appName: string } | null;
-  /** Collects the pushes, which run on after the build returns. */
-  pushes?: Promise<boolean>[];
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -127,25 +125,15 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
   const targets = remote ? (opts.targets ?? []) : [];
   const gate = opts.gate ?? ((run) =>
     withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets }, opts.bounded, run));
-  let ranRemotely = false;
-  const output = await gate(async (placement) => {
+  return gate(async (placement) => {
     const target = placement?.target;
     if (!target || !remote) return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
     return onTarget(target, async (session) => {
       const built = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
       await bringBack(remote, { authEnv: opts.env, session, log, signal: opts.signal, exec });
-      ranRemotely = true;
       return built;
     });
   });
-  if (opts.registry && !ranRemotely) {
-    const { ops, appName } = opts.registry;
-    for (const name of services) {
-      if (!keys[name] || !images[name]) continue;
-      opts.pushes?.push(ops.push(images[name], ops.ref(serviceRepo(appName, name), keys[name])));
-    }
-  }
-  return output;
 }
 
 async function runComposeBuild(

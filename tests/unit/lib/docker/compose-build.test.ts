@@ -141,46 +141,14 @@ describe("composeBuild", () => {
     expect(calls.find((c) => c.args.includes("--print"))!.args).toContain("--no-cache");
   });
 
-  it("pushes each built keyed service to the build registry and nothing without one", async () => {
-    const pushed: [string, string][] = [];
-    const pushes: Promise<boolean>[] = [];
-    const registry = {
-      appName: "shop",
-      ops: {
-        ref: (repo: string, key: string) => `localhost:5001/${repo}:${key}`,
-        pull: async () => false,
-        push: async (local: string, ref: string) => {
-          pushed.push([local, ref]);
-          return true;
-        },
-        untag: async () => {},
-      },
-    };
-    await composeBuild(options({ registry, pushes }));
-    await Promise.all(pushes);
-
-    expect(pushes).toHaveLength(2);
-    expect(pushed.map(([local]) => local)).toEqual(["shop-production-green-web", "shop-production-green-api"]);
-    expect(pushed[0][1]).toMatch(/^localhost:5001\/shop-web:[0-9a-f]{64}$/);
-
-    calls = [];
-    await composeBuild(options());
-    expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
-  });
-
-  it("pushes only the services it built", async () => {
-    let n = 0;
-    const partial: ComposeBuildOpts["exec"] = async (cmd, args, opts) => {
-      if (args[0] === "image" && args[1] === "ls") return { stdout: n++ === 0 ? "shop-production-blue-web:latest\n" : "" };
-      return exec!(cmd, args, opts);
-    };
+  it("pushes nothing from a build here, with a build registry set", async () => {
     const pushed: string[] = [];
-    const registry = {
-      appName: "shop",
-      ops: { ref: (r: string, k: string) => `${r}:${k}`, pull: async () => false, push: async (l: string) => (pushed.push(l), true), untag: async () => {} },
-    };
-    await composeBuild(options({ exec: partial, registry, pushes: [] }));
-    expect(pushed).toEqual(["shop-production-green-api"]);
+    // `push` is what the old ops had; a build here must not reach for it.
+    const ops = { ref: (r: string, k: string) => `localhost:5001/${r}:${k}`, pull: async () => false, untag: async () => {}, push: async (l: string) => (pushed.push(l), true) };
+    // `pushes` is the old collector; swap passed it on every deploy.
+    await composeBuild(options({ registry: { appName: "shop", ops }, pushes: [] } as Partial<ComposeBuildOpts>));
+    expect(pushed).toEqual([]);
+    expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
   });
 
   describe("on a build target", () => {
@@ -190,12 +158,11 @@ describe("composeBuild", () => {
     };
     const registry = {
       appName: "shop",
-      ops: { ref: (r: string, k: string) => `localhost:5001/${r}:${k.slice(0, 6)}`, pull: async () => false, push: async () => true, untag: async () => {} },
+      ops: { ref: (r: string, k: string) => `localhost:5001/${r}:${k.slice(0, 6)}`, pull: async () => false, untag: async () => {} },
     };
 
     it("builds there with compose build, pushes from there and pulls each image here", async () => {
-      const pushes: Promise<boolean>[] = [];
-      await composeBuild(options({ registry, pushes, targets: [target], gate: (run) => run({ target }) }));
+      await composeBuild(options({ registry, targets: [target], gate: (run) => run({ target }) }));
       const remote = (c: (typeof calls)[number]) => c.env?.DOCKER_HOST === "ssh://vardo@10.99.0.2:2222";
       expect(bakeCall()).toBeUndefined();
       const build = calls.find((c) => c.args.includes("build") && c.args[0] === "compose" && !c.args.includes("--print"))!;
@@ -207,13 +174,12 @@ describe("composeBuild", () => {
       expect(push.every(remote)).toBe(true);
       expect(pull.some(remote)).toBe(false);
       expect(calls.some((c) => !remote(c) && c.args[0] === "tag" && c.args[2] === "shop-production-green-web")).toBe(true);
-      expect(pushes).toHaveLength(0);
     });
 
     it("stays here when a service to build has no key", async () => {
       const keyless: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
         cmd === "git" && args.at(-1)!.endsWith(":api") ? Promise.reject(new Error("not in tree")) : exec!(cmd, args, opts);
-      await composeBuild(options({ exec: keyless, registry, pushes: [], targets: [target], gate: (run) => run({ target }) }));
+      await composeBuild(options({ exec: keyless, registry, targets: [target], gate: (run) => run({ target }) }));
       expect(bakeCall()).toBeDefined();
       expect(calls.some((c) => c.env?.DOCKER_HOST)).toBe(false);
     });
@@ -222,7 +188,7 @@ describe("composeBuild", () => {
       const failing: ComposeBuildOpts["exec"] = async (cmd, args, opts) =>
         args[0] === "push" ? Promise.reject(Object.assign(new Error("push failed"), { stderr: "dial tcp: connection refused" })) : exec!(cmd, args, opts);
       const { BuilderError } = await import("@/lib/docker/build-targets");
-      await expect(composeBuild(options({ exec: failing, registry, pushes: [], targets: [target], gate: (run) => run({ target }) })))
+      await expect(composeBuild(options({ exec: failing, registry, targets: [target], gate: (run) => run({ target }) })))
         .rejects.toBeInstanceOf(BuilderError);
     });
   });

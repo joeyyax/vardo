@@ -1,4 +1,4 @@
-// Build registry: built images are pushed here and reused from here by build key. Off when unset.
+// Build registry: builds on a target come back through it, and deploys reuse its images by build key. Off when unset.
 
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
 import { execFileAsync } from "@/lib/utils/exec";
@@ -92,8 +92,6 @@ export type RegistryOps = {
   ref: (repo: string, key: string) => string;
   /** Pulls `ref`; false when the registry doesn't have it or can't be reached. */
   pull: (ref: string) => Promise<boolean>;
-  /** Tags `local` as `ref`, pushes it and drops the tag. Never throws. */
-  push: (local: string, ref: string) => Promise<boolean>;
   /** Drops a local tag, leaving the image's other tags. */
   untag: (ref: string) => Promise<void>;
 };
@@ -105,7 +103,7 @@ function firstLine(err: unknown): string {
   return (e?.stderr?.trim() || e?.message || String(err)).split("\n")[0];
 }
 
-/** Push and pull against `registry`, each under the configured logins. */
+/** Pull against `registry`, under the configured logins. */
 export function registryOps(
   registry: BuildRegistry,
   opts: {
@@ -133,23 +131,6 @@ export function registryOps(
       } catch (err) {
         const detail = firstLine(err);
         if (!NOT_FOUND.test(detail)) opts.log(`[registry] Couldn't pull ${ref}: ${detail}`);
-        return false;
-      }
-    },
-    push: async (local, ref) => {
-      try {
-        await opts.withAuth(async (env) => {
-          await run(["tag", local, ref], env, TAG_TIMEOUT);
-          try {
-            await run(["push", "--quiet", ref], env, REGISTRY_TRANSFER_TIMEOUT);
-          } finally {
-            await run(["image", "rm", ref], env, TAG_TIMEOUT).catch(() => {});
-          }
-        });
-        opts.log(`[registry] Pushed ${ref}`);
-        return true;
-      } catch (err) {
-        opts.log(`[registry] Couldn't push ${ref}, keeping the local image: ${firstLine(err)}`);
         return false;
       }
     },

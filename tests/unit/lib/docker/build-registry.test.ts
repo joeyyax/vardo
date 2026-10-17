@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// The build registry: refs derived from app and build key, and push and pull that never fail a deploy.
+// The build registry: refs derived from app and build key, and pulls that never fail a deploy.
 
 vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: vi.fn(), setSystemSetting: vi.fn() }));
 
@@ -57,27 +57,6 @@ describe("refs", () => {
 });
 
 describe("registryOps", () => {
-  it("tags, pushes and drops the registry tag, under registry auth", async () => {
-    const { ops, calls, envs, log } = setup();
-    const ref = ops.ref("notes-api", KEY);
-    expect(await ops.push("host/notes-api:abc12345", ref)).toBe(true);
-    expect(calls).toEqual([
-      ["tag", "host/notes-api:abc12345", ref],
-      ["push", "--quiet", ref],
-      ["image", "rm", ref],
-    ]);
-    expect(envs.every((e) => e.DOCKER_CONFIG === "/tmp/auth")).toBe(true);
-    expect(log).toEqual([`[registry] Pushed ${ref}`]);
-  });
-
-  it("logs a failed push, still drops the tag and doesn't throw", async () => {
-    const { ops, calls, log } = setup({ push: "dial tcp: connection refused" });
-    const ref = ops.ref("notes-api", KEY);
-    expect(await ops.push("host/notes-api:abc12345", ref)).toBe(false);
-    expect(calls.at(-1)).toEqual(["image", "rm", ref]);
-    expect(log).toEqual([`[registry] Couldn't push ${ref}, keeping the local image: dial tcp: connection refused`]);
-  });
-
   it("pulls quietly and treats a missing tag as a miss without logging", async () => {
     const hit = setup();
     expect(await hit.ops.pull("localhost:5001/vardo/a:1")).toBe(true);

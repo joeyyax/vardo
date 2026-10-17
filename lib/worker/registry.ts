@@ -65,6 +65,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "image-update-prune", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdatePruneLoop },
   { name: "image-eol-sync", roles: WEB, singleton: false, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/eol-sync")).eolSyncLoop },
   { name: "host-reclaim", roles: BOTH, singleton: true, load: async () => (await import("@/lib/docker/host-reclaim/scheduler")).hostReclaimLoop },
+  { name: "build-registry-cleanup", roles: BOTH, singleton: true, load: async () => (await import("@/lib/docker/build-registry-cleanup")).buildRegistryCleanupLoop },
   { name: "image-reclaim", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-reclaim/scheduler")).imageReclaimLoop },
 
   // Scheduled work

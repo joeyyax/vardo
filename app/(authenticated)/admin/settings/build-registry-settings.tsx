@@ -6,23 +6,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RelativeTime } from "@/components/relative-time";
+import type { CleanupStatus } from "@/lib/docker/build-registry-cleanup";
 import { useSystemSetting } from "./use-system-setting";
 
-type Data = { enabled: boolean; url: string; username: string; hasPassword: boolean };
+type Data = { enabled: boolean; url: string; username: string; hasPassword: boolean; cleanup: CleanupStatus | null };
 
-/** Registry that builds push to and reuse from. */
+/** Registry that builds on a target come back through. */
 export function BuildRegistrySettings() {
   const [enabled, setEnabled] = useState(false);
   const [url, setUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [hasPassword, setHasPassword] = useState(false);
+  const [cleanup, setCleanup] = useState<CleanupStatus | null>(null);
 
   const onLoad = useCallback((data: Data) => {
     setEnabled(data.enabled);
     setUrl(data.url);
     setUsername(data.username);
     setHasPassword(data.hasPassword);
+    setCleanup(data.cleanup);
     setPassword("");
   }, []);
 
@@ -36,7 +40,7 @@ export function BuildRegistrySettings() {
       <CardHeader>
         <CardTitle>Build registry</CardTitle>
         <CardDescription>
-          Pushes each built image to this registry and reuses it when a deploy builds the same inputs. Off, images stay on this server.
+          Builds on a build target come back through this registry. Builds on this server don&apos;t push to it. Deploys reuse its images when nothing build-relevant changed.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -58,7 +62,7 @@ export function BuildRegistrySettings() {
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="text-xs text-muted-foreground">Host plus an optional namespace. Images go to &lt;registry&gt;/&lt;app&gt;:&lt;build key&gt;.</p>
+            <p className="text-xs text-muted-foreground">Host plus a namespace for this instance. Images go to &lt;registry&gt;/&lt;app&gt;:&lt;build key&gt;.</p>
           </div>
           <div className="grid max-w-md gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -83,6 +87,17 @@ export function BuildRegistrySettings() {
                 autoComplete="new-password"
               />
             </div>
+          </div>
+          <div className="max-w-md space-y-1 text-xs text-muted-foreground">
+            <p>
+              Every 6 hours Vardo deletes old images: each app keeps its newest 3, plus anything under a day old. The registry needs{" "}
+              <code>REGISTRY_STORAGE_DELETE_ENABLED=true</code>, and disk frees only after it runs <code>registry garbage-collect</code>.
+            </p>
+            {enabled && cleanup && (
+              <p className={cleanup.error ? "text-destructive" : undefined}>
+                Last cleanup <RelativeTime date={cleanup.at} />: {cleanup.error ?? `deleted ${cleanup.deleted}, kept ${cleanup.kept}`}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={saving || loading || !url.trim()} aria-label="Save build registry">

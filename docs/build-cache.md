@@ -108,6 +108,33 @@ A service whose context is remote or outside the repo, or that uses `additional_
 
 Keys go in `vardo-build-keys.yml` in the slot, passed to `compose build` only, which labels each image `vardo.build.key`. On the next deploy a service whose key labels a local image skips its build: Vardo builds `FROM <that image>` on the daemon's own builder with this slot's compose labels. That moves no layers (under a second) and keeps the per-slot labels image reclaim sorts by. Only the remaining services build; when none remain, the build is skipped. A rebuild skips the lookup but still labels the new images.
 
+## Build registry
+
+Admin → This instance → Build registry takes any OCI registry. Only builds on a build target push to it: the target pushes `<registry>/<app>:<build key>` (compose: `<app>-<service>:<key>`), this server pulls it and both drop the registry tag. A build on this server pushes nothing. Reuse still checks the registry by key when the host has no matching image.
+
+There's no setting to push builds from this server too. The key includes the app id and a transferred app gets a new id, so another instance never matches the key; the copy would only duplicate disk this host already uses.
+
+### Cleanup
+
+Every 6 hours the `build-registry-cleanup` loop lists the registry's repos under the configured namespace and touches only those named `<app>` or `<app>-<service>` for an app on this instance. In each it keeps:
+
+- the newest 3 tags (`ROLLBACK_IMAGES_RETAINED`)
+- tags whose build key an image on this host carries in its `vardo.build.key` label
+- tags built in the last day, so a build between push and pull keeps its image
+- tags whose age it can't read
+
+The rest are deleted by digest (`DELETE /v2/<name>/manifests/<digest>`), and a digest goes only when none of its tags is kept. The last run's counts or error show on the Build registry card. Repos of deleted apps are left as they were, at most 3 tags each. Give each instance its own namespace; two instances sharing one would prune each other's images.
+
+The registry has to allow deletes: `REGISTRY_STORAGE_DELETE_ENABLED=true` for `registry:2`. Otherwise the card shows `The registry refuses deletes`.
+
+Deleting a manifest frees no disk. `registry:2` frees blobs only in a garbage-collect pass. For a registry deployed as a Vardo app, add a cron job on it:
+
+```
+registry garbage-collect --delete-untagged /etc/docker/registry/config.yml
+```
+
+Run it weekly. Upstream warns that a push during garbage collection can lose layers, so pick an hour with no overflow builds.
+
 ## Image export
 
 Measured 2026-10-10 on the same Mac against a throwaway `moby/buildkit:v0.34.0` on a remote buildx builder, set up as `vardo-bounded` is. The app is `create-next-app` 15.5.4 built from Nixpacks 1.41's generated Dockerfile (956 MB image); each run changes one source line, which reruns `npm ci` and `next build`. Seconds, mean of 3 to 5 runs.

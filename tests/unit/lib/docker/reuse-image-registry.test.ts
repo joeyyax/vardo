@@ -31,7 +31,6 @@ function registry(has: boolean) {
   const ops: RegistryOps = {
     ref: (repo, key) => `localhost:5001/${repo}:${key}`,
     pull: async (ref) => (calls.push(`pull ${ref}`), has),
-    push: async () => true,
     untag: async (ref) => {
       calls.push(`untag ${ref}`);
     },

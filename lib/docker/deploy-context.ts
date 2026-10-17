@@ -165,9 +165,6 @@ export type DeployContext = {
   /** Image refs built locally this deploy. The swap pre-pull must skip them or `compose pull` 404s. */
   builtImageRefs: string[];
 
-  /** Build registry pushes still running; the deploy waits for them before it finishes. */
-  registryPushes?: Promise<boolean>[];
-
   /** host.toml config from repo root. */
   hostConfig: HostConfig | null;
 
