@@ -36,7 +36,7 @@ Status: **fixed** (on `main`), **open**, or **not a boundary**. Claims the reche
 | Path routes on another tenant's host | fixed | A host's domain rows may differ by path, so uniqueness is host plus path. The domain API refuses a host another org routes unless every holder is unverified and the caller proves it, which evicts them (#897), `hostHoldByOtherOrg` in `lib/domains/claim.ts`, called from `lib/domains/manage.ts`. Checked in the API only; the unique index covers host plus path, so two orgs racing for a new host on different paths can both land. |
 | Domain middlewares reference another tenant's or Traefik's | fixed | untrusted orgs may name only middlewares Vardo defines (`cloudflare-only@file`); checked on write and again at deploy, `lib/domains/middlewares.ts` |
 | Compose joins `vardo_internal` (Postgres, Redis) or any network | fixed | #886: untrusted orgs may join only `vardo-network` on a routed service, their own project's `vardo-p-<project>-<env>` network without aliases, and networks named for the app, `lib/docker/compose-policy.ts` |
-| Every routed app shares `vardo-network` with the console | open, by design | `lib/docker/deploy-steps/resolve-compose.ts` joins routed services to it; apps reach `vardo-frontend:3000` directly |
+| Every routed app shares `vardo-network` with the console | fixed | #1136: the console isn't on `vardo-network`; Traefik reaches it on `vardo_console`, which only the two join (`docker-compose.yml`, `lib/docker/console-network.ts`, `docs/console-lock.md`) |
 | Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | fixed | #886: untrusted external volumes must carry the app's `<app>-<env>_` prefix; other volumes keep Compose's project name, `lib/docker/compose-policy.ts` |
 | Invitation revoke | fixed | both accept paths ignored `revoked`; `lib/invitations/accept.ts` now claims a pending, unexpired row atomically |
 | Mesh peers read any org's manifest | not a boundary | peers are trusted, `app/api/v1/mesh/sync/route.ts` |
@@ -131,7 +131,8 @@ Narrows:
 - Builds and deploys refuse when Docker's disk is 95% used or has under 2 GB free, so a tenant filling it can't take the next deploy down mid-build (#815, `lib/docker/disk-guard.ts`; `VARDO_DISK_GUARD_PERCENT`, `VARDO_DISK_GUARD_MIN_FREE_GB`).
 
 Widens or leaves open:
-- `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` directly. Traefik's `:8080` answers it only `/ping` (#889).
+- `vardo-network` holds Traefik, WireGuard and the worker beside every routed app. The console isn't on it (#1136); Traefik's `:8080` answers apps only `/ping` (#889) and the worker's `/healthz` listens on loopback.
+- Apps keep Docker's default `NET_RAW`, so one on `vardo-network` can ARP-spoof another app's or Traefik's address there and read the plaintext hop behind Traefik. Dropping `NET_RAW` for untrusted orgs closes it.
 - `no-new-privileges` only for untrusted orgs (#889). No `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
 - Redis has a password on installs from #889 on. Older legacy installs get one from `vardo update` once the active slot's install.sh hands updates off to the new version (#925).
 

@@ -3433,7 +3433,7 @@ do_uninstall() {
       echo -e "  ${DIM}[dry-run] rm -rf $VARDO_DIR${RESET}"
     fi
 
-    run_cmd docker network rm vardo-network 2>/dev/null || true
+    run_cmd docker network rm vardo-network vardo_console 2>/dev/null || true
     if ! $DRY_RUN; then log "Network removed"; fi
 
     echo ""
