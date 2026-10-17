@@ -27,7 +27,7 @@ export const MIN_CEILING_BYTES = 64 * 1024 ** 2;
 /** How long a learned push ceiling holds. */
 export const CEILING_TTL_MS = 7 * 24 * 60 * 60_000;
 /** How a push cut off mid-upload reads, as opposed to one the registry refused. */
-const CUT_OFF = /EOF|broken pipe|connection reset|closed|timed? ?out|deadline|\b408\b/i;
+export const CUT_OFF = /EOF|broken pipe|connection reset|closed|timed? ?out|deadline|\b408\b/i;
 
 /** Per target, the largest uncompressed layer whose push was cut off. Kept in memory; a restart relearns it. */
 const pushCeilings = new Map<string, { bytes: number; at: number }>();
@@ -36,7 +36,7 @@ export function resetPushCeilings(): void {
   pushCeilings.clear();
 }
 
-function ceilingFor(target: string, now = Date.now()): number | null {
+export function ceilingFor(target: string, now = Date.now()): number | null {
   const c = pushCeilings.get(target);
   if (!c) return null;
   if (now - c.at > CEILING_TTL_MS) {
@@ -46,8 +46,14 @@ function ceilingFor(target: string, now = Date.now()): number | null {
   return c.bytes;
 }
 
-/** The image's largest uncompressed layer on the target, or null when docker can't say. */
-async function largestLayer(image: string, exec: Exec, there: NodeJS.ProcessEnv): Promise<number | null> {
+/** Lowers a target's push ceiling to `bytes`, or sets it. */
+export function lowerCeiling(target: string, bytes: number): void {
+  const ceiling = ceilingFor(target);
+  pushCeilings.set(target, { bytes: Math.min(bytes, ceiling ?? bytes), at: Date.now() });
+}
+
+/** The image's largest uncompressed layer on the daemon `there` reaches, or null when docker can't say. */
+export async function largestLayer(image: string, exec: Exec, there: NodeJS.ProcessEnv): Promise<number | null> {
   try {
     const { stdout } = (await exec("docker", ["history", "--no-trunc", "--human=false", "--format", "{{.Size}}", image], { env: there, timeout: TAG_TIMEOUT })) as { stdout: string };
     const sizes = String(stdout).split("\n").map(Number).filter((n) => Number.isFinite(n) && n > 0);

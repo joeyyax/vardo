@@ -61,7 +61,9 @@ import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
 import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../build-targets";
-import { TARGET_BUILD, bringBack } from "../remote-build";
+import { bringBack } from "../remote-build";
+import { withTargetBuilder } from "../target-builder";
+import { bringDirect } from "../direct-export";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -499,11 +501,24 @@ async function dockerBuild(
         for (const line of bounded.notes ?? []) logs.push(line);
         return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
       }
-      ran = TARGET_BUILD;
-      const remoteArgs = dockerfileBuildArgs({ ...argsInput, loadArgs: TARGET_BUILD.loadArgs });
       await onTarget(target, async (session) => {
-        await spawnStream("docker", remoteArgs, { cwd: repoPath, env: remoteEnv(authEnv, session), signal }, logs, "[build][docker]", build.capture);
-        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, from: target.name, log: (line) => logs.push(line), placement: build.gate.placement, signal });
+        const there = remoteEnv(authEnv, session);
+        const log = (line: string) => void logs.push(line);
+        await withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
+          ran = targetBuild;
+          const run = (loadArgs: string[]) =>
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, loadArgs }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+          const image = { image: build.imageName, ref: remote.ref };
+          if (!compression) {
+            await run(targetBuild.loadArgs);
+            await bringBack([image], { authEnv, session, from: target.name, log, placement: build.gate.placement, signal });
+            return;
+          }
+          await bringDirect([image], {
+            authEnv, from: target.name, log, placement: build.gate.placement, signal, compression,
+            build: ([output]) => run(["--output", output, "--provenance=false", "--sbom=false"]),
+          });
+        }, { signal });
       });
     });
   } catch (err) {

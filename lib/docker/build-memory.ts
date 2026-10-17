@@ -80,7 +80,7 @@ export async function buildKitLimit(host: string): Promise<BoundedBuild> {
   return { env: {}, loadArgs: [], limitBytes: await memoryLimit(container), container };
 }
 
-function formatGiB(bytes: number): string {
+export function formatGiB(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(bytes % 1024 ** 3 === 0 ? 0 : 1)} GiB`;
 }
 
