@@ -43,6 +43,21 @@ describe("digest email", () => {
     expect(text).toContain("lonvr: Started Oct 17 after 44 days stopped");
   });
 
+  it("lists a stopped app's backups as on hold with the last backup in the org's zone, not as a callout", async () => {
+    const event: DigestHealthEvent = {
+      ...monthly,
+      stoppedBackups: [
+        { appId: "app_lonvr", appName: "Reeve NVR", lastBackupAt: "2026-08-02T05:00:00Z" },
+        { appId: "app_restream", appName: "Restream", lastBackupAt: null },
+      ],
+    };
+    const { text, html } = (await renderNotificationEmail(event, ctx))!;
+    expect(text).toContain("Reeve NVR: App stopped · last backup Aug 1");
+    expect(text).toContain("Restream: App stopped · never backed up");
+    expect(html).toContain('href="https://vardo.example.com/apps/app_lonvr/backups"');
+    expect(digestCallouts(event, ctx)).toHaveLength(digestCallouts(monthly, ctx).length);
+  });
+
   it("shows new apps and what deploys changed", async () => {
     const { text } = (await renderNotificationEmail(monthly, ctx))!;
     expect(text).toContain("scrypted: Deployed Oct 11 · 30-day recap on Nov 10");

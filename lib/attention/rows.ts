@@ -19,7 +19,11 @@ import {
 import { resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { isBackupSelected } from "@/lib/backups/durability";
 import { listUncoveredApps } from "@/lib/backups/enroll";
-import { OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
+import { backupJobStaleness, OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
+import { withJobApps } from "@/lib/backups/job-apps";
+import { UTC } from "@/lib/time-zone";
+import { getOrgTimeZone } from "@/lib/time-zone-settings";
+import { stoppedBackupRow } from "./backup-stopped-row";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
@@ -132,26 +136,37 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
     .from(backupJobs)
     .where(eq(backupJobs.organizationId, orgId));
 
-  const overdue = overdueBackupJobs(jobRows, now);
-  if (overdue.length === 0) return [];
+  const { overdue, stopped } = backupJobStaleness(await withJobApps(jobRows, now), now);
+  if (overdue.length === 0 && stopped.length === 0) return { overdue: [], stopped: [], timeZone: UTC };
 
-  const links = await db
-    .select({ jobId: backupJobApps.backupJobId, id: apps.id, name: apps.name, displayName: apps.displayName })
-    .from(backupJobApps)
-    .innerJoin(apps, eq(apps.id, backupJobApps.appId))
-    .where(
-      inArray(
-        backupJobApps.backupJobId,
-        overdue.map((o) => o.job.id),
+  const [links, timeZone] = await Promise.all([
+    db
+      .select({ jobId: backupJobApps.backupJobId, id: apps.id, name: apps.name, displayName: apps.displayName })
+      .from(backupJobApps)
+      .innerJoin(apps, eq(apps.id, backupJobApps.appId))
+      .where(
+        inArray(
+          backupJobApps.backupJobId,
+          [...overdue, ...stopped].map((o) => o.job.id),
+        ),
       ),
-    );
+    getOrgTimeZone(orgId),
+  ]);
 
   const appsByJob = new Map<string, { id: string; name: string; displayName: string }[]>();
   for (const { jobId, ...app } of links) {
     appsByJob.set(jobId, [...(appsByJob.get(jobId) ?? []), app]);
   }
 
-  return overdue.map((entry) => ({ ...entry, apps: appsByJob.get(entry.job.id) ?? [] }));
+  return {
+    // The overdue row names only the apps still meant to run.
+    overdue: overdue.map((entry) => ({
+      ...entry,
+      apps: (appsByJob.get(entry.job.id) ?? []).filter((a) => !entry.stoppedAppIds.includes(a.id)),
+    })),
+    stopped: stopped.map((entry) => ({ ...entry, apps: appsByJob.get(entry.job.id) ?? [] })),
+    timeZone,
+  };
 }
 
 const COVERAGE_TTL_MS = 30_000;
@@ -412,7 +427,7 @@ export async function buildAttentionRows(
     updates,
     version,
     failedBackups,
-    overdueJobs,
+    { overdue: overdueJobs, stopped: stoppedJobs, timeZone },
     pausedDumps,
     activity,
     exited,
@@ -595,6 +610,9 @@ export async function buildAttentionRows(
       footer: `Each of these jobs has captured nothing for more than ${OVERDUE_INTERVALS} runs of its own schedule.`,
     });
   }
+
+  const stoppedRow = stoppedBackupRow(stoppedJobs, timeZone);
+  if (stoppedRow) rows.push(stoppedRow);
 
   if (coverage) rows.push(...backupCoverageRows(coverage));
 

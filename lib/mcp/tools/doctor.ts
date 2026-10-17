@@ -12,7 +12,9 @@ import { sharedOomKills } from "@/lib/alerts/oom";
 import { DRILL_INTERVAL_MS } from "@/lib/backups/drill-schedule";
 import { STALE_RUN_MS } from "@/lib/backups/engine";
 import { jobClaimHolder, jobClaimKey } from "@/lib/backups/job-claim";
-import { overdueBackupJobs } from "@/lib/backups/staleness";
+import { backupJobStaleness } from "@/lib/backups/staleness";
+import { withJobApps } from "@/lib/backups/job-apps";
+import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { readSystemBackupJob } from "@/lib/backups/system-storage";
 import { LEASE_TTL_MS } from "@/lib/deploy/queue";
 import { deploysWaitingForWorker } from "@/lib/deploy/waiting";
@@ -97,17 +99,30 @@ async function backupJobsCheck(): Promise<DoctorLine[]> {
   const [{ job }, jobs] = await Promise.all([
     readSystemBackupJob(),
     db.query.backupJobs.findMany({
-      columns: { id: true, name: true, schedule: true, enabled: true, lastRunAt: true, createdAt: true },
-      with: { backups: { orderBy: (b, { desc }) => [desc(b.startedAt)], limit: 1, columns: { status: true } } },
+      columns: { id: true, name: true, organizationId: true, schedule: true, enabled: true, lastRunAt: true, createdAt: true },
+      with: {
+        backups: { orderBy: (b, { desc }) => [desc(b.startedAt)], limit: 1, columns: { status: true } },
+        organization: { columns: { timeZone: true } },
+      },
     }),
   ]);
   const enabled = jobs.filter((j) => j.enabled);
+  const [{ overdue, stopped }, instanceTimeZone] = await Promise.all([
+    withJobApps(enabled, now).then((withApps) => backupJobStaleness(withApps, now)),
+    getInstanceTimeZone(),
+  ]);
   return [
     ...backupStorageLines({ job: job && { enabled: job.enabled, target: job.target } }),
     ...backupJobLines({
       enabledJobs: enabled.length,
       failing: enabled.filter((j) => j.backups[0]?.status === "failed").map((j) => backupJobLabel(j.name)),
-      overdue: overdueBackupJobs(jobs, now).map((o) => ({ id: o.job.id, name: backupJobLabel(o.job.name), since: o.since, neverRan: o.neverRan })),
+      overdue: overdue.map((o) => ({ id: o.job.id, name: backupJobLabel(o.job.name), since: o.since, neverRan: o.neverRan })),
+      stopped: stopped.map((o) => ({
+        id: o.job.id,
+        name: backupJobLabel(o.job.name),
+        lastBackupAt: o.lastBackupAt,
+        timeZone: resolveTimeZone(o.job.organization?.timeZone, instanceTimeZone),
+      })),
       now,
     }),
   ];

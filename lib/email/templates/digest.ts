@@ -1,6 +1,7 @@
 import type { AppRecap, DigestHealthEvent, DigestWatchedProject } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { UTC } from "@/lib/time-zone";
+import { stoppedBackupLabel } from "@/lib/backups/staleness";
 import { plural } from "../format";
 import { buildTime, nearLimit, recapIssues, size } from "./app-recap";
 import { linkedList, nameLink, type MailBlock, type MailFact, type MailInline, type MailRich, type NotificationMailBody, type StatTile, type StatsRow, type VolumeRow } from "./components";
@@ -391,6 +392,16 @@ export function digestMail(event: DigestHealthEvent, ctx: MailContext): Notifica
         label: c.appName,
         labelHref: appPage(ctx, c.appId),
         value: c.kind === "stopped" ? `Stopped ${day(c.at, tz)}` : `Started ${day(c.at, tz)}${c.stoppedMs !== null ? ` after ${stoppedFor(c.stoppedMs)} stopped` : ""}`,
+      })),
+    ),
+  );
+  blocks.push(
+    ...factsSection(
+      "Backups on hold",
+      (event.stoppedBackups ?? []).slice(0, LIST_MAX).map((s) => ({
+        label: s.appName,
+        labelHref: appPage(ctx, s.appId, "backups"),
+        value: stoppedBackupLabel(s.lastBackupAt ? new Date(s.lastBackupAt) : null, tz),
       })),
     ),
   );

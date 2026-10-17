@@ -3,6 +3,7 @@
 import { Cron } from "croner";
 
 import { appNotRunning, type AppRunState } from "@/lib/apps/run-state";
+import { formatDay } from "@/lib/uptime/core/range";
 
 /** Missed runs before a job counts as overdue. One late run is a slow night. */
 export const OVERDUE_INTERVALS = 2;
@@ -26,8 +27,8 @@ export type ScheduledBackupJob = {
   looseVolumes?: boolean;
 };
 
-export type OverdueBackupJob = {
-  job: ScheduledBackupJob;
+export type OverdueBackupJob<J extends ScheduledBackupJob = ScheduledBackupJob> = {
+  job: J;
   /** Last capture, or when the job was created if it has never captured one, or a later start of one of its apps. */
   since: Date;
   neverRan: boolean;
@@ -36,8 +37,8 @@ export type OverdueBackupJob = {
 };
 
 /** A job past due only because every app it covers was stopped on purpose. */
-export type StoppedBackupJob = {
-  job: ScheduledBackupJob;
+export type StoppedBackupJob<J extends ScheduledBackupJob = ScheduledBackupJob> = {
+  job: J;
   lastBackupAt: Date | null;
 };
 
@@ -63,12 +64,12 @@ function resumedAt(apps: JobApp[]): number {
 }
 
 /** Enabled jobs past OVERDUE_INTERVALS of their schedule, split by whether their apps were stopped on purpose. */
-export function backupJobStaleness(
-  jobs: ScheduledBackupJob[],
+export function backupJobStaleness<J extends ScheduledBackupJob>(
+  jobs: J[],
   now: Date,
-): { overdue: OverdueBackupJob[]; stopped: StoppedBackupJob[] } {
-  const overdue: OverdueBackupJob[] = [];
-  const stopped: StoppedBackupJob[] = [];
+): { overdue: OverdueBackupJob<J>[]; stopped: StoppedBackupJob<J>[] } {
+  const overdue: OverdueBackupJob<J>[] = [];
+  const stopped: StoppedBackupJob<J>[] = [];
 
   for (const job of jobs) {
     if (!job.enabled) continue;
@@ -91,7 +92,12 @@ export function backupJobStaleness(
   return { overdue, stopped };
 }
 
+/** "App stopped · last backup Aug 2", dated in `timeZone`. */
+export function stoppedBackupLabel(lastBackupAt: Date | null, timeZone: string): string {
+  return `App stopped · ${lastBackupAt ? `last backup ${formatDay(lastBackupAt.getTime(), timeZone)}` : "never backed up"}`;
+}
+
 /** Enabled jobs that have captured nothing for OVERDUE_INTERVALS of their schedule, leaving out jobs whose apps were all stopped on purpose. */
-export function overdueBackupJobs(jobs: ScheduledBackupJob[], now: Date): OverdueBackupJob[] {
+export function overdueBackupJobs<J extends ScheduledBackupJob>(jobs: J[], now: Date): OverdueBackupJob<J>[] {
   return backupJobStaleness(jobs, now).overdue;
 }
