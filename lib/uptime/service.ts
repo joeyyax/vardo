@@ -295,6 +295,9 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
   const days90 = daily90.get(id) ?? [];
   const evaluation = evaluate({ vantages: ctx.vantages, results: results.filter((r) => r.at >= now - 15 * MINUTE_MS), now, intervalSec: row.intervalSec });
   const signed = hourly.find((h) => h.signedAt)?.signedAt?.getTime() ?? null;
+  const outages = await outagesFor(scope, row, results, ctx.vantages, now);
+  const ongoing = outages.find((o) => o.end === null);
+  if (ongoing && summary.downSince) Object.assign(ongoing, { start: summary.downSince, durationMs: now - summary.downSince });
 
   const vantages: VantageStateView[] = evaluation.vantages.map((s) => ({
     id: s.vantage.id,
@@ -316,7 +319,7 @@ export async function getMonitor(scope: Scope, id: string, now = Date.now()): Pr
     medianLatency24h: median(results24.filter((r) => r.ok).map((r) => r.latencyMs)),
     latency24h: latencySeries(results24, ctx.vantages),
     vantages,
-    outages: await outagesFor(scope, row, results, ctx.vantages, now),
+    outages,
     channels,
   };
 }
