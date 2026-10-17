@@ -3,50 +3,34 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellOff, Bell, CalendarClock, Pencil, Trash2 } from "lucide-react";
 import { EntityLink } from "@/components/entity-link";
-import { toast } from "@/lib/messenger";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
-import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import {
   checkLabel,
   expectation,
-  formatDuration,
+  figureTiles,
+  figureWithSince,
   formatMs,
-  formatPct,
   intervalLabel,
   meshNote,
   pathLabel,
   readingDetail,
   readingLabel,
   stateLabel,
+  ERROR_TEXT,
 } from "@/lib/uptime/format";
-import type { ErrorKind, MonitorDetail as Detail, VantageView } from "@/lib/uptime/types";
-import { MaintenanceDialog } from "./maintenance-dialog";
-import { MonitorSheet } from "./monitor-sheet";
+import { RANGE_LABELS } from "@/lib/uptime/core/range";
+import type { MonitorDetail as Detail, UptimeRange, VantageView } from "@/lib/uptime/types";
+import { CheckNote, ReviewCard } from "./health-parts";
+import { MonitorActions } from "./monitor-actions";
+import { OutageList } from "./monitor-history";
 import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
+import { BarsCaption, UptimeRangePicker } from "./range-controls";
 import { ResponseChart } from "./response-chart";
 
 const POLL_MS = 30_000;
-
-const ERROR_TEXT: Record<ErrorKind, string> = {
-  timeout: "timed out",
-  dns: "DNS lookup failed",
-  refused: "connection refused",
-  reset: "connection reset",
-  tls: "TLS error",
-  "cert-expired": "certificate expired",
-  "cert-expiring": "certificate expiring",
-  status: "unexpected status",
-  keyword: "keyword missing",
-  invalid: "invalid target",
-  "private-address": "private address, not checked",
-  blocked: "address not allowed",
-  unknown: "check failed",
-};
 
 const when = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -66,13 +50,11 @@ export function MonitorDetail({
   const url = `${apiBase}/${initial.id}`;
   const [m, setM] = useState(initial);
   const [now, setNow] = useState(() => Date.now());
-  const [editing, setEditing] = useState(false);
-  const [maintenance, setMaintenance] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [range, setRange] = useState<UptimeRange>(initial.range);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(url);
+      const res = await fetch(`${url}?range=${range}`);
       if (res.ok) {
         setM((await res.json()).monitor);
         setNow(Date.now());
@@ -80,33 +62,16 @@ export function MonitorDetail({
     } catch {
       // Keep what's shown.
     }
-  }, [url]);
+  }, [url, range]);
 
   useEffect(() => {
+    const first = setTimeout(refresh, 0);
     const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
   }, [refresh]);
-
-  async function patch(path: string, body: unknown, method = "PATCH") {
-    const res = await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) {
-      toast.error((await res.json().catch(() => ({}))).error || "Couldn't save the change");
-      return false;
-    }
-    await refresh();
-    return true;
-  }
-
-  async function remove() {
-    const res = await fetch(url, { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Monitor deleted");
-      router.push("/uptime");
-    } else {
-      toast.error((await res.json().catch(() => ({}))).error || "Couldn't delete the monitor");
-      setDeleting(false);
-    }
-  }
 
   const upcoming = m.maintenance.filter((w) => w.end > now);
   const active = m.maintenance.find((w) => w.start <= now && w.end > now);
@@ -123,6 +88,8 @@ export function MonitorDetail({
             <h1 className="type-h1 truncate">{m.name}</h1>
             <StatePill state={m.enabled ? m.state : "unknown"}>{m.enabled ? stateLabel(m.state, m.downSince) : "Off"}</StatePill>
             {m.preview && <Chip tone="info" caps={false}>Preview</Chip>}
+            {m.domainRemoved && <Chip tone="warn" caps={false}>Domain removed from app</Chip>}
+            {m.overrides && <Chip tone="info" caps={false}>Edited</Chip>}
           </div>
           <p className="flex flex-wrap items-center gap-x-1 break-all font-mono text-xs text-muted-foreground">
             <TargetLink monitor={m} />
@@ -130,6 +97,7 @@ export function MonitorDetail({
               · {checkLabel(m.check)} · {intervalLabel(m.intervalSec)} · {expectation(m.check)}
             </span>
           </p>
+          <CheckNote monitor={m} />
           {(m.appName || meshNote(m.meshBy)) && (
             <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
               {m.appName && (
@@ -147,31 +115,11 @@ export function MonitorDetail({
           )}
         </div>
         {canManage && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => patch("/mute", { muted: !m.muted }, "POST")}>
-              {m.muted ? <Bell /> : <BellOff />}
-              {m.muted ? "Unmute alerts" : "Mute alerts"}
-            </Button>
-            <Button variant="outline" onClick={() => setMaintenance(true)}>
-              <CalendarClock /> Schedule maintenance
-            </Button>
-            {m.source === "manual" ? (
-              <>
-                <Button variant="outline" onClick={() => setEditing(true)}>
-                  <Pencil /> Edit
-                </Button>
-                <Button variant="ghost" size="icon" aria-label="Delete monitor" onClick={() => setDeleting(true)}>
-                  <Trash2 />
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" onClick={() => patch("", { enabled: !m.enabled })}>
-                {m.enabled ? "Turn off" : "Turn on"}
-              </Button>
-            )}
-          </div>
+          <MonitorActions monitor={m} apiBase={apiBase} vantages={vantages} now={now} onChanged={refresh} onDeleted={() => router.push("/uptime")} />
         )}
       </div>
+
+      <ReviewCard monitor={m} apiBase={apiBase} canManage={canManage} onAnswered={refresh} />
 
       {m.reading && (
         <Card variant="surface" className="space-y-1 p-5">
@@ -181,19 +129,22 @@ export function MonitorDetail({
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="24 hours" value={formatPct(m.uptime24h)} />
-        <Tile label="30 days" value={formatPct(m.uptime30)} />
-        <Tile label="90 days" value={formatPct(m.uptime90d)} />
+        {figureTiles(m.createdAt, now, { h24: m.uptime24h, d30: m.uptime30, d90: m.uptime90d }).map((t) => (
+          <Tile key={t.label} label={t.label} value={t.value} />
+        ))}
         <Tile label="Response, 24h median" value={formatMs(m.medianLatency24h)} />
       </div>
 
       <Card variant="surface" className="space-y-3 p-5">
-        <h2 className="type-h3">Last 90 days</h2>
-        <DayTicks days={m.daily90} tall />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>90 days ago</span>
-          <span>Today</span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="type-h3">Last {RANGE_LABELS[range]}</h2>
+            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(m.rangeUptime, m.since, now)}</p>
+          </div>
+          <UptimeRangePicker value={range} onChange={setRange} />
         </div>
+        <DayTicks days={m.bars} barMs={m.barMs} range={m.range} tall />
+        <BarsCaption range={m.range} since={m.since} now={now} bars={m.bars.length} />
       </Card>
 
       <Card variant="surface" className="space-y-3 p-5">
@@ -249,24 +200,7 @@ export function MonitorDetail({
 
       <Card variant="surface" className="space-y-3 p-5">
         <h2 className="type-h3">Outages</h2>
-        {m.outages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No outages in the last 14 days.</p>
-        ) : (
-          <ul className="divide-y">
-            {m.outages.map((o) => (
-              <li key={o.start} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                <span>
-                  {when.format(o.start)} · {o.end ? `${formatDuration(o.durationMs)}` : `ongoing for ${formatDuration(o.durationMs)}`}
-                </span>
-                {o.incidentId && (
-                  <Link href="/activity" className="text-primary hover:underline">
-                    Open the incident
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <OutageList outages={m.outages} />
       </Card>
 
       <Card variant="surface" className="space-y-2 p-5">
@@ -290,15 +224,6 @@ export function MonitorDetail({
         </p>
       </Card>
 
-      <MonitorSheet open={editing} onOpenChange={setEditing} apiBase={apiBase} vantages={vantages} monitor={m} onSaved={refresh} />
-      <MaintenanceDialog open={maintenance} onOpenChange={setMaintenance} url={url} windows={m.maintenance} now={now} onSaved={refresh} />
-      <ConfirmDeleteDialog
-        open={deleting}
-        onOpenChange={setDeleting}
-        title={`Delete ${m.name}?`}
-        description="Its history is removed too."
-        onConfirm={remove}
-      />
     </div>
   );
 }

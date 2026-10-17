@@ -3,33 +3,44 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { RelativeTime } from "@/components/relative-time";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "@/lib/messenger";
-import { formatDuration, formatMs, formatPct, readingLabel, stateLabel } from "@/lib/uptime/format";
-import type { AppUptime } from "@/lib/uptime/types";
-import { DayTicks, StatePill, TargetLink, Tile } from "./parts";
+import { RANGE_LABELS } from "@/lib/uptime/core/range";
+import { figureTiles, figureWithSince, formatDuration, formatMs, readingLabel, stateLabel } from "@/lib/uptime/format";
+import type { AppUptime, UptimeRange } from "@/lib/uptime/types";
+import { CheckCard } from "./check-card";
+import { MonitorSheet, type CheckLink } from "./monitor-sheet";
+import { DayTicks, StatePill, Tile } from "./parts";
+import { BarsCaption, UptimeRangePicker } from "./range-controls";
 
 const POLL_MS = 30_000;
 
 const day = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-/** The app page's Uptime tab. */
+/**
+ * The app page's Uptime tab. Every check of the app is managed here: the domains' automatic checks and the ones added by hand.
+ * The same monitors appear in the Uptime page, which renders the same components.
+ */
 export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; appId: string; canManage: boolean }) {
   const [data, setData] = useState<AppUptime | null>(null);
   const [failed, setFailed] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [range, setRange] = useState<UptimeRange | null>(null);
+  const [adding, setAdding] = useState(false);
+  const apiBase = `/api/v1/organizations/${orgId}/uptime/monitors`;
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/uptime/apps/${appId}`);
+      const res = await fetch(`/api/v1/organizations/${orgId}/uptime/apps/${appId}${range ? `?range=${range}` : ""}`);
       if (!res.ok) throw new Error();
       setData(await res.json());
+      setNow(Date.now());
       setFailed(false);
     } catch {
       setFailed(true);
     }
-  }, [orgId, appId]);
+  }, [orgId, appId, range]);
 
   useEffect(() => {
     // Loads on mount, then every 30 seconds.
@@ -41,23 +52,27 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
     };
   }, [load]);
 
-  async function toggle(monitorId: string, enabled: boolean) {
-    const res = await fetch(`/api/v1/organizations/${orgId}/uptime/monitors/${monitorId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    });
-    if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Couldn't save the change");
-    await load();
-  }
-
   if (failed && !data) return <EmptyState title="Couldn't load uptime" body="Try again in a moment." />;
   if (!data) return <p className="text-sm text-muted-foreground">Loading uptime…</p>;
-  if (data.monitors.length === 0) {
-    return <EmptyState title="Nothing to monitor yet" body="Domains on this app are monitored automatically once they exist." />;
-  }
 
-  const single = data.monitors.length === 1 ? data.monitors[0].id : null;
+  const link: CheckLink = {
+    appId,
+    domains: data.monitors.filter((m) => m.source === "auto" && m.domainId && !m.preview).map((m) => ({ id: m.domainId!, host: m.name.split("/")[0] })),
+  };
+  const sheet = <MonitorSheet open={adding} onOpenChange={setAdding} apiBase={apiBase} vantages={[]} checkedFrom={data.vantageName ?? undefined} link={link} onSaved={load} />;
+
+  if (data.monitors.length === 0) {
+    return (
+      <>
+        <EmptyState
+          title="Nothing to monitor yet"
+          body="Domains on this app are monitored automatically once they exist. You can add a check by hand."
+          action={canManage ? <Button onClick={() => setAdding(true)}>Add check</Button> : undefined}
+        />
+        {sheet}
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -75,21 +90,35 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
             "No data yet"
           )}
         </StatePill>
-        <Link href={single ? `/uptime/${single}` : "/uptime"} className="text-sm text-primary hover:underline">
-          Open in Uptime
-        </Link>
+        <div className="flex items-center gap-3">
+          {canManage && (
+            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+              Add check
+            </Button>
+          )}
+          <Link href="/uptime" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+            View in Uptime
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="24 hours" value={formatPct(data.uptime24h)} />
-        <Tile label="30 days" value={formatPct(data.uptime30d)} />
-        <Tile label="90 days" value={formatPct(data.uptime90d)} />
+        {figureTiles(data.historyStart, now, { h24: data.uptime24h, d30: data.uptime30d, d90: data.uptime90d }).map((t) => (
+          <Tile key={t.label} label={t.label} value={t.value} />
+        ))}
         <Tile label="Response" value={formatMs(data.medianLatency24h)} sub="24h median" />
       </div>
 
       <Card variant="surface" className="space-y-3 p-5">
-        <h2 className="type-h3">Last 90 days</h2>
-        <DayTicks days={data.daily90} tall />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="type-h3">Last {RANGE_LABELS[data.range]}</h2>
+            <p className="text-sm text-muted-foreground tabular-nums">{figureWithSince(data.rangeUptime, data.since, now)}</p>
+          </div>
+          <UptimeRangePicker value={data.range} onChange={setRange} />
+        </div>
+        <DayTicks days={data.bars} barMs={data.barMs} range={data.range} tall />
+        <BarsCaption range={data.range} since={data.since} now={now} bars={data.bars.length} />
         <p className="text-xs text-muted-foreground">
           {data.lastOutage
             ? `Last outage: ${day.format(data.lastOutage.start)}${data.lastOutage.end ? `, ${formatDuration(data.lastOutage.end - data.lastOutage.start)}` : ", ongoing"}`
@@ -98,30 +127,14 @@ export function AppUptimePanel({ orgId, appId, canManage }: { orgId: string; app
       </Card>
 
       <Card variant="surface" className="p-0">
-        <h2 className="type-h3 p-5 pb-3">Monitored domains</h2>
+        <h2 className="type-h3 p-5 pb-3">Checks</h2>
         <ul className="divide-y border-t">
           {data.monitors.map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-4 px-5 py-3">
-              <div className="min-w-0">
-                <Link href={`/uptime/${m.id}`} className="block truncate text-sm font-medium hover:underline">
-                  {m.name}
-                </Link>
-                <p className="flex min-w-0 font-mono text-xs text-muted-foreground">
-                  <TargetLink monitor={m} />
-                </p>
-                {m.reading && <p className="truncate text-xs text-muted-foreground">{readingLabel(m.reading)}</p>}
-                {m.preview && <p className="text-xs text-muted-foreground">Preview · removed with the preview</p>}
-              </div>
-              <Switch
-                checked={m.enabled}
-                disabled={!canManage}
-                aria-label={`Monitor ${m.name}`}
-                onCheckedChange={(on) => toggle(m.id, on)}
-              />
-            </li>
+            <CheckCard key={m.id} monitor={m} apiBase={apiBase} canManage={canManage} vantages={[]} checkedFrom={data.vantageName ?? undefined} now={now} onChanged={load} />
           ))}
         </ul>
       </Card>
+      {sheet}
     </div>
   );
 }

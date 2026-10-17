@@ -99,7 +99,7 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
   let sql: ReturnType<typeof postgres>;
   let rollup: typeof import("@/lib/metrics/rollup");
   let history: typeof import("@/lib/metrics/history");
-  let monitor: typeof import("@/lib/domain-monitoring/monitor");
+  let client: typeof import("@/lib/uptime/client");
 
   beforeAll(async () => {
     const url = await conn!.create(dbName);
@@ -115,9 +115,10 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     await sql`insert into app (id, organization_id, name, display_name, project_id, parent_app_id, compose_service)
       values ('stack-db', 'org', 'stack-db', 'Stack DB', 'proj', 'stack', 'db')`;
     await sql`insert into domain (id, app_id, domain) values ('d1', 'web', 'web.example.com')`;
+    await sql`insert into uptime_monitor (id, organization_id, name, "check", source, app_id, domain_id) values ('mon-d1', 'org', 'web.example.com', '{"type":"http","url":"https://web.example.com","expectedStatus":{"min":100,"max":499},"timeoutMs":10000}', 'auto', 'web', 'd1')`;
     rollup = await import("@/lib/metrics/rollup");
     history = await import("@/lib/metrics/history");
-    monitor = await import("@/lib/domain-monitoring/monitor");
+    client = await import("@/lib/uptime/client");
   }, MIGRATE_TIMEOUT);
 
   afterAll(async () => {
@@ -131,7 +132,7 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     store.series = [];
     store.calls = 0;
     await sql`delete from app_metric_hour`;
-    await sql`delete from domain_check`;
+    await sql`delete from uptime_result`;
     await sql`delete from system_settings where key = ${rollup.WATERMARK_KEY}`;
   });
 
@@ -143,8 +144,8 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     addContainer("web", "c1", NOW - 26 * HOUR, NOW);
     for (let ts = NOW - 2 * HOUR - 5 * 60_000; ts < NOW - 5 * 60_000; ts += 5 * 60_000) {
       const down = ts === NOW - HOUR - 5 * 60_000;
-      await sql`insert into domain_check (id, domain_id, reachable, response_time_ms, checked_at)
-        values (${`k${ts}`}, 'd1', ${!down}, 200, ${new Date(ts)})`;
+      await sql`insert into uptime_result (monitor_id, vantage_id, path, at, ok, latency_ms)
+        values ('mon-d1', 'local', 'local', ${new Date(ts)}, ${!down}, 200)`;
     }
 
     const result = await rollup.rollupHours({ now: NOW });
@@ -198,16 +199,20 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
       ('env-prod', 'web', 'production', 'production', true, null),
       ('env-stg', 'web', 'staging', 'staging', false, 'staging.web.example.com')`;
     await sql`insert into domain (id, app_id, domain) values ('d-stg', 'web', 'staging.web.example.com')`;
+    await sql`insert into uptime_monitor (id, organization_id, name, "check", source, app_id, domain_id) values ('mon-stg', 'org', 'staging.web.example.com', '{"type":"http","url":"https://staging.web.example.com","expectedStatus":{"min":100,"max":499},"timeoutMs":10000}', 'auto', 'web', 'd-stg')`;
     const at = new Date(NOW - HOUR + 60_000);
-    await sql`insert into domain_check (id, domain_id, reachable, response_time_ms, checked_at) values
-      ('k-prod', 'd1', true, 100, ${at}),
-      ('k-stg', 'd-stg', false, null, ${at})`;
+    await sql`insert into uptime_result (monitor_id, vantage_id, path, at, ok, latency_ms, error) values
+      ('mon-d1', 'local', 'local', ${at}, true, 100, null),
+      ('mon-stg', 'local', 'local', ${at}, false, 0, null),
+      ('mon-d1', 'other-vantage', 'public', ${at}, false, 0, null),
+      ('mon-d1', 'local', 'local', ${new Date(NOW - HOUR + 120_000)}, false, 0, 'blocked')`;
 
     try {
       await rollup.rollupHours({ now: NOW });
       const last = (await rows("web")).find((r) => r.hour.getTime() === NOW - HOUR - 5 * 60_000)!;
       expect(last).toMatchObject({ cpu_avg: 10, checks_total: 1, checks_up: 1 });
     } finally {
+      await sql`delete from uptime_monitor where id = 'mon-stg'`;
       await sql`delete from domain where id = 'd-stg'`;
       await sql`delete from environment`;
     }
@@ -268,35 +273,26 @@ describe.skipIf(!conn)("metrics rollup on Postgres", { timeout: MIGRATE_TIMEOUT 
     expect(left).toEqual([cutoff.toISOString(), new Date(NOW - HOUR).toISOString()]);
   });
 
-  it("prunes domain checks older than seven days", async () => {
-    const edge = NOW - monitor.DOMAIN_CHECK_RETENTION_MS;
-    await sql`insert into domain_check (id, domain_id, reachable, checked_at) values
-      ('old', 'd1', true, ${new Date(edge - 1000)}),
-      ('edge', 'd1', true, ${new Date(edge)}),
-      ('new', 'd1', true, ${new Date(NOW - HOUR)})`;
-
-    await monitor.pruneDomainChecks(NOW);
-
-    const ids = (await sql<{ id: string }[]>`select id from domain_check order by checked_at`).map((r) => r.id);
-    expect(ids).toEqual(["edge", "new"]);
-  });
-
-  it("keeps the newest checks of each domain, not the newest overall", async () => {
+  it("reads the newest checks of each domain from uptime, not the newest overall", async () => {
     await sql`insert into domain (id, app_id, domain) values ('d-quiet', 'web', 'quiet.example.com')`;
+    await sql`insert into uptime_monitor (id, organization_id, name, "check", source, app_id, domain_id) values ('mon-quiet', 'org', 'quiet.example.com', '{"type":"http","url":"https://quiet.example.com","expectedStatus":{"min":100,"max":499},"timeoutMs":10000}', 'auto', 'web', 'd-quiet')`;
     try {
       for (let i = 0; i < 15; i++) {
-        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`busy${i}`}, 'd1', true, ${new Date(NOW - i * 60_000)})`;
+        await sql`insert into uptime_result (monitor_id, vantage_id, path, at, ok, latency_ms) values ('mon-d1', 'local', 'local', ${new Date(NOW - i * 60_000)}, true, 50)`;
       }
       for (let i = 0; i < 3; i++) {
-        await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${`quiet${i}`}, 'd-quiet', true, ${new Date(NOW - HOUR - i * 60_000)})`;
+        await sql`insert into uptime_result (monitor_id, vantage_id, path, at, ok, latency_ms) values ('mon-quiet', 'local', 'local', ${new Date(NOW - HOUR - i * 60_000)}, true, 50)`;
       }
 
-      const checks = await monitor.recentChecks(["d1", "d-quiet"], 10);
+      const checks = await client.uptimeClient.recentDomainChecks("org", ["d1", "d-quiet"], 10);
 
-      expect(checks.filter((c) => c.domainId === "d1").map((c) => c.id)).toEqual(Array.from({ length: 10 }, (_, i) => `busy${i}`));
+      expect(checks.filter((c) => c.domainId === "d1")).toHaveLength(10);
       expect(checks.filter((c) => c.domainId === "d-quiet")).toHaveLength(3);
-      expect(await monitor.recentChecks([], 10)).toEqual([]);
+      expect(checks[0]!.checkedAt).toBe(new Date(NOW).toISOString());
+      expect(await client.uptimeClient.recentDomainChecks("org", [], 10)).toEqual([]);
+      expect(await client.uptimeClient.recentDomainChecks("other-org", ["d1"], 10)).toEqual([]);
     } finally {
+      await sql`delete from uptime_monitor where id = 'mon-quiet'`;
       await sql`delete from domain where id = 'd-quiet'`;
     }
   });

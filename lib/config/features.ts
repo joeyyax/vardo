@@ -181,7 +181,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
   "domain-monitoring": {
     label: "Domain monitoring",
-    description: "Periodic DNS health checks and certificate expiry warnings for attached domains.",
+    description: "Uptime checks for attached domains: unreachable domains in Attention, away summaries and hourly uptime. Off pauses their automatic monitors.",
     group: "observability",
   },
   "container-import": {

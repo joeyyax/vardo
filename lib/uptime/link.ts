@@ -53,6 +53,7 @@ export const watchEntrySchema = z.object({
   check: checkSchema,
   intervalSec: z.union([z.literal(30), z.literal(60), z.literal(300)]),
   path: z.enum(["public", "mesh"]).optional(),
+  headers: z.record(z.string().max(64), z.string().max(1024)).refine((h) => Object.keys(h).length <= 10, "Too many headers").optional(),
   periodSec: z.number().int().min(30).max(86_400 * 7).optional(),
   offsetMs: z.number().int().min(0).max(86_400 * 7 * 1000).optional(),
 });

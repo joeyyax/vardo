@@ -1,14 +1,17 @@
+import { parseRange } from "@/lib/uptime/core";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { monitorResponses } from "@/lib/uptime/route-handlers";
 
+const rangeOf = (request: NextRequest) => parseRange(new URL(request.url).searchParams.get("range"));
+
 // GET — the instance's monitors
 async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
-    return await monitorResponses.list({ kind: "instance" });
+    return await monitorResponses.list({ kind: "instance" }, rangeOf(request));
   } catch (error) {
     return handleRouteError(error, "Error listing instance monitors");
   }

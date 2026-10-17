@@ -40,6 +40,8 @@ export async function safeFetch(
 
     const location = response.headers.get("location");
     if (response.status < 300 || response.status > 399 || !location) {
+      // The address the last hop asked for, so callers can see where redirects ended.
+      if (!response.url) Object.defineProperty(response, "url", { value: url.toString() });
       return response;
     }
 

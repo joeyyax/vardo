@@ -6,7 +6,8 @@ import { quietLinkClass } from "@/components/entity-link";
 import { Chip } from "@/components/ui/chip";
 import { StatusMark } from "@/components/ui/status-dot";
 import { stateLabel, tickTitle, tickTone, type TickTone } from "@/lib/uptime/format";
-import type { DayTick, MonitorState, MonitorSummary } from "@/lib/uptime/types";
+import { rangeSlots } from "@/lib/uptime/core/range";
+import type { DayTick, DisplayState, MonitorSummary, UptimeRange } from "@/lib/uptime/types";
 import { cn } from "@/lib/utils";
 
 const TICK_COLOR: Record<TickTone, string> = {
@@ -17,11 +18,23 @@ const TICK_COLOR: Record<TickTone, string> = {
 };
 
 /** One bar per day: green up, amber partial, red down, grey no data. */
-export function DayTicks({ days, className, tall = false }: { days: DayTick[]; className?: string; tall?: boolean }) {
+export function DayTicks({ days, className, tall = false, barMs, range }: { days: DayTick[]; className?: string; tall?: boolean; barMs?: number; range?: UptimeRange }) {
+  // Bars keep the width they have with full history and sit against "now"; the time before the history stays empty.
+  const slots = Math.max(range ? rangeSlots(range) : days.length, days.length);
   return (
-    <div role="img" aria-label={`Uptime for the last ${days.length} days`} className={cn("flex items-stretch gap-[2px]", tall ? "h-9" : "h-6", className)}>
-      {days.map((day) => (
-        <span key={day.start} title={tickTitle(day)} className={cn("min-w-0 flex-1 rounded-[2px]", TICK_COLOR[tickTone(day)])} />
+    <div
+      role="img"
+      aria-label={`Uptime, ${days.length} bars`}
+      className={cn("grid items-stretch gap-[2px]", tall ? "h-9" : "h-6", className)}
+      style={{ gridTemplateColumns: `repeat(${slots}, minmax(0, 1fr))` }}
+    >
+      {days.map((day, i) => (
+        <span
+          key={day.start}
+          title={tickTitle(day, barMs)}
+          className={cn("min-w-0 rounded-[2px]", TICK_COLOR[tickTone(day)])}
+          style={i === 0 ? { gridColumnStart: slots - days.length + 1 } : undefined}
+        />
       ))}
     </div>
   );
@@ -44,15 +57,15 @@ export function TargetLink({ monitor, className }: { monitor: Pick<MonitorSummar
   );
 }
 
-const TONE: Record<MonitorState, "good" | "issue" | "neutral" | "warn"> = { up: "good", degraded: "warn", down: "issue", unknown: "neutral" };
+const TONE: Record<DisplayState, "good" | "issue" | "neutral" | "warn"> = { up: "good", degraded: "warn", down: "issue", unknown: "neutral", review: "warn" };
 
-export function StateMark({ state }: { state: MonitorState }) {
+export function StateMark({ state }: { state: DisplayState }) {
   return <StatusMark tone={TONE[state]} />;
 }
 
-export function StatePill({ state, downSince, children }: { state: MonitorState; downSince?: number | null; children?: ReactNode }) {
+export function StatePill({ state, downSince, children }: { state: DisplayState; downSince?: number | null; children?: ReactNode }) {
   return (
-    <Chip tone={state === "up" ? "good" : state === "down" ? "issue" : state === "degraded" ? "warn" : "neutral"} caps={false}>
+    <Chip tone={state === "up" ? "good" : state === "down" ? "issue" : state === "degraded" || state === "review" ? "warn" : "neutral"} caps={false}>
       {children ?? stateLabel(state, downSince ?? null)}
     </Chip>
   );

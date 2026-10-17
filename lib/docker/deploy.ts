@@ -945,6 +945,10 @@ export async function sendDeployNotification(notice: DeployNotice) {
     const incidentField = incident ? { incident } : {};
 
     if (success) {
+      // The app may have a new health endpoint; uptime looks again on its next pass.
+      void import("@/lib/uptime/client")
+        .then(({ uptimeClient }) => uptimeClient.requestHealthDetection(app.id))
+        .catch((err) => logger.child("uptime").warn(`Queueing health detection for ${app.id} failed: ${err instanceof Error ? err.message : err}`));
       const history = await successHistory(app.id, deploymentId, deployment?.environmentId ?? null).catch(() => ({ firstDeploy: false }));
       let recapAt: string | undefined;
       if (history.firstDeploy) {

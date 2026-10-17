@@ -13,6 +13,8 @@ export type HttpCheck = {
   expectedStatus: { min: number; max: number };
   keyword?: string;
   timeoutMs: number;
+  /** Set at run time from the monitor's encrypted headers. Never stored with the check. */
+  headers?: Record<string, string>;
 };
 export type TcpCheck = { type: "tcp"; host: string; port: number; timeoutMs?: number };
 export type TlsCheck = { type: "tls"; host: string; port: number; warnDays: number; timeoutMs?: number };
@@ -24,6 +26,26 @@ export const AUTO_EXPECTED_STATUS = { min: 100, max: 499 } as const;
 export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 export const DEFAULT_TLS_PORT = 443;
 export const DEFAULT_TLS_WARN_DAYS = 14;
+
+/** Fields the operator changed on an automatic monitor. Sync and detection leave them alone until reset. */
+export type AutoOverrides = {
+  name?: string;
+  /** Path under the domain. An empty string checks the homepage. */
+  path?: string;
+  expectedStatus?: { min: number; max: number };
+  keyword?: string;
+  timeoutMs?: number;
+  intervalSec?: IntervalSec;
+};
+
+/** What the operator said about an automatic monitor that answers below 500 but not 2xx. */
+export type ReviewAnswer =
+  /** This status is what the app answers when up. */
+  | { kind: "status"; status: number }
+  /** Check this path instead. */
+  | { kind: "path"; path: string }
+  /** Don't monitor this domain. */
+  | { kind: "skip" };
 
 export type MaintenanceWindow = { start: number; end: number };
 
@@ -71,6 +93,8 @@ export type WatchEntry = {
   check: Check;
   intervalSec: IntervalSec;
   path?: "public" | "mesh";
+  /** Request headers the owner chose to share with linked instances. */
+  headers?: Record<string, string>;
   /** How often to run it: the interval times the vantage points sharing the monitor. Defaults to `intervalSec`. */
   periodSec?: number;
   /** When in the period to run it, in ms from the epoch's period boundary. */

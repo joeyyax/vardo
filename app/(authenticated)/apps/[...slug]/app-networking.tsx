@@ -711,6 +711,11 @@ export function AppNetworking({
                       {domain.domain}
                       {domain.pathPrefix && <span className="text-muted-foreground">{domain.pathPrefix}</span>}
                     </a>
+                    {!isOff && !domain.domain.endsWith(".localhost") && (
+                      <a href={`/apps/${appName}/uptime`} className="shrink-0 text-xs text-muted-foreground hover:text-foreground hover:underline">
+                        Checks
+                      </a>
+                    )}
                     {domain.isPrimary && (
                       <Badge variant="info" className="text-xs shrink-0">
                         Primary

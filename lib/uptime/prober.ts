@@ -2,6 +2,7 @@
 // internet; private ones over the mesh, connecting only to that peer's tunnel address.
 
 import { and, asc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { decryptSystem, encryptSystem } from "@/lib/crypto/encrypt";
 import { db } from "@/lib/db";
 import { meshPeers, uptimeProbeResults, uptimeProbeSummaries, uptimeVantages, uptimeWatchEntries } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -11,6 +12,7 @@ import {
   isDueAt,
   hourlySummary,
   resultBatch,
+  sendableHeaders,
   signRecord,
   summarize,
   verifyRecord,
@@ -67,12 +69,14 @@ async function storeWatch(peerId: string, entries: WatchEntry[], now: number): P
     if (ids.length === 0) await tx.delete(uptimeWatchEntries).where(eq(uptimeWatchEntries.peerId, peerId));
     else await tx.delete(uptimeWatchEntries).where(and(eq(uptimeWatchEntries.peerId, peerId), notInArray(uptimeWatchEntries.monitorId, ids)));
     for (const e of entries) {
+      // Shared headers are stored encrypted, never as part of the check.
+      const headersEncrypted = e.headers && Object.keys(sendableHeaders(e.headers)).length > 0 ? encryptSystem(JSON.stringify(e.headers)) : null;
       await tx
         .insert(uptimeWatchEntries)
-        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at })
+        .values({ peerId, monitorId: e.monitorId, check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, headersEncrypted, fetchedAt: at })
         .onConflictDoUpdate({
           target: [uptimeWatchEntries.peerId, uptimeWatchEntries.monitorId],
-          set: { check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, fetchedAt: at },
+          set: { check: e.check, intervalSec: e.intervalSec, path: e.path ?? "public", periodSec: e.periodSec ?? null, offsetMs: e.offsetMs ?? null, headersEncrypted, fetchedAt: at },
         });
     }
   });
@@ -147,6 +151,16 @@ async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>)
   );
 }
 
+/** The entry with the headers its owner shared, decrypted for this one request. */
+function withHeaders<E extends { check: WatchEntry["check"]; headersEncrypted: string | null }>(e: E): E {
+  if (!e.headersEncrypted || e.check.type !== "http") return e;
+  try {
+    return { ...e, check: { ...e.check, headers: JSON.parse(decryptSystem(e.headersEncrypted)) as Record<string, string> } };
+  } catch {
+    return e;
+  }
+}
+
 /** Runs the peers' checks that are due. */
 export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<number> {
   await seedLastProbe();
@@ -169,7 +183,7 @@ export async function probeDue(now = Date.now(), deps: ProbeDeps = {}): Promise<
   await pool(due, CONCURRENCY, async ({ entry: e, internalIp }) => {
     lastProbe.set(`${e.peerId}:${e.monitorId}`, now);
     try {
-      const result = await probeEntry(e, { vantageId: identity.id, peerAddress: tunnelAddress(internalIp), strict, deps });
+      const result = await probeEntry(withHeaders(e), { vantageId: identity.id, peerAddress: tunnelAddress(internalIp), strict, deps });
       fresh.push({ peerId: e.peerId, result });
     } catch (err) {
       log.warn(`Probe of ${e.monitorId} threw:`, err);

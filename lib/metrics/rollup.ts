@@ -1,11 +1,12 @@
-// Rolls the 7-day time-series store and domain checks into hourly per-app rows kept 13 months.
+// Rolls the 7-day time-series store and uptime's domain checks into hourly per-app rows kept 13 months.
 // Production only: each app's default environment, never its staging or preview containers and hosts.
 
-import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appMetricHours, domainChecks, domains, environments, systemSettings } from "@/lib/db/schema";
+import { appMetricHours, environments, systemSettings } from "@/lib/db/schema";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
+import { uptimeClient } from "@/lib/uptime/client";
 import { IntervalLoop, type LoopContext } from "@/lib/worker/interval-loop";
 import { parseSeries } from "./resource-samples";
 import { RETENTION_MS, tsRedis } from "./ts-client";
@@ -94,27 +95,8 @@ async function readSlots(fromMs: number, toMs: number): Promise<SlotSeries> {
 const NO_SERIES: SlotSeries = { cpu: [], samples: [], memory: [], memoryLimit: [], networkRx: [], networkTx: [] };
 
 async function readChecks(fromMs: number, toMs: number) {
-  return db
-    .select({
-      appId: domains.appId,
-      checkedAt: domainChecks.checkedAt,
-      reachable: domainChecks.reachable,
-      responseTimeMs: domainChecks.responseTimeMs,
-    })
-    .from(domainChecks)
-    .innerJoin(domains, eq(domains.id, domainChecks.domainId))
-    // Older releases stored a non-default environment's hostname as a domain row; those aren't production.
-    .leftJoin(
-      environments,
-      and(eq(environments.appId, domains.appId), eq(environments.domain, domains.domain), sql`${environments.isDefault} is not true`),
-    )
-    .where(
-      and(
-        gte(domainChecks.checkedAt, new Date(fromMs)),
-        lt(domainChecks.checkedAt, new Date(toMs)),
-        isNull(environments.id),
-      ),
-    );
+  const rows = await uptimeClient.domainChecks(fromMs, toMs);
+  return rows.map((r) => ({ appId: r.appId, checkedAt: new Date(r.at), reachable: r.reachable, responseTimeMs: r.responseTimeMs }));
 }
 
 async function readApps(): Promise<RollupApp[]> {

@@ -7,10 +7,6 @@ import { MIGRATE_TIMEOUT, connectScratchServer, runMigrate, scratchName } from "
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
-vi.mock("@/lib/security/outbound-policy", () => ({ getDomainProbePolicy: async () => ({}) }));
-vi.mock("@/lib/security/safe-fetch", () => ({
-  safeFetch: vi.fn(async () => new Response("down", { status: 503 })),
-}));
 
 const conn = await connectScratchServer();
 
@@ -23,7 +19,6 @@ describe.skipIf(!conn)("domain enabled flag on Postgres", { timeout: MIGRATE_TIM
   let splitRoutable: typeof import("@/lib/domains/routable").splitRoutable;
   let applyDeployTransforms: typeof import("@/lib/docker/compose-inject").applyDeployTransforms;
   let getFleetAttention: typeof import("@/lib/attention/fleet").getFleetAttention;
-  let checkAllDomains: typeof import("@/lib/domain-monitoring/monitor").checkAllDomains;
   let db: typeof import("@/lib/db").db;
   let schema: typeof import("@/lib/db/schema");
   let eq: typeof import("drizzle-orm").eq;
@@ -42,7 +37,6 @@ describe.skipIf(!conn)("domain enabled flag on Postgres", { timeout: MIGRATE_TIM
     ({ splitRoutable } = await import("@/lib/domains/routable"));
     ({ applyDeployTransforms } = await import("@/lib/docker/compose-inject"));
     ({ getFleetAttention } = await import("@/lib/attention/fleet"));
-    ({ checkAllDomains } = await import("@/lib/domain-monitoring/monitor"));
     ({ db } = await import("@/lib/db"));
     schema = await import("@/lib/db/schema");
     ({ eq } = await import("drizzle-orm"));
@@ -114,19 +108,20 @@ describe.skipIf(!conn)("domain enabled flag on Postgres", { timeout: MIGRATE_TIM
     expect(row.enabled).toBe(true);
   });
 
-  it("keeps a disabled domain out of the unreachable list and the probe loop", async () => {
-    await sql`delete from domain_check`;
-    for (const [id, ago] of [["c1", 60], ["c2", 30]] as const) {
-      await sql`insert into domain_check (id, domain_id, reachable, checked_at) values (${id}, 'd-shop', false, now() - ${ago}::int * interval '1 second')`;
-    }
-    expect((await getFleetAttention("o1")).unreachableDomains.map((d) => d.domain)).toEqual(["shop.example.com"]);
+  it("lists a domain as unreachable once uptime confirms it, and drops it when disabled", async () => {
+    await sql`insert into uptime_monitor (id, organization_id, name, "check", source, app_id, domain_id) values ('mon-shop', 'o1', 'shop.example.com', '{"type":"http","url":"https://shop.example.com","expectedStatus":{"min":100,"max":499},"timeoutMs":10000}', 'auto', 'a1', 'd-shop')`;
+    const result = (ago: number) =>
+      sql`insert into uptime_result (monitor_id, vantage_id, path, at, ok, latency_ms, error) values ('mon-shop', 'local', 'local', now() - ${ago}::int * interval '1 second', false, 10, 'timeout')`;
+    await sql`insert into uptime_vantage (id, name, kind, public_key) values ('local', 'This instance', 'local', 'k') on conflict do nothing`;
+
+    // One failure isn't confirmed.
+    await result(30);
+    expect((await getFleetAttention("o1")).unreachableDomains).toEqual([]);
+
+    await result(10);
+    expect((await getFleetAttention("o1")).unreachableDomains).toEqual([{ id: "d-shop", domain: "shop.example.com", appName: "shop-web", error: "timed out" }]);
 
     await manage.editDomain(APP, { id: "d-shop", enabled: false });
     expect((await getFleetAttention("o1")).unreachableDomains).toEqual([]);
-
-    const probed = await checkAllDomains();
-    expect(probed.map((p) => p.domain).sort()).toEqual(["old.example.com", "www.example.com"]);
-    const [count] = await sql`select count(*)::int as n from domain_check where domain_id = 'd-shop'`;
-    expect(count.n).toBe(2);
   });
 });
