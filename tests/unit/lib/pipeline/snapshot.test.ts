@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { assembleSnapshot, describeEvent, type DeployRow, type SnapshotInputs } from "@/lib/pipeline/snapshot";
 import { groupLoops } from "@/lib/pipeline/loops";
+import { deploySlotLine } from "@/lib/pipeline/deploy-slot-line";
+import type { PipelineEntry } from "@/lib/pipeline/events";
 import type { LoopStatus } from "@/lib/worker/status";
 
 // The Pipeline snapshot: builders and their slot holders, where each deploy sits, jobs, loops and the activity feed.
@@ -65,10 +67,10 @@ describe("assembleSnapshot", () => {
     const s = assembleSnapshot(inputs());
     expect(s.deploys).toEqual([]);
     expect(s.builders).toEqual([
-      { id: "local", name: "jy0", kind: "local", slots: 2, online: true, holders: [] },
-      { id: "lh", name: "Long House", kind: "mesh", slots: 2, online: null, holders: [] },
+      { id: "local", name: "jy0", kind: "local", slots: 2, online: true, holders: [], refusals: [], busy: null },
+      { id: "lh", name: "Long House", kind: "mesh", slots: 2, online: null, holders: [], refusals: [], busy: null },
     ]);
-    expect(s.deploySlots).toEqual({ busy: 0, total: 4 });
+    expect(s.deploySlots).toEqual({ busy: 0, total: 4, onTargets: 0 });
   });
 
   it("puts each deploy on the builder whose slot it holds", () => {
@@ -170,6 +172,115 @@ describe("describeEvent", () => {
     expect(describeEvent({ kind: "stage", deploymentId: "d", stage: "healthcheck", status: "failed", at: 0 }, ctx)?.text).toBe(
       "scope failed its health check; the old version kept serving",
     );
+  });
+});
+
+describe("deploy slots", () => {
+  it("counts a run on a target's deploy slot apart from this server's", () => {
+    const s = assembleSnapshot(
+      inputs({
+        deploySlots: 1,
+        gate: { local: [], targets: { lh: ["t:aa"] }, ready: ["lh"] },
+        deploys: [row({ id: "h", claimSlot: null }), row({ id: "t", claimSlot: "target" })],
+      }),
+    );
+    expect(s.deploySlots).toEqual({ busy: 1, total: 1, onTargets: 1 });
+    expect(deploySlotLine(s)).toBe("1 of 1 running here, 1 more on Long House");
+  });
+
+  it("reads only this server's line with nothing on a target", () => {
+    const s = assembleSnapshot(inputs({ deploySlots: 8, deploys: [row({ id: "a" }), row({ id: "b" })] }));
+    expect(deploySlotLine(s)).toBe("2 of 8 running here");
+  });
+});
+
+describe("refusals", () => {
+  const refused = (over: Partial<Extract<PipelineEntry, { kind: "refused" }>> = {}): PipelineEntry => ({
+    kind: "refused",
+    deploymentId: "d",
+    builder: "lh",
+    name: "Long House",
+    reason: "memory",
+    needBytes: 6 * 1024 ** 3,
+    freeBytes: 2 * 1024 ** 3,
+    busy: true,
+    at: NOW - 10_000,
+    ...over,
+  });
+
+  it("marks the refusing builder and lists the latest refusal once", () => {
+    const s = assembleSnapshot(
+      inputs({
+        deploys: [row({ id: "d", appName: "scope", waitReason: "build-slot" })],
+        events: [refused({ at: NOW - 5_000 }), refused({ at: NOW - 20_000 })],
+      }),
+    );
+    const lh = s.builders.find((b) => b.id === "lh")!;
+    expect(lh.refusals).toEqual([{ at: NOW - 5_000, deploymentId: "d", reason: "memory", needBytes: 6 * 1024 ** 3, freeBytes: 2 * 1024 ** 3 }]);
+    expect(lh.busy).toBe(true);
+    expect(s.activity.map((a) => a.text)).toEqual(["scope: Long House turned the build down (needs 6.0 GiB, 2.0 GiB free); waiting for a builder"]);
+  });
+
+  it("forgets a refusal after five minutes and says less for an older peer", () => {
+    const s = assembleSnapshot(inputs({ events: [refused({ at: NOW - 6 * 60_000 })] }));
+    expect(s.builders.find((b) => b.id === "lh")!.refusals).toEqual([]);
+    const old = refused({ reason: null, needBytes: null, freeBytes: null, busy: null });
+    expect(describeEvent(old, { appNames: new Map(), builderName: new Map(), instanceName: "jy0" })?.text).toBe(
+      "A deploy: Long House turned the build down; waiting for a builder",
+    );
+  });
+});
+
+describe("segments, queue and likely builder", () => {
+  it("gives an in-flight deploy its open stage and a finished one closed stages", () => {
+    const timings = { stages: { clone: { start: NOW - 40_000, end: NOW - 30_000 }, build: { start: NOW - 30_000 } } };
+    const s = assembleSnapshot(inputs({ deploys: [row({ id: "d", timings })] }));
+    expect(s.deploys[0].segments.map((g) => [g.stage, g.end === null])).toEqual([
+      ["queued", false],
+      ["prepare", false],
+      ["build", true],
+    ]);
+  });
+
+  it("takes the queue's own count for the place in line", () => {
+    const s = assembleSnapshot(inputs({ deploys: [row({ id: "d", status: "queued", waitReason: "deploy-slot", waitAhead: 2, waitTotal: 5, waitEta: NOW + 60_000 })] }));
+    expect(s.deploys[0].queue).toEqual({ reason: "deploy-slot", position: 3, of: 5, eta: NOW + 60_000 });
+  });
+
+  it("sends a waiting deploy to the slot that frees soonest, and the next to the one after", () => {
+    const s = assembleSnapshot(
+      inputs({
+        localSlots: 1,
+        gate: { local: [{ token: "h:aa", since: NOW - 10_000 }], targets: { lh: ["t:bb", "t2:cc"] }, ready: ["lh"] },
+        events: [
+          { kind: "slot", action: "claim", token: "t:bb", deploymentId: "t", builder: "lh", at: NOW - 50_000 },
+          { kind: "slot", action: "claim", token: "t2:cc", deploymentId: "t2", builder: "lh", at: NOW - 55_000 },
+        ],
+        deploys: [
+          row({ id: "h", appId: "a" }),
+          row({ id: "t", appId: "a" }),
+          row({ id: "t2", appId: "a" }),
+          row({ id: "w1", appId: "a", waitReason: "build-slot", waitAhead: 0 }),
+          row({ id: "w2", appId: "a", waitReason: "build-slot", waitAhead: 1 }),
+        ],
+        medians: { apps: { a: { builders: { local: 60_000, lh: 90_000 } } }, builders: {} },
+      }),
+    );
+    const next = (id: string) => s.deploys.find((d) => d.id === id)!.next;
+    expect(next("w1")).toEqual({ builder: "lh", name: "Long House", at: NOW + 35_000 });
+    expect(next("w2")).toEqual({ builder: "lh", name: "Long House", at: NOW + 40_000 });
+    expect(s.builders.find((b) => b.id === "lh")!.holders.map((h) => h.since)).toEqual([NOW - 50_000, NOW - 55_000]);
+  });
+
+  it("says nothing about the builder without a median", () => {
+    const s = assembleSnapshot(
+      inputs({
+        localSlots: 1,
+        gate: { local: [{ token: "h:aa", since: NOW - 10_000 }], targets: {}, ready: [] },
+        deploys: [row({ id: "h" }), row({ id: "w", waitReason: "build-slot" })],
+      }),
+    );
+    expect(s.deploys.find((d) => d.id === "w")!.next).toBeNull();
   });
 });
 

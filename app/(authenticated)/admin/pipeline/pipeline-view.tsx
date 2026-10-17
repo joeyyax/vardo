@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
+import { deploySlotLine } from "@/lib/pipeline/deploy-slot-line";
 import type { ActivityItem, PipelineDeploy, PipelineSnapshot } from "@/lib/pipeline/types";
 import { cn } from "@/lib/utils";
 import type { Lane } from "./geometry";
@@ -141,7 +142,7 @@ function InFlight({ snapshot, now, lanes }: { snapshot: PipelineSnapshot; now: n
           </span>
         ))}
         <span>
-          Deploy slots <b className="font-semibold">{snapshot.deploySlots.busy}/{snapshot.deploySlots.total}</b>
+          Deploy slots <b className="font-semibold">{deploySlotLine(snapshot)}</b>
         </span>
         <span>
           Queued <b className="font-semibold">{queued}</b>

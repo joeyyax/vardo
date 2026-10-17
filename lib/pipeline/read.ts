@@ -1,6 +1,6 @@
 // Reads what the Pipeline snapshot needs: deploy rows, the build gate in Redis, targets, jobs, loops and recent events.
 
-import { and, desc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, backups, cronJobRuns, cronJobs, deployments } from "@/lib/db/schema";
 import { redis } from "@/lib/redis";
@@ -21,6 +21,7 @@ import {
   type GateState,
   type TargetConfig,
 } from "./snapshot";
+import { pipelineMedians } from "./medians";
 import type { PipelineSnapshot, PipelineTotals } from "./types";
 
 const log = logger.child("pipeline");
@@ -55,23 +56,72 @@ const readLocalSlots = () => cached(limitCache, localBuildLimit, 1, (v) => (limi
 
 const time = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : null);
 
+const deployColumns = {
+  id: deployments.id,
+  appId: deployments.appId,
+  appName: apps.displayName,
+  status: deployments.status,
+  stage: deployments.stage,
+  waitReason: deployments.waitReason,
+  waitingSince: deployments.waitingSince,
+  waitAhead: deployments.waitAhead,
+  waitTotal: deployments.waitTotal,
+  waitEta: deployments.waitEta,
+  startedAt: deployments.startedAt,
+  claimedAt: deployments.claimedAt,
+  finishedAt: deployments.finishedAt,
+  buildOutcome: deployments.buildOutcome,
+  buildTargetId: deployments.buildTargetId,
+  buildTargetName: deployments.buildTargetName,
+  claimSlot: deployments.claimSlot,
+  timings: deployments.stageTimings,
+  imageTransfer: deployments.imageTransfer,
+  imageTransferMs: deployments.imageTransferMs,
+};
+
+type DeploySelect = { [K in keyof typeof deployColumns]: (typeof deployColumns)[K]["_"]["data"] | null };
+
+const toRow = (r: DeploySelect): DeployRow => ({
+  id: r.id!,
+  appId: r.appId!,
+  appName: r.appName!,
+  status: r.status!,
+  stage: r.stage,
+  waitReason: r.waitReason,
+  waitingSince: time(r.waitingSince),
+  waitAhead: r.waitAhead,
+  waitTotal: r.waitTotal,
+  waitEta: time(r.waitEta),
+  queuedAt: time(r.startedAt)!,
+  claimedAt: time(r.claimedAt),
+  finishedAt: time(r.finishedAt),
+  buildOutcome: r.buildOutcome,
+  buildTargetId: r.buildTargetId,
+  buildTargetName: r.buildTargetName,
+  claimSlot: r.claimSlot,
+  timings: r.timings,
+  imageTransfer: r.imageTransfer,
+  imageTransferMs: r.imageTransferMs,
+});
+
+/** Finished deploys before the linger, within the hour, newest first. */
+export const RECENT_MS = 60 * 60_000;
+const RECENT_LIMIT = 50;
+
+async function readRecent(now: number): Promise<DeployRow[]> {
+  const rows = await db
+    .select(deployColumns)
+    .from(deployments)
+    .innerJoin(apps, eq(apps.id, deployments.appId))
+    .where(and(gt(deployments.finishedAt, new Date(now - RECENT_MS)), lte(deployments.finishedAt, new Date(now - LINGER_MS))))
+    .orderBy(desc(deployments.finishedAt))
+    .limit(RECENT_LIMIT);
+  return rows.map(toRow);
+}
+
 async function readDeploys(now: number): Promise<DeployRow[]> {
   const rows = await db
-    .select({
-      id: deployments.id,
-      appId: deployments.appId,
-      appName: apps.displayName,
-      status: deployments.status,
-      stage: deployments.stage,
-      waitReason: deployments.waitReason,
-      waitingSince: deployments.waitingSince,
-      startedAt: deployments.startedAt,
-      claimedAt: deployments.claimedAt,
-      finishedAt: deployments.finishedAt,
-      buildOutcome: deployments.buildOutcome,
-      buildTargetId: deployments.buildTargetId,
-      buildTargetName: deployments.buildTargetName,
-    })
+    .select(deployColumns)
     .from(deployments)
     .innerJoin(apps, eq(apps.id, deployments.appId))
     .where(
@@ -82,21 +132,7 @@ async function readDeploys(now: number): Promise<DeployRow[]> {
     )
     .orderBy(deployments.startedAt)
     .limit(100);
-  return rows.map((r) => ({
-    id: r.id,
-    appId: r.appId,
-    appName: r.appName,
-    status: r.status,
-    stage: r.stage,
-    waitReason: r.waitReason,
-    waitingSince: time(r.waitingSince),
-    queuedAt: time(r.startedAt)!,
-    claimedAt: time(r.claimedAt),
-    finishedAt: time(r.finishedAt),
-    buildOutcome: r.buildOutcome,
-    buildTargetId: r.buildTargetId,
-    buildTargetName: r.buildTargetName,
-  }));
+  return rows.map(toRow);
 }
 
 async function readGate(targets: TargetConfig[]): Promise<GateState> {
@@ -275,7 +311,7 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
   const now = Date.now();
   const targets = await readTargets();
   const drillIds = await soft(readDrillIds(), new Set<string>(), "restore drills");
-  const [instanceName, localSlots, gate, deploys, events, backupRows, drills, crons, loops, totals] = await Promise.all([
+  const [instanceName, localSlots, gate, deploys, events, backupRows, drills, crons, loops, totals, recent, medians] = await Promise.all([
     soft(getInstanceDisplayName(), null, "the instance name"),
     readLocalSlots(),
     soft(readGate(targets), { local: [], targets: {}, ready: null }, "the build gate"),
@@ -286,8 +322,11 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     soft(readCrons(now), [], "cron runs"),
     soft(readLoopStatus().then((r) => r.loops), [], "background loops"),
     soft(readTotals(now), { live: 0, elsewhere: 0, fellBack: 0, failed: 0 }, "deploy totals"),
+    soft(readRecent(now), [], "recent deploys"),
+    soft(pipelineMedians(now), { apps: {}, builders: {} }, "stage medians"),
   ]);
-  const eventApps = await soft(readEventApps(events, new Set(deploys.map((d) => d.id))), {}, "app names");
+  const known = new Set([...deploys, ...recent].map((d) => d.id));
+  const eventApps = await soft(readEventApps(events, known), {}, "app names");
   return assembleSnapshot({
     now,
     instanceName: instanceName ?? "This server",
@@ -303,5 +342,7 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     events,
     eventApps,
     totals,
+    recent,
+    medians,
   });
 }

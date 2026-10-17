@@ -7,6 +7,7 @@ import { describePlacement, placeDeploy } from "./stops";
 import type {
   ActivityItem,
   BuilderKind,
+  BuilderRefusal,
   PipelineBuilder,
   PipelineDeploy,
   PipelineJob,
@@ -16,6 +17,9 @@ import type {
 } from "./types";
 import { gateTokenDeployment } from "./events";
 import { SHARED_STAGE_LABELS, sharedStage } from "@/lib/ui/deploy-stage";
+import type { StageTimings } from "@/lib/docker/stage-timings";
+import type { PipelineMedians } from "./medians";
+import { deploySegments } from "./segments";
 
 export type DeployRow = {
   id: string;
@@ -31,6 +35,14 @@ export type DeployRow = {
   buildOutcome: string | null;
   buildTargetId: string | null;
   buildTargetName: string | null;
+  claimSlot?: string | null;
+  timings?: StageTimings | null;
+  imageTransfer?: string | null;
+  imageTransferMs?: number | null;
+  /** The queue's own count for its wait: how many are ahead and in the line. */
+  waitAhead?: number | null;
+  waitTotal?: number | null;
+  waitEta?: number | null;
 };
 
 export type GateState = {
@@ -65,13 +77,39 @@ export type SnapshotInputs = {
   /** App names for deploys the events name that are no longer in flight. */
   eventApps?: Record<string, string>;
   totals: PipelineTotals;
+  /** Deploys finished before the linger, within the hour, newest first. */
+  recent?: DeployRow[];
+  medians?: PipelineMedians;
 };
 
 const ACTIVITY_LIMIT = 8;
+/** A refusal marks its builder this long. */
+export const REFUSAL_WINDOW_MS = 5 * 60_000;
+const NO_MEDIANS: PipelineMedians = { apps: {}, builders: {} };
 /** A failed loop pass shows in the activity this long. */
 const LOOP_FAILURE_WINDOW_MS = 10 * 60_000;
 
 export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
+  // Latest stage event per deploy, the deploys whose build fell back, when each target slot was claimed and each builder's refusals.
+  const stageAt = new Map<string, number>();
+  const fellBack = new Set<string>();
+  const claimedAt = new Map<string, number>();
+  const refusals = new Map<string, BuilderRefusal[]>();
+  const busy = new Map<string, boolean | null>();
+  for (const e of input.events) {
+    if (e.kind === "stage" && !stageAt.has(e.deploymentId)) stageAt.set(e.deploymentId, e.at);
+    if (e.kind === "fallback" && e.deploymentId) fellBack.add(e.deploymentId);
+    if (e.kind === "slot" && e.action === "claim" && !claimedAt.has(e.token)) claimedAt.set(e.token, e.at);
+    if (e.kind === "refused" && input.now - e.at < REFUSAL_WINDOW_MS) {
+      const list = refusals.get(e.builder) ?? [];
+      if (!busy.has(e.builder)) busy.set(e.builder, e.busy);
+      if (!list.some((r) => r.deploymentId === e.deploymentId)) {
+        list.push({ at: e.at, deploymentId: e.deploymentId, reason: e.reason, needBytes: e.needBytes, freeBytes: e.freeBytes });
+      }
+      refusals.set(e.builder, list);
+    }
+  }
+
   const builders: PipelineBuilder[] = [
     {
       id: "local",
@@ -80,6 +118,8 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
       slots: Math.max(1, input.localSlots),
       online: true,
       holders: input.gate.local.map(({ token, since }) => ({ token, deploymentId: gateTokenDeployment(token), since })),
+      refusals: [],
+      busy: null,
     },
     ...input.targets.map((t): PipelineBuilder => ({
       id: t.id,
@@ -87,22 +127,16 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
       kind: t.kind,
       slots: t.maxConcurrent,
       online: input.gate.ready === null ? null : input.gate.ready.includes(t.id),
-      holders: (input.gate.targets[t.id] ?? []).map((token): SlotHolder => ({ token, deploymentId: gateTokenDeployment(token), since: null })),
+      holders: (input.gate.targets[t.id] ?? []).map((token): SlotHolder => ({ token, deploymentId: gateTokenDeployment(token), since: claimedAt.get(token) ?? null })),
+      refusals: refusals.get(t.id) ?? [],
+      busy: busy.get(t.id) ?? null,
     })),
   ];
   const builderName = new Map(builders.map((b) => [b.id, b.name]));
   const holding = new Map<string, string>();
   for (const b of builders) for (const h of b.holders) if (h.deploymentId) holding.set(h.deploymentId, b.id);
 
-  // Latest stage event per deploy, and the deploys whose build fell back.
-  const stageAt = new Map<string, number>();
-  const fellBack = new Set<string>();
-  for (const e of input.events) {
-    if (e.kind === "stage" && !stageAt.has(e.deploymentId)) stageAt.set(e.deploymentId, e.at);
-    if (e.kind === "fallback" && e.deploymentId) fellBack.add(e.deploymentId);
-  }
-
-  const deploys = input.deploys.map((row): PipelineDeploy => {
+  const toDeploy = (row: DeployRow): PipelineDeploy => {
     const placement = placeDeploy(row);
     const held = holding.get(row.id) ?? null;
     const built =
@@ -125,8 +159,16 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
       queuedAt: row.queuedAt,
       stageSince: row.finishedAt ?? since,
       finishedAt: row.finishedAt,
+      claimSlot: row.claimSlot ?? null,
+      segments: deploySegments({ ...row, timings: row.timings ?? null }, input.now),
+      transfer: row.imageTransfer ? { via: row.imageTransfer, ms: row.imageTransferMs ?? null } : null,
+      queue: queuePlace(row),
+      next: null,
     };
-  });
+  };
+  const medians = input.medians ?? NO_MEDIANS;
+  const deploys = withLikelyBuilders(input.deploys.map(toDeploy), builders, medians, input.now);
+  const recent = (input.recent ?? []).map(toDeploy);
 
   const jobs: PipelineJob[] = [
     ...input.backups.map((b): PipelineJob => ({
@@ -160,8 +202,15 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
 
   const loops = groupLoops(input.loops);
   const appNames = new Map([...Object.entries(input.eventApps ?? {}), ...input.deploys.map((d): [string, string] => [d.id, d.appName])]);
+  const refusalsListed = new Set<string>();
   const activity = [
     ...input.events.flatMap((e, i) => {
+      // A deploy re-asks a full peer every few seconds; only its latest refusal there is listed.
+      if (e.kind === "refused") {
+        const key = `${e.deploymentId}:${e.builder}`;
+        if (refusalsListed.has(key)) return [];
+        refusalsListed.add(key);
+      }
       const text = describeEvent(e, { appNames, builderName, instanceName: input.instanceName });
       return text ? [{ id: `${e.at}:${i}`, at: e.at, ...text }] : [];
     }),
@@ -174,17 +223,70 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
     .sort((a, b) => b.at - a.at)
     .slice(0, ACTIVITY_LIMIT);
 
+  const runningRows = input.deploys.filter((d) => d.status === "running");
+  const onTargets = runningRows.filter((d) => d.claimSlot === "target").length;
   return {
     at: input.now,
     instanceName: input.instanceName,
-    deploySlots: { busy: input.deploys.filter((d) => d.status === "running").length, total: input.deploySlots },
+    deploySlots: { busy: runningRows.length - onTargets, total: input.deploySlots, onTargets },
     builders,
     deploys,
+    recent,
+    medians: pickMedians(medians, [...deploys, ...recent]),
     jobs,
     loops,
     activity,
     totals: input.totals,
   };
+}
+
+/** The medians of the apps on the page only. */
+function pickMedians(all: PipelineMedians, deploys: PipelineDeploy[]): PipelineMedians {
+  const ids = new Set(deploys.map((d) => d.appId));
+  return { apps: Object.fromEntries(Object.entries(all.apps).filter(([id]) => ids.has(id))), builders: all.builders };
+}
+
+/** Its line's place from the queue's count, for a deploy waiting on a deploy slot or the builder. */
+function queuePlace(row: DeployRow): PipelineDeploy["queue"] {
+  if (!row.waitReason || row.waitAhead == null) return null;
+  return { reason: row.waitReason, position: row.waitAhead + 1, of: row.waitTotal ?? null, eta: row.waitEta ?? null };
+}
+
+/**
+ * Fills `next` for deploys waiting for a builder: in queue order, each takes the slot that frees soonest,
+ * a slot freeing at its holder's start plus its build median. A deploy on a target's deploy slot only takes a target's.
+ * A slot whose free time is unknown is never picked; with none known, `next` stays null.
+ */
+export function withLikelyBuilders(deploys: PipelineDeploy[], builders: PipelineBuilder[], medians: PipelineMedians, now: number): PipelineDeploy[] {
+  const appOf = new Map(deploys.map((d) => [d.id, d.appId]));
+  const buildMs = (builder: string, appId: string | null | undefined) =>
+    (appId ? medians.apps[appId]?.builders[builder] : undefined) ?? medians.builders[builder] ?? null;
+  const slots = builders
+    .filter((b) => b.online !== false)
+    .flatMap((b) =>
+      Array.from({ length: Math.max(b.slots, b.holders.length) }, (_, i) => {
+        const h = b.holders[i];
+        if (!h) return { builder: b, freeAt: now };
+        const ms = buildMs(b.id, h.deploymentId ? appOf.get(h.deploymentId) : null);
+        return { builder: b, freeAt: h.since !== null && ms !== null ? Math.max(now, h.since + ms) : Infinity };
+      }),
+    );
+  const waiting = deploys
+    .filter((d) => d.waitReason === "build-slot" && d.status === "running")
+    .sort((a, b) => (a.queue?.position ?? Infinity) - (b.queue?.position ?? Infinity) || a.queuedAt - b.queuedAt);
+  const next = new Map<string, PipelineDeploy["next"]>();
+  for (const d of waiting) {
+    const open = slots.filter((s) => (d.claimSlot === "target" ? s.builder.id !== "local" : true));
+    const best = open.reduce<(typeof slots)[number] | null>((a, s) => (s.freeAt < (a?.freeAt ?? Infinity) ? s : a), null);
+    if (!best) {
+      next.set(d.id, null);
+      continue;
+    }
+    next.set(d.id, { builder: best.builder.id, name: best.builder.name, at: best.freeAt });
+    const ms = buildMs(best.builder.id, d.appId);
+    best.freeAt = ms === null ? Infinity : best.freeAt + ms;
+  }
+  return deploys.map((d) => (next.has(d.id) ? { ...d, next: next.get(d.id)! } : d));
 }
 
 const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
@@ -197,7 +299,7 @@ function refusalWhy(e: Extract<PipelineEntry, { kind: "refused" }>): string {
   return e.reason === "full" ? " (its builder is full)" : "";
 }
 
-type DescribeContext ={ appNames: Map<string, string>; builderName: Map<string, string>; instanceName: string };
+type DescribeContext = { appNames: Map<string, string>; builderName: Map<string, string>; instanceName: string };
 
 /** An activity line for an event, or null for one too routine to list. */
 export function describeEvent(e: PipelineEntry, ctx: DescribeContext): Omit<ActivityItem, "id" | "at"> | null {
