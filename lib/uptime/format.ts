@@ -14,6 +14,7 @@ export const ERROR_TEXT: Record<ErrorKind, string> = {
   "cert-expiring": "certificate expiring",
   status: "unexpected status",
   keyword: "keyword missing",
+  "no-route": "no route: Vardo has nothing serving this host",
   invalid: "invalid target",
   "private-address": "private address, not checked",
   blocked: "address not allowed",
@@ -62,7 +63,7 @@ export function formatDuration(ms: number): string {
 
 export function stateLabel(state: DisplayState, downSince: number | null, now = Date.now()): string {
   if (state === "down") return downSince ? `Down for ${formatDuration(now - downSince)}` : "Down";
-  return state === "up" ? "Up" : state === "degraded" ? "Degraded" : state === "review" ? "Needs review" : "No data";
+  return state === "up" ? "Up" : state === "degraded" ? "Degraded" : state === "review" ? "Needs review" : state === "stopped" ? "Stopped" : "No data";
 }
 
 /** The disagreement in a few words, such as "Unreachable from outside". */

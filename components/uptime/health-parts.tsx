@@ -12,6 +12,7 @@ import type { MonitorSummary } from "@/lib/uptime/types";
 
 const SOURCE_NOTE = {
   healthcheck: "from the app's healthcheck",
+  image: "a known path for the app's image",
   probe: "found by probing common paths",
   homepage: "the homepage",
 } as const;

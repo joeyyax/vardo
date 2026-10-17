@@ -57,6 +57,8 @@ export const uptimeMonitors = pgTable(
     headerNames: jsonb("header_names").$type<string[]>().notNull().default([]),
     /** Linked instances get the headers and check this monitor too. */
     shareHeaders: boolean("share_headers").notNull().default(false),
+    /** The operator dismissed the notice that the check loads a heavy or slow page. */
+    heavyNoticeDismissed: boolean("heavy_notice_dismissed").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -135,6 +137,10 @@ export const uptimeResults = pgTable(
     /** An ErrorKind. */
     error: text("error"),
     certDaysLeft: integer("cert_days_left"),
+    /** The cache that answered an HTTP check, such as "cloudflare". Null when the origin did. */
+    cache: text("cache"),
+    /** Body size of an HTTP check, capped where the response sends no Content-Length. */
+    bytes: integer("bytes"),
     /** The signed record an external result arrived in. Null on local results. */
     recordId: bigint("record_id", { mode: "number" }).references(() => uptimeRecords.id, { onDelete: "cascade" }),
   },

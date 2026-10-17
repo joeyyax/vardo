@@ -58,6 +58,7 @@ export const checkSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("http"),
     url: z.string().max(2048).refine((v) => /^https?:\/\//i.test(v), "http or https only"),
+    method: z.enum(["GET", "HEAD", "POST"]).optional(),
     expectedStatus: z.object({ min: z.number().int().min(100).max(599), max: z.number().int().min(100).max(599) }),
     keyword: z.string().max(200).optional(),
     timeoutMs: timeout,

@@ -1086,6 +1086,13 @@
       "when": 1792258730727,
       "tag": "0154_uptime_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792263031894,
+      "tag": "0155_uptime_cache_size",
+      "breakpoints": true
     }
   ]
 }

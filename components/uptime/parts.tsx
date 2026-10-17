@@ -57,7 +57,7 @@ export function TargetLink({ monitor, className }: { monitor: Pick<MonitorSummar
   );
 }
 
-const TONE: Record<DisplayState, "good" | "issue" | "neutral" | "warn"> = { up: "good", degraded: "warn", down: "issue", unknown: "neutral", review: "warn" };
+const TONE: Record<DisplayState, "good" | "issue" | "neutral" | "warn"> = { up: "good", degraded: "warn", down: "issue", unknown: "neutral", review: "warn", stopped: "neutral" };
 
 export function StateMark({ state }: { state: DisplayState }) {
   return <StatusMark tone={TONE[state]} />;

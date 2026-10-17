@@ -3,6 +3,7 @@
 import net from "node:net";
 import tls from "node:tls";
 import { sendableHeaders } from "./headers";
+import { cacheOf, isNoRoute } from "./response";
 import type { CheckPath, CheckResult, ErrorKind, HttpCheck, TcpCheck, TlsCheck } from "./types";
 
 /** Resolves to a reason when the host must not be connected to, else null. */
@@ -57,20 +58,30 @@ function result(ctx: RunContext, at: number, end: number, rest: Partial<CheckRes
   return { monitorId: ctx.monitorId, vantageId: ctx.vantageId, path: ctx.path, at, latencyMs: Math.max(0, Math.round(end - at)), ...rest };
 }
 
-async function readCapped(res: Response): Promise<string> {
-  if (!res.body) return "";
+/** Bytes read to size a response without a Content-Length: enough to tell a heavy page from a light one. */
+export const SIZE_READ_BYTES = 65_536;
+
+/** Reads up to `cap` bytes, decoding text only when asked. Returns the text and the bytes read. */
+async function readCapped(res: Response, cap: number, decode: boolean): Promise<{ text: string; bytes: number }> {
+  if (!res.body) return { text: "", bytes: 0 };
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let text = "";
-  let total = 0;
-  while (total < MAX_BODY_BYTES) {
+  let bytes = 0;
+  while (bytes < cap) {
     const { done, value } = await reader.read();
     if (done) break;
-    total += value.byteLength;
-    text += decoder.decode(value, { stream: true });
+    bytes += value.byteLength;
+    if (decode) text += decoder.decode(value, { stream: true });
   }
   await reader.cancel().catch(() => {});
-  return text;
+  return { text, bytes };
+}
+
+/** Content-Length when the response sends one, else the bytes read. */
+function sizeOf(res: Response, read: number): number {
+  const declared = Number(res.headers.get("content-length"));
+  return Number.isInteger(declared) && declared >= 0 && res.headers.get("content-length")?.trim() !== "" ? Math.max(declared, read) : read;
 }
 
 export async function runHttpCheck(check: HttpCheck, ctx: HttpContext): Promise<CheckResult> {
@@ -79,23 +90,27 @@ export async function runHttpCheck(check: HttpCheck, ctx: HttpContext): Promise<
   const at = now();
   try {
     const res = await doFetch(check.url, {
-      method: "GET",
+      method: check.method ?? "GET",
       redirect: "follow",
       signal: AbortSignal.timeout(check.timeoutMs),
       headers: { ...sendableHeaders(check.headers), "user-agent": "Vardo-Uptime/1", "cache-control": "no-cache" },
     });
     const status = res.status;
+    const cache = cacheOf(res.headers);
+    const seen = cache ? { status, cache } : { status };
+    // Vardo's catch-all answered: the host has no route, whatever the status says.
+    if (isNoRoute(res.headers)) {
+      await res.body?.cancel().catch(() => {});
+      return result(ctx, at, now(), { ok: false, ...seen, error: "no-route" });
+    }
     if (status < check.expectedStatus.min || status > check.expectedStatus.max) {
       await res.body?.cancel().catch(() => {});
-      return result(ctx, at, now(), { ok: false, status, error: "status" });
+      return result(ctx, at, now(), { ok: false, ...seen, error: "status" });
     }
-    if (check.keyword) {
-      const body = await readCapped(res);
-      if (!body.includes(check.keyword)) return result(ctx, at, now(), { ok: false, status, error: "keyword" });
-    } else {
-      await res.body?.cancel().catch(() => {});
-    }
-    return result(ctx, at, now(), { ok: true, status });
+    const body = await readCapped(res, check.keyword ? MAX_BODY_BYTES : SIZE_READ_BYTES, !!check.keyword);
+    const bytes = sizeOf(res, body.bytes);
+    if (check.keyword && !body.text.includes(check.keyword)) return result(ctx, at, now(), { ok: false, ...seen, bytes, error: "keyword" });
+    return result(ctx, at, now(), { ok: true, ...seen, bytes });
   } catch (err) {
     return result(ctx, at, now(), { ok: false, error: classifyError(err) });
   }

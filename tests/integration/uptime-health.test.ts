@@ -208,7 +208,7 @@ describe.skipIf(!conn)("uptime health detection on Postgres", { timeout: MIGRATE
     });
 
     it("keeps counting 500 and up as down", async () => {
-      await sql`update uptime_monitor set review_status = null, review_reason = null where domain_id = 'dom1'`;
+      await sql`update uptime_monitor set review_status = null, review_reason = null, interval_sec = 60 where domain_id = 'dom1'`;
       respond = () => new Response("boom", { status: 503 });
       for (let i = 0; i < 4; i++) await pass();
       expect((await client.uptimeClient.listMonitors(org)).find((m) => m.domainId === "dom1")!.state).toBe("down");

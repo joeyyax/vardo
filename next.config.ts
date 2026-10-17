@@ -38,6 +38,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Traefik sends hosts with no route here. Uptime reads it as no route, not as the app; NO_ROUTE_HEADER in lib/uptime/core/response.ts.
+        source: "/unknown-host",
+        headers: [{ key: "x-vardo-route", value: "none" }],
+      },
+      {
         // Default security headers for all routes. The public trust routes set their own, stricter ones.
         source: "/((?!api/public/trust).*)",
         headers: [

@@ -6,8 +6,8 @@ import type { Check, CheckPath, ErrorKind, AutoOverrides, HealthSource, Interval
 
 export type { AutoOverrides, Check, CheckPath, ErrorKind, HealthSource, IntervalSec, MaintenanceWindow, MonitorState, Reading, ReviewAnswer };
 
-/** A monitor state, or "review" while the operator hasn't said what counts as up. Review doesn't alert and counts as unknown. */
-export type DisplayState = MonitorState | "review";
+/** A monitor state, "review" while the operator hasn't said what counts as up, or "stopped" while its app isn't running. Neither alerts; both count as unknown. */
+export type DisplayState = MonitorState | "review" | "stopped";
 
 /** The question for an automatic monitor whose best answer is a non-2xx below 500. */
 export type ReviewQuestion = { status: number; reason: "status" | "login" };
@@ -167,7 +167,8 @@ export type AppUptime = {
   rangeUptime: number | null;
   /** Epoch ms the oldest monitor was created. */
   historyStart: number | null;
-  state: MonitorState;
+  /** "stopped" when every monitor's app is stopped or missing. */
+  state: MonitorState | "stopped";
   /** Monitors waiting on an answer. */
   reviews: MonitorSummary[];
   localOnly: boolean;
@@ -246,6 +247,7 @@ export const createMonitorSchema = z
     type: z.enum(["http", "tcp", "tls"]),
     name: z.string().trim().max(80).optional(),
     url: httpUrl.optional(),
+    method: z.enum(["GET", "HEAD", "POST"]).optional(),
     host: hostSchema.optional(),
     port: portSchema.optional(),
     expectedStatus: z.object({ min: z.number().int().min(100).max(599), max: z.number().int().min(100).max(599) }).optional(),
@@ -279,8 +281,8 @@ export const updateMonitorSchema = createMonitorSchema
   .strict();
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("status"), status: z.number().int().min(100).max(499) }).strict(),
-  z.object({ kind: z.literal("path"), path: z.string().trim().min(1).max(200) }).strict(),
+  z.object({ kind: z.literal("status"), status: z.number().int().min(100).max(499), method: z.enum(["GET", "HEAD", "POST"]).optional() }).strict(),
+  z.object({ kind: z.literal("path"), path: z.string().trim().min(1).max(200), method: z.enum(["GET", "HEAD", "POST"]).optional(), status: z.number().int().min(100).max(499).optional() }).strict(),
   z.object({ kind: z.literal("skip") }).strict(),
   z.object({ kind: z.literal("headers"), headers: z.array(headerSchema).max(10).optional(), basicAuth: basicAuthSchema.optional(), shareHeaders: z.boolean().optional() }).strict(),
 ]);

@@ -64,7 +64,7 @@ import type {
 import { UptimeInputError } from "./errors";
 import { vantageNames } from "./format";
 import { targetRefusal, type PolicyLevel } from "./outbound";
-import { autoCheckFor, autoEdit, baseUrlOf, editsAuto } from "./auto";
+import { appNotRunning, autoCheckFor, runStateColumns, autoEdit, baseUrlOf, editsAuto, withAutoFields } from "./auto";
 import { applyHeaderPatch } from "./secrets";
 import { listVantagePoints } from "./vantage";
 import { externalWatchers, loadImpaired, sharing } from "./watchers";
@@ -93,6 +93,8 @@ export function toResult(row: typeof uptimeResults.$inferSelect): CheckResult {
     ...(row.status !== null ? { status: row.status } : {}),
     ...(row.error ? { error: row.error as CheckResult["error"] } : {}),
     ...(row.certDaysLeft !== null ? { certDaysLeft: row.certDaysLeft } : {}),
+    ...(row.cache ? { cache: row.cache as CheckResult["cache"] } : {}),
+    ...(row.bytes !== null ? { bytes: row.bytes } : {}),
   };
 }
 
@@ -105,9 +107,11 @@ export function buildCheck(input: CreateMonitorInput, previous?: Check): Check {
     const expectedStatus = input.expectedStatus ?? prev?.expectedStatus ?? { ...DEFAULT_EXPECTED_STATUS };
     if (expectedStatus.max < expectedStatus.min) throw new UptimeInputError("The status range ends before it starts.");
     const keyword = "keyword" in input ? input.keyword || undefined : prev?.keyword;
+    const method = input.method ?? prev?.method;
     return {
       type: "http",
       url,
+      ...(method && method !== "GET" ? { method } : {}),
       expectedStatus,
       ...(keyword ? { keyword } : {}),
       timeoutMs: input.timeoutMs ?? prev?.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS,
@@ -145,6 +149,8 @@ export type Loaded = {
   watchers: Map<string, string[]>;
   impaired: Set<string>;
   appNames: Map<string, string>;
+  /** Apps that are stopped or missing. */
+  stoppedApps: Set<string>;
   /** Domains that still exist among those manual checks link to. */
   liveDomains: Set<string>;
   vantages: VantagePoint[];
@@ -262,7 +268,7 @@ export async function load(rows: UptimeMonitorRow[], now: number, range?: Uptime
           .where(and(inArray(uptimeResults.monitorId, ids), gte(uptimeResults.at, new Date(now - 15 * MINUTE_MS))))
       : Promise.resolve([]),
     dailyBuckets(ids, 30, now),
-    appIds.length ? db.select({ id: apps.id, name: apps.name }).from(apps).where(inArray(apps.id, appIds)) : Promise.resolve([]),
+    appIds.length ? db.select({ id: apps.id, name: apps.name, ...runStateColumns }).from(apps).where(inArray(apps.id, appIds)) : Promise.resolve([]),
     externalWatchers(),
     loadImpaired(now),
     linkedIds.length ? db.select({ id: domains.id }).from(domains).where(inArray(domains.id, linkedIds)) : Promise.resolve([]),
@@ -270,7 +276,7 @@ export async function load(rows: UptimeMonitorRow[], now: number, range?: Uptime
   ]);
   const partial = { vantages, impaired, watchers, daily };
   const bars = await rangeBars(rows, effective, now, partial);
-  return { rows, range: effective, bars, reports, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), liveDomains: new Set(domainRows.map((d) => d.id)), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
+  return { rows, range: effective, bars, reports, watchers, impaired, appNames: new Map(appRows.map((a) => [a.id, a.name])), stoppedApps: new Set(appRows.filter((a) => appNotRunning(a)).map((a) => a.id)), liveDomains: new Set(domainRows.map((d) => d.id)), vantages, recent: groupBy(resultRows.map(toResult), (r) => r.monitorId), daily };
 }
 
 /** How often each vantage point checks the monitor, counting those that share it. */
@@ -287,7 +293,8 @@ export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): M
   const daily = ctx.daily.get(row.id) ?? [];
   const last = results.reduce<CheckResult | null>((best, r) => (!best || r.at > best.at ? r : best), null);
   const check = row.check;
-  const reviewing = row.enabled && row.reviewStatus !== null && row.reviewAnswer === null;
+  const stopped = row.enabled && !!row.appId && ctx.stoppedApps.has(row.appId);
+  const reviewing = row.enabled && !stopped && row.reviewStatus !== null && row.reviewAnswer === null;
   return {
     id: row.id,
     name: row.name,
@@ -312,9 +319,9 @@ export function summarizeRow(row: UptimeMonitorRow, ctx: Loaded, now: number): M
     shareHeaders: row.shareHeaders,
     privateHeader: row.headerNames.length > 0 && !row.shareHeaders,
     maintenance: row.maintenance,
-    state: !row.enabled ? "unknown" : reviewing ? "review" : evaluation.state,
+    state: !row.enabled ? "unknown" : stopped ? "stopped" : reviewing ? "review" : evaluation.state,
     openable: check.type === "http" && row.peerRole !== "link",
-    reading: row.enabled && !reviewing ? (evaluation.reading ?? null) : null,
+    reading: row.enabled && !reviewing && !stopped ? (evaluation.reading ?? null) : null,
     report: reportOf(row.id, ctx),
     localOnly: evaluation.localOnly,
     downSince: evaluation.downSince ?? null,
@@ -514,16 +521,16 @@ export async function updateMonitor(scope: Scope, id: string, patch: UpdateMonit
     const base = baseUrlOf(row);
     if (base && row.check.type === "http") {
       const next = autoCheckFor({ healthPath: changes.healthPath === undefined ? row.healthPath : changes.healthPath, reviewAnswer: "reviewAnswer" in changes ? (changes.reviewAnswer ?? null) : row.reviewAnswer, overrides: "overrides" in changes ? (changes.overrides ?? null) : row.overrides }, base);
-      set.check = { ...row.check, url: next.url, expectedStatus: next.expectedStatus, timeoutMs: next.timeoutMs, keyword: next.keyword };
+      set.check = withAutoFields(row.check, next);
     }
   }
 
-  const editsCheck = row.source !== "auto" ? ["type", "name", "url", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays", "intervalSec"].some((k) => k in patch) : ["type", "url", "host", "port", "warnDays"].some((k) => k in patch);
+  const editsCheck = row.source !== "auto" ? ["type", "name", "url", "method", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays", "intervalSec"].some((k) => k in patch) : ["type", "url", "method", "host", "port", "warnDays"].some((k) => k in patch);
   if (editsCheck) {
     if (row.source === "auto") throw new UptimeInputError("An automatic monitor's address follows its domain. Change the path instead.");
     if (patch.name !== undefined) set.name = patch.name || defaultName(row.check);
     if (patch.intervalSec !== undefined) set.intervalSec = patch.intervalSec;
-    const touched = ["type", "url", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays"].some((k) => k in patch);
+    const touched = ["type", "url", "method", "host", "port", "expectedStatus", "timeoutMs", "keyword", "warnDays"].some((k) => k in patch);
     if (touched) {
       const type = patch.type ?? row.check.type;
       set.check = buildCheck({ ...patch, type } as CreateMonitorInput, type === row.check.type ? row.check : undefined);
@@ -622,7 +629,7 @@ export async function getAppUptime(orgId: string, appId: string, now = Date.now(
     rangeUptime: rangeUptime(appBars.buckets),
     historyStart,
     reviews,
-    state: downs.length ? "down" : degraded.length ? "degraded" : known.length ? "up" : "unknown",
+    state: downs.length ? "down" : degraded.length ? "degraded" : known.length ? "up" : active.length && active.every((m) => m.state === "stopped") ? "stopped" : "unknown",
     localOnly: active.every((m) => m.localOnly),
     downSince: downs.length ? Math.min(...downs.map((m) => m.downSince ?? now)) : null,
     reading: (downs[0] ?? degraded[0])?.reading ?? null,

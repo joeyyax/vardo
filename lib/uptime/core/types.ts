@@ -1,14 +1,23 @@
 // Plain data shapes for the uptime core. Imports nothing from Vardo.
 
+import type { CacheName } from "./response";
+
 export type Owner = { kind: "org"; orgId: string } | { kind: "instance" };
 
 export const INTERVALS = [30, 60, 300] as const;
 export type IntervalSec = (typeof INTERVALS)[number];
 export const DEFAULT_INTERVAL: IntervalSec = 60;
+/** Automatic monitors that fall back to the homepage check this often. */
+export const HOMEPAGE_INTERVAL: IntervalSec = 300;
+
+export const HTTP_METHODS = ["GET", "HEAD", "POST"] as const;
+export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 export type HttpCheck = {
   type: "http";
   url: string;
+  /** GET when absent. A POST sends no body. */
+  method?: HttpMethod;
   /** Inclusive status range. */
   expectedStatus: { min: number; max: number };
   keyword?: string;
@@ -41,9 +50,9 @@ export type AutoOverrides = {
 /** What the operator said about an automatic monitor that answers below 500 but not 2xx. */
 export type ReviewAnswer =
   /** This status is what the app answers when up. */
-  | { kind: "status"; status: number }
-  /** Check this path instead. */
-  | { kind: "path"; path: string }
+  | { kind: "status"; status: number; method?: HttpMethod }
+  /** Check this path instead, with this method and the status it answers when up. */
+  | { kind: "path"; path: string; method?: HttpMethod; status?: number }
   /** Don't monitor this domain. */
   | { kind: "skip" };
 
@@ -76,6 +85,7 @@ export const ERROR_KINDS = [
   "cert-expiring",
   "status",
   "keyword",
+  "no-route",
   "invalid",
   "private-address",
   "blocked",
@@ -120,6 +130,10 @@ export type CheckResult = {
   error?: ErrorKind;
   /** Whole days until the certificate expires, on TLS checks that read one. */
   certDaysLeft?: number;
+  /** The cache that answered an HTTP check instead of the origin. */
+  cache?: CacheName;
+  /** Body size of an HTTP check: Content-Length when sent, else the bytes read up to a cap. */
+  bytes?: number;
 };
 
 export type VantagePoint = {
