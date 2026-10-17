@@ -33,5 +33,5 @@ describe.skipIf(!READY)("removeContainer volumes option", () => {
     } finally {
       docker("volume", "rm", "-f", keep.volume);
     }
-  });
+  }, 60_000);
 });

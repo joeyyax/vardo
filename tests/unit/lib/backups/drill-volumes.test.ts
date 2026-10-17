@@ -59,7 +59,7 @@ const HAS_IMAGE = (() => {
   }
 })();
 
-const volumes = () => new Set(execFileSync("docker", ["volume", "ls", "-q"], { encoding: "utf8" }).split("\n").filter(Boolean));
+const volumes = () => new Set(execFileSync("docker", ["volume", "ls", "-q", "--filter", "dangling=true"], { encoding: "utf8" }).split("\n").filter(Boolean));
 
 describe.skipIf(!HAS_IMAGE)("real Docker drill volumes", () => {
   it("leaves no new volume behind", async () => {

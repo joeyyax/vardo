@@ -37,18 +37,17 @@ export async function imageVolumePaths(image: string): Promise<string[]> {
 
 /** Remove a scratch container and every volume it mounted. Never throws. */
 export async function removeScratchContainer(container: string): Promise<void> {
-  const opts = { env: dockerEnv(), timeout: 60_000 };
   let volumes: string[] = [];
   try {
     const { stdout } = await execFileAsync(
       "docker",
       ["inspect", "--format", '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}', container],
-      opts,
+      { env: dockerEnv(), timeout: 60_000 },
     );
     volumes = String(stdout).split("\n").map((s) => s.trim()).filter(Boolean);
   } catch {
     // Already gone; `--rm` took its anonymous volumes with it.
   }
-  await execFileAsync("docker", ["rm", "-f", "-v", container], opts).catch(() => {});
-  if (volumes.length > 0) await execFileAsync("docker", ["volume", "rm", "-f", ...volumes], opts).catch(() => {});
+  await execFileAsync("docker", ["rm", "-f", "-v", container], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
+  if (volumes.length > 0) await execFileAsync("docker", ["volume", "rm", "-f", ...volumes], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
 }
