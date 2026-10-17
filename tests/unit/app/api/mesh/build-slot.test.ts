@@ -38,6 +38,10 @@ vi.mock("@/lib/docker/build-gate", () => ({
   releaseSlotForPeer: async (token: string) => void state.held.delete(token),
 }));
 
+vi.mock("@/lib/docker/mesh-builder", () => ({
+  meshBuilderStats: async () => ({ oomKills: 3, limitBytes: 12 * 1024 ** 3 }),
+}));
+
 const { POST } = await import("@/app/api/v1/mesh/build-slot/route");
 
 function request(payload: unknown, headers?: Record<string, string>) {
@@ -76,8 +80,14 @@ describe("POST /api/v1/mesh/build-slot", () => {
     expect(await send({ action: "claim", token: "dep-a-x1" })).toEqual({ status: 200, body: { held: false } });
   });
 
+  it("reports the isolated builder's OOM kills and limit without touching the gate", async () => {
+    expect(await send({ action: "builder", token: "dep-a-x1" })).toEqual({ status: 200, body: { builder: { oomKills: 3, limitBytes: 12 * 1024 ** 3 } } });
+    expect(state.held.size).toBe(0);
+  });
+
   it("refuses a peer it doesn't run builds for", async () => {
     state.peer = { ...state.peer!, acceptBuilds: false };
+    expect((await send({ action: "builder", token: "dep-a-x1" })).status).toBe(403);
     expect((await send({ action: "claim", token: "dep-a-x1" })).status).toBe(403);
     expect(state.held.size).toBe(0);
   });

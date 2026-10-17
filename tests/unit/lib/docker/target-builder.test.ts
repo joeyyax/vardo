@@ -5,6 +5,7 @@ import { access, readFile } from "fs/promises";
 import { BuilderError } from "@/lib/docker/build-targets";
 import { TARGET_BUILDER, targetBuilder, withTargetBuilder } from "@/lib/docker/target-builder";
 import { TARGET_BUILD } from "@/lib/docker/remote-build";
+import { meshBuilderStats } from "@/lib/docker/mesh-builder";
 
 const there = { DOCKER_HOST: "ssh://vardo-mesh@10.99.0.2:2222" } as unknown as NodeJS.ProcessEnv & { DOCKER_HOST: string };
 
@@ -117,5 +118,24 @@ describe("withTargetBuilder", () => {
       }, { exec: docker.exec, localStore: async () => "containerd" }),
     ).rejects.toThrow("failed to solve");
     expect(await exists(dir)).toBe(false);
+  });
+});
+
+describe("meshBuilderStats", () => {
+  it("reads the isolated builder's OOM kills from its cgroup and its memory limit", async () => {
+    const seen: string[] = [];
+    const stats = await meshBuilderStats({
+      inspect: async () => ({ Id: "abc123", HostConfig: { Memory: 12 * 1024 ** 3 } }),
+      oomKills: async (id) => (seen.push(id), 3),
+    });
+    expect(stats).toEqual({ oomKills: 3, limitBytes: 12 * 1024 ** 3 });
+    expect(seen).toEqual(["abc123"]);
+  });
+
+  it("has nulls when the builder isn't there or has no limit", async () => {
+    expect(await meshBuilderStats({ inspect: async () => { throw new Error("No such container"); }, oomKills: async () => 1 }))
+      .toEqual({ oomKills: null, limitBytes: null });
+    expect(await meshBuilderStats({ inspect: async () => ({ Id: "abc123", HostConfig: { Memory: 0 } }), oomKills: async () => null }))
+      .toEqual({ oomKills: null, limitBytes: null });
   });
 });

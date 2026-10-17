@@ -91,6 +91,8 @@ A linked instance can run another's builds when that one's builder is full. The 
 - It answers BuildKit over mutual TLS on port 1234 (`VARDO_MESH_BUILDER_PORT`). `vardo-wireguard` forwards that port on the tunnel address to it, only from the tunnel addresses of peers this instance accepts builds from.
 - Each instance keeps an Ed25519 CA for its builder, encrypted in its settings. The signed key exchange carries each side's builder client key. The side that accepts builds answers with its CA and a client certificate for that key, valid for 6 hours and renewed past half of that.
 - Turning **Accept builds** off or removing the peer drops its forward right away, and its certificate isn't renewed. A build already running there finishes.
+- A build from a peer takes a slot in this instance's build gate. It waits while both builders growing to their limits would leave less free memory than a tenth of RAM, at least 1 GiB.
+- A build that runs out of memory there builds again on the sending instance. The sending instance reads the builder's OOM kills from its cgroup, since BuildKit often reports only the package manager's exit code.
 - Every image built there carries labels for the requesting instance, the app and the commit: `dev.vardo.build.requester`, `dev.vardo.build.requester-id`, `dev.vardo.build.app` and `org.opencontainers.image.revision`. Pushed images carry them as annotations too.
 
 ### Peers without the isolated builder

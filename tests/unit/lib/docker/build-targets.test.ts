@@ -15,7 +15,7 @@ vi.mock("@/lib/mesh/build-peers", () => ({ meshBuildPeers: async () => mesh }));
 
 const {
   builderFailureReason, BuilderError, configuredTargets, describeTarget, getBuildTargets, isTargetReady, onTarget, openSshSession,
-  openTargetSession, remoteEnv, resetTargetHealth, setBuildTargets, targetDockerHost,
+  openTargetSession, peerBuildOom, remoteEnv, resetTargetHealth, setBuildTargets, targetDockerHost,
 } = await import("@/lib/docker/build-targets");
 
 const run = promisify(execFile);
@@ -153,6 +153,33 @@ describe("builderFailureReason", () => {
   it("leaves the app's own build errors alone", () => {
     expect(builderFailureReason('failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 1')).toBeNull();
     expect(builderFailureReason("failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory")).toBeNull();
+  });
+});
+
+describe("peerBuildOom", () => {
+  const pnpm = new Error('#17 13.57  ELIFECYCLE  Command failed.\nfailed to solve: process "/bin/sh -c pnpm run build" did not complete successfully: exit code: 1');
+  const killed = new Error('failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 137');
+  const stats = (oomKills: number | null) => ({ oomKills, limitBytes: 4 * 1024 ** 3 });
+
+  it("calls it out of memory when the builder's OOM kills rose, whatever the error says", () => {
+    expect(peerBuildOom(pnpm, stats(2), stats(3))).toBe(true);
+  });
+
+  it("goes by the counter over the error when both readings are in", () => {
+    expect(peerBuildOom(killed, stats(2), stats(2))).toBe(false);
+    expect(peerBuildOom(pnpm, stats(2), stats(2))).toBe(false);
+  });
+
+  it("falls back to BuildKit's error without both readings", () => {
+    expect(peerBuildOom(killed, null, null)).toBe(true);
+    expect(peerBuildOom(killed, stats(null), stats(null))).toBe(true);
+    expect(peerBuildOom(Object.assign(new Error("docker failed"), { stderr: "process did not complete successfully: signal: killed" }), stats(1), null)).toBe(true);
+    expect(peerBuildOom(new Error("fork/exec /bin/sh: cannot allocate memory"), null, null)).toBe(true);
+  });
+
+  it("leaves an ordinary build failure alone", () => {
+    expect(peerBuildOom(pnpm, null, null)).toBe(false);
+    expect(peerBuildOom(new Error("error TS2322: Type 'OOM' is not assignable"), null, null)).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@ import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
 import { meshBuildPeers, type MeshBuildPeer, type MeshBuilderAccess } from "@/lib/mesh/build-peers";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
-import { probeMeshBuilder } from "./mesh-builder";
+import { probeMeshBuilder, type MeshBuilderStats } from "./mesh-builder";
 
 export const BUILD_TARGETS_SETTING = "build_targets";
 
@@ -261,6 +261,19 @@ const BUILDER_FAILURES: [RegExp, string][] = [
 export function builderFailureReason(message: string): string | null {
   for (const [pattern, reason] of BUILDER_FAILURES) if (pattern.test(message)) return reason;
   return null;
+}
+
+/** BuildKit's error for a step the kernel killed, and a failed allocation. */
+const STEP_OUT_OF_MEMORY = [/did not complete successfully: (?:exit code: 137|signal: killed)/, /cannot allocate memory/i];
+
+/**
+ * Whether a build that failed on a peer's isolated builder ran out of memory: the builder's OOM kills rose during it.
+ * A peer that can't report its kills falls back to the error text, which misses a killed child such as `next build` under pnpm.
+ */
+export function peerBuildOom(err: unknown, before: MeshBuilderStats | null, after: MeshBuilderStats | null): boolean {
+  if (before?.oomKills != null && after?.oomKills != null) return after.oomKills > before.oomKills;
+  const text = errorText(err);
+  return STEP_OUT_OF_MEMORY.some((p) => p.test(text));
 }
 
 function errorText(err: unknown): string {
