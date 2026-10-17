@@ -20,6 +20,7 @@ type Service = {
   devices?: unknown[];
   security_opt?: string[];
   mem_limit?: string;
+  memswap_limit?: string;
   cpus?: string | number;
   pids_limit?: number;
   network_mode?: string;
