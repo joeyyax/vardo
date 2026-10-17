@@ -17,4 +17,6 @@ export type ConfigSnapshot = {
   imageDigest?: string | null;
   /** Engine major per major-locked service, keyed by compose service ("" when single-image). */
   imageMajors?: Record<string, number>;
+  /** Deploy metadata each rotating service got, keyed by compose service. Absent before #1131. */
+  deployVars?: Record<string, Record<string, string>>;
 };

@@ -4,7 +4,6 @@ import { cp, mkdir, readFile, rm, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { parseComposeYaml } from "./compose";
 import { isUnder } from "./compose-root";
-import { GIT_SHA_ARG } from "./build-key";
 
 /** Runs git against the shared checkout with extra environment. */
 export type BuildSourceGit = (args: string[], env?: Record<string, string>) => Promise<unknown>;
@@ -55,15 +54,17 @@ export async function copyGitDir(opts: { git: BuildSourceGit; repoDir: string; d
 
 export type BuildSpec = { context: string; args?: Record<string, string> | string[] } & Record<string, unknown>;
 
-/** Adds VARDO_GIT_SHA to a compose build's args unless the file sets it. */
-export function withGitShaArg(build: BuildSpec, sha: string): void {
-  const args = build.args;
-  if (Array.isArray(args)) {
-    if (!args.some((a) => a === GIT_SHA_ARG || a.startsWith(`${GIT_SHA_ARG}=`))) args.push(`${GIT_SHA_ARG}=${sha}`);
-  } else if (args && typeof args === "object") {
-    if (!(GIT_SHA_ARG in args)) args[GIT_SHA_ARG] = sha;
-  } else {
-    build.args = { [GIT_SHA_ARG]: sha };
+/** Adds each of `vars` to a compose build's args unless the file sets it. */
+export function withBuildVarArgs(build: BuildSpec, vars: Record<string, string>): void {
+  for (const [key, value] of Object.entries(vars)) {
+    const args = build.args;
+    if (Array.isArray(args)) {
+      if (!args.some((a) => a === key || a.startsWith(`${key}=`))) args.push(`${key}=${value}`);
+    } else if (args && typeof args === "object") {
+      if (!(key in args)) args[key] = value;
+    } else {
+      build.args = { [key]: value };
+    }
   }
 }
 

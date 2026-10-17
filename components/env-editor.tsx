@@ -20,6 +20,8 @@ import "./surface-terminal.css";
 import { Card } from "@/components/ui/card";
 import { EnvMultilineAdd } from "@/components/env-multiline-add";
 import { useCan } from "@/components/capabilities-provider";
+import { DeployVarsCard } from "@/components/deploy-vars-card";
+import { parseEnvToMap } from "@/lib/env/parse-env";
 
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
@@ -295,6 +297,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
   // Memoized so mousemove renders don't re-split.
   const lines = useMemo(() => content.split("\n"), [content]);
+  const savedKeys = useMemo(() => new Set(Object.keys(parseEnvToMap(initialContent))), [initialContent]);
 
   if (!loaded) {
     return (
@@ -468,6 +471,8 @@ export function EnvEditor(props: EnvEditorProps) {
         {/* Copy chips overlay */}
         {content && renderCopyChips()}
       </Card>
+
+      {!isStandalone && <DeployVarsCard orgId={orgId} appId={appId} environmentId={environmentId} ownKeys={savedKeys} />}
     </div>
   );
 }

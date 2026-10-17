@@ -13,6 +13,7 @@ const SERVER_ONLY = [/^@\/lib\/app-services(\/|$)/];
 /** Pure helpers under lib/docker with no Docker or db dependency, shared with client components. */
 const CLIENT_SAFE = new Set([
   "@/lib/docker/conditions",
+  "@/lib/docker/deploy-vars",
   "@/lib/docker/image-updates/batch-report",
   "@/lib/docker/image-updates/ignore",
   "@/lib/docker/image-updates/migration-path",

@@ -72,6 +72,8 @@ export type DeployApp = {
   configSource: string | null;
   domains: {
     id: string;
+    /** The app or child app the row belongs to. */
+    appId?: string;
     domain: string;
     isPrimary: boolean | null;
     port: number | null;
@@ -193,6 +195,10 @@ export type DeployContext = {
 
   /** Commit this deploy ships. Unset for an app without a repo. */
   gitSha?: string;
+  /** Branch the commit was fetched from. Unset for an app without a repo. */
+  gitBranch?: string;
+  /** Deploy metadata set in each rotating service's environment (lib/docker/deploy-vars.ts). */
+  deployVars?: Record<string, Record<string, string>>;
   gitMessage?: string;
   gitAuthor?: string;
 

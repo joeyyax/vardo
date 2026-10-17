@@ -55,6 +55,8 @@ import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerfileBuildArgs, nixpacksBuildArgs, railpackBuildArgs, type BuildOverrides } from "../buildpack-args";
+import { buildVars } from "../deploy-vars";
+import { withoutUndeclaredBuildVars } from "../compose-build-reuse";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
 import { engineVersion } from "../engine-version";
@@ -609,6 +611,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const repoDir = join(appBase, "repo");
     ctx.repoDir = repoDir;
     const branch = ctx.envBranchOverride || app.gitBranch || "main";
+    ctx.gitBranch = branch;
     // Credentials travel in env config, never in the clone URL.
     const split = splitGitUrl(app.gitUrl);
     let cloneUrl = split.url;
@@ -880,6 +883,13 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
       const overrides: BuildOverrides = { buildCommand: app.buildCommand, startCommand: app.startCommand };
       const engine = buildType as RepoBuildEngine;
+      // Commit and branch join the app's env as build args; the app's own value wins.
+      const buildEnv = () => ({ ...buildVars(ctx.gitSha, ctx.gitBranch, envMap), ...envMap });
+      const dockerfileText = engine === "dockerfile"
+        ? await readFile(repoFilePath(srcDir, root, app.dockerfilePath || "Dockerfile"), "utf-8").catch(() => "")
+        : null;
+      // An undeclared ARG can't change the image, so it stays out of the key.
+      const keyArgs = () => dockerfileText === null ? buildEnv() : withoutUndeclaredBuildVars(buildEnv(), dockerfileText);
       const keyFor = async () =>
         ctx.gitSha
           ? buildKey({
@@ -891,7 +901,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
               dockerfilePath: app.dockerfilePath,
               buildCommand: app.buildCommand ?? null,
               startCommand: app.startCommand ?? null,
-              buildArgs: envMap,
+              buildArgs: keyArgs(),
               withGitDir: ctx.buildSourceHasGit === true,
             })
           : undefined;
@@ -912,7 +922,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         if (ctx.rebuild) log(`[build] ${ctx.rebuild === "no-cache" ? "Rebuilding without the build cache" : "Rebuilding"}, as asked`);
         if (buildType === "railpack" || buildType === "nixpacks") {
           const plan = await captureBuildPlan(buildType, root, {
-            envVars: envMap,
+            envVars: buildEnv(),
             overrides,
             markers: markers ?? (await providerMarkers(root)),
             log,
@@ -929,7 +939,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           imageName,
           engine,
           logs,
-          envVars: envMap,
+          envVars: buildEnv(),
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,

@@ -61,7 +61,7 @@ Limits:
 
 - A Dockerfile that reads `.git` (`COPY .git`, a `.git` bind mount, or `git rev-parse`, `describe`, `log` and the like in a step) gets the checkout's `.git` copied in, pointed at the deployed commit. Compose services' Dockerfiles are checked too. Those builds rebuild from that `COPY` on every commit, as before.
 - Railpack and Nixpacks builds aren't scanned. One whose build runs git (a `next.config` calling `git rev-parse` without a fallback) sets `VARDO_BUILD_INCLUDE_GIT=true` in the app's env.
-- The alternative is a build arg: Dockerfile and compose builds get `VARDO_GIT_SHA` (compose only when the file doesn't set it). Declare `ARG VARDO_GIT_SHA` to use it; undeclared, it changes nothing.
+- The alternative is a build arg: Dockerfile and compose builds get `VARDO_GIT_SHA` and `VARDO_GIT_BRANCH` (compose only when the file doesn't set them), Railpack and Nixpacks get them as build env. Declare `ARG VARDO_GIT_SHA` to use it; undeclared, it changes nothing. See [Deploy variables](deploy-variables.md).
 - Each environment's build tree is a full copy of the commit's files.
 
 ## Image reuse
@@ -75,7 +75,7 @@ The key (`deployment.build_key`, and the `vardo.build.key` label on Dockerfile i
 - the deployed commit SHA and the root directory
 - the engine (`dockerfile`, `railpack`, `nixpacks`), its version, and the Dockerfile path for Dockerfile builds
 - the build and start command overrides
-- a SHA-256 of every build arg the build gets, and whether `.git` is in the context
+- a SHA-256 of every build arg the build gets (for a Dockerfile, minus an undeclared `VARDO_GIT_SHA` or `VARDO_GIT_BRANCH`), and whether `.git` is in the context
 
 Every app env var is a build arg today (`--build-arg` for Dockerfiles, `--env` for Railpack and Nixpacks), so any env change, runtime-only or not, rebuilds. The newest of the last 10 deploys with the key whose image is still on the host is reused; image reclaim may have removed older ones.
 
@@ -100,7 +100,7 @@ Each compose service with a `build:` gets its own key (`lib/docker/compose-build
 - the build config version and the app id
 - the git tree id of the service's context at the deployed commit, so a commit that leaves the directory alone keeps the key
 - a SHA-256 of its Dockerfile (or `dockerfile_inline`), wherever it lives
-- its build args, minus `VARDO_GIT_SHA` unless the Dockerfile declares `ARG VARDO_GIT_SHA`
+- its build args, minus `VARDO_GIT_SHA` and `VARDO_GIT_BRANCH` unless the Dockerfile declares them
 - the rest of the build spec (target, labels, platforms and the like) and the Docker server version
 - the commit, when the context includes `.git`
 

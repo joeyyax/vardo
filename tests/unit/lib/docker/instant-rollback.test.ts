@@ -119,6 +119,14 @@ describe("performInstantRollback — the flip", () => {
     expect(calls.indexOf("stop:blog-production-blue")).toBeGreaterThan(calls.indexOf("up:blog-production-green"));
   });
 
+  it("credits the standby's deploy from this environment, not another one's slot of the same color", async () => {
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    await performInstantRollback(OPTS);
+
+    const where = dbMock.query.deployments.findFirst.mock.calls[0][0] as { where: import("drizzle-orm").SQL };
+    expect(new PgDialect().sqlToQuery(where.where).params).toEqual(expect.arrayContaining(["app-1", "success", "green", "env-1"]));
+  });
+
   it("starts the standby without recreating containers or pulling", async () => {
     await performInstantRollback(OPTS);
 

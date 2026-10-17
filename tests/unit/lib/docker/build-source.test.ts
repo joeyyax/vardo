@@ -10,7 +10,7 @@ import {
   dockerfileNeedsGit,
   dockerfilesIn,
   syncBuildSource,
-  withGitShaArg,
+  withBuildVarArgs,
   type BuildSpec,
 } from "@/lib/docker/build-source";
 
@@ -207,18 +207,26 @@ describe("dockerfilesIn", () => {
   });
 });
 
-describe("withGitShaArg", () => {
-  it("adds the arg in each args form and keeps one the file sets", () => {
+describe("withBuildVarArgs", () => {
+  const vars = { VARDO_GIT_SHA: "abc", VARDO_GIT_BRANCH: "main" };
+
+  it("adds each arg in each args form and keeps one the file sets", () => {
     const none: BuildSpec = { context: "." };
-    withGitShaArg(none, "abc");
-    expect(none.args).toEqual({ VARDO_GIT_SHA: "abc" });
+    withBuildVarArgs(none, vars);
+    expect(none.args).toEqual(vars);
 
     const map: BuildSpec = { context: ".", args: { A: "1", VARDO_GIT_SHA: "mine" } };
-    withGitShaArg(map, "abc");
-    expect(map.args).toEqual({ A: "1", VARDO_GIT_SHA: "mine" });
+    withBuildVarArgs(map, vars);
+    expect(map.args).toEqual({ A: "1", VARDO_GIT_SHA: "mine", VARDO_GIT_BRANCH: "main" });
 
-    const list: BuildSpec = { context: ".", args: ["A=1"] };
-    withGitShaArg(list, "abc");
-    expect(list.args).toEqual(["A=1", "VARDO_GIT_SHA=abc"]);
+    const list: BuildSpec = { context: ".", args: ["A=1", "VARDO_GIT_BRANCH"] };
+    withBuildVarArgs(list, vars);
+    expect(list.args).toEqual(["A=1", "VARDO_GIT_BRANCH", "VARDO_GIT_SHA=abc"]);
+  });
+
+  it("leaves a build without vars alone", () => {
+    const none: BuildSpec = { context: "." };
+    withBuildVarArgs(none, {});
+    expect(none.args).toBeUndefined();
   });
 });
