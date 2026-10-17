@@ -22,8 +22,9 @@ describe("builtOn", () => {
   it("gives an SSH copy its size, and says when it skipped the registry", () => {
     const base = { buildTargetName: "Long House", buildOutcome: "target" as const, imageTransferMs: 14_000, imageTransferBytes: 412 * 1024 ** 2 };
     expect(builtOn({ ...base, imageTransfer: "ssh" })?.detail).toBe("Copied over SSH in 14s (412 MB)");
-    expect(builtOn({ ...base, imageTransfer: "registry_skipped" })?.detail).toBe("Copied over SSH in 14s (412 MB), skipping the registry for a large layer");
-    expect(builtOn({ ...base, imageTransfer: "mixed" })?.detail).toBe("Came back through the build registry and over SSH in 14s (412 MB)");
+    expect(builtOn({ ...base, imageTransfer: "session" })?.detail).toBe("Streamed back from the builder in 14s (412 MB)");
+    expect(builtOn({ ...base, imageTransfer: "registry_skipped" })?.detail).toBe("Copied directly in 14s (412 MB), skipping the registry for a large layer");
+    expect(builtOn({ ...base, imageTransfer: "mixed" })?.detail).toBe("Came back through the build registry and directly in 14s (412 MB)");
   });
 
   it("has no detail before the image came back", () => {
@@ -50,8 +51,8 @@ describe("buildStatsParts", () => {
 
   it("lists a target's counts, then its medians", () => {
     expect(buildStatsParts(stats, "target")).toEqual({
-      counts: ["12 builds", "1 fell back here", "8 via registry", "3 over SSH (1 skipped the registry)"],
-      medians: ["build 41s", "context 12 MB", "image 180 MB", "bring-back 4.2s", "400 MB over SSH"],
+      counts: ["12 builds", "1 fell back here", "8 via registry", "3 copied directly (1 skipped the registry)"],
+      medians: ["build 41s", "context 12 MB", "image 180 MB", "bring-back 4.2s", "400 MB copied"],
     });
   });
 

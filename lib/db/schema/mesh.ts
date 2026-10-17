@@ -47,7 +47,7 @@ export const meshPeers = pgTable("mesh_peer", {
   acceptInstanceBrowse: boolean("accept_instance_browse").default(false).notNull(),
   // The peer answers our browse requests, as its last heartbeat said.
   peerAcceptsInstanceBrowse: boolean("peer_accepts_instance_browse").default(false).notNull(),
-  // Install this peer's SSH key so it can run builds on this host's Docker over the mesh.
+  // Run this peer's builds here: in the isolated builder, or over mesh SSH for an older peer.
   acceptBuilds: boolean("accept_builds").default(false).notNull(),
   // The peer runs our builds, as it last said.
   peerAcceptsBuilds: boolean("peer_accepts_builds").default(false).notNull(),
@@ -55,6 +55,13 @@ export const meshPeers = pgTable("mesh_peer", {
   peerSshKey: text("peer_ssh_key"),
   peerSshHostKey: text("peer_ssh_host_key"),
   peerSshPort: integer("peer_ssh_port"),
+  // The peer's builder client key, and the certificate this instance's builder CA last issued for it.
+  peerBuilderKey: text("peer_builder_key"),
+  builderCert: text("builder_cert"),
+  // The peer's isolated builder: its port, CA and the client certificate it issued this instance.
+  peerBuilderPort: integer("peer_builder_port"),
+  peerBuilderCa: text("peer_builder_ca"),
+  peerBuilderCert: text("peer_builder_cert"),
   // The peer checks this instance's monitors: we serve it our watch list and accept its results.
   uptimeChecksUs: boolean("uptime_checks_us").default(true).notNull(),
   // This instance checks the peer's monitors: we fetch its watch list and probe.

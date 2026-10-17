@@ -15,10 +15,12 @@ function transferDetail(d: PlacementFields): string | null {
       return `Pulled from the build registry${took}`;
     case "ssh":
       return `Copied over SSH${took}${size}`;
+    case "session":
+      return `Streamed back from the builder${took}${size}`;
     case "registry_skipped":
-      return `Copied over SSH${took}${size}, skipping the registry for a large layer`;
+      return `Copied directly${took}${size}, skipping the registry for a large layer`;
     case "mixed":
-      return `Came back through the build registry and over SSH${took}${size}`;
+      return `Came back through the build registry and directly${took}${size}`;
     default:
       return null;
   }
@@ -47,7 +49,7 @@ export function buildStatsParts(stats: BuildStats | null | undefined, where: "he
     `${stats.builds} ${stats.builds === 1 ? "build" : "builds"}`,
     stats.fallbacks > 0 && (where === "here" ? `${stats.fallbacks} after a target was unavailable` : `${stats.fallbacks} fell back here`),
     stats.registry > 0 && `${stats.registry} via registry`,
-    stats.ssh > 0 && `${stats.ssh} over SSH${stats.skipped > 0 ? ` (${stats.skipped} skipped the registry)` : ""}`,
+    stats.ssh > 0 && `${stats.ssh} copied directly${stats.skipped > 0 ? ` (${stats.skipped} skipped the registry)` : ""}`,
     stats.mixed > 0 && `${stats.mixed} both ways`,
   ]);
   const ms = (n: number) => formatDuration(n, { precise: true });
@@ -57,7 +59,7 @@ export function buildStatsParts(stats: BuildStats | null | undefined, where: "he
     stats.medianImageBytes != null && `image ${formatBytes(stats.medianImageBytes)}`,
     stats.medianPeakBytes != null && `peak memory ${formatBytes(stats.medianPeakBytes)}`,
     stats.medianTransferMs != null && `bring-back ${ms(stats.medianTransferMs)}`,
-    stats.medianTransferBytes != null && `${formatBytes(stats.medianTransferBytes)} over SSH`,
+    stats.medianTransferBytes != null && `${formatBytes(stats.medianTransferBytes)} copied`,
   ]);
   return { counts, medians };
 }

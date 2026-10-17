@@ -4,6 +4,8 @@ import { reconcileConsoleForward } from "./console-forward";
 import { reconcileSshForward } from "./ssh-forward";
 import { reconcileTraefikForward } from "./traefik-forward";
 import { syncAuthorizedKeys } from "./ssh-endpoint";
+import { syncBuilderTls } from "./builder-tls";
+import { reconcileBuilderForward } from "./builder-forward";
 import { exchangeSshKeys } from "./ssh-exchange";
 import { logger } from "@/lib/logger";
 import { IntervalLoop } from "@/lib/worker/interval-loop";
@@ -23,6 +25,12 @@ async function reconcileForward(): Promise<void> {
     await syncAuthorizedKeys();
   } catch (err) {
     log.error("Mesh SSH endpoint check failed:", err);
+  }
+  try {
+    await syncBuilderTls();
+    await reconcileBuilderForward();
+  } catch (err) {
+    log.error("Mesh builder check failed:", err);
   }
   try {
     await reconcileTraefikForward();

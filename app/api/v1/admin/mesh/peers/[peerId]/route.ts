@@ -37,8 +37,9 @@ async function handleDelete(
       await tx.delete(meshPeers).where(eq(meshPeers.id, peerId));
     });
 
-    // Its SSH key stops working here and its WireGuard peer goes.
+    // Its SSH key and builder port stop working here and its WireGuard peer goes.
     await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
+    await import("@/lib/mesh/builder-forward").then(({ reconcileBuilderForward }) => reconcileBuilderForward()).catch(() => {});
     await import("@/lib/mesh/wireguard")
       .then(async ({ isWireguardRunning, rebuildAndSync }) => (await isWireguardRunning()) && rebuildAndSync())
       .catch(() => {});
@@ -109,7 +110,8 @@ async function handlePatch(
 
     const [peer] = await db
       .update(meshPeers)
-      .set({ organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, acceptBuilds, updatedAt: new Date() })
+      // Turning builds off stops renewing the peer's builder certificate.
+      .set({ organizationId, acceptMcp, acceptWebhookRelay, acceptInstanceSignin, acceptInstanceBrowse, acceptBuilds, ...(acceptBuilds === false && { builderCert: null }), updatedAt: new Date() })
       .where(eq(meshPeers.id, peerId))
       .returning({
         id: meshPeers.id,
@@ -127,6 +129,7 @@ async function handlePatch(
 
     if (acceptBuilds !== undefined) {
       await import("@/lib/mesh/ssh-endpoint").then(({ syncAuthorizedKeys }) => syncAuthorizedKeys()).catch(() => {});
+      await import("@/lib/mesh/builder-forward").then(({ reconcileBuilderForward }) => reconcileBuilderForward()).catch(() => {});
     }
 
     // Tells the peer now rather than at its next heartbeat.

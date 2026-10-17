@@ -78,18 +78,25 @@ The app's **Settings** page lists the triggers that apply to it (webhook, relay 
 
 ## Builds on a linked instance
 
-A linked instance can run another's builds when that one's builder is full. Images come back as from any build target: through the build registry when one is set, otherwise over the SSH connection.
+A linked instance can run another's builds when that one's builder is full. The builds run in an isolated builder there, not on its Docker. Images come back as from any build target: through the build registry when one is set, otherwise streamed back from the build.
 
 ### Turn it on
 
 1. **On the instance that runs the builds:** an instance admin, signed in, opens **Admin settings → Instances**, picks the sending peer's menu and chooses **Accept builds**.
 2. **On the sending instance:** the peer shows **Builds there** and joins **Admin settings → This instance → Build targets** at the end, one build at a time. Move it or set its builds at a time there; 0 sends it none.
 
-### How it connects
+### The isolated builder
 
-- Each instance runs `vardo-mesh-ssh`, an sshd with no published port. `vardo-wireguard` forwards TCP port 22 on the tunnel address to it, the same way it forwards the console port.
-- Each instance has an ed25519 client key and the endpoint's host key. Linked instances trade them with a signed peer call over the tunnel or HTTPS, every heartbeat pass when something changed and every 10 minutes otherwise. Nothing is pasted or trusted on first use.
-- **Accept builds** writes the peer's key into the endpoint's `authorized_keys` as `from="<its tunnel address>",restrict,command="docker system dial-stdio"`, and the sshd config forces that command for every key. No shell, terminal or forwarding.
-- That's still full access to this host's Docker, which can run any container. Turn it on only for an instance you trust as much as this one.
-- Removing the peer, turning **Accept builds** off or the peer forgetting the link removes its key. A build already running there finishes.
-- A new client key on either side reaches the other on the next exchange.
+- Each instance runs `vardo-mesh-builder`: rootless BuildKit in a user namespace, with memory, CPU and process limits (`VARDO_MESH_BUILDER_MEM`, default `4g`, and `VARDO_MESH_BUILDER_CPUS`, default `2`). Its only volume is its own cache. It has no Docker socket and no host paths.
+- It answers BuildKit over mutual TLS on port 1234 (`VARDO_MESH_BUILDER_PORT`). `vardo-wireguard` forwards that port on the tunnel address to it, only from the tunnel addresses of peers this instance accepts builds from.
+- Each instance keeps an Ed25519 CA for its builder, encrypted in its settings. The signed key exchange carries each side's builder client key. The side that accepts builds answers with its CA and a client certificate for that key, valid for 6 hours and renewed past half of that.
+- Turning **Accept builds** off or removing the peer drops its forward right away, and its certificate isn't renewed. A build already running there finishes.
+- Every image built there carries labels for the requesting instance, the app and the commit: `dev.vardo.build.requester`, `dev.vardo.build.requester-id`, `dev.vardo.build.app` and `org.opencontainers.image.revision`. Pushed images carry them as annotations too.
+
+### Older instances
+
+A peer on an older Vardo has no isolated builder, so its builds still go over mesh SSH for now:
+
+- Each instance runs `vardo-mesh-ssh`, an sshd with no published port. `vardo-wireguard` forwards TCP port 22 on the tunnel address to it.
+- **Accept builds** writes an older peer's key into the endpoint's `authorized_keys` as `from="<its tunnel address>",restrict,command="docker system dial-stdio"`. That's full access to this host's Docker, which can run any container.
+- A peer that gets a builder certificate drops out of `authorized_keys`, so two instances on this release never use mesh SSH.

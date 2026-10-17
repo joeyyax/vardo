@@ -11,7 +11,8 @@ import { serviceRepo, type RegistryOps } from "./build-registry";
 import type { BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot, type BuildPlacement, type DeploySlot } from "./build-gate";
-import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
+import { BuilderError, onTarget, remoteEnv, type BuildTarget } from "./build-targets";
+import { bakeLabelArgs, buildProvenance, type Provenance } from "./build-provenance";
 import { bringBack } from "./remote-build";
 import type { BuildPlacementRecorder } from "./build-placement";
 import { withTargetBuilder } from "./target-builder";
@@ -61,6 +62,8 @@ export type ComposeBuildOpts = {
   placement?: BuildPlacementRecorder;
   /** Build registry: keyed images are pulled from it for reuse; only builds on a target push to it. */
   registry?: { ops: RegistryOps; appName: string } | null;
+  /** The app's name, for the provenance a build on a target records. */
+  appName?: string;
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -78,7 +81,7 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
 }
 
 /** As bakeArgs, with each service's own output. */
-export function serviceBakeArgs(file: string, outputs: Record<string, string>, services: string[]): string[] {
+export function serviceBakeArgs(file: string, outputs: Record<string, string>, services: string[], labels: Provenance = {}): string[] {
   return [
     "buildx", "bake", "-f", file, "--progress=plain",
     // A pushed service carries only its registry ref; BuildKit would push the compose image name too.
@@ -86,6 +89,7 @@ export function serviceBakeArgs(file: string, outputs: Record<string, string>, s
       const ref = pushedName(output);
       return ["--set", `${service}.output=${output}`, ...(ref ? ["--set", `${service}.tags=${ref}`] : [])];
     }),
+    ...bakeLabelArgs(Object.keys(outputs), labels),
     "--provenance=false", "--sbom=false", ...services,
   ];
 }
@@ -158,18 +162,20 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<ComposeBuild
     }
     return onTarget(target, async (session) => {
       const there = remoteEnv(opts.env, session);
-      return withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
+      return withTargetBuilder(target, there, log, async ({ build: targetBuild, compression, channel }) => {
         if (compression && (await bakes(opts, exec, services, keyFileArgs, { ...there, ...targetBuild.env }))) {
+          const labels = await buildProvenance(opts.appName ?? opts.registry?.appName, opts.gitSha);
           let built!: Output;
           await bringDirect(remote, {
-            authEnv: opts.env, from: target.name, log, placement: opts.placement, signal: opts.signal, exec, compression,
+            authEnv: opts.env, from: target.name, log, placement: opts.placement, signal: opts.signal, exec, compression, channel, annotations: labels,
             build: async (outputs) => {
               const byService = Object.fromEntries(services.map((name, i) => [name, outputs[i]]));
-              built = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there, byService);
+              built = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there, byService, labels);
             },
           });
           return built;
         }
+        if (target.builder) throw new BuilderError(`this compose file can't be built with bake, which ${target.name}'s isolated builder needs`);
         const built = await runComposeBuild(opts, exec, services, keyFileArgs, targetBuild, there);
         await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, placement: opts.placement, signal: opts.signal, exec });
         return built;
@@ -188,6 +194,7 @@ async function runComposeBuild(
   baseEnv: NodeJS.ProcessEnv,
   /** Each service's own `--output`, for a bake straight from a peer's BuildKit. */
   outputs?: Record<string, string>,
+  labels?: Provenance,
 ): Promise<Output> {
   const { slotDir, project } = opts;
   const { files, noCache, named } = composeArgs(opts, services, keyFileArgs);
@@ -199,7 +206,7 @@ async function runComposeBuild(
     if (bake) {
       const file = join(slotDir, BAKE_FILE);
       await writeFile(file, bake);
-      const args = outputs ? serviceBakeArgs(file, outputs, named) : bakeArgs(file, bounded.output!, named);
+      const args = outputs ? serviceBakeArgs(file, outputs, named, labels) : bakeArgs(file, bounded.output!, named);
       // Compose grants read access to every build context; bake would ask for each.
       return asOutput(await exec("docker", args, { ...run, env: { ...env, BUILDX_BAKE_ENTITLEMENTS_FS: "0" } }));
     }

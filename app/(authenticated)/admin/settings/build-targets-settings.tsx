@@ -27,6 +27,9 @@ type Target = {
   hostKey: string[] | null;
   /** Linked instance only: why it can't take builds yet. */
   waiting?: string | null;
+  /** Linked instance only: it builds in its isolated builder on this port. */
+  isolated?: boolean;
+  builderPort?: number | null;
   /** Builds sent there over the stats window, null when none. */
   stats?: BuildStats | null;
 };
@@ -84,10 +87,11 @@ export function BuildTargetsSettings() {
         body: JSON.stringify({ id: target.id }),
       });
       const body = (await res.json().catch(() => null)) as
-        | { ok?: boolean; pinned?: boolean; fingerprints?: string[]; dockerVersion?: string; error?: string }
+        | { ok?: boolean; isolated?: boolean; pinned?: boolean; fingerprints?: string[]; dockerVersion?: string; error?: string }
         | null;
       const pinned = body?.pinned ? ` Pinned host key ${body.fingerprints?.join(", ")}.` : "";
-      if (body?.ok) toast.success(`${target.name}: Docker ${body.dockerVersion}.${pinned}`);
+      if (body?.ok && body.isolated) toast.success(`${target.name}: its isolated builder accepted this server's certificate.`);
+      else if (body?.ok) toast.success(`${target.name}: Docker ${body.dockerVersion}.${pinned}`);
       else toast.error(`${target.name}: ${body?.error ?? "test failed"}.${pinned}`);
     } finally {
       setTesting(null);
@@ -105,16 +109,16 @@ export function BuildTargetsSettings() {
       <CardHeader>
         <CardTitle>Build targets</CardTitle>
         <CardDescription>
-          When this server&apos;s builder is full, builds run on these Docker hosts in order. Images come back through the build
-          registry when one is set, otherwise over SSH.
+          When this server&apos;s builder is full, builds run on these targets in order. Images come back through the build
+          registry when one is set, otherwise straight from the build.
           Dockerfile, Nixpacks and compose builds can run there; Railpack builds stay here. A linked instance that accepts builds
-          from here joins the list on its own.
+          from here joins the list on its own and builds in its isolated builder, with no access to its Docker or host.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!loading && !data.registry && data.targets.length > 0 && (
           <p className="text-sm text-muted-foreground">
-            No build registry, so each image comes back whole over SSH. A registry sends only the layers that changed.
+            No build registry, so each image comes back whole. A registry sends only the layers that changed.
           </p>
         )}
 
@@ -132,10 +136,12 @@ export function BuildTargetsSettings() {
                     {t.kind === "mesh" && <Badge variant="outline">Linked instance</Badge>}
                   </p>
                   <p className="truncate font-mono text-xs text-muted-foreground">
-                    {t.user}@{t.host}:{t.port} · {t.maxConcurrent} at a time
+                    {t.isolated ? `${t.host}:${t.builderPort}` : `${t.user}@${t.host}:${t.port}`} · {t.maxConcurrent} at a time
                   </p>
                   <p className="[overflow-wrap:anywhere] font-mono text-xs text-muted-foreground sm:truncate" title={t.hostKey?.join("\n")}>
-                    {t.hostKey
+                    {t.isolated
+                      ? "Isolated builder, certificate from the mesh link"
+                      : t.hostKey
                       ? `Host key ${t.hostKey.find((f) => f.endsWith("(ED25519)")) ?? t.hostKey[0]}${t.kind === "mesh" ? " from the mesh link" : ""}`
                       : t.kind === "mesh"
                         ? `Not ready: ${t.waiting ?? "waiting for the key exchange"}`

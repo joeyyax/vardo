@@ -58,7 +58,7 @@ function stats(all: PlacementRow[], ranThere: PlacementRow[]): BuildStats {
     builds: all.length,
     fallbacks: all.filter((r) => r.outcome === "fallback").length,
     registry: count("registry"),
-    ssh: count("ssh") + count("registry_skipped"),
+    ssh: count("ssh") + count("session") + count("registry_skipped"),
     skipped: count("registry_skipped"),
     mixed: count("mixed"),
     // A fallback's build phase includes its time on the target.

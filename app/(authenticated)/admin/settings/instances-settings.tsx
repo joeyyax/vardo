@@ -115,7 +115,7 @@ const ACCEPT_BROWSE_WARNING =
   "Users on this peer can then see the names, statuses, domains and last deploy times of projects they belong to here, read-only. No env values, secrets or logs leave this instance.";
 
 const ACCEPT_BUILDS_WARNING =
-  "This peer can then run builds on this server's Docker over the mesh, as an SSH key that can only run docker system dial-stdio. That still lets it run any container here, so turn it on only for an instance you trust as much as this one.";
+  "This peer can then run builds in an isolated builder here: a rootless BuildKit with its own cache and memory and CPU limits, reached over the mesh with a certificate only this link gets. It can't reach this server's Docker, files or containers. A peer on an older Vardo builds over mesh SSH instead, which can run any container here, until it updates.";
 
 /** Opt-ins that share the confirm-then-save flow. */
 type LinkToggle = "acceptInstanceSignin" | "acceptInstanceBrowse" | "acceptBuilds";
@@ -778,7 +778,7 @@ export function InstancesSettings() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">Doesn&apos;t expose ports or replace SSH; mesh SSH only runs builds a peer is allowed to send</span>
+                  <span className="text-muted-foreground">Doesn&apos;t expose ports or replace SSH; peers you accept builds from reach only the isolated builder</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />

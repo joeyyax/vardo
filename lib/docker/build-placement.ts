@@ -3,8 +3,8 @@
 /** `here`: built on this server. `target`: built on the target. `fallback`: the target failed and the build ran here. */
 export type BuildOutcome = "here" | "target" | "fallback";
 
-/** How the images came back. `mixed` when a deploy's images came back different ways. */
-export type ImageTransfer = "registry" | "ssh" | "registry_skipped" | "mixed";
+/** How the images came back. `session` is streamed back from an isolated builder; `mixed` when a deploy's images came back different ways. */
+export type ImageTransfer = "registry" | "ssh" | "session" | "registry_skipped" | "mixed";
 
 export type BuildPlacementColumns = {
   buildTargetId: string | null;
@@ -34,7 +34,7 @@ export const NO_PLACEMENT: BuildPlacementColumns = {
 
 type Target = { id: string; name: string };
 
-/** One image brought back: the way, its time and, over SSH, the bytes sent. */
+/** One image brought back: the way, its time and, for a tarball, the bytes sent. */
 export type Transfer = { via: Exclude<ImageTransfer, "mixed">; ms: number; bytes?: number };
 
 const sum = (a: number | null, b: number | null | undefined) => (b == null ? a : (a ?? 0) + b);

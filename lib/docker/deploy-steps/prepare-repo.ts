@@ -64,6 +64,7 @@ import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../bui
 import { bringBack } from "../remote-build";
 import { withTargetBuilder } from "../target-builder";
 import { bringDirect, pushedName } from "../direct-export";
+import { buildProvenance } from "../build-provenance";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
@@ -411,6 +412,9 @@ type RepoBuild = {
   gate: BuildGate;
   /** Targets a Dockerfile build may run on, with the build registry ref for its image when there is one. */
   remote?: { targets: BuildTarget[]; ref: string | null } | null;
+  /** The app's name, and the commit when gitSha isn't passed as a build arg, for the provenance a build on a target records. */
+  appName?: string;
+  revision?: string;
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -432,7 +436,7 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
       if (generated) {
         try {
           logs.push(`[build] Building with Nixpacks (generated Dockerfile)...`);
-          await dockerBuild({ ...build, dockerfile: generated.dockerfile, buildArgs: generated.buildArgs, gitSha: undefined }, authEnv);
+          await dockerBuild({ ...build, dockerfile: generated.dockerfile, buildArgs: generated.buildArgs, gitSha: undefined, revision: build.gitSha }, authEnv);
           logs.push(`[build] Nixpacks build complete: ${imageName}`);
         } finally {
           await removeNixpacksDir(repoPath);
@@ -504,10 +508,11 @@ async function dockerBuild(
       await onTarget(target, async (session) => {
         const there = remoteEnv(authEnv, session);
         const log = (line: string) => void logs.push(line);
-        await withTargetBuilder(target, there, log, async ({ build: targetBuild, compression }) => {
+        await withTargetBuilder(target, there, log, async ({ build: targetBuild, compression, channel }) => {
           ran = targetBuild;
+          const labels = await buildProvenance(build.appName, build.revision ?? build.gitSha);
           const run = (loadArgs: string[], tag = argsInput.imageName) =>
-            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs, labels }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
           const image = { image: build.imageName, ref: remote.ref };
           if (!compression) {
             await run(targetBuild.loadArgs);
@@ -515,7 +520,7 @@ async function dockerBuild(
             return;
           }
           await bringDirect([image], {
-            authEnv, from: target.name, log, placement: build.gate.placement, signal, compression,
+            authEnv, from: target.name, log, placement: build.gate.placement, signal, compression, channel, annotations: labels,
             // A pushed image carries only its registry ref; BuildKit would push every `-t` name too.
             build: ([output]) => run(["--output", output, "--provenance=false", "--sbom=false"], pushedName(output) ?? argsInput.imageName),
           });
@@ -935,6 +940,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           buildKey: key,
           capture,
           remote: targets.length > 0 ? { targets, ref: registry && key ? registry.ref(app.name, key) : null } : null,
+          appName: app.name,
         }));
         try {
           await run();

@@ -525,6 +525,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           deploymentId: ctx.deploymentId,
           wait: ctx.wait,
           registry: registry ? { ops: registry, appName: app.name } : null,
+          appName: app.name,
           targets: await configuredTargets(),
           deploySlot: ctx.deploySlot,
           placement: ctx.placement,

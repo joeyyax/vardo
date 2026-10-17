@@ -87,10 +87,12 @@ export function dockerfileBuildArgs(opts: {
   noCache?: boolean;
   buildKey?: string;
   gitSha?: string;
+  labels?: Record<string, string>;
 }): string[] {
   const args = ["build", ...opts.loadArgs, "--progress=plain", "-t", opts.imageName, "-f", opts.dockerfile];
   if (opts.noCache) args.push("--no-cache");
   if (opts.buildKey) args.push("--label", `${BUILD_KEY_LABEL}=${opts.buildKey}`);
+  for (const [k, v] of Object.entries(opts.labels ?? {})) args.push("--label", `${k}=${v}`);
   for (const [k, v] of Object.entries(opts.envVars)) args.push("--build-arg", `${k}=${v}`);
   if (opts.gitSha && !(GIT_SHA_ARG in opts.envVars)) args.push("--build-arg", `${GIT_SHA_ARG}=${opts.gitSha}`);
   args.push(opts.context);

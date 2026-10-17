@@ -14,6 +14,7 @@ import { redactError } from "@/lib/redact";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { ownMeshAddress } from "./heartbeat";
 import { MESH_SSH_CONTAINER } from "./constants";
+import { meshBuilderRunning } from "./builder-tls";
 
 export const CLIENT_KEY_SETTING = "mesh_ssh_client_key";
 
@@ -116,12 +117,14 @@ export function renderAuthorizedKeys(peers: KeyedPeer[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Direct peers this instance runs builds for. */
+/** Direct peers this instance runs builds for over SSH: those without a certificate for the running builder. */
 export async function buildPeers(): Promise<KeyedPeer[]> {
-  return db.query.meshPeers.findMany({
+  const rows = await db.query.meshPeers.findMany({
     where: and(eq(meshPeers.connectionType, "direct"), eq(meshPeers.acceptBuilds, true)),
-    columns: { id: true, internalIp: true, peerSshKey: true },
+    columns: { id: true, internalIp: true, peerSshKey: true, builderCert: true },
   });
+  const builder = rows.some((r) => r.builderCert) && (await meshBuilderRunning());
+  return rows.filter((r) => !(builder && r.builderCert)).map(({ id, internalIp, peerSshKey }) => ({ id, internalIp, peerSshKey }));
 }
 
 function writeInContainer(content: string): Promise<void> {
