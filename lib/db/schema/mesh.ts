@@ -47,11 +47,11 @@ export const meshPeers = pgTable("mesh_peer", {
   acceptInstanceBrowse: boolean("accept_instance_browse").default(false).notNull(),
   // The peer answers our browse requests, as its last heartbeat said.
   peerAcceptsInstanceBrowse: boolean("peer_accepts_instance_browse").default(false).notNull(),
-  // Run this peer's builds here: in the isolated builder, or over mesh SSH for an older peer.
+  // Run this peer's builds here, in the isolated builder.
   acceptBuilds: boolean("accept_builds").default(false).notNull(),
   // The peer runs our builds, as it last said.
   peerAcceptsBuilds: boolean("peer_accepts_builds").default(false).notNull(),
-  // The peer's SSH client key, its mesh SSH host key and port, from the signed key exchange.
+  // Unused. Older consoles select them, so don't drop them yet.
   peerSshKey: text("peer_ssh_key"),
   peerSshHostKey: text("peer_ssh_host_key"),
   peerSshPort: integer("peer_ssh_port"),

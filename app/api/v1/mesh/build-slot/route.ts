@@ -5,7 +5,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { claimSlotForPeer, peerSlotToken, releaseSlotForPeer, renewSlotForPeer } from "@/lib/docker/build-gate";
 import { BUILD_SLOT_PATH } from "@/lib/mesh/build-slot";
 import { readSignedMeshCall } from "@/lib/mesh/signed-request";
-import { UNLINKED_STATUS } from "@/lib/mesh/ssh-exchange";
+import { UNLINKED_STATUS } from "@/lib/mesh/key-exchange";
 
 const slotSchema = z.object({
   action: z.enum(["claim", "renew", "release"]),

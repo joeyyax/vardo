@@ -36,7 +36,8 @@ const script = compose.configs.mesh_builder_entrypoint.content;
 describe("mesh-builder service", () => {
   it("is a shared production service on the rootless image of vardo-buildkit's version", () => {
     expect(svc["x-vardo-shared"]).toBe(true);
-    expect(svc.profiles).toEqual(compose.services["mesh-ssh"].profiles);
+    expect(svc.profiles).toEqual(["production"]);
+    expect(compose.services["mesh-ssh"]).toBeUndefined();
     expect(svc.image).toBe(`${compose.services.buildkit.image}-rootless`);
   });
 

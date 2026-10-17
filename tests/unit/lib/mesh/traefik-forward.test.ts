@@ -48,8 +48,8 @@ describe("traefikForwardHooks", () => {
   });
 
   it("sits beside the other forwards in wg0.conf", () => {
-    const conf = buildWgConfig(PRIVATE, 51820, "10.99.0.2", [], "10.88.0.3", "10.88.0.7", "172.18.0.5");
-    expect(conf.split("\n").filter((l) => l.startsWith("PostUp = "))).toHaveLength(3);
+    const conf = buildWgConfig(PRIVATE, 51820, "10.99.0.2", [], "10.88.0.3", "172.18.0.5");
+    expect(conf.split("\n").filter((l) => l.startsWith("PostUp = "))).toHaveLength(2);
     expect(buildWgConfig(PRIVATE, 51820, "10.99.0.2", [], "10.88.0.3").split("\n").filter((l) => l.startsWith("PostUp = "))).toHaveLength(1);
   });
 });

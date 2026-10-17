@@ -9,8 +9,8 @@ vi.mock("@/lib/auth/admin", () => ({
   requireAppAdmin: async () => ({ user: { id: "admin-1" }, authMethod: state.authMethod }),
 }));
 vi.mock("@/lib/mesh/heartbeat", () => ({ sendHeartbeatToPeer: vi.fn() }));
-vi.mock("@/lib/mesh/ssh-endpoint", () => ({ syncAuthorizedKeys: async () => void state.synced++ }));
-vi.mock("@/lib/mesh/ssh-exchange", () => ({ exchangeSshKeys: vi.fn() }));
+vi.mock("@/lib/mesh/builder-forward", () => ({ reconcileBuilderForward: async () => void state.synced++ }));
+vi.mock("@/lib/mesh/key-exchange", () => ({ exchangeKeys: vi.fn() }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({
@@ -68,7 +68,7 @@ describe("PATCH /api/v1/admin/mesh/peers/[peerId] acceptMcp", () => {
     expect((await patch({})).status).toBe(400);
   });
 
-  it("lets an admin's session accept builds, which rewrites authorized_keys", async () => {
+  it("lets an admin's session accept builds, which reconciles the builder forward", async () => {
     const res = await patch({ acceptBuilds: true });
     expect(res.status).toBe(200);
     expect(state.set).toMatchObject({ acceptBuilds: true });
