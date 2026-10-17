@@ -8,7 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { meshPeers, systemSettings } from "@/lib/db/schema";
 import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getSystemSettingRaw, invalidateSettingsCache, setSystemSetting } from "@/lib/system-settings";
+import { getSystemSettingRaw, invalidateSettingsCache } from "@/lib/system-settings";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
 import { dockerEnv } from "@/lib/docker/docker-env";
@@ -77,13 +77,6 @@ export async function meshClientKey(): Promise<ClientKey> {
   const stored = parseClientKey(await getSystemSettingRaw(CLIENT_KEY_SETTING));
   if (!stored) throw new Error("Couldn't store the mesh SSH client key");
   return stored;
-}
-
-/** Replaces the client key; peers get the new one on the next key exchange. */
-export async function rotateMeshClientKey(): Promise<ClientKey> {
-  const fresh = await generateClientKey();
-  await setSystemSetting(CLIENT_KEY_SETTING, JSON.stringify(fresh));
-  return fresh;
 }
 
 const HOST_KEY_TTL_MS = 60_000;
