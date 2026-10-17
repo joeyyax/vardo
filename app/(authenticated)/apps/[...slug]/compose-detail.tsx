@@ -60,6 +60,7 @@ import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
+import { AppUptimePanel } from "@/components/uptime/app-uptime";
 import type { Incident, RestartReading } from "@/lib/ui/stability";
 import type { LifecycleEvent } from "@/lib/ui/lifecycle";
 import { CronManager } from "./app-cron";
@@ -1119,6 +1120,7 @@ export function ComposeDetail({
                 {
                   label: "Observe",
                   items: [
+                    { value: "uptime", label: "Uptime" },
                     { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
@@ -1287,6 +1289,10 @@ export function ComposeDetail({
               />
             </DangerZone>
           )}
+        </TabsContent>
+
+        <TabsContent value="uptime">
+          <AppUptimePanel orgId={orgId} appId={app.id} canManage={can(userRole, "uptime.manage")} />
         </TabsContent>
 
         <TabsContent value="stability">

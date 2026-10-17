@@ -1,9 +1,10 @@
 // Uptime service: monitors and their state, read from the tables. Callers check access first.
 
-import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import {
+  apps,
   notificationChannels,
   uptimeDaily,
   uptimeHourly,
@@ -380,10 +381,12 @@ export async function deleteMonitor(scope: Scope, id: string): Promise<"deleted"
 
 export async function getAppUptime(orgId: string, appId: string, now = Date.now()): Promise<AppUptime> {
   const scope: Scope = { kind: "org", orgId };
+  // A compose stack's services carry the domains.
+  const stack = await db.select({ id: apps.id }).from(apps).where(and(eq(apps.organizationId, orgId), or(eq(apps.id, appId), eq(apps.parentAppId, appId))));
   const rows = await db
     .select()
     .from(uptimeMonitors)
-    .where(and(scopeWhere(scope), eq(uptimeMonitors.appId, appId)))
+    .where(and(scopeWhere(scope), inArray(uptimeMonitors.appId, stack.map((a) => a.id))))
     .orderBy(asc(uptimeMonitors.preview), asc(uptimeMonitors.name));
   const ctx = await load(rows, now);
   const monitors = rows.map((r) => summarizeRow(r, ctx, now));
