@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, X } from "lucide-react";
-import { DEPLOY_STAGE_KEYS, ROLLBACK_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
+import { DEPLOY_STAGE_KEYS, ROLLBACK_STAGE_KEYS, SHARED_STAGE_LABELS, STAGE_LABELS, sharedStage, stageHead } from "@/lib/ui/deploy-stage";
 import {
   applyWait,
   deployCardText,
@@ -83,23 +83,33 @@ export function deploySteps(view: DeployView, stages: Record<string, string>): S
   const keys = (rollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS).filter((k) => k !== "cleanup" && stages[k] !== "skipped");
   const first = queuedStep(view);
   const current = keys.findIndex((k) => stages[k] === "running" || stages[k] === "failed");
+  const steps = keys.map((k, i): StripStep => {
+    const state: StripStep["state"] =
+      stages[k] === "success"
+        ? "done"
+        : i === current
+          ? stages[k] === "failed"
+            ? "failed"
+            : view.held === k
+              ? "held"
+              : "now"
+          : "todo";
+    return { key: k, label: state === "held" && k === "build" ? SHARED_STAGE_LABELS.wait : STAGE_LABELS[k], state };
+  });
   return [
     ...(rollback ? [] : [{ key: "queued", label: first.label, state: first.state }]),
-    ...keys.map((k, i): StripStep => ({
-      key: k,
-      label: STAGE_LABELS[k],
-      state:
-        stages[k] === "success"
-          ? "done"
-          : i === current
-            ? stages[k] === "failed"
-              ? "failed"
-              : view.held === k
-                ? "held"
-                : "now"
-            : "todo",
-    })),
+    ...mergePrepare(steps),
   ];
+}
+
+/** Clone and compose as one Prepare step: done once both are, otherwise the state of the one in flight. */
+function mergePrepare(steps: StripStep[]): StripStep[] {
+  const prep = steps.filter((s) => s.key === "clone" || s.key === "compose");
+  if (prep.length < 2) return steps.map((s) => (s.key === "clone" || s.key === "compose" ? { ...s, key: "prepare" } : s));
+  const live = prep.find((s) => s.state !== "done" && s.state !== "todo");
+  const state = live?.state ?? (prep.every((s) => s.state === "done") ? "done" : prep[0].state === "done" ? "now" : "todo");
+  const merged: StripStep = { key: "prepare", label: SHARED_STAGE_LABELS.prepare, state };
+  return [merged, ...steps.filter((s) => s.key !== "clone" && s.key !== "compose")];
 }
 
 /** The phases a row's stage implies, until the stream replays them: every one before it done, it running. */
@@ -140,7 +150,8 @@ function announcement(view: DeployView, wait: WaitState, steps: StripStep[], sta
   if (view.held && view.why) return view.line ?? view.word;
   if (view.tone !== "info") return view.word;
   const now = steps.find((s) => s.state === "now" && s.key !== "queued");
-  return now ? `${rollback ? "Rolling back" : "Deploying"}: ${now.label} in progress` : "";
+  if (!now) return "";
+  return rollback ? `Rolling back: ${now.label} in progress` : stageHead(sharedStage(now.key === "prepare" ? "clone" : now.key) ?? "prepare");
 }
 
 /** What Start next does: "It starts before the 2 deploys ahead of it." */

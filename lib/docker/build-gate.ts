@@ -836,7 +836,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     };
     let slot = await remote.tryAcquire(id, 0).catch(() => none);
     if (!slot) {
-      gate.log(`[queue] Waiting for a build slot on ${targets.map((t) => t.name).join(", ")}`);
+      gate.log(`[queue] Waiting for a builder on ${targets.map((t) => t.name).join(", ")}`);
       void gate.wait?.("build-slot");
       const clock = !gate.wait && gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
       try {

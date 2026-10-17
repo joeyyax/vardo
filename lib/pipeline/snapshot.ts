@@ -198,12 +198,12 @@ export function describeEvent(e: PipelineEntry, ctx: DescribeContext): Omit<Acti
     case "claimed":
       return e.slot === "target" ? { text: `${app(e.deploymentId)} took a deploy slot that builds elsewhere`, tone: "default" } : null;
     case "wait":
-      if (e.reason === "build-slot") return { text: `${app(e.deploymentId)} is waiting for a build slot`, tone: "warning" };
+      if (e.reason === "build-slot") return { text: `${app(e.deploymentId)} is waiting for a builder`, tone: "warning" };
       if (e.reason === "deploy-slot") return { text: `${app(e.deploymentId)} is waiting for a deploy slot`, tone: "warning" };
       return null;
     case "slot":
       if (e.action !== "claim") return null;
-      if (!e.deploymentId) return { text: `A linked instance took a build slot on ${where(e.builder)}`, tone: "default" };
+      if (!e.deploymentId) return { text: `A linked instance is building on ${where(e.builder)}`, tone: "default" };
       return e.builder === "local" ? null : { text: `${app(e.deploymentId)} is building on ${where(e.builder)}`, tone: "default" };
     case "fallback":
       return { text: `${app(e.deploymentId)}: ${e.name} couldn't build (${e.reason}); building on ${ctx.instanceName} instead`, tone: "warning" };

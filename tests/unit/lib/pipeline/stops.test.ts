@@ -16,7 +16,7 @@ describe("placeDeploy", () => {
     expect(place("running", null).stop).toBe("gate");
   });
 
-  it("holds a deploy waiting for a build slot at the gate", () => {
+  it("holds a deploy waiting for a builder at the gate", () => {
     expect(place("running", "build", "build-slot")).toMatchObject({ stop: "gate", waiting: true });
   });
 
@@ -53,10 +53,13 @@ describe("placeDeploy", () => {
 
 describe("describePlacement", () => {
   it("names the wait, the builder and the failure", () => {
-    expect(describePlacement(place("running", "build", "build-slot"), { waitReason: "build-slot" })).toBe("Waiting for a build slot");
+    expect(describePlacement(place("running", "build", "build-slot"), { waitReason: "build-slot" })).toBe("Waiting for a builder");
     expect(describePlacement(place("running", "build"), { stage: "build", builder: "Long House" })).toBe("Building on Long House");
-    expect(describePlacement(place("running", "clone"), { stage: "clone" })).toBe("Cloning");
+    expect(describePlacement(place("running", "clone"), { stage: "clone" })).toBe("Preparing");
+    expect(describePlacement(place("running", "deploy"), { stage: "deploy" })).toBe("Starting");
+    expect(describePlacement(place("running", "routing"), { stage: "routing" })).toBe("Switching traffic");
     expect(describePlacement(place("failed", "build"), { stage: "build" })).toBe("Failed at build");
+    expect(describePlacement(place("failed", "compose"), { stage: "compose" })).toBe("Failed at prepare");
     expect(describePlacement(place("failed", "healthcheck"), { stage: "healthcheck" })).toBe("Rolled back");
   });
 });

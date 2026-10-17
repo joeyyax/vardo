@@ -248,7 +248,7 @@ export function PipelineView() {
         <div className="space-y-1">
           <h2 className="type-h2">Pipeline</h2>
           <p className="text-sm text-muted-foreground">
-            Deploys move from the queue to live through this server&apos;s build slots, or detour through a build target and merge back at the swap.
+            Deploys move from the queue to live through this server&apos;s builder, or build on a linked builder and rejoin at Start.
           </p>
         </div>
         <span className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">

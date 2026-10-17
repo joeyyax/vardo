@@ -1,6 +1,7 @@
 // Where a deploy sits on the Pipeline map, from its row's status, stage and wait.
 
 import type { WaitReason } from "@/lib/docker/deploy-logger";
+import { SHARED_STAGE_LABELS, sharedStage, stageHead, type SharedStage } from "@/lib/ui/deploy-stage";
 
 /** Stops on the map, in the order a deploy passes them. `rolledBack` is the branch off the health check. */
 export const STOPS = ["queue", "gate", "build", "export", "swap", "health", "routing", "live", "rolledBack"] as const;
@@ -55,46 +56,48 @@ export function placeDeploy({ status, stage, waitReason }: StopInput): Placement
   }
 }
 
-/** What a deploy is doing, in a few words. */
+/** What a deploy is doing, in a few words: its shared stage, present tense. */
 export function describePlacement(p: Placement, ctx: { waitReason?: string | null; stage?: string | null; builder?: string | null }): string {
   if (p.gone) return "Cancelled";
-  if (p.failed) return ctx.stage ? `Failed at ${ctx.stage}` : "Failed";
-  if (ctx.waitReason === "build-slot") return "Waiting for a build slot";
+  if (p.failed) return ctx.stage ? `Failed at ${failedAt(ctx.stage)}` : "Failed";
+  if (ctx.waitReason === "build-slot") return stageHead("wait");
   if (ctx.waitReason === "deploy-slot") return "Waiting for a deploy slot";
   if (ctx.waitReason === "app") return "Waiting for this app's deploy";
   if (ctx.waitReason === "worker") return "Waiting for the worker";
   if (ctx.waitReason === "exclusive") return "Waiting for Vardo's own swap";
   if (ctx.waitReason === "checkout") return "Waiting for the checkout";
-  switch (p.stop) {
-    case "queue":
-      return "Queued";
-    case "gate":
-      return ctx.stage === "clone" ? "Cloning" : ctx.stage === "compose" ? "Preparing" : "Starting";
-    case "build":
-      return ctx.builder ? `Building on ${ctx.builder}` : "Building";
-    case "export":
-      return "Exporting image";
-    case "swap":
-      return "Starting new slot";
-    case "health":
-      return "Health check";
-    case "routing":
-      return "Switching traffic";
-    case "live":
-      return "Live";
-    case "rolledBack":
-      return "Rolled back";
-  }
+  if (p.stop === "rolledBack") return "Rolled back";
+  return stageHead(STOP_STAGE[p.stop], { builder: ctx.builder });
 }
 
-export const STOP_LABEL: Record<Stop, string> = {
-  queue: "Queue",
-  gate: "Slot gate",
-  build: "Build",
-  export: "Export",
-  swap: "Swap",
-  health: "Health check",
-  routing: "Routing",
-  live: "Live",
+/** "build", "health check": the shared name of an engine stage. */
+function failedAt(stage: string): string {
+  const shared = sharedStage(stage);
+  return shared ? SHARED_STAGE_LABELS[shared].toLowerCase() : stage;
+}
+
+/** Each stop's shared stage. Export folds into Build. */
+export const STOP_STAGE: Record<Stop, SharedStage> = {
+  queue: "queued",
+  gate: "prepare",
+  build: "build",
+  export: "build",
+  swap: "start",
+  health: "health",
+  routing: "switch",
+  live: "live",
+  rolledBack: "rollingBack",
+};
+
+/** Each stop's name on the map. */
+export const STOP_NAMES: Record<Stop, string> = {
+  queue: SHARED_STAGE_LABELS.queued,
+  gate: SHARED_STAGE_LABELS.prepare,
+  build: SHARED_STAGE_LABELS.build,
+  export: SHARED_STAGE_LABELS.build,
+  swap: SHARED_STAGE_LABELS.start,
+  health: SHARED_STAGE_LABELS.health,
+  routing: SHARED_STAGE_LABELS.switch,
+  live: SHARED_STAGE_LABELS.live,
   rolledBack: "Rolled back",
 };

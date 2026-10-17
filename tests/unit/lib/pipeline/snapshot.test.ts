@@ -158,7 +158,7 @@ describe("describeEvent", () => {
     );
     expect(describeEvent({ kind: "slot", action: "claim", token: "d:a", deploymentId: "d", builder: "local", at: 0 }, ctx)).toBeNull();
     expect(describeEvent({ kind: "slot", action: "claim", token: "build:mesh-x", deploymentId: null, builder: "local", at: 0 }, ctx)?.text).toBe(
-      "A linked instance took a build slot on jy0",
+      "A linked instance is building on jy0",
     );
     expect(describeEvent({ kind: "fallback", deploymentId: "d", builder: "lh", name: "Long House", reason: "offline", at: 0 }, ctx)).toEqual({
       text: "scope: Long House couldn't build (offline); building on jy0 instead",
