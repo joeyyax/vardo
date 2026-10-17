@@ -370,6 +370,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     composeContent: app.composeContent,
     imageDigest,
     imageMajors,
+    deployVars: ctx.deployVars,
   };
 
   const durationMs = Date.now() - ctx.startTime;

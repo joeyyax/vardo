@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { isAbsolute, join, relative, resolve } from "path";
 import { stringify } from "yaml";
 import { BUILD_CONFIG_VERSION, BUILD_KEY_LABEL, GIT_SHA_ARG, buildArgsHash } from "./build-key";
+import { BUILD_VAR_KEYS } from "./deploy-vars";
 import { serviceRepo, type RegistryOps } from "./build-registry";
 
 /** Compose file that labels each built image with its key; passed to `compose build` only. */
@@ -73,9 +74,21 @@ export function argsMap(args: unknown): Record<string, string> {
   return out;
 }
 
-/** Whether a Dockerfile declares `ARG VARDO_GIT_SHA`; undeclared, the arg can't change the image. */
+/** Whether a Dockerfile declares `ARG <name>`; undeclared, the arg can't change the image. */
+export function declaresArg(dockerfile: string, name: string): boolean {
+  return new RegExp(`^\\s*ARG\\s+(?:[^\\n]*\\s)?${name}(?:\\s|=|$)`, "im").test(dockerfile);
+}
+
+/** Whether a Dockerfile declares `ARG VARDO_GIT_SHA`. */
 export function declaresGitShaArg(dockerfile: string): boolean {
-  return new RegExp(`^\\s*ARG\\s+${GIT_SHA_ARG}(?:\\s|=|$)`, "im").test(dockerfile);
+  return declaresArg(dockerfile, GIT_SHA_ARG);
+}
+
+/** `args` without the deploy variables the Dockerfile doesn't declare. */
+export function withoutUndeclaredBuildVars(args: Record<string, string>, dockerfile: string): Record<string, string> {
+  const out = { ...args };
+  for (const key of BUILD_VAR_KEYS) if (!declaresArg(dockerfile, key)) delete out[key];
+  return out;
 }
 
 /** Why a service can't be keyed, or null. Remote contexts, extra contexts and secrets carry inputs outside the commit. */
@@ -137,8 +150,7 @@ export async function serviceBuildKey(
   }
   if (!contextTree) return { reason: "its context isn't in the commit" };
 
-  const args = argsMap(build.args);
-  if (!declaresGitShaArg(dockerfile)) delete args[GIT_SHA_ARG];
+  const args = withoutUndeclaredBuildVars(argsMap(build.args), dockerfile);
   const rest = { ...build };
   for (const k of ["context", "dockerfile", "dockerfile_inline", "args", "labels"]) delete rest[k];
   rest.labels = Object.fromEntries(

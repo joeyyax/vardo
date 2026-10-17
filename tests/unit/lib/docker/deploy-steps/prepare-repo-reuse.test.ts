@@ -435,3 +435,51 @@ describe("prepareRepo image reuse", () => {
     });
   });
 });
+
+describe("prepareRepo deploy variables at build time", () => {
+  const SHA = "abc1234abc1234abc1234abc1234abc1234abc12";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbSets.length = 0;
+    earlier.rows = [];
+    localImages.clear();
+    nixpacks.generates = false;
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: 1 });
+      setImmediate(() => proc.emit("close", 0));
+      return proc as unknown as ReturnType<typeof spawn>;
+    });
+  });
+
+  const keyOf = async (ctx: DeployContext) => {
+    dbSets.length = 0;
+    await prepareRepo(ctx);
+    return dbSets.find((v) => "buildKey" in v)?.buildKey;
+  };
+
+  it("gives the build the commit and branch, and nothing that changes per deploy", async () => {
+    await prepareRepo(makeCtx());
+    const [, args] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
+    expect(args).toContain(`VARDO_GIT_SHA=${SHA}`);
+    expect(args).toContain("VARDO_GIT_BRANCH=main");
+    expect(args.join(" ")).not.toMatch(/VARDO_DEPLOY_ID|VARDO_DEPLOYED_AT|VARDO_SLOT/);
+  });
+
+  it("keeps the app's own value", async () => {
+    const ctx = makeCtx();
+    ctx.envMap.VARDO_GIT_BRANCH = "release";
+    await prepareRepo(ctx);
+    const [, args] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
+    expect(args).toContain("VARDO_GIT_BRANCH=release");
+    expect(args).not.toContain("VARDO_GIT_BRANCH=main");
+  });
+
+  it("keys the same build the same way across deploys", async () => {
+    expect(await keyOf({ ...makeCtx(), deploymentId: "dep-a" })).toBe(await keyOf({ ...makeCtx(), deploymentId: "dep-b" }));
+  });
+
+  it("keys a branch apart from another at the same commit", async () => {
+    expect(await keyOf({ ...makeCtx(), envBranchOverride: "preview" })).not.toBe(await keyOf(makeCtx()));
+  });
+});

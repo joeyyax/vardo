@@ -21,6 +21,7 @@ import {
   composeToYaml,
   buildVardoOverlay,
   defaultMemoryLimitMb,
+  serviceMemoryLimit,
 } from "../compose";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -47,7 +48,8 @@ import { volumePrefix } from "../volume-prefix";
 import { appRootDir } from "../compose-root";
 import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE, slotEnvFileArgs, writeSlotVars } from "../slot-files";
 import { CERTS_VOLUME_KEY, syncAppCerts } from "@/lib/ssl/cert-export";
-import { withGitShaArg, type BuildSpec } from "../build-source";
+import { withBuildVarArgs, type BuildSpec } from "../build-source";
+import { buildVars, deployVars, memoryBytes, serviceUrls, withoutOwn } from "../deploy-vars";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -220,7 +222,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
             : join(buildRoot, service.build.context);
           service.build.context = ctxPath;
         }
-        if (ctx.gitSha) withGitShaArg(service.build as BuildSpec, ctx.gitSha);
+        withBuildVarArgs(service.build as BuildSpec, buildVars(ctx.gitSha, ctx.gitBranch));
       }
     };
     rewriteBuildContext(compose);
@@ -231,16 +233,19 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   const serviceExposedPorts: Record<string, { internal: number; external?: number; protocol?: string }[]> = {};
   // Decrypted, unresolved env per decomposed child service.
   const serviceEnvRaw: Record<string, Record<string, string>> = {};
+  // Compose service -> its child app's name.
+  const childNames: Record<string, string> = {};
   if (Object.keys(compose.services).length > 1) {
     const childApps = await db.query.apps.findMany({
       where: and(
         eq(apps.parentAppId, app.id),
         eq(apps.organizationId, ctx.organizationId),
       ),
-      columns: { id: true, composeService: true, exposedPorts: true, envContent: true },
+      columns: { id: true, name: true, composeService: true, exposedPorts: true, envContent: true },
     });
     for (const child of childApps) {
       if (!child.composeService) continue;
+      childNames[child.composeService] = child.name;
       if (ctx.envIsolated) {
         const own = await environmentEnvContent(child.id, ctx.envName);
         if (own !== null) child.envContent = own;
@@ -367,13 +372,36 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   const certMount = await prepareCertMount(ctx, stableVolumePrefix);
 
+  const shared = nonRotatingServices(compose);
   // Blue and green carry their own Traefik names so the overlap never redefines a router.
-  const { full: slotCompose, bare: bareCompose } = slotComposePair(
-    compose,
-    ctx.bareCompose,
-    newSlot,
-    nonRotatingServices(compose),
-  );
+  const { full: slotCompose, bare: bareCompose } = slotComposePair(compose, ctx.bareCompose, newSlot, shared);
+
+  // Shared services get no deploy vars: a value that changes every deploy would recreate them every deploy.
+  const rotating = Object.keys(slotCompose.services).filter((s) => !shared.has(s));
+  const learnedMemoryMb = app.memoryLimit == null ? (ctx.learnedMemory?.mb ?? null) : null;
+  const urls = serviceUrls(app.domains, app.id, rotating, new Set(Object.keys(childNames)));
+  const meta = {
+    gitSha: ctx.gitSha,
+    gitBranch: ctx.gitBranch,
+    deploymentId: ctx.deploymentId,
+    deployedAt: new Date(),
+    environment: ctx.envName,
+    slot: isLocalEnv ? null : newSlot,
+  };
+  const serviceDeployVars: Record<string, Record<string, string>> = {};
+  for (const name of rotating) {
+    const svc = slotCompose.services[name];
+    const memory = serviceMemoryLimit(svc, {
+      memoryLimit: app.memoryLimit,
+      learnedMemoryMb,
+      priority: app.priority,
+      serviceConfig: ctx.serviceConfig[name],
+    });
+    const vars = deployVars(meta, { appName: childNames[name] ?? app.name, url: urls[name], memoryBytes: memoryBytes(memory) });
+    // The app's or service's own variable of the same name wins.
+    serviceDeployVars[name] = withoutOwn(vars, svc.environment, resolvedServiceEnv[name], name in childNames ? undefined : envMap);
+  }
+  ctx.deployVars = serviceDeployVars;
 
   const overlayCompose = buildVardoOverlay({
     fullCompose: slotCompose,
@@ -386,7 +414,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       reservationMb: app.memoryReservation,
       limitMb: app.memoryLimit ?? ctx.learnedMemory?.mb ?? defaultMemoryLimitMb(app.priority ?? "standard"),
     }),
-    learnedMemoryMb: app.memoryLimit == null ? (ctx.learnedMemory?.mb ?? null) : null,
+    learnedMemoryMb,
     priority: app.priority,
     gpuEnabled: app.gpuEnabled ?? false,
     externalVolumes: compose.volumes ?? {},
@@ -394,6 +422,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     serviceExposedPorts,
     serviceConfig: ctx.serviceConfig,
     serviceEnv: resolvedServiceEnv,
+    deployVars: serviceDeployVars,
     orgTrusted: ctx.orgTrusted,
     certMount,
     infraServices: isSelfApp(app.name) ? nonRotatingServices(compose) : undefined,

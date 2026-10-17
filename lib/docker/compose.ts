@@ -63,6 +63,7 @@ export {
   stripVardoInjections,
   excludeServices,
   buildVardoOverlay,
+  serviceMemoryLimit,
   defaultMemoryLimitMb,
   injectNetwork,
   getTraefikRoutedServices,

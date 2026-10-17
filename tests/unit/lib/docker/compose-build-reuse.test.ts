@@ -19,10 +19,11 @@ import {
 const SRC = "/srv/apps/shop/production/build-source";
 const SHA = "a".repeat(40);
 
-const trees: Record<string, string> = { web: "tree-web-1", api: "tree-api-1" };
+const trees: Record<string, string> = { web: "tree-web-1", api: "tree-api-1", site: "tree-site-1" };
 const files: Record<string, string> = {
   [`${SRC}/web/Dockerfile`]: "FROM node:22\nCOPY . .\n",
   [`${SRC}/api/Dockerfile`]: "FROM node:22\nARG VARDO_GIT_SHA\nCOPY . .\n",
+  [`${SRC}/site/Dockerfile`]: "FROM node:22\nARG NODE_ENV VARDO_GIT_BRANCH\nCOPY . .\n",
 };
 
 function opts(over: Partial<ServiceKeyOpts> = {}): ServiceKeyOpts {
@@ -68,6 +69,12 @@ describe("serviceBuildKey", () => {
     const a = await keyOf({ context: `${SRC}/api`, args: { VARDO_GIT_SHA: "1".repeat(40) } });
     const b = await keyOf({ context: `${SRC}/api`, args: { VARDO_GIT_SHA: "2".repeat(40) } });
     expect(a).not.toBe(b);
+  });
+
+  it("keys on VARDO_GIT_BRANCH only when the Dockerfile declares it", async () => {
+    const branch = (b: string) => ({ VARDO_GIT_SHA: SHA, VARDO_GIT_BRANCH: b });
+    expect(await keyOf({ context: `${SRC}/web`, args: branch("main") })).toBe(await keyOf({ context: `${SRC}/web`, args: branch("pr-1") }));
+    expect(await keyOf({ context: `${SRC}/site`, args: branch("main") })).not.toBe(await keyOf({ context: `${SRC}/site`, args: branch("pr-1") }));
   });
 
   it("changes with the context's tree, args, target and app", async () => {
@@ -119,6 +126,7 @@ describe("helpers", () => {
     expect(declaresGitShaArg("ARG VARDO_GIT_SHA\n")).toBe(true);
     expect(declaresGitShaArg("  arg VARDO_GIT_SHA=unknown\n")).toBe(true);
     expect(declaresGitShaArg("ARG VARDO_GIT_SHA_EXTRA\n")).toBe(false);
+    expect(declaresGitShaArg("ARG CI VARDO_GIT_SHA NODE_ENV\n")).toBe(true);
   });
 
   it("names images as compose does", () => {

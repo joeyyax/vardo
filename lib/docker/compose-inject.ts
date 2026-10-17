@@ -428,6 +428,24 @@ export function excludeServices(
   };
 }
 
+/** A service's memory cap: app limit, then compose limit, then learned default, then tier default. Explicit 0 is none. */
+export function serviceMemoryLimit(
+  svc: ComposeService,
+  opts: {
+    memoryLimit?: number | null;
+    learnedMemoryMb?: number | null;
+    priority?: "critical" | "standard" | "disposable" | null;
+    serviceConfig?: ServiceConfigOverride;
+  },
+): string | undefined {
+  const cfg = opts.serviceConfig;
+  const explicit = cfg ? cfg.memoryLimit : opts.memoryLimit;
+  const learnedMb = cfg ? cfg.learnedMemoryMb : opts.learnedMemoryMb;
+  const tier = (cfg ? cfg.priority : opts.priority) ?? "standard";
+  if (explicit != null) return explicit > 0 ? `${explicit}M` : undefined;
+  return svc.deploy?.resources?.limits?.memory ?? `${learnedMb && learnedMb > 0 ? learnedMb : defaultMemoryLimitMb(tier)}M`;
+}
+
 /** Build docker-compose.override.yml holding only Vardo-injected config. */
 export function buildVardoOverlay(opts: {
   fullCompose: ComposeFile;
@@ -451,6 +469,8 @@ export function buildVardoOverlay(opts: {
   serviceConfig?: Record<string, ServiceConfigOverride>;
   /** Resolved per-service env vars from child apps; override same-named compose keys. */
   serviceEnv?: Record<string, Record<string, string>>;
+  /** Per-service deploy metadata (lib/docker/deploy-vars.ts); serviceEnv wins over it. */
+  deployVars?: Record<string, Record<string, string>>;
   /** Cores the tier CPU default is sized from. Defaults to this host's. */
   hostCpus?: number;
   /** Untrusted organizations get no-new-privileges on every service. */
@@ -473,6 +493,7 @@ export function buildVardoOverlay(opts: {
     serviceExposedPorts = {},
     serviceConfig = {},
     serviceEnv = {},
+    deployVars = {},
     hostCpus,
     orgTrusted = true,
   } = opts;
@@ -503,18 +524,10 @@ export function buildVardoOverlay(opts: {
     const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
     const explicitMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
     const burstReservation = cfg ? cfg.memoryReservation : memoryReservation;
-    const learnedMb = cfg ? cfg.learnedMemoryMb : opts.learnedMemoryMb;
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
     const effPriority = cfg ? cfg.priority : priority;
     const tier = effPriority ?? "standard";
-    // App limit, then compose limit, then learned default, then tier default. Explicit 0 means no cap.
-    const declaredMemory = svc.deploy?.resources?.limits?.memory;
-    const effMemory =
-      explicitMemoryLimit == null
-        ? declaredMemory ?? `${learnedMb && learnedMb > 0 ? learnedMb : defaultMemoryLimitMb(tier)}M`
-        : explicitMemoryLimit > 0
-          ? `${explicitMemoryLimit}M`
-          : undefined;
+    const effMemory = serviceMemoryLimit(svc, { memoryLimit, learnedMemoryMb: opts.learnedMemoryMb, priority, serviceConfig: cfg });
     const declaredCpus = svc.deploy?.resources?.limits?.cpus;
     const tierCpus = defaultCpuLimit(tier, hostCpus);
     // App limit (0 is none, leaving the compose's), then compose limit (0 is none), then tier default.
@@ -614,9 +627,9 @@ export function buildVardoOverlay(opts: {
       overlayService.volumes = ["vardo-certs:/certs:ro"];
     }
 
-    const svcEnv = serviceEnv[name];
-    if (svcEnv && Object.keys(svcEnv).length > 0) {
-      overlayService.environment = { ...svcEnv };
+    const svcEnv = { ...deployVars[name], ...serviceEnv[name] };
+    if (Object.keys(svcEnv).length > 0) {
+      overlayService.environment = svcEnv;
     }
 
     overlayServices[name] = overlayService;
