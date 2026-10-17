@@ -1093,6 +1093,13 @@
       "when": 1792263031894,
       "tag": "0155_uptime_cache_size",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792268171563,
+      "tag": "0156_metadata_endpoint",
+      "breakpoints": true
     }
   ]
 }

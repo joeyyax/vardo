@@ -35,6 +35,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // The metadata proxy limits per caller and the route checks its own headers.
+  if (request.nextUrl.pathname.startsWith("/api/internal/metadata/")) return NextResponse.next();
+
   // Downstream readers (rate limits, Better Auth) see only the vetted address.
   const ip = await clientIpFor(request.headers);
   const headers = new Headers(request.headers);

@@ -13,6 +13,7 @@ const LIMITERS = new Set(["withRateLimit", "withStreamCap"]);
 /** "METHOD path" → why it stays unlimited. */
 const EXEMPT: Record<string, string> = {
   "GET health": "container and Traefik health check; a 429 would restart a healthy console",
+  "GET internal/metadata/v1/self": "the metadata proxy limits each caller address; every app shares the proxy's address here",
 };
 
 /** GET handlers in a file that streams elsewhere (on POST) but answer JSON themselves. */
