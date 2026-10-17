@@ -145,7 +145,8 @@ describe("composeBuild", () => {
     const pushed: string[] = [];
     // `push` is what the old ops had; a build here must not reach for it.
     const ops = { ref: (r: string, k: string) => `localhost:5001/${r}:${k}`, pull: async () => false, untag: async () => {}, push: async (l: string) => (pushed.push(l), true) };
-    await composeBuild(options({ registry: { appName: "shop", ops } }));
+    // `pushes` is the old collector; swap passed it on every deploy.
+    await composeBuild(options({ registry: { appName: "shop", ops }, pushes: [] } as Partial<ComposeBuildOpts>));
     expect(pushed).toEqual([]);
     expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
   });
