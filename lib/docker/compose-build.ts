@@ -13,6 +13,7 @@ import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot, type BuildPlacement, type DeploySlot } from "./build-gate";
 import { onTarget, remoteEnv, type BuildTarget } from "./build-targets";
 import { TARGET_BUILD, bringBack } from "./remote-build";
+import type { BuildPlacementRecorder } from "./build-placement";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
@@ -20,6 +21,8 @@ export const BAKE_FILE = "vardo-bake.json";
 const MAX_BUFFER = 10 * 1024 * 1024;
 
 type Output = { stdout: string; stderr: string };
+/** The build's output and, when every built service's image name is known, those names. */
+export type ComposeBuildResult = Output & { images: string[] | null };
 type Exec = (cmd: string, args: string[], opts: Record<string, unknown>) => Promise<{ stdout: string | Buffer; stderr?: string | Buffer }>;
 
 export type ComposeBuildOpts = {
@@ -52,6 +55,8 @@ export type ComposeBuildOpts = {
   targets?: BuildTarget[];
   /** The deploy slot its claim took. */
   deploySlot?: DeploySlot;
+  /** Records where the build ran and how its images came back. */
+  placement?: BuildPlacementRecorder;
   /** Build registry: keyed images are pulled from it for reuse; only builds on a target push to it. */
   registry?: { ops: RegistryOps; appName: string } | null;
 };
@@ -71,7 +76,7 @@ export function bakeArgs(file: string, output: string, services: string[]): stri
 }
 
 /** Builds the slot's services; returns the build output, or null when every service reused an image. */
-export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | null> {
+export async function composeBuild(opts: ComposeBuildOpts): Promise<ComposeBuildResult | null> {
   const exec = opts.exec ?? (execFileAsync as unknown as Exec);
   const { slotDir, project, log } = opts;
 
@@ -129,19 +134,20 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<Output | nul
     : null;
   const targets = remote ? (opts.targets ?? []) : [];
   const gate = opts.gate ?? ((run) =>
-    withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets, deploySlot: opts.deploySlot }, opts.bounded, run));
-  return gate(async (placement) => {
+    withBuildSlot({ deploymentId: opts.deploymentId, log, wait: opts.wait, signal: opts.signal, targets, deploySlot: opts.deploySlot, placement: opts.placement }, opts.bounded, run));
+  const built = await gate(async (placement) => {
     const target = placement?.target;
     if (!target || !remote) {
       for (const line of opts.bounded.notes ?? []) log(line);
       return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
     }
     return onTarget(target, async (session) => {
-      const built = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
-      await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, signal: opts.signal, exec });
-      return built;
+      const out = await runComposeBuild(opts, exec, services, keyFileArgs, TARGET_BUILD, remoteEnv(opts.env, session));
+      await bringBack(remote, { authEnv: opts.env, session, from: target.name, log, placement: opts.placement, signal: opts.signal, exec });
+      return out;
     });
   });
+  return { ...built, images: remote ? remote.map((r) => r.image) : null };
 }
 
 async function runComposeBuild(

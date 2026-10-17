@@ -72,6 +72,7 @@ vi.mock("@/lib/utils/exec", () => ({
   }),
 }));
 
+const { createBuildPlacement, NO_PLACEMENT } = await import("@/lib/docker/build-placement");
 const { buildLimit, parseMemoryPressure, localBuildStore, withBuildSlot, resetBuildGateForTests, buildEta, recordablePeak } = await import(
   "@/lib/docker/build-gate"
 );
@@ -434,8 +435,10 @@ describe("withBuildSlot", () => {
   it("records the builder's rise for a build that ran alone", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     state.anon = [400 * MiB, 2400 * MiB];
-    await withBuildSlot(gateFor("dep-a").gate, bounded, takes(90_000));
+    const placement = createBuildPlacement();
+    await withBuildSlot({ ...gateFor("dep-a").gate, placement }, bounded, takes(90_000));
     expect(state.recorded).toEqual([{ deploymentId: "dep-a", peakBytes: 2000 * MiB }]);
+    expect(placement.columns()).toMatchObject({ buildOutcome: "here", buildPeakBytes: 2000 * MiB });
   });
 
   it("records nothing for a near-instant build, such as one served from the cache", async () => {
@@ -501,13 +504,15 @@ describe("withBuildSlot", () => {
   it("records nothing when another build joined while it ran", async () => {
     state.peak = 1 * GB;
     const first = deferred();
-    const a = withBuildSlot(gateFor("dep-a").gate, bounded, () => first.promise);
+    const placement = createBuildPlacement();
+    const a = withBuildSlot({ ...gateFor("dep-a").gate, placement }, bounded, () => first.promise);
     await new Promise((r) => setTimeout(r, 10));
     const b = withBuildSlot(gateFor("dep-b").gate, bounded, async () => {});
     await b;
     first.resolve();
     await a;
     expect(state.recorded).toHaveLength(0);
+    expect(placement.columns()).toMatchObject({ buildOutcome: "here", buildPeakBytes: null });
   });
 
   it("clears an idle builder after a build fails", async () => {
@@ -526,6 +531,7 @@ describe("withBuildSlot", () => {
 describe("withBuildSlot with build targets", async () => {
   let store: ReturnType<typeof fakeRedisStore>;
   const { BuilderError } = await import("@/lib/docker/build-targets");
+
   const target = (id: string, maxConcurrent = 1) => ({
     id, kind: "ssh" as const, name: id, host: `${id}.example.com`, port: 22, user: "vardo",
     privateKey: "key", hostKey: `${id}.example.com ssh-ed25519 AAAA`, maxConcurrent,
@@ -540,10 +546,12 @@ describe("withBuildSlot with build targets", async () => {
 
   it("builds here while this host has a slot, and says so", async () => {
     const a = gateFor("dep-a");
+    const placement = createBuildPlacement();
     let where: unknown = "unset";
-    await withBuildSlot({ ...a.gate, targets: [target("lh")] }, bounded, async ({ target }) => void (where = target));
+    await withBuildSlot({ ...a.gate, targets: [target("lh")], placement }, bounded, async ({ target }) => void (where = target));
     expect(where).toBeNull();
     expect(a.lines).toContain("[build] Building on this server");
+    expect(placement.columns()).toEqual({ ...NO_PLACEMENT, buildOutcome: "here" });
   });
 
   it("overflows to the first target with a free slot when this host is busy", async () => {
@@ -557,7 +565,8 @@ describe("withBuildSlot with build targets", async () => {
     const c = gateFor("dep-c");
     const busy = deferred();
     const on: string[] = [];
-    const queuedB = withBuildSlot({ ...b.gate, targets: [lh, hz] }, bounded, async ({ target }) => {
+    const placement = createBuildPlacement();
+    const queuedB = withBuildSlot({ ...b.gate, targets: [lh, hz], placement }, bounded, async ({ target }) => {
       on.push(`b:${target?.id}`);
       await busy.promise;
     });
@@ -566,6 +575,7 @@ describe("withBuildSlot with build targets", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     expect(on).toEqual(["b:lh", "c:hz"]);
     expect(b.lines).toContain("[build] Building on lh (vardo@lh.example.com:22)");
+    expect(placement.columns()).toMatchObject({ buildTargetId: "lh", buildTargetName: "lh", buildOutcome: "target", buildFallbackReason: null });
     busy.resolve();
     first.resolve();
     await Promise.all([running, queuedB, queuedC]);
@@ -592,7 +602,8 @@ describe("withBuildSlot with build targets", async () => {
     await new Promise((r) => setTimeout(r, 10));
     const b = gateFor("dep-b");
     const on: (string | null)[] = [];
-    const queued = withBuildSlot({ ...b.gate, targets: [target("lh")] }, bounded, async ({ target }) => {
+    const placement = createBuildPlacement();
+    const queued = withBuildSlot({ ...b.gate, targets: [target("lh")], placement }, bounded, async ({ target }) => {
       on.push(target?.id ?? null);
       if (target) throw new BuilderError("it's unreachable");
     });
@@ -601,6 +612,7 @@ describe("withBuildSlot with build targets", async () => {
     await Promise.all([running, queued]);
     expect(on).toEqual(["lh", null]);
     expect(b.lines).toContain("[build] lh couldn't build: it's unreachable. Building on this server instead");
+    expect(placement.columns()).toMatchObject({ buildTargetId: "lh", buildOutcome: "fallback", buildFallbackReason: "it's unreachable", imageTransfer: null });
     expect(ready.get("lh")).toBe(false);
   });
 

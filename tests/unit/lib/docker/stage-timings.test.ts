@@ -1,5 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { createStageTimings, exportMsFromBuildOutput, formatTimings, timedWait } from "@/lib/docker/stage-timings";
+import { contextBytesFromBuildOutput, createStageTimings, exportMsFromBuildOutput, formatTimings, timedWait } from "@/lib/docker/stage-timings";
+
+describe("contextBytesFromBuildOutput", () => {
+  it("sums each step's last context size, in BuildKit's decimal units", () => {
+    const out = [
+      "#1 [internal] load build definition from Dockerfile",
+      "#1 transferring dockerfile: 512B done",
+      "#4 [internal] load build context",
+      "#4 transferring context: 10.5MB 2.0s",
+      "#4 transferring context: 12.30MB 2.4s done",
+      "#9 [web internal] load build context",
+      "#9 transferring context: 2.07kB done",
+    ].join("\n");
+    expect(contextBytesFromBuildOutput(out)).toBe(12_300_000 + 2070);
+  });
+
+  it("is null when no context was sent", () => {
+    expect(contextBytesFromBuildOutput("#1 transferring dockerfile: 512B done")).toBeNull();
+  });
+});
 
 describe("waits", () => {
   it("tallies waits apart from the phases and prints them", () => {

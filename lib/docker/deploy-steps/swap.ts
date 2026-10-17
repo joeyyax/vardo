@@ -51,7 +51,8 @@ import { runningExcept } from "@/lib/deploy/queue";
 import { beforeSwap } from "@/lib/deploy/swap-gate";
 import { withFailedStepOutput } from "../build-failure";
 import { dockerEnv } from "@/lib/docker/docker-env";
-import { exportMsFromBuildOutput } from "../stage-timings";
+import { contextBytesFromBuildOutput, exportMsFromBuildOutput } from "../stage-timings";
+import { imagesBytes } from "../image-size";
 import { DeployClosedElsewhereError } from "../errors";
 
 const NETWORK_NAME = VARDO_NETWORK;
@@ -520,6 +521,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           registry: registry ? { ops: registry, appName: app.name } : null,
           targets: await configuredTargets(),
           deploySlot: ctx.deploySlot,
+          placement: ctx.placement,
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);
@@ -529,6 +531,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         const buildStart = admitted();
         const buildEnd = Date.now();
         const exportMs = Math.min(exportMsFromBuildOutput(`${stdout}\n${stderr}`), buildEnd - buildStart);
+        if (built) {
+          ctx.placement?.built({
+            contextBytes: contextBytesFromBuildOutput(`${stdout}\n${stderr}`),
+            imageBytes: built.images ? await imagesBytes(built.images) : null,
+          });
+        }
         ctx.timer.range("build", buildStart, buildEnd - exportMs);
         if (exportMs > 0) ctx.timer.range("export", buildEnd - exportMs, buildEnd);
         for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {

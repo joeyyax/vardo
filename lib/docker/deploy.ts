@@ -48,6 +48,7 @@ import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { createStageTimings, formatTimings, STAGE_PHASE, timedWait, type StageTimings } from "./stage-timings";
+import { createBuildPlacement } from "./build-placement";
 import type { RebuildMode } from "./build-key";
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
 import { resolveRebuild, buildCacheLogLine } from "./build-key";
@@ -186,6 +187,7 @@ export async function runDeployment(
   }
 
   const timer = createStageTimings();
+  const placement = createBuildPlacement();
 
   // Serialized so a slow write can't land after a later one and shorten the log.
   let logFlush: Promise<unknown> = Promise.resolve();
@@ -194,11 +196,12 @@ export async function runDeployment(
   function flushLog() {
     const snapshot = saved();
     const stageTimings = timer.snapshot();
+    const built = placement.columns();
     logFlush = logFlush
       .then(() =>
         db
           .update(deployments)
-          .set({ log: snapshot, stageTimings })
+          .set({ log: snapshot, stageTimings, ...built })
           .where(eq(deployments.id, deploymentId)),
       )
       .catch(() => {});
@@ -551,6 +554,7 @@ export async function runDeployment(
       stage,
       checkAbort,
       timer,
+      placement,
       logs,
       logLines,
       logPrefix,
@@ -753,7 +757,7 @@ export async function runDeployment(
     // A row the sweeper already closed keeps its record and the app status it set.
     const recorded = await db
       .update(deployments)
-      .set({ status: "failed", log: saved(), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
+      .set({ status: "failed", log: saved(), stageTimings: timer.snapshot(), ...placement.columns(), durationMs, finishedAt: new Date() })
       .where(ownedRow(deploymentId, opts.executorId))
       .returning({ id: deployments.id })
       .then((rows) => rows.length > 0);

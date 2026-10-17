@@ -8,6 +8,7 @@ import type { DeployStage, WaitWriter } from "./deploy-logger";
 import type { RollbackTarget } from "./rollback-target";
 
 import type { StageTimer } from "./stage-timings";
+import type { BuildPlacementRecorder } from "./build-placement";
 import type { BuildCacheMode, RebuildMode } from "./build-key";
 import type { DeploySlot } from "./build-gate";
 
@@ -260,6 +261,8 @@ export type DeployContext = {
   checkAbort: () => void;
   /** Phase timings, persisted to `deployment.stage_timings`. */
   timer: StageTimer;
+  /** Where the build ran, persisted to the deployment's build placement columns. */
+  placement?: BuildPlacementRecorder;
   /** Proxy object for helpers that expect { push }. */
   logs: { push: (line: string) => void };
   logLines: string[];

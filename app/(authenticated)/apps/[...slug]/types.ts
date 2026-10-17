@@ -7,6 +7,7 @@ import type { FeatureFlags } from "@/lib/config/features";
 import type { Incident, RestartReading } from "@/lib/ui/stability";
 import type { LifecycleEvent } from "@/lib/ui/lifecycle";
 import type { BuildPlanRecord } from "@/lib/docker/build-plan";
+import type { BuildOutcome, ImageTransfer } from "@/lib/docker/build-placement";
 
 export type Deployment = {
   id: string;
@@ -23,6 +24,13 @@ export type Deployment = {
   /** Post-deploy work a successful deploy did not finish. */
   postDeployError: string | null;
   buildPlan: BuildPlanRecord | null;
+  /** The build target the build ran on or fell back from; null when it built here. */
+  buildTargetName?: string | null;
+  buildOutcome?: BuildOutcome | null;
+  buildFallbackReason?: string | null;
+  imageTransfer?: ImageTransfer | null;
+  imageTransferMs?: number | null;
+  imageTransferBytes?: number | null;
   slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;

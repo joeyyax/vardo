@@ -5,6 +5,7 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getBuildRegistryConfig } from "@/lib/docker/build-registry";
+import { PLACEMENT_WINDOW_DAYS, placementStats, type PlacementStats } from "@/lib/docker/build-placement-stats";
 import {
   MAX_TARGET_BUILDS,
   getBuildTargets,
@@ -31,15 +32,17 @@ async function publicTarget(t: BuildTarget) {
   };
 }
 
-/** GET /api/v1/admin/build-targets — targets in overflow order, without private keys */
+/** GET /api/v1/admin/build-targets — targets in overflow order, without private keys, with this server's and each target's last 30 days of builds */
 async function handleGet() {
   try {
     await requireAppAdmin();
-    const targets = await getBuildTargets();
+    const [targets, stats] = await Promise.all([getBuildTargets(), placementStats().catch((): PlacementStats => ({ here: null, targets: {} }))]);
     return NextResponse.json({
       configured: true,
       registry: (await getBuildRegistryConfig()) !== null,
-      targets: await Promise.all(targets.map(publicTarget)),
+      statsDays: PLACEMENT_WINDOW_DAYS,
+      here: stats.here,
+      targets: await Promise.all(targets.map(async (t) => ({ ...(await publicTarget(t)), stats: stats.targets[t.id] ?? null }))),
     });
   } catch (error) {
     return handleRouteError(error, "Error reading build targets");

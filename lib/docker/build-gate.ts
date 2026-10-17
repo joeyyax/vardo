@@ -23,6 +23,7 @@ import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
 import { typicalBuildMs } from "@/lib/deploy/eta-history";
 import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTargetDown, type BuildTarget } from "./build-targets";
 import type { TargetSlots } from "@/lib/deploy/queue";
+import type { BuildPlacementRecorder } from "./build-placement";
 
 const log = logger.child("build-gate");
 
@@ -560,6 +561,8 @@ export type BuildGate = {
   targets?: BuildTarget[];
   /** The deploy slot the deploy holds. On a target's, the build never takes this host's builder. */
   deploySlot?: DeploySlot;
+  /** Records which target the build ran on and how its images came back, or that it fell back here. */
+  placement?: BuildPlacementRecorder;
 };
 
 /** The deploy slot a claimed deploy holds: this server's, or a build target's. */
@@ -715,6 +718,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
 
   async function runRemote(on: BuildTarget): Promise<T> {
     gate.log(`[build] Building on ${describeTarget(on)}`);
+    gate.placement?.started(on);
     const renew = setInterval(() => void store.renew(id, on.id).catch(() => {}), RENEW_MS);
     renew.unref?.();
     try {
@@ -724,6 +728,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       markTargetDown(on);
       log.warn(`Build target ${on.name} failed: ${err.reason}`, err.cause);
       gate.log(`[build] ${on.name} couldn't build: ${err.reason}. Building on this server instead`);
+      gate.placement?.fellBack(on, err.reason);
     } finally {
       clearInterval(renew);
       await store.releaseTarget(id, on.id).catch(() => {});
@@ -780,6 +785,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   }
 
   async function runHeld(held: Admission): Promise<T> {
+    gate.placement?.here();
     if (held.local) {
       try {
         return await build({ target: null });
@@ -818,8 +824,9 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
       const rise = sampler ? await sampler.stop() : null;
       const admits = await store.release(id, !ok).catch(() => null);
       // Alone at admission and nobody admitted since: the builder's rise is this build's.
-      if (ok && gate.deploymentId && held.alone && admits === held.gen && recordablePeak(rise, buildMs)) {
-        await recordPeak(gate.deploymentId, rise).catch((err) => log.warn("Couldn't record the build's memory peak:", err));
+      if (ok && held.alone && admits === held.gen && recordablePeak(rise, buildMs)) {
+        gate.placement?.peak(rise);
+        if (gate.deploymentId) await recordPeak(gate.deploymentId, rise).catch((err) => log.warn("Couldn't record the build's memory peak:", err));
       }
       // A build that ended badly may have left steps running; clear them now if the builder is idle.
       if (!ok && bounded.container && (await store.claimSweep(id).catch(() => false))) {
