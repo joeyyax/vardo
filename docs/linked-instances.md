@@ -75,3 +75,21 @@ Every instance also polls. Every 5 minutes by default, it runs `git ls-remote` o
 - It runs a full pass 90 seconds after the console starts and 30 seconds after the link to a peer comes back.
 
 The app's **Settings** page lists the triggers that apply to it (webhook, relay and poll) and when it was last checked for changes.
+
+## Builds on a linked instance
+
+A linked instance can run another's builds when that one's builder is full. Builds come back through the build registry, as with any build target.
+
+### Turn it on
+
+1. **On the instance that runs the builds:** an instance admin, signed in, opens **Admin settings → Instances**, picks the sending peer's menu and chooses **Accept builds**.
+2. **On the sending instance:** the peer shows **Builds there** and joins **Admin settings → This instance → Build targets** at the end, one build at a time. Move it or set its builds at a time there; 0 sends it none. It needs a build registry like any target.
+
+### How it connects
+
+- Each instance runs `vardo-mesh-ssh`, an sshd with no published port. `vardo-wireguard` forwards TCP port 22 on the tunnel address to it, the same way it forwards the console port.
+- Each instance has an ed25519 client key and the endpoint's host key. Linked instances trade them with a signed peer call over the tunnel or HTTPS, every heartbeat pass when something changed and every 10 minutes otherwise. Nothing is pasted or trusted on first use.
+- **Accept builds** writes the peer's key into the endpoint's `authorized_keys` as `from="<its tunnel address>",restrict,command="docker system dial-stdio"`, and the sshd config forces that command for every key. No shell, terminal or forwarding.
+- That's still full access to this host's Docker, which can run any container. Turn it on only for an instance you trust as much as this one.
+- Removing the peer, turning **Accept builds** off or the peer forgetting the link removes its key. A build already running there finishes.
+- A new client key on either side reaches the other on the next exchange.

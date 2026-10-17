@@ -47,7 +47,7 @@ export const CORE_SERVICE_DEFS: Record<CoreServiceKey, CoreServiceDef> = {
   watchdog: { label: "Watchdog", term: "core-watchdog", names: ["watchdog"] },
   metrics: { label: "Metrics (Collector)", term: "core-metrics", names: ["collector"] },
   logs: { label: "Logs (Loki/Promtail)", term: "core-logs", names: ["loki", "promtail"] },
-  mesh: { label: "Mesh (WireGuard)", term: "mesh", names: ["wireguard"] },
+  mesh: { label: "Mesh (WireGuard)", term: "mesh", names: ["wireguard", "mesh-ssh"] },
   other: { label: "Other Vardo services", names: [] },
 };
 
