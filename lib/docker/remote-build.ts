@@ -79,7 +79,6 @@ export function copyImage(
     ];
     let bytes = 0;
     let failure: string | null = null;
-    const timers: ReturnType<typeof setTimeout>[] = [];
 
     const kill = (proc: ChildProcess) => {
       if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return;
@@ -105,7 +104,7 @@ export function copyImage(
       idle = setTimeout(() => fail(`no data for ${idleMs / 1000}s`), idleMs);
     };
     resetIdle();
-    timers.push(setTimeout(() => fail(`timed out after ${timeoutMs / 1000}s`), timeoutMs));
+    const deadline = setTimeout(() => fail(`timed out after ${timeoutMs / 1000}s`), timeoutMs);
 
     for (const end of ends) {
       end.proc.stderr?.on("data", (chunk: Buffer) => {
@@ -118,7 +117,7 @@ export function copyImage(
         if (code !== 0) fail(`${end.name} failed${code === null ? "" : ` (exit ${code})`}: ${end.stderr.trim().split("\n").at(-1) || "no output"}`);
         if (!ends.every((e) => e.done)) return;
         if (idle) clearTimeout(idle);
-        for (const t of timers) clearTimeout(t);
+        clearTimeout(deadline);
         opts.signal?.removeEventListener("abort", onAbort);
         if (failure) reject(new Error(failure));
         else resolve(bytes);

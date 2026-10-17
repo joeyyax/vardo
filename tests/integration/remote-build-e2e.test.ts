@@ -16,6 +16,8 @@ vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: async () => null,
 const spec = process.env.VARDO_E2E_TARGET?.match(/^([^@]+)@(.+):(\d+)$/);
 const registryHost = process.env.VARDO_E2E_REGISTRY;
 const enabled = Boolean(spec && registryHost && process.env.VARDO_E2E_TARGET_KEY);
+// One local slot, so holding it sends the build to the target.
+if (enabled) process.env.VARDO_MAX_CONCURRENT_BUILDS = "1";
 
 const { withBuildSlot, redisBuildStore, resetBuildGateForTests } = await import("@/lib/docker/build-gate");
 const { redis } = await import("@/lib/redis");
