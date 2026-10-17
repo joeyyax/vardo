@@ -30,6 +30,7 @@ import {
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { imageVolumePaths, removeScratchContainer, scratchLabelArgs, scratchMountArgs, SCRATCH_LABEL } from "./scratch";
 
 const log = logger.child("drill");
 
@@ -176,11 +177,20 @@ export async function drillScratchDatabase(
   const envArgs = plan.env.flatMap((e) => ["-e", e]);
 
   logFn(`Starting scratch ${kind} (${plan.image}) as ${container}`);
-  await execFileAsync(
-    "docker",
-    ["run", "-d", "--rm", "--name", container, "--network", "none", ...envArgs, plan.image],
-    { env: dockerEnv(), timeout: 120_000 },
-  );
+  const dataPaths = await imageVolumePaths(plan.image);
+  try {
+    await execFileAsync(
+      "docker",
+      [
+        "run", "-d", "--rm", "--name", container, "--network", "none",
+        ...scratchLabelArgs("drill"), ...scratchMountArgs("drill", dataPaths), ...envArgs, plan.image,
+      ],
+      { env: dockerEnv(), timeout: 120_000 },
+    );
+  } catch (err) {
+    await removeScratchContainer(container);
+    throw err;
+  }
 
   try {
     if (!(await waitForReady(container, plan.readyArgv))) {
@@ -206,7 +216,7 @@ export async function drillScratchDatabase(
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
     return verdict;
   } finally {
-    await execFileAsync("docker", ["rm", "-f", container], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
+    await removeScratchContainer(container);
   }
 }
 
@@ -217,7 +227,7 @@ async function drillKuma(
   logFn: (m: string) => void,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const scratchVolume = scratchContainerName(nanoid(8).toLowerCase());
-  await execFileAsync("docker", ["volume", "create", scratchVolume], { env: dockerEnv(), timeout: 30_000 });
+  await execFileAsync("docker", ["volume", "create", "--label", `${SCRATCH_LABEL}=drill`, scratchVolume], { env: dockerEnv(), timeout: 30_000 });
 
   try {
     logFn(`Checking Uptime Kuma archive in scratch ${image}`);
@@ -258,7 +268,7 @@ async function drillArchive(
   logFn: (m: string) => void,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const scratchVolume = scratchContainerName(nanoid(8).toLowerCase());
-  await execFileAsync("docker", ["volume", "create", scratchVolume], { env: dockerEnv(), timeout: 30_000 });
+  await execFileAsync("docker", ["volume", "create", "--label", `${SCRATCH_LABEL}=drill`, scratchVolume], { env: dockerEnv(), timeout: 30_000 });
 
   try {
     let extractExitCode = 0;

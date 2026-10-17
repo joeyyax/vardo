@@ -549,9 +549,12 @@ export async function startContainer(id: string): Promise<void> {
   await dockerRequest("POST", `/containers/${encodeURIComponent(id)}/start`);
 }
 
-/** Remove a container. Without `force` the daemon returns 409 for a running container. */
-export async function removeContainer(id: string, opts?: { force?: boolean }): Promise<void> {
-  const qs = opts?.force ? "?force=true" : "";
+/** Remove a container. Without `force` the daemon returns 409 for a running container; `volumes` also removes its anonymous volumes. */
+export async function removeContainer(id: string, opts?: { force?: boolean; volumes?: boolean }): Promise<void> {
+  const params = new URLSearchParams();
+  if (opts?.force) params.set("force", "true");
+  if (opts?.volumes) params.set("v", "true");
+  const qs = params.size > 0 ? `?${params}` : "";
   await dockerRequest("DELETE", `/containers/${encodeURIComponent(id)}${qs}`);
 }
 

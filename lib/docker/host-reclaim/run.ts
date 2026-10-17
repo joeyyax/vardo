@@ -124,7 +124,7 @@ export async function runHostReclaim(trigger: ReclaimTrigger, now = Date.now()):
     for (const id of staleOneOffs(await listAllContainers(), now, ONE_OFF_MIN_AGE_MS)) {
       if (!(await holdsFence())) return await finish("Lost the lease");
       try {
-        await removeContainer(id);
+        await removeContainer(id, { volumes: true });
         run.containers++;
       } catch {
         run.failures++;
