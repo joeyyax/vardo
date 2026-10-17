@@ -48,6 +48,7 @@ import { createPgClusterProducer, restorePostgresArchive } from "./pg-cluster";
 import { assertSpace, hostFreeBytes, localFreeBytes, stagingNeed, targetNeed, type SpaceNeed } from "./disk-space";
 import { quiesce, type RestoreDestination } from "./quiesce";
 import { getSystemBackupsDefault, resolveBackupSwitch } from "./switch";
+import { appNotRunning } from "@/lib/apps/run-state";
 import { isSelfApp } from "@/lib/docker/self-env";
 import {
   DIRECTORY_SOURCE_MARKER,
@@ -920,6 +921,10 @@ async function runBackupUntracked(
   const jobApps = options.appIds
     ? scoped
     : switchedOn.filter((bja) => bja.app.status !== "missing");
+  // A missing app stopped on purpose still lets the run cover the job; one that vanished after running doesn't.
+  const stoppedMissing = options.appIds
+    ? 0
+    : switchedOn.filter((bja) => bja.app.status === "missing" && appNotRunning(bja.app)).length;
   const jobVolumes = scope
     ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
     : job.backupJobVolumes;
@@ -1320,7 +1325,7 @@ async function runBackupUntracked(
 
   // Only a full-job run that captured an archive may refresh lastRunAt.
   const coveredWholeJob =
-    jobApps.length === job.backupJobApps.length - (scoped.length - switchedOn.length) &&
+    jobApps.length + stoppedMissing === job.backupJobApps.length - (scoped.length - switchedOn.length) &&
     jobVolumes.length === job.backupJobVolumes.length;
   const capturedSomething = results.some((r) => r.outcome === "success");
   const onlyEmptySources = results.length > 0 && results.every((r) => r.emptySource || r.undeclared);
