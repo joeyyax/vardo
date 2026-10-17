@@ -65,7 +65,8 @@ import { TARGET_BUILD, bringBack } from "../remote-build";
 import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
-import { exportMsFromBuildOutput } from "../stage-timings";
+import { contextBytesFromBuildOutput, exportMsFromBuildOutput } from "../stage-timings";
+import { imagesBytes } from "../image-size";
 import { acquireCheckoutLock, type CheckoutLock } from "../checkout-lock";
 import {
   INCLUDE_GIT_ENV,
@@ -380,6 +381,7 @@ async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) =
   }
   const start = admitted();
   const end = Date.now();
+  ctx.placement?.built({ contextBytes: contextBytesFromBuildOutput(capture.text) });
   const exportMs = Math.min(exportMsFromBuildOutput(capture.text), end - start);
   ctx.timer.range("build", start, end - exportMs);
   if (exportMs > 0) ctx.timer.range("export", end - exportMs, end);
@@ -501,7 +503,7 @@ async function dockerBuild(
       const remoteArgs = dockerfileBuildArgs({ ...argsInput, loadArgs: TARGET_BUILD.loadArgs });
       await onTarget(target, async (session) => {
         await spawnStream("docker", remoteArgs, { cwd: repoPath, env: remoteEnv(authEnv, session), signal }, logs, "[build][docker]", build.capture);
-        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, from: target.name, log: (line) => logs.push(line), signal });
+        await bringBack([{ image: build.imageName, ref: remote.ref }], { authEnv, session, from: target.name, log: (line) => logs.push(line), placement: build.gate.placement, signal });
       });
     });
   } catch (err) {
@@ -910,7 +912,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           dockerfilePath: customDockerfile,
           cacheKey: ctx.appId,
           signal,
-          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal, deploySlot: ctx.deploySlot },
+          gate: { deploymentId: ctx.deploymentId, log, wait: ctx.wait, signal, deploySlot: ctx.deploySlot, placement: ctx.placement },
           overrides,
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,
@@ -939,6 +941,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw buildErr;
           }
         }
+        ctx.placement?.built({ imageBytes: await imagesBytes([imageName]) });
       }
 
       if (key) {

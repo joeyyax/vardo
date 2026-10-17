@@ -6,6 +6,7 @@ import { formatBytes } from "@/lib/metrics/format";
 import { REGISTRY_TRANSFER_TIMEOUT } from "./build-registry";
 import { BuilderError, builderFailureReason, remoteEnv, type DockerSession } from "./build-targets";
 import type { BoundedBuild } from "./build-memory";
+import type { BuildPlacementRecorder } from "./build-placement";
 
 const TAG_TIMEOUT = 30_000;
 /** A copy over SSH fails when no bytes move for this long. */
@@ -75,8 +76,8 @@ class PushError extends Error {
   }
 }
 
-function seconds(began: number): string {
-  return `${((Date.now() - began) / 1000).toFixed(1)}s`;
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 /** Pushes from the target and pulls here under the image's own name. The image stays on the target. */
@@ -194,6 +195,8 @@ export async function bringBack(
     /** The target's name for the deploy log. */
     from: string;
     log: (line: string) => void;
+    /** Records how each image came back, as the log reports it. */
+    placement?: Pick<BuildPlacementRecorder, "transferred">;
     signal?: AbortSignal;
     exec?: Exec;
     spawn?: Spawn;
@@ -216,7 +219,9 @@ export async function bringBack(
           const began = Date.now();
           try {
             await viaRegistry(image, ref, exec, there, here, opts.signal);
-            opts.log(`[build] Pulled ${ref} from the build registry as ${image} (${seconds(began)})`);
+            const ms = Date.now() - began;
+            opts.log(`[build] Pulled ${ref} from the build registry as ${image} (${seconds(ms)})`);
+            opts.placement?.transferred({ via: "registry", ms });
             continue;
           } catch (err) {
             if (opts.signal?.aborted) throw err;
@@ -234,7 +239,9 @@ export async function bringBack(
       const began = Date.now();
       try {
         const bytes = await copyImage(image, { fromEnv: there, toEnv: here, signal: opts.signal, spawn: opts.spawn });
-        opts.log(`[build] Copied ${image} from ${opts.from} over SSH (${formatBytes(bytes)}, ${seconds(began)})`);
+        const ms = Date.now() - began;
+        opts.log(`[build] Copied ${image} from ${opts.from} over SSH (${formatBytes(bytes)}, ${seconds(ms)})`);
+        opts.placement?.transferred({ via: skipped ? "registry_skipped" : "ssh", ms, bytes });
       } catch (err) {
         if (opts.signal?.aborted) throw err;
         const message = (err as Error).message;

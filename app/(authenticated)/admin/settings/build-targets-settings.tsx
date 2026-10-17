@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, ServerCog } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/messenger";
+import { buildStatsParts } from "@/lib/ui/build-placement";
+import type { BuildStats } from "@/lib/docker/build-placement-stats";
 import { useSystemSetting } from "./use-system-setting";
 
 type Target = {
@@ -25,9 +27,11 @@ type Target = {
   hostKey: string[] | null;
   /** Linked instance only: why it can't take builds yet. */
   waiting?: string | null;
+  /** Builds sent there over the stats window, null when none. */
+  stats?: BuildStats | null;
 };
 
-type Data = { registry: boolean; targets: Target[] };
+type Data = { registry: boolean; statsDays?: number; here?: BuildStats | null; targets: Target[] };
 
 type Draft = { id?: string; mesh?: boolean; name: string; host: string; port: string; user: string; privateKey: string; maxConcurrent: string };
 
@@ -35,14 +39,36 @@ const EMPTY: Draft = { name: "", host: "", port: "22", user: "root", privateKey:
 
 const ENDPOINT = "/api/v1/admin/build-targets";
 
+/** Builds over the window in one place: counts, then medians. */
+function BuildStatsLine({ stats, days, where }: { stats: BuildStats | null | undefined; days: number; where: "here" | "target" }) {
+  const parts = buildStatsParts(stats, where);
+  return (
+    <div className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground">
+      <ServerCog className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      {parts ? (
+        <div className="min-w-0 space-y-0.5">
+          <p>Last {days} days: {parts.counts.join(" · ")}</p>
+          {parts.medians.length > 0 && <p>Median {parts.medians.join(" · ")}</p>}
+        </div>
+      ) : (
+        <p className="min-w-0">No builds in the last {days} days</p>
+      )}
+    </div>
+  );
+}
+
 /** Docker hosts over SSH and linked instances that builds overflow to when this server's builder is busy. */
 export function BuildTargetsSettings() {
-  const [data, setData] = useState<Data>({ registry: false, targets: [] });
+  const [data, setData] = useState<Data>({ registry: false, statsDays: 30, here: null, targets: [] });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Target | null>(null);
 
-  const onLoad = useCallback((loaded: Data) => setData({ registry: loaded.registry, targets: loaded.targets }), []);
+  const onLoad = useCallback(
+    (loaded: Data) => setData({ registry: loaded.registry, statsDays: loaded.statsDays, here: loaded.here, targets: loaded.targets }),
+    [],
+  );
+  const days = data.statsDays ?? 30;
   const { loading, saving, save, refetch } = useSystemSetting<Data>(ENDPOINT, {
     label: "Build targets",
     onLoad,
@@ -94,6 +120,10 @@ export function BuildTargetsSettings() {
 
         {data.targets.length > 0 && (
           <ul className="divide-y rounded-md border">
+            <li className="p-3">
+              <p className="text-sm font-medium">This server</p>
+              <BuildStatsLine stats={data.here} days={days} where="here" />
+            </li>
             {data.targets.map((t, i) => (
               <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
                 <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
@@ -111,6 +141,7 @@ export function BuildTargetsSettings() {
                         ? `Not ready: ${t.waiting ?? "waiting for the key exchange"}`
                         : "Host key not pinned yet; Test pins it"}
                   </p>
+                  <BuildStatsLine stats={t.stats} days={days} where="target" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" disabled={busy || testing !== null} onClick={() => test(t)}>

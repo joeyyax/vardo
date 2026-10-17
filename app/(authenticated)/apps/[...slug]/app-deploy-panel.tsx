@@ -47,6 +47,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { compactUptime } from "@/lib/ui/app-row";
 import { DeployProgress, useNow } from "@/components/deploy-progress";
 import { BuildPlanPanel } from "./build-plan-panel";
+import { BuiltOnFact, BuiltOnMark } from "./built-on";
 import type { useCancelDeploy } from "./hooks/use-app-actions";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
 import {
@@ -438,6 +439,7 @@ export function AppDeployPanel({
     // Phones keep one value: the state when there is one, else the time.
     const status = (
       <span className="flex min-w-0 items-center gap-3 text-muted-foreground/70 tabular-nums">
+        {role !== "queued" && <BuiltOnMark deployment={deployment} />}
         {text ? (
           <span className="min-w-0 truncate">{text}</span>
         ) : (
@@ -711,6 +713,11 @@ export function AppDeployPanel({
                   <RelativeTime date={viewing.startedAt} absoluteFirst />
                 </Fact>
                 {viewing.durationMs != null && <Fact label="Took">{formatDuration(viewing.durationMs)}</Fact>}
+                {viewing.buildOutcome && (
+                  <Fact label="Build">
+                    <BuiltOnFact deployment={viewing} />
+                  </Fact>
+                )}
                 {viewing.slot && <Fact label="Container set">{viewing.slot}</Fact>}
               </dl>
             </PanelSection>

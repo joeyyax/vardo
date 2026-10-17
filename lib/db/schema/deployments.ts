@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   index,
   integer,
   jsonb,
@@ -15,6 +16,7 @@ import type { StageTimings } from "@/lib/docker/stage-timings";
 import type { BuildPlanRecord } from "@/lib/docker/build-plan";
 import type { RebuildMode } from "@/lib/docker/build-key";
 import type { DeployStage, WaitReason } from "@/lib/docker/deploy-logger";
+import type { BuildOutcome, ImageTransfer } from "@/lib/docker/build-placement";
 import { user } from "./auth";
 import { deploymentStatusEnum, deploymentTriggerEnum } from "./enums";
 import { apps } from "./apps";
@@ -104,6 +106,21 @@ export const deployments = pgTable("deployment", {
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
   // "target" while running on a build target's deploy slot; "local" on a queued row that must build on this server.
   claimSlot: text("claim_slot").$type<ClaimSlot>(),
+  // Where the build ran: here, on a target, or here after the target failed. Null when the deploy didn't build.
+  buildOutcome: text("build_outcome").$type<BuildOutcome>(),
+  // The build target it ran on or fell back from. Null when it built here.
+  buildTargetId: text("build_target_id"),
+  buildTargetName: text("build_target_name"),
+  // The target's failure when the build fell back here.
+  buildFallbackReason: text("build_fallback_reason"),
+  // How the images came back from the target, and the total time and SSH bytes that took.
+  imageTransfer: text("image_transfer").$type<ImageTransfer>(),
+  imageTransferMs: integer("image_transfer_ms"),
+  imageTransferBytes: bigint("image_transfer_bytes", { mode: "number" }),
+  // Build context sent, total image size and, for a build alone on this server's builder, its memory rise.
+  buildContextBytes: bigint("build_context_bytes", { mode: "number" }),
+  imageBytes: bigint("image_bytes", { mode: "number" }),
+  buildPeakBytes: bigint("build_peak_bytes", { mode: "number" }),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),
@@ -114,5 +131,6 @@ export const deployments = pgTable("deployment", {
     index("deployment_queued_idx").on(t.startedAt).where(sql`status = 'queued'`),
     index("deployment_exclusive_idx").on(t.exclusiveRequestedAt).where(sql`exclusive_requested_at is not null`),
     index("deployment_waiting_idx").on(t.waitingSince).where(sql`wait_reason is not null`),
+    index("deployment_build_outcome_idx").on(t.startedAt).where(sql`build_outcome is not null`),
   ]
 );

@@ -106,6 +106,20 @@ export function formatTimings(timings: StageTimings): string {
   return parts.length ? `[timing] ${parts.join(", ")}` : "";
 }
 
+const SIZE_UNITS: Record<string, number> = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12, kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3 };
+
+/** Bytes of build context BuildKit sent, from `#4 transferring context: 12.3MB 0.4s done` lines. Null when none. */
+export function contextBytesFromBuildOutput(output: string): number | null {
+  const steps = new Map<string, number>();
+  for (const line of output.split(/\r?\n|\r/)) {
+    const m = line.match(/^(?:\[[^\]]*\] )?#(\d+) (?:\[[^\]]*\] )?transferring context: ([\d.]+)\s*([kKMGT]?i?B)\b/);
+    if (!m) continue;
+    const unit = SIZE_UNITS[m[3].toLowerCase()];
+    if (unit) steps.set(m[1], Math.round(Number(m[2]) * unit));
+  }
+  return steps.size ? [...steps.values()].reduce((a, b) => a + b, 0) : null;
+}
+
 /**
  * Seconds BuildKit spent exporting images, from `--progress=plain` output:
  * `#25 sending tarball` ... `#25 DONE 14.3s`. Cached steps carry no duration.

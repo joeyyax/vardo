@@ -3,7 +3,12 @@ import { NextRequest } from "next/server";
 
 // Build target settings: the private key is write-only, a moved host is pinned again, and order is overflow order.
 
-const { store, scans, mesh } = vi.hoisted(() => ({ store: new Map<string, string>(), scans: [] as string[], mesh: [] as unknown[] }));
+const { store, scans, mesh, stats } = vi.hoisted(() => ({
+  store: new Map<string, string>(),
+  scans: [] as string[],
+  mesh: [] as unknown[],
+  stats: { here: null as unknown, targets: {} as Record<string, unknown> },
+}));
 
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
@@ -14,6 +19,7 @@ vi.mock("@/lib/system-settings", () => ({
   setSystemSetting: async (key: string, value: string) => void store.set(key, value),
 }));
 vi.mock("@/lib/mesh/build-peers", () => ({ meshBuildPeers: async () => mesh }));
+vi.mock("@/lib/docker/build-placement-stats", () => ({ PLACEMENT_WINDOW_DAYS: 30, placementStats: async () => stats }));
 vi.mock("@/lib/docker/build-targets", async (original) => ({
   ...(await original<typeof import("@/lib/docker/build-targets")>()),
   hostKeyFingerprints: async () => ["SHA256:abc (ED25519)"],
@@ -46,11 +52,26 @@ beforeEach(() => {
   store.clear();
   scans.length = 0;
   mesh.length = 0;
+  stats.here = null;
+  stats.targets = {};
 });
 
 describe("/api/v1/admin/build-targets", () => {
   it("is empty until a target is added, and says whether the registry is set", async () => {
-    expect(await get()).toEqual({ configured: true, registry: false, targets: [] });
+    expect(await get()).toEqual({ configured: true, registry: false, statsDays: 30, here: null, targets: [] });
+  });
+
+  it("gives this server and each target their last 30 days of builds, null without any", async () => {
+    mesh.push(linked());
+    await post(lh);
+    const sent = { builds: 4, fallbacks: 1, registry: 2, ssh: 1, skipped: 0, mixed: 0, medianBuildMs: 40_000, medianTransferMs: 2100 };
+    const local = { builds: 9, fallbacks: 1, medianBuildMs: 60_000, medianPeakBytes: 1e9 };
+    stats.targets["mesh-lhpeer"] = sent;
+    stats.here = local;
+    const body = await get();
+    const byKind = Object.fromEntries(body.targets.map((t: { kind: string; stats: unknown }) => [t.kind, t.stats]));
+    expect(byKind).toEqual({ mesh: sent, ssh: null });
+    expect(body.here).toEqual(local);
   });
 
   it("saves a target and never returns its private key", async () => {
@@ -58,7 +79,7 @@ describe("/api/v1/admin/build-targets", () => {
     expect(stored()[0]).toMatchObject({ host: "10.99.0.2", privateKey: `${KEY}\n`, hostKey: null, maxConcurrent: 2 });
     const body = await get();
     expect(body.targets).toEqual([
-      { id: expect.any(String), kind: "ssh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 2, hasKey: true, hostKey: null },
+      { id: expect.any(String), kind: "ssh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 2, hasKey: true, hostKey: null, stats: null },
     ]);
     expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
   });
@@ -115,7 +136,7 @@ describe("/api/v1/admin/build-targets", () => {
     mesh.push(linked());
     const body = await get();
     expect(body.targets).toEqual([
-      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null },
+      { id: "mesh-lhpeer", kind: "mesh", name: "Long House", host: "10.99.0.2", port: 22, user: "vardo", maxConcurrent: 1, hasKey: true, hostKey: ["SHA256:abc (ED25519)"], waiting: null, stats: null },
     ]);
     expect(JSON.stringify(body)).not.toContain("PRIVATE KEY");
   });

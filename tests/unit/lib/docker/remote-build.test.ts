@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { spawn } from "child_process";
 import { bringBack, copyImage, resetPushCeilings, MIN_CEILING_BYTES } from "@/lib/docker/remote-build";
 import { BuilderError } from "@/lib/docker/build-targets";
+import { createBuildPlacement } from "@/lib/docker/build-placement";
 
 // Bringing a target's image here: the build registry first, then `docker save | docker load` over SSH.
 
@@ -157,6 +158,41 @@ describe("bringBack", () => {
       await bringBack([{ image: "c:1", ref: "reg/c:1" }], { authEnv, session, from: "lh", log: () => {}, exec: next.exec, spawn });
       expect(next.calls.some((c) => c.args[0] === "push")).toBe(true);
     });
+  });
+
+  it("records how each image came back, with the times and bytes its log lines give", async () => {
+    const { spawn } = shells({ save: "head -c 2097152 /dev/zero", load: "cat >/dev/null" });
+    const placement = createBuildPlacement();
+    placement.started({ id: "lh-id", name: "Long House" });
+    const lines: string[] = [];
+    await bringBack([{ image: "shop:d", ref: "reg/shop:k" }], { authEnv, session, from: "Long House", log: (l) => lines.push(l), placement, exec: recorder().exec, spawn });
+    expect(placement.columns()).toMatchObject({ imageTransfer: "registry", imageTransferBytes: null });
+    const pulled = lines[0].match(/\((\d+\.\d)s\)$/)?.[1];
+    expect(((placement.columns().imageTransferMs ?? -1) / 1000).toFixed(1)).toBe(pulled);
+
+    const ssh = createBuildPlacement();
+    ssh.started({ id: "lh-id", name: "Long House" });
+    await bringBack([{ image: "shop:d", ref: null }], { authEnv, session, from: "Long House", log: () => {}, placement: ssh, exec: recorder().exec, spawn });
+    expect(ssh.columns()).toMatchObject({ imageTransfer: "ssh", imageTransferBytes: 2_097_152 });
+  });
+
+  it("records an SSH copy that skipped the registry, and mixed ways across images", async () => {
+    const big = MIN_CEILING_BYTES * 4;
+    const { spawn } = shells({ save: "head -c 1000 /dev/zero", load: "cat >/dev/null" });
+    await bringBack([{ image: "a:1", ref: "reg/a:1" }], { authEnv, session, from: "lh", log: () => {}, exec: recorder((a) => a[0] === "push", { layers: [big], stderr: "write: broken pipe" }).exec, spawn });
+
+    const skipped = createBuildPlacement();
+    skipped.started({ id: "lh", name: "lh" });
+    await bringBack([{ image: "a:2", ref: "reg/a:2" }], { authEnv, session, from: "lh", log: () => {}, placement: skipped, exec: recorder(undefined, { layers: [big] }).exec, spawn });
+    expect(skipped.columns()).toMatchObject({ imageTransfer: "registry_skipped", imageTransferBytes: 1000 });
+
+    const mixed = createBuildPlacement();
+    mixed.started({ id: "lh", name: "lh" });
+    await bringBack(
+      [{ image: "web", ref: null }, { image: "api", ref: "reg/api:k" }],
+      { authEnv, session, from: "lh", log: () => {}, placement: mixed, exec: recorder(undefined, { layers: [1000] }).exec, spawn },
+    );
+    expect(mixed.columns()).toMatchObject({ imageTransfer: "mixed", imageTransferBytes: 1000 });
   });
 
   it("copies over SSH when the pull here fails", async () => {
