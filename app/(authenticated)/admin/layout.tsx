@@ -73,6 +73,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       items: [
         { label: "Overview", href: "/admin", exact: true },
         { label: "Pipeline", href: "/admin/pipeline" },
+        { label: "Apps", href: "/admin/apps" },
       ],
     },
 {

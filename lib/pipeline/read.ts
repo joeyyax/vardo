@@ -49,7 +49,7 @@ async function cached<T>(slot: { at: number; value: T } | null, load: () => Prom
   return value;
 }
 
-const readTargets = () =>
+export const readTargets = () =>
   cached(
     targetsCache,
     async () => (await configuredTargets()).map((t): TargetConfig => ({ id: t.id, name: t.name, kind: t.kind, maxConcurrent: t.maxConcurrent })),
@@ -92,7 +92,7 @@ type DeploySelect = { [K in Exclude<keyof typeof deployColumns, "logTail">]: (ty
   logTail: string | null;
 };
 
-const toRow = (r: DeploySelect): DeployRow => ({
+export const toRow = (r: DeploySelect): DeployRow => ({
   id: r.id!,
   appId: r.appId!,
   appName: r.appName!,
@@ -120,7 +120,7 @@ const toRow = (r: DeploySelect): DeployRow => ({
 });
 
 /** Deploy rows with their app and org. */
-const deployFrom = () =>
+export const deployFrom = () =>
   db
     .select(deployColumns)
     .from(deployments)
