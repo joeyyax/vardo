@@ -231,7 +231,10 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
   ];
 
   const loops = groupLoops(input.loops);
-  const appNames = new Map([...Object.entries(input.eventApps ?? {}), ...input.deploys.map((d): [string, string] => [d.id, d.appName])]);
+  const appNames = new Map([
+    ...Object.entries(input.eventApps ?? {}),
+    ...[...input.deploys, ...(input.recent ?? [])].map((d): [string, string] => [d.id, d.appName]),
+  ]);
   const refusalsListed = new Set<string>();
   const activity = [
     ...input.events.flatMap((e, i) => {

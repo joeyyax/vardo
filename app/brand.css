@@ -197,6 +197,13 @@
   --status-neutral: oklch(45% 0.012 78);
   --status-neutral-muted: oklch(94.9% 0.001 78);
   --status-neutral-edge: oklch(57% 0.012 78);
+
+  /* Deploy stages in loop order on one neutral ramp; later stages are stronger so short ones still show. */
+  --st-prep: oklch(78.2% 0.004 82);
+  --st-build: oklch(60.3% 0.006 80);
+  --st-start: oklch(47.3% 0.008 79);
+  --st-health: oklch(35.9% 0.01 77);
+  --st-switch: oklch(24.5% 0.011 76);
   /* Teal is the shallowest stop in sRGB — 0.078 is the ceiling at this L. */
   --status-disposable: oklch(48% 0.078 200);
   --status-disposable-muted: oklch(94.9% 0.01 200);
@@ -307,6 +314,12 @@
     --status-neutral: oklch(70% 0.008 78);
     --status-neutral-muted: oklch(30.7% 0.009 78);
     --status-neutral-edge: oklch(63% 0.008 78);
+
+    --st-prep: oklch(42.3% 0.008 78);
+    --st-build: oklch(57.4% 0.008 80);
+    --st-start: oklch(68.3% 0.007 81);
+    --st-health: oklch(77.9% 0.007 83);
+    --st-switch: oklch(87.5% 0.006 84);
     --status-disposable: oklch(72% 0.116 200);
     --status-disposable-muted: oklch(30.4% 0.021 200);
     /* Teal again — 0.102 is the ceiling at the edge lightness. */

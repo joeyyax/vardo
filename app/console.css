@@ -62,6 +62,12 @@
   --color-status-critical-edge: var(--status-critical-edge);
 
   --color-row-hover: var(--row-hover);
+
+  --color-st-prep: var(--st-prep);
+  --color-st-build: var(--st-build);
+  --color-st-start: var(--st-start);
+  --color-st-health: var(--st-health);
+  --color-st-switch: var(--st-switch);
   --shadow-soft: var(--shadow-soft-value);
 
   --color-env-tier: var(--env-tier);
@@ -124,6 +130,43 @@ html {
   @media (prefers-reduced-motion: reduce) {
     animation: none;
     background-color: var(--brass-muted);
+  }
+}
+
+/* Pipeline tracks: waiting is amber hatch, a rollback red hatch, a linked instance's own build a faint one. */
+@utility hatch-warn {
+  background: repeating-linear-gradient(135deg, var(--status-warning) 0 2px, transparent 2px 6px);
+  outline: 1px solid var(--status-warning-edge);
+  outline-offset: -1px;
+}
+@utility hatch-error {
+  background: repeating-linear-gradient(135deg, var(--status-error) 0 2px, transparent 2px 5px);
+  outline: 1px solid var(--status-error-edge);
+  outline-offset: -1px;
+}
+@utility hatch-muted {
+  background: repeating-linear-gradient(135deg, color-mix(in oklch, var(--foreground) 12%, transparent) 0 3px, transparent 3px 7px);
+}
+@utility track-future {
+  background: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in oklch, var(--foreground) 4%, transparent) 3px 4px);
+}
+
+/* The same flash in the error tone, for a row that settled as a failure. */
+@keyframes row-flash-error {
+  0%,
+  35% {
+    background-color: var(--status-error-muted);
+    box-shadow: inset 2px 0 0 var(--status-error);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+@utility animate-row-flash-error {
+  animation: row-flash-error 1.8s var(--ease-out-quart);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }
 
