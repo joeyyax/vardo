@@ -113,10 +113,14 @@ export type BarPiece = {
   end: number;
   /** Still growing at now. */
   open: boolean;
+  /** The shared stage it was in, kept when a failure repaints it. */
+  stage: SharedStage;
+  /** Its name without the time: "Build on Long House". */
+  label: string;
   title: string;
 };
 
-const PIECE_TITLE: Record<string, string> = {
+export const PIECE_TITLE: Record<string, string> = {
   queued: "Queued",
   prepare: "Prepare",
   wait: "Waiting for a builder",
@@ -142,13 +146,13 @@ export function barPieces(d: PipelineDeploy, now: number): BarPiece[] {
     const kind = s.stage === "queued" ? "queued" : s.stage === "wait" ? "wait" : (s.stage as BarStage);
     const stop = end(s);
     const label = s.stage === "build" && d.builderName ? `Build on ${d.builderName}` : PIECE_TITLE[kind];
-    pieces.push({ key: `${s.stage}-${i}`, kind, start: s.start, end: stop, open: s.end === null && isLive(d), title: `${label} ${clock(stop - s.start)}` });
+    pieces.push({ key: `${s.stage}-${i}`, kind, start: s.start, end: stop, open: s.end === null && isLive(d), stage: s.stage, label, title: `${label} ${clock(stop - s.start)}` });
   });
 
   if (d.rollback) {
     const from = pieces.at(-1)?.end ?? d.queuedAt;
     const to = d.finishedAt ?? now;
-    pieces.push({ key: "back", kind: "back", start: from, end: to, open: isLive(d), title: `Rolling back ${clock(to - from)}` });
+    pieces.push({ key: "back", kind: "back", start: from, end: to, open: isLive(d), stage: "rollingBack", label: isLive(d) ? "Rolling back" : "Rolled back", title: `Rolling back ${clock(to - from)}` });
     return pieces;
   }
 
@@ -160,7 +164,7 @@ export function barPieces(d: PipelineDeploy, now: number): BarPiece[] {
   }
   if (d.stop === "rolledBack" && last) {
     const to = Math.max(d.finishedAt ?? now, last.end + MIN_BACK_MS);
-    pieces.push({ key: "back", kind: "back", start: last.end, end: to, open: false, title: "Rolled back · the old version kept serving" });
+    pieces.push({ key: "back", kind: "back", start: last.end, end: to, open: false, stage: "rollingBack", label: "Rolled back", title: "Rolled back · the old version kept serving" });
   }
   return pieces;
 }
@@ -329,6 +333,47 @@ export function stageTimes(d: PipelineDeploy, now: number): Partial<Record<BarSt
     out[k] = (out[k] ?? 0) + Math.max(0, (s.end ?? d.finishedAt ?? now) - s.start);
   }
   return out;
+}
+
+/** A window that runs from `start` to `end`, for a track zoomed to one deploy. */
+export function zoomFrame(start: number, end: number): { now: number; windowMs: number } {
+  const windowMs = Math.max(1, end - start) / (1 + FUTURE);
+  return { now: start + windowMs, windowMs };
+}
+
+/** Room left past the latest mark on a zoomed track. */
+const ZOOM_PAD = 0.04;
+
+/**
+ * A zoomed track's span: from the deploy's queue to its finish, or while it runs to its expected finish.
+ * Either way it fits the last good deploy's length, so the reference bar is never cut.
+ */
+export function zoomRange(
+  d: PipelineDeploy,
+  pieces: Pick<BarPiece, "end">[],
+  ghosts: Pick<Ghost, "end">[],
+  previousMs: number | null,
+  now: number,
+): { start: number; end: number } {
+  const start = d.queuedAt;
+  const done = pieces.at(-1)?.end ?? d.finishedAt ?? now;
+  const reach = Math.max(isLive(d) ? Math.max(now, ghosts.at(-1)?.end ?? now) : done, start + (previousMs ?? 0), start + 1_000);
+  return { start, end: isLive(d) ? reach + (reach - start) * ZOOM_PAD : reach };
+}
+
+/** Gridlines across a zoomed track, every 30s, minute or 5m so they stay a few dozen at most. */
+export function zoomGrid(start: number, end: number): number[] {
+  const len = end - start;
+  const step = len <= 5 * 60_000 ? 30_000 : len <= 15 * 60_000 ? 60_000 : 5 * 60_000;
+  const out: number[] = [];
+  for (let t = start + step; t < end; t += step) out.push(t);
+  return out;
+}
+
+/** When a running deploy should go live at its medians, or null when the ghosts stop short of Switch traffic. */
+export function expectedLive(ghosts: Ghost[]): number | null {
+  const last = ghosts.at(-1);
+  return last?.kind === "switch" ? last.end : null;
 }
 
 /** Text width at the label font, for deciding whether a label fits inside its bar. */

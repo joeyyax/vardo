@@ -45,7 +45,7 @@ import { formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { compactUptime } from "@/lib/ui/app-row";
-import { DeployProgress, useNow } from "@/components/deploy-progress";
+import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
 import { BuildPlanPanel } from "./build-plan-panel";
 import { BuiltOnFact, BuiltOnMark } from "./built-on";
 import type { useCancelDeploy } from "./hooks/use-app-actions";
@@ -180,6 +180,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 const PROBLEM_TONE = { error: "text-status-error", warning: "text-status-warning" } as const;
 
+/** A deploy that finished this recently opens in the deploy view. */
+const FINISHED_LINGER_MS = 2 * 60_000;
+
 /** Modal layers own Escape while they are open. */
 function overlayOpen(): boolean {
   return !!document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], [role="menu"]');
@@ -209,9 +212,8 @@ export function AppDeployPanel({
     deployStages,
     deployWait,
     deployLog,
+    deployId,
     deployStartTime,
-    expandedDeployLog,
-    setExpandedDeployLog,
     viewingLogId,
     setViewingLogId,
     handleRollbackPreview,
@@ -225,7 +227,9 @@ export function AppDeployPanel({
     handleRollbackConfirm,
   } = deploy;
 
-  const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
+  // The finished deploy's view stays until it's closed or another starts.
+  const [keptId, setKeptId] = useState<string | null>(null);
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
   const clock = useNow(30_000);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const { cancelRequested, setCancelRequested, cancelDeploy } = cancel;
@@ -390,6 +394,19 @@ export function AppDeployPanel({
 
   const roleOf = (d: Deployment): DeployRole =>
     d.id === liveDeploy?.id ? "live" : d.id === instantRollbackDeploy?.id ? "standby" : d.status === "queued" ? "queued" : "history";
+
+  const trackUrl = (id: string | null | undefined) => (id ? `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${id}/track` : null);
+  const commitOf = (d: Deployment | null | undefined) => (d ? { sha: d.gitSha, message: d.gitMessage, by: triggeredBy(d) } : null);
+  const watched = deployId ? (filteredDeployments.find((d) => d.id === deployId) ?? null) : null;
+  // The deploy this page watched finish, or one that finished in the last two minutes.
+  const latest = completedDeployments[0] ?? null;
+  const justDone = latest?.finishedAt && clock !== null && clock - new Date(latest.finishedAt).getTime() < FINISHED_LINGER_MS ? latest : null;
+  const candidate = deploying ? null : watched && watched.status !== "queued" && watched.status !== "running" ? watched : justDone;
+  if (candidate && candidate.id !== keptId && candidate.id !== dismissedId) setKeptId(candidate.id);
+  const finished = !deploying && keptId && keptId !== dismissedId ? (completedDeployments.find((d) => d.id === keptId) ?? null) : null;
+  // The log this page streamed, else the stream replayed with its stages.
+  const watchedHere = !!finished && finished.id === deployId && deployLog.length > 0;
+  const replay = useDeployStream(orgId, appId, { deploymentId: finished?.id, enabled: !!finished && !watchedHere, withLog: true });
 
   const viewing = viewingLogId ? filteredDeployments.find((d) => d.id === viewingLogId) ?? null : null;
 
@@ -583,8 +600,8 @@ export function AppDeployPanel({
                 }}
                 typicalMs={typicalMs}
                 log={deployLog}
-                expanded={expandedDeployLog}
-                onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
+                trackUrl={trackUrl(deployId ?? serverRunningDeploy?.id)}
+                commit={commitOf(watched ?? serverRunningDeploy)}
                 cancelling={cancelRequested}
                 onStartNext={instanceAdmin ? () => bumpDeploy() : undefined}
               />
@@ -597,9 +614,22 @@ export function AppDeployPanel({
                 row={serverRunningDeploy}
                 typicalMs={typicalMs}
                 log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
-                expanded={expandedServerDeploy}
-                onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
+                trackUrl={trackUrl(serverRunningDeploy.id)}
+                commit={commitOf(serverRunningDeploy)}
                 cancelling={cancelRequested}
+              />
+            )}
+            {finished && (!serverRunningDeploy || serverRunningDeploy.status !== "running") && (
+              <DeployProgress
+                variant="full"
+                stages={watchedHere ? deployStages : replay.stages}
+                wait={NO_WAIT}
+                row={finished}
+                typicalMs={typicalMs}
+                log={watchedHere ? deployLog : replay.log.length ? replay.log : finished.log ? finished.log.split("\n") : []}
+                trackUrl={trackUrl(finished.id)}
+                commit={commitOf(finished)}
+                onDismiss={() => setDismissedId(finished.id)}
               />
             )}
 

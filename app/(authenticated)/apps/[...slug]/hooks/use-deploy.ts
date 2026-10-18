@@ -76,8 +76,16 @@ export function useDeploy({
     const event = parseWaitEvent(data);
     if (event) setDeployWait((prev) => applyWait(prev, event));
   }, []);
+  // Marks where each stage starts in the log.
   const recordStage = useCallback((stage: string, status: StageStatus) => {
     setDeployStages((prev) => ({ ...prev, [stage]: status }));
+    setDeployLog((prev) => [...prev, `[stage] ${stage}: ${status}`]);
+  }, []);
+  // The deploy in flight, or the last one this page watched once it's done.
+  const [deployId, setDeployId] = useState<string | null>(null);
+  const noteDeployId = useCallback((data: unknown) => {
+    const id = (data as { deploymentId?: unknown } | null)?.deploymentId;
+    if (typeof id === "string") setDeployId(id);
   }, []);
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
   const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
@@ -101,6 +109,8 @@ export function useDeploy({
     const attach = !!serverRunningDeploy && !deploying;
     setAttachedDeployId(attach ? runningDeployId : null);
     if (attach) {
+      setDeployId(runningDeployId);
+      setDeployLog([]);
       setDeploying(true);
       setDeployQueued(serverRunningDeploy.status === "queued");
       setDeployStages({});
@@ -163,9 +173,7 @@ export function useDeploy({
           else toast.error(message);
           announce(`${message}.`);
         }
-        if (data.deploymentId) {
-          setViewingLogId(data.deploymentId);
-        }
+        noteDeployId(data);
       } catch { /* skip malformed */ }
       es.close();
       setDeploying(false);
@@ -223,7 +231,6 @@ export function useDeploy({
                   .trim();
                 toast.error(cleaned || "Deployment failed");
               }
-              setViewingLogId(dep.id);
               stopped = true;
             }
           } catch { /* retry */ }
@@ -244,6 +251,7 @@ export function useDeploy({
     setDeploying(true);
     setDeployQueued(true);
     onDeployStartedRef.current?.();
+    setDeployId(null);
     setDeployLog([]);
     setDeployStages({});
     setDeployWait(NO_WAIT);
@@ -291,6 +299,7 @@ export function useDeploy({
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
             } else if (eventType === "status") {
+              noteDeployId(data);
               setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
@@ -308,9 +317,7 @@ export function useDeploy({
                 else toast.error(message);
                 setDeployAnnouncement(`${message}.`);
               }
-              if (result.deploymentId) {
-                setViewingLogId(result.deploymentId);
-              }
+              noteDeployId(result);
             } else if (eventType === "error") {
               toast.error((data as { message: string }).message);
             }
@@ -329,7 +336,7 @@ export function useDeploy({
       setDeploying(false);
       setDeployAbort(null);
     }
-  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage, recordWait]);
+  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage, recordWait, noteDeployId]);
 
   const handleDeploy = useCallback(() => runDeploy(), [runDeploy]);
   const handleRebuild = useCallback(() => runDeploy("no-cache"), [runDeploy]);
@@ -369,6 +376,7 @@ export function useDeploy({
     setDeploying(true);
     setDeployQueued(true);
     onDeployStartedRef.current?.();
+    setDeployId(null);
     setDeployLog([]);
     setDeployStages({});
     setDeployWait(NO_WAIT);
@@ -420,6 +428,7 @@ export function useDeploy({
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
             } else if (eventType === "status") {
+              noteDeployId(data);
               setDeployQueued((data as { status: string }).status === "queued");
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: StageStatus };
@@ -435,9 +444,7 @@ export function useDeploy({
               } else {
                 toast.error(result.error || "Rollback deployment failed");
               }
-              if (result.deploymentId) {
-                setViewingLogId(result.deploymentId);
-              }
+              noteDeployId(result);
             }
           }
         }
@@ -463,6 +470,7 @@ export function useDeploy({
     deploying,
     deployQueued,
     deployLog,
+    deployId,
     deployStartTime,
     deployStages,
     deployWait: seededWait,

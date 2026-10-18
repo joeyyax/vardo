@@ -17,23 +17,28 @@ import {
   type WaitState,
 } from "@/lib/ui/deploy-wait";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { Term } from "@/components/term";
-import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
+import { DeployZoom } from "@/components/deploy-view";
 import { quietLinkClass } from "@/components/entity-link";
 import { cn } from "@/lib/utils";
 
 type StageStatus = "running" | "success" | "failed" | "skipped";
 
-export type DeployStream = { stages: Record<string, StageStatus>; wait: WaitState };
+export type DeployStream = { stages: Record<string, StageStatus>; wait: WaitState; log: string[] };
 
-/** Phases and waits of an app's deploy, from its log stream. Replays from the start on connect. */
-export function useDeployStream(orgId: string, appId: string, { deploymentId, enabled = true }: { deploymentId?: string; enabled?: boolean } = {}) {
+/**
+ * Phases and waits of an app's deploy, from its log stream. Replays from the start on connect.
+ * `withLog` keeps its lines too, with a `[stage]` marker where each stage starts.
+ */
+export function useDeployStream(
+  orgId: string,
+  appId: string,
+  { deploymentId, enabled = true, withLog = false }: { deploymentId?: string; enabled?: boolean; withLog?: boolean } = {},
+) {
   const key = `${appId}:${deploymentId ?? ""}`;
-  const [stream, setStream] = useState<DeployStream & { key: string }>({ key, stages: {}, wait: NO_WAIT });
-  if (stream.key !== key) setStream({ key, stages: {}, wait: NO_WAIT });
+  const [stream, setStream] = useState<DeployStream & { key: string }>({ key, stages: {}, wait: NO_WAIT, log: [] });
+  if (stream.key !== key) setStream({ key, stages: {}, wait: NO_WAIT, log: [] });
 
   useEffect(() => {
     if (!enabled) return;
@@ -42,7 +47,10 @@ export function useDeployStream(orgId: string, appId: string, { deploymentId, en
     es.addEventListener("stage", (event) => {
       try {
         const data = JSON.parse((event as MessageEvent).data) as { stage?: string; status?: StageStatus };
-        if (data.stage && data.status) setStream((s) => ({ ...s, stages: { ...s.stages, [data.stage!]: data.status! } }));
+        if (data.stage && data.status) {
+          const marker = `[stage] ${data.stage}: ${data.status}`;
+          setStream((s) => ({ ...s, stages: { ...s.stages, [data.stage!]: data.status! }, log: withLog ? [...s.log, marker] : s.log }));
+        }
       } catch {
         /* malformed event */
       }
@@ -55,10 +63,20 @@ export function useDeployStream(orgId: string, appId: string, { deploymentId, en
         /* malformed event */
       }
     });
+    if (withLog) {
+      es.addEventListener("log", (event) => {
+        try {
+          const data = JSON.parse((event as MessageEvent).data) as { message?: string };
+          if (typeof data.message === "string") setStream((s) => ({ ...s, log: [...s.log, data.message!] }));
+        } catch {
+          /* malformed event */
+        }
+      });
+    }
     es.addEventListener("done", () => es.close());
     es.onerror = () => es.close();
     return () => es.close();
-  }, [orgId, appId, deploymentId, enabled]);
+  }, [orgId, appId, deploymentId, enabled, withLog]);
 
   return stream;
 }
@@ -170,8 +188,8 @@ function WaitLine({ view, line, className }: { view: DeployView; line: string; c
 }
 
 /**
- * A deploy in flight: the phase strip, a bar against the last good deploy and the time left.
- * `full` names every phase and adds the time spent and the log; `compact` names only the phase in flight.
+ * A deploy in flight. `full` is the deploy view: its stages zoomed on one track, the time left and the log by stage.
+ * `compact` is the phase strip naming only the phase in flight, a bar against the last good deploy and the time left.
  */
 export function DeployProgress({
   variant,
@@ -182,8 +200,9 @@ export function DeployProgress({
   href,
   subject,
   log,
-  expanded = false,
-  onToggleExpand,
+  trackUrl = null,
+  commit,
+  onDismiss,
   cancelling = false,
   onStartNext,
 }: {
@@ -198,10 +217,13 @@ export function DeployProgress({
   href?: string;
   /** Compact: the app, so each "Open" link names its deploy to a screen reader. */
   subject?: string;
-  /** Full: the deploy log, shown on expand. */
+  /** Full: the deploy log, with `[stage]` markers where stages start. */
   log?: string[];
-  expanded?: boolean;
-  onToggleExpand?: () => void;
+  /** Full: where the deploy's track is read. */
+  trackUrl?: string | null;
+  commit?: { sha: string | null; message: string | null; by: string | null } | null;
+  /** Full: closes a finished deploy's view. */
+  onDismiss?: () => void;
   /** Full: a cancel was signaled and the engine is finishing its current phase. */
   cancelling?: boolean;
   /** Instance admins: moves a deploy waiting in line to the front. Resolves true once it has. */
@@ -318,45 +340,31 @@ export function DeployProgress({
     );
   }
 
-  const hasLog = !!log?.length;
+  const held = !!view.held && row.status !== "success";
   return (
-    <Card variant="surface" className="grid gap-3 p-4">
-      <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {announcement(view, wait, steps, stages)}
-      </span>
-      <div className="flex items-start justify-between gap-4">
-        {strip}
-        {hasLog && onToggleExpand && (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-label={expanded ? "Hide deploy log" : "Show deploy log"}
-            onClick={onToggleExpand}
-            className="relative shrink-0 rounded p-0.5 after:absolute after:-inset-3 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass pointer-fine:after:hidden"
-          >
-            <DisclosureChevron open={expanded} />
-          </button>
-        )}
-      </div>
-      {bar}
-      {text && (
-        <div className="grid gap-0.5">
+    <DeployZoom
+      trackUrl={trackUrl}
+      row={row}
+      stages={stages}
+      view={view}
+      now={now}
+      fallback={held ? null : (text?.line ?? null)}
+      meta={text?.meta ?? null}
+      log={log ?? []}
+      commit={commit}
+      announcement={announcement(view, wait, steps, stages)}
+      action={
+        held && text ? (
           <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
-            <WaitLine view={view} line={text.line} className="text-sm tabular-nums" />
+            <WaitLine view={view} line={text.line} className="text-sm font-medium tabular-nums" />
             {startNext}
           </div>
-          {text.meta && <span className="text-[13px] text-muted-foreground tabular-nums">{text.meta}</span>}
-        </div>
-      )}
-      {cancelling && <p className="text-xs text-muted-foreground">Cancelling — the deploy will stop after the current phase.</p>}
-      {expanded && hasLog && (
-        <TerminalOutput
-          lines={log!.map((line) => ({ text: line, html: highlightLogLine(line), level: detectLogLevel(line) }))}
-          height="max-h-80"
-          showFilters={false}
-        />
-      )}
+        ) : undefined
+      }
+      notice={cancelling ? <p className="text-xs text-muted-foreground">Cancelling — the deploy will stop after the current phase.</p> : undefined}
+      onDismiss={onDismiss}
+    >
       {confirmStartNext}
-    </Card>
+    </DeployZoom>
   );
 }
