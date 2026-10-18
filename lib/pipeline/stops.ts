@@ -11,6 +11,8 @@ export type StopInput = {
   status: string;
   stage: string | null;
   waitReason: WaitReason | string | null;
+  /** "rollback" on an auto-rollback's own run. */
+  trigger?: string | null;
 };
 
 /** `failed` marks a deploy that stopped at `stop` without reaching the swap. */
@@ -33,8 +35,9 @@ const SWAPPED = new Set(["deploy", "healthcheck", "routing"]);
 
 const QUEUE_WAITS = new Set(["app", "deploy-slot", "worker", "exclusive"]);
 
-export function placeDeploy({ status, stage, waitReason }: StopInput): Placement {
+export function placeDeploy({ status, stage, waitReason, trigger }: StopInput): Placement {
   const at = (stop: Stop, extra: Partial<Placement> = {}): Placement => ({ stop, waiting: false, failed: false, gone: false, ...extra });
+  if (trigger === "rollback" && status === "running" && !stage) return at("rolledBack");
   switch (status) {
     case "queued":
       return at("queue", { waiting: true });
@@ -57,7 +60,10 @@ export function placeDeploy({ status, stage, waitReason }: StopInput): Placement
 }
 
 /** What a deploy is doing, in a few words: its shared stage, present tense. */
-export function describePlacement(p: Placement, ctx: { waitReason?: string | null; stage?: string | null; builder?: string | null }): string {
+export function describePlacement(
+  p: Placement,
+  ctx: { waitReason?: string | null; stage?: string | null; builder?: string | null; status?: string },
+): string {
   if (p.gone) return "Cancelled";
   if (p.failed) return ctx.stage ? `Failed at ${failedAt(ctx.stage)}` : "Failed";
   if (ctx.waitReason === "build-slot") return stageHead("wait");
@@ -66,7 +72,7 @@ export function describePlacement(p: Placement, ctx: { waitReason?: string | nul
   if (ctx.waitReason === "worker") return "Waiting for the worker";
   if (ctx.waitReason === "exclusive") return "Waiting for Vardo's own swap";
   if (ctx.waitReason === "checkout") return "Waiting for the checkout";
-  if (p.stop === "rolledBack") return "Rolled back";
+  if (p.stop === "rolledBack") return ctx.status === "running" ? stageHead("rollingBack") : "Rolled back";
   return stageHead(STOP_STAGE[p.stop], { builder: ctx.builder });
 }
 

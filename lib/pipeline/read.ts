@@ -2,7 +2,10 @@
 
 import { and, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, backups, cronJobRuns, cronJobs, deployments } from "@/lib/db/schema";
+import { apps, backupJobs, backups, cronJobRuns, cronJobs, deployments, organizations } from "@/lib/db/schema";
+import { failureFromLog } from "@/lib/stream/deploy-tail";
+import { getNextRun } from "@/lib/backups/next-run";
+import { overdueBackupJobs } from "@/lib/backups/staleness";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { BUILD_GATE_KEYS, localBuildLimit } from "@/lib/docker/build-gate";
@@ -14,6 +17,8 @@ import { readLoopStatus } from "@/lib/worker/status";
 import { PIPELINE_STREAM, parsePipelineEntry, type PipelineEntry } from "./events";
 import {
   assembleSnapshot,
+  toPipelineDeploy,
+  type DeployContext,
   type BackupRow,
   type CronRow,
   type DeployRow,
@@ -22,7 +27,7 @@ import {
   type TargetConfig,
 } from "./snapshot";
 import { pipelineMedians } from "./medians";
-import type { PipelineSnapshot, PipelineTotals } from "./types";
+import type { PipelineSnapshot, PipelineTotals, ScheduledJob } from "./types";
 
 const log = logger.child("pipeline");
 
@@ -77,9 +82,15 @@ const deployColumns = {
   timings: deployments.stageTimings,
   imageTransfer: deployments.imageTransfer,
   imageTransferMs: deployments.imageTransferMs,
+  appSlug: apps.name,
+  orgName: organizations.name,
+  trigger: deployments.trigger,
+  logTail: sql<string | null>`case when ${deployments.status} in ('failed', 'rolled_back') then right(${deployments.log}, 4000) end`,
 };
 
-type DeploySelect = { [K in keyof typeof deployColumns]: (typeof deployColumns)[K]["_"]["data"] | null };
+type DeploySelect = { [K in Exclude<keyof typeof deployColumns, "logTail">]: (typeof deployColumns)[K]["_"]["data"] | null } & {
+  logTail: string | null;
+};
 
 const toRow = (r: DeploySelect): DeployRow => ({
   id: r.id!,
@@ -102,28 +113,72 @@ const toRow = (r: DeploySelect): DeployRow => ({
   timings: r.timings,
   imageTransfer: r.imageTransfer,
   imageTransferMs: r.imageTransferMs,
+  appSlug: r.appSlug,
+  orgName: r.orgName,
+  trigger: r.trigger,
+  failure: failureFromLog(r.logTail) ?? null,
 });
+
+/** Deploy rows with their app and org. */
+const deployFrom = () =>
+  db
+    .select(deployColumns)
+    .from(deployments)
+    .innerJoin(apps, eq(apps.id, deployments.appId))
+    .leftJoin(organizations, eq(organizations.id, apps.organizationId));
 
 /** Finished deploys before the linger, within the hour, newest first. */
 export const RECENT_MS = 60 * 60_000;
 const RECENT_LIMIT = 50;
 
-async function readRecent(now: number): Promise<DeployRow[]> {
-  const rows = await db
-    .select(deployColumns)
-    .from(deployments)
-    .innerJoin(apps, eq(apps.id, deployments.appId))
-    .where(and(gt(deployments.finishedAt, new Date(now - RECENT_MS)), lte(deployments.finishedAt, new Date(now - LINGER_MS))))
+async function readRecent(now: number, windowMs = RECENT_MS, limit = RECENT_LIMIT): Promise<DeployRow[]> {
+  const rows = await deployFrom()
+    .where(
+      and(
+        Number.isFinite(windowMs) ? gt(deployments.finishedAt, new Date(now - windowMs)) : isNotNull(deployments.finishedAt),
+        lte(deployments.finishedAt, new Date(now - LINGER_MS)),
+      ),
+    )
     .orderBy(desc(deployments.finishedAt))
-    .limit(RECENT_LIMIT);
+    .limit(limit);
   return rows.map(toRow);
 }
 
+/** At least this many finished deploys, however old, so a quiet page still shows the last ones. */
+const RECENT_FLOOR = 5;
+
+async function readRecentOrLast(now: number): Promise<DeployRow[]> {
+  const hour = await readRecent(now);
+  return hour.length >= RECENT_FLOOR ? hour : readRecent(now, Infinity, RECENT_FLOOR);
+}
+
+/** History windows the Pipeline page fetches on demand. */
+export const HISTORY_WINDOWS = { "1h": 60 * 60_000, "6h": 6 * 60 * 60_000 } as const;
+export type HistoryWindow = keyof typeof HISTORY_WINDOWS;
+const HISTORY_LIMIT = 300;
+
+/** Deploys finished in the window, newest first, with their apps' medians. */
+export async function readPipelineHistory(window: HistoryWindow): Promise<Pick<PipelineSnapshot, "recent" | "medians">> {
+  const now = Date.now();
+  const [targets, rows, medians] = await Promise.all([
+    readTargets(),
+    readRecent(now, HISTORY_WINDOWS[window], HISTORY_LIMIT),
+    soft(pipelineMedians(now), { apps: {}, builders: {} }, "stage medians"),
+  ]);
+  const ctx: DeployContext = {
+    now,
+    builderName: new Map<string, string>([["local", (await soft(getInstanceDisplayName(), null, "the instance name")) ?? "This server"], ...targets.map((t): [string, string] => [t.id, t.name])]),
+    holding: new Map(),
+    stageAt: new Map(),
+    fellBack: new Set(),
+  };
+  const recent = rows.map((r) => toPipelineDeploy(r, ctx));
+  const ids = new Set(recent.map((d) => d.appId));
+  return { recent, medians: { apps: Object.fromEntries(Object.entries(medians.apps).filter(([id]) => ids.has(id))), builders: medians.builders } };
+}
+
 async function readDeploys(now: number): Promise<DeployRow[]> {
-  const rows = await db
-    .select(deployColumns)
-    .from(deployments)
-    .innerJoin(apps, eq(apps.id, deployments.appId))
+  const rows = await deployFrom()
     .where(
       or(
         inArray(deployments.status, ["queued", "running"]),
@@ -276,17 +331,87 @@ async function readCrons(now: number): Promise<CronRow[]> {
   ];
 }
 
+const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
+
 async function readTotals(now: number): Promise<PipelineTotals> {
-  const [row] = await db
-    .select({
-      live: sql<number>`count(*) filter (where ${deployments.status} = 'success')`,
-      elsewhere: sql<number>`count(*) filter (where ${deployments.buildOutcome} = 'target')`,
-      fellBack: sql<number>`count(*) filter (where ${deployments.buildOutcome} = 'fallback')`,
-      failed: sql<number>`count(*) filter (where ${deployments.status} in ('failed', 'rolled_back'))`,
-    })
-    .from(deployments)
-    .where(gt(deployments.finishedAt, new Date(now - 24 * 60 * 60_000)));
-  return { live: Number(row?.live ?? 0), elsewhere: Number(row?.elsewhere ?? 0), fellBack: Number(row?.fellBack ?? 0), failed: Number(row?.failed ?? 0) };
+  const since = new Date(now - DAY_MS);
+  const [[row], hours, [last]] = await Promise.all([
+    db
+      .select({
+        live: sql<number>`count(*) filter (where ${deployments.status} = 'success')`,
+        elsewhere: sql<number>`count(*) filter (where ${deployments.buildOutcome} = 'target')`,
+        fellBack: sql<number>`count(*) filter (where ${deployments.buildOutcome} = 'fallback')`,
+        failed: sql<number>`count(*) filter (where ${deployments.status} in ('failed', 'rolled_back'))`,
+        medianToLive: sql<number | null>`percentile_cont(0.5) within group (order by extract(epoch from ${deployments.finishedAt} - ${deployments.startedAt}) * 1000) filter (where ${deployments.status} = 'success')`,
+      })
+      .from(deployments)
+      .where(gt(deployments.finishedAt, since)),
+    db
+      .select({ hour: sql<number>`floor(extract(epoch from ${deployments.finishedAt}) / 3600)::int`, n: sql<number>`count(*)::int` })
+      .from(deployments)
+      .where(and(eq(deployments.status, "success"), gt(deployments.finishedAt, since)))
+      .groupBy(sql`1`),
+    db.select({ at: sql<Date | null>`max(${deployments.finishedAt})`.mapWith(deployments.finishedAt) }).from(deployments).where(eq(deployments.status, "success")),
+  ]);
+  const hourly = Array.from({ length: 24 }, () => 0);
+  const thisHour = Math.floor(now / HOUR_MS);
+  for (const h of hours) {
+    const ago = thisHour - Number(h.hour);
+    if (ago >= 0 && ago < 24) hourly[23 - ago] = Number(h.n);
+  }
+  return {
+    live: Number(row?.live ?? 0),
+    elsewhere: Number(row?.elsewhere ?? 0),
+    fellBack: Number(row?.fellBack ?? 0),
+    failed: Number(row?.failed ?? 0),
+    medianToLiveMs: row?.medianToLive == null ? null : Math.round(Number(row.medianToLive)),
+    hourly,
+    lastLiveAt: time(last?.at),
+  };
+}
+
+const UPCOMING_LIMIT = 3;
+const SCHEDULE_CACHE_MS = 30_000;
+let scheduleCache: { at: number; value: { upcoming: ScheduledJob[]; overdue: ScheduledJob[] } } | null = null;
+
+/** The soonest cron and backup runs, and backup jobs past due. */
+async function readSchedules(now: number): Promise<{ upcoming: ScheduledJob[]; overdue: ScheduledJob[] }> {
+  if (scheduleCache && now - scheduleCache.at < SCHEDULE_CACHE_MS) return scheduleCache.value;
+  const [crons, jobs] = await Promise.all([
+    db
+      .select({ name: cronJobs.name, appName: apps.displayName, schedule: cronJobs.schedule, timeZone: cronJobs.timeZone })
+      .from(cronJobs)
+      .leftJoin(apps, eq(apps.id, cronJobs.appId))
+      .where(eq(cronJobs.enabled, true))
+      .limit(500),
+    db
+      .select({
+        id: backupJobs.id,
+        name: backupJobs.name,
+        schedule: backupJobs.schedule,
+        enabled: backupJobs.enabled,
+        lastRunAt: backupJobs.lastRunAt,
+        createdAt: backupJobs.createdAt,
+        timeZone: organizations.timeZone,
+      })
+      .from(backupJobs)
+      .leftJoin(organizations, eq(organizations.id, backupJobs.organizationId))
+      .where(eq(backupJobs.enabled, true))
+      .limit(500),
+  ]);
+  const next = (schedule: string, tz: string | null) => getNextRun(schedule, tz ?? "UTC")?.getTime() ?? null;
+  const upcoming = [
+    ...crons.map((c) => ({ kind: "cron", name: c.appName ? `${c.appName} · ${c.name}` : c.name, at: next(c.schedule, c.timeZone) })),
+    ...jobs.map((j) => ({ kind: "backup", name: j.name, at: next(j.schedule, j.timeZone) })),
+  ]
+    .flatMap((j): ScheduledJob[] => (j.at === null ? [] : [{ kind: j.kind as ScheduledJob["kind"], name: j.name, at: j.at }]))
+    .sort((a, b) => a.at - b.at)
+    .slice(0, UPCOMING_LIMIT);
+  const overdue = overdueBackupJobs(jobs, new Date(now)).map((o): ScheduledJob => ({ kind: "backup", name: o.job.name, at: o.since.getTime() }));
+  const value = { upcoming, overdue };
+  scheduleCache = { at: now, value };
+  return value;
 }
 
 async function readEventApps(events: PipelineEntry[], known: Set<string>): Promise<Record<string, string>> {
@@ -311,7 +436,7 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
   const now = Date.now();
   const targets = await readTargets();
   const drillIds = await soft(readDrillIds(), new Set<string>(), "restore drills");
-  const [instanceName, localSlots, gate, deploys, events, backupRows, drills, crons, loops, totals, recent, medians] = await Promise.all([
+  const [instanceName, localSlots, gate, deploys, events, backupRows, drills, crons, loops, totals, recent, medians, schedules] = await Promise.all([
     soft(getInstanceDisplayName(), null, "the instance name"),
     readLocalSlots(),
     soft(readGate(targets), { local: [], targets: {}, ready: null }, "the build gate"),
@@ -322,8 +447,9 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     soft(readCrons(now), [], "cron runs"),
     soft(readLoopStatus().then((r) => r.loops), [], "background loops"),
     soft(readTotals(now), { live: 0, elsewhere: 0, fellBack: 0, failed: 0 }, "deploy totals"),
-    soft(readRecent(now), [], "recent deploys"),
+    soft(readRecentOrLast(now), [], "recent deploys"),
     soft(pipelineMedians(now), { apps: {}, builders: {} }, "stage medians"),
+    soft(readSchedules(now), { upcoming: [], overdue: [] }, "job schedules"),
   ]);
   const known = new Set([...deploys, ...recent].map((d) => d.id));
   const eventApps = await soft(readEventApps(events, known), {}, "app names");
@@ -344,5 +470,6 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     totals,
     recent,
     medians,
+    ...schedules,
   });
 }

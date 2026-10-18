@@ -63,6 +63,14 @@ const inputs = (over: Partial<SnapshotInputs> = {}): SnapshotInputs => ({
 });
 
 describe("assembleSnapshot", () => {
+  it("names a deploy that finished before the linger in its activity", () => {
+    const done = row({ id: "r", appName: "grady-site", status: "success", stage: "done", finishedAt: NOW - 45_000 });
+    const s = assembleSnapshot(
+      inputs({ recent: [done], events: [{ kind: "stage", deploymentId: "r", stage: "done", status: "success", at: NOW - 45_000 }] }),
+    );
+    expect(s.activity.map((a) => a.text)).toEqual(["grady-site is live"]);
+  });
+
   it("shows empty lanes for every builder when nothing is in flight", () => {
     const s = assembleSnapshot(inputs());
     expect(s.deploys).toEqual([]);
