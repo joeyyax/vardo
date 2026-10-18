@@ -15,43 +15,40 @@ const render = (props: Partial<Omit<Props, "row">> & { row?: Partial<Props["row"
       stages: {},
       wait: NO_WAIT,
       typicalMs: 277_000,
-      log: ["[queue] Waiting for the worker. Deploys start when it's back"],
+      log: ["[queue] In line for a deploy slot"],
       ...props,
       row: { status: "queued", startedAt: Date.now() - 60_000, ...props.row },
     }),
   );
 
 const named = (html: string) => [...html.matchAll(/<span(?: title="[^"]*")?>([^<]+)<\/span><span class="sr-only">/g)].map((m) => m[1]);
+const title = (html: string) => /<h2[^>]*>(?:<svg.*?<\/svg>)?([^<]*)<\/h2>/.exec(html)?.[1];
 
 describe("DeployProgress", () => {
   it("shows a queued deploy as queued, never deploying, with no actions of its own", () => {
     const html = render({});
-    expect(html).toContain("Queued");
+    expect(title(html)).toBe("Queued");
     expect(html).not.toContain("Deploying");
     expect(html).not.toContain("Waiting");
     expect(html).not.toMatch(/Cancel|Abort/);
   });
 
   it("names a held request as preparing", () => {
-    expect(render({ row: { held: true } })).toContain("Preparing");
+    expect(title(render({ row: { held: true } }))).toBe("Preparing");
   });
 
-  it("ticks off the queued step once a phase runs", () => {
-    const html = render({ stages: { clone: "running" }, row: { status: "running" } });
-    expect(html).toMatch(/Queued<\/span><span class="sr-only">, done/);
-    expect(html).toMatch(/Prepare<\/span><span class="sr-only">, in progress/);
+  it("names the stage in flight once a phase runs", () => {
+    expect(title(render({ stages: { clone: "running" }, row: { status: "running" } }))).toBe("Preparing");
+    expect(title(render({ stages: { clone: "success", compose: "success", build: "running" }, row: { status: "running" } }))).toBe("Building");
   });
 
   it("reads a claimed deploy with no phase yet as starting", () => {
-    const html = render({ row: { status: "running", stage: null } });
-    expect(html).toMatch(/Starting<\/span><span class="sr-only">, in progress/);
+    expect(title(render({ row: { status: "running", stage: null } }))).toBe("Starting");
   });
 
-  it("names every phase in full but only the one in flight in compact", () => {
+  it("names only the phase in flight in compact", () => {
     const stages = { clone: "success", compose: "success", build: "running" };
-    const full = named(render({ stages, row: { status: "running" } }));
     const compact = named(render({ variant: "compact", stages, row: { status: "running" }, href: "/apps/x/deployments/d" }));
-    expect(full).toEqual(["Queued", "Prepare", "Build", "Start", "Health check", "Switch traffic"]);
     expect(compact).toEqual(["Build"]);
   });
 
@@ -66,13 +63,19 @@ describe("DeployProgress", () => {
     expect(html).toContain('Open →<span class="sr-only"> deploy of Queued app</span>');
   });
 
-  it("links compact to the deploy and keeps the log and time spent to full", () => {
+  it("links compact to the deploy and keeps the log by stage to full", () => {
     const compact = render({ variant: "compact", stages: { clone: "running" }, row: { status: "running" }, href: "/apps/x/deployments/d" });
     expect(compact).toContain("Open →");
-    expect(compact).not.toContain("deploy log");
-    const full = render({ stages: { clone: "running" }, row: { status: "running" }, onToggleExpand: () => {} });
+    expect(compact).not.toContain(">Log<");
+    const full = render({ stages: { clone: "running" }, row: { status: "running" }, log: ["[stage] clone: running", "[deploy] Cloning"] });
     expect(full).not.toContain("Open →");
-    expect(full).toContain("Show deploy log");
+    expect(full).toContain(">Log<");
+    expect(full).toContain('aria-label="Log by stage"');
+    expect(full).not.toContain("[stage] clone");
+  });
+
+  it("closes a finished deploy's view", () => {
+    expect(render({ row: { status: "success" }, onDismiss: () => {} })).toContain('aria-label="Close"');
   });
 });
 
@@ -113,7 +116,7 @@ describe("stagesUpTo", () => {
   });
 
   it("shows a running row's phase before its stream connects", () => {
-    const html = render({ row: { status: "running", stage: "deploy" } });
+    const html = render({ variant: "compact", row: { status: "running", stage: "deploy" } });
     expect(html).toMatch(/Build<\/span><span class="sr-only">, done/);
     expect(html).toMatch(/Start<\/span><span class="sr-only">, in progress/);
   });

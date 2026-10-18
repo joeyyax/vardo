@@ -38,7 +38,7 @@ export const PIECE_CLASS: Record<BarPiece["kind"], string> = {
   back: "h-3 hatch-error",
 };
 
-const GHOST_CLASS: Record<Ghost["kind"], string> = {
+export const GHOST_CLASS: Record<Ghost["kind"], string> = {
   prepare: "ring-foreground/20",
   build: "ring-foreground/20",
   start: "ring-foreground/20",
