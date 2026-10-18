@@ -11,7 +11,7 @@ import {
   stripVardoInjections,
   stripTraefikLabels,
   injectHeadersIntoOwnRouters,
-  getTraefikRoutedServices,
+  vardoNetworkServices,
 } from "../compose";
 import { selectRoutedService } from "../routed-service";
 import { formatRoute } from "@/lib/domains/path-prefix";
@@ -312,9 +312,9 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] project network ${ctx.projectNetwork}: attached ${attached.join(", ")}`);
   }
 
-  // Only Traefik-routed services join vardo-network, never all of them.
+  // Only Traefik-routed services join vardo-network, never all of them; the console never does.
   // Shared aliases like "postgres" would collide across sibling apps.
-  const traefikRouted = getTraefikRoutedServices(compose);
+  const traefikRouted = vardoNetworkServices(compose, NETWORK_NAME);
   if (traefikRouted.size > 0) {
     compose = injectNetwork(compose, NETWORK_NAME, { attachTo: traefikRouted });
     const skipped = Object.keys(compose.services).filter(

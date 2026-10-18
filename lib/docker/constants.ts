@@ -7,6 +7,9 @@ export const DEFAULT_CONTAINER_PORT = 3000;
 /** Docker network shared by all deployed apps and Traefik. */
 export const NETWORK_NAME = "vardo-network";
 
+/** Docker network only Traefik and the console share, so apps can't reach the console past Traefik (#1136). */
+export const CONSOLE_NETWORK = "vardo_console";
+
 /** Internal network for the collector, Loki and Promtail. Only the console and those services join it. */
 export const MONITORING_NETWORK = "vardo-monitoring";
 

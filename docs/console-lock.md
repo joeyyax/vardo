@@ -21,6 +21,29 @@ The value is a comma-separated list of Traefik middleware references. Apply it w
 
 The two open paths come from `vardo-console-public@file`, which the console writes to Traefik's dynamic directory at boot while a lock is set and removes when it isn't (`lib/docker/console-lock.ts`). The GitHub webhook checks its own HMAC signature.
 
+## Only Traefik reaches the console
+
+The lock runs in Traefik, so it holds only if nothing reaches the console's port 3000 without Traefik. Apps share `vardo-network` with Traefik; the console doesn't. Traefik reaches it on `vardo_console`, a network only the two join, by the console's `traefik.docker.network=vardo_console` label.
+
+| Network | Who else is on it | Why the console joins |
+| --- | --- | --- |
+| `vardo_console` | Traefik, the other console slot | Routing |
+| `vardo_internal` | Postgres, Redis, WireGuard, the worker | Database and Redis |
+| `vardo_mesh` | WireGuard, `vardo-mesh-builder`, the worker | Linked instances, through WireGuard's DNAT |
+| `vardo-monitoring` | The collector, Loki, Promtail | Metrics and logs |
+| `vardo-metadata` | The metadata proxy | [Metadata endpoint](metadata-endpoint.md) |
+
+Never `vardo-network` or a project's `vardo-p-*` network. The worker stays on `vardo-network` for deploy probes and serves only `/healthz` on loopback.
+
+At boot, and every 30 seconds after, each console checks that it and Traefik are on `vardo_console`, connects Traefik if it isn't (no restart), then leaves `vardo-network` (`lib/docker/console-network.ts`). It leaves only once Traefik is beside it, so a failed step keeps it reachable. The 30-second pass puts Traefik back after a recreate that dropped the network. A deploy of Vardo doesn't put the console on `vardo-network`: a service with `vardo.traefik=manual` and its own `traefik.docker.network` is skipped.
+
+Check from any app container:
+
+```
+docker exec <app container> wget -q -T 3 -O- http://vardo-production-<slot>-frontend-1:3000/api/health   # bad address
+docker network inspect vardo_console -f '{{range .Containers}}{{.Name}} {{end}}'                        # vardo-traefik and the console
+```
+
 ## Middlewares
 
 - `cloudflare-only@file`: Vardo maintains it, an ipAllowList of Cloudflare's v4 and v6 ranges refreshed daily from cloudflare.com/ips, plus `VARDO_TRUSTED_PROXIES` (`lib/docker/cloudflare-only.ts`). The console's DNS record must be proxied, or every request gets a 403. Set `VARDO_CONSOLE_CERT_RESOLVER=le-dns` too, since the TLS challenge can't pass Cloudflare's proxy.
@@ -49,6 +72,7 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://SERVER_IP/                    
 ## Gotchas
 
 - A middleware Traefik can't find disables the locked routers: the console's domain shows the "service not found" page and the IP answers 404. It fails closed. Fix the name or clear the variable, then `docker compose up -d frontend` from the slot directory over SSH.
+- The console answers 502 or 504 through Traefik while Traefik isn't on `vardo_console`, for up to 30 seconds after a recreate that dropped it. To fix it by hand: `docker network connect vardo_console vardo-traefik`.
 
 ## Trusted proxies
 

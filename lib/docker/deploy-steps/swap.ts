@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { join } from "path";
 import { connect } from "net";
 import { ensureNetwork } from "../client";
+import { ownContainerOn } from "../console-network";
 import {
   slotComposeFiles,
   getTraefikRoutedServices,
@@ -1011,8 +1012,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const probePort = primarySvcName
       ? routedPort(compose.services[primarySvcName]) ?? containerPort
       : 0;
+    const probeable = primarySvcName && routed.has(primarySvcName) && probePort > 0;
+    // A console off vardo-network can't reach the app; it waits on container state alone.
+    const offNetwork = probeable && (await ownContainerOn(NETWORK_NAME)) === false;
+    if (offNetwork) log(`[deploy] This process isn't on ${NETWORK_NAME}; readiness skips the TCP probe`);
     const probe =
-      primarySvcName && routed.has(primarySvcName) && probePort > 0
+      probeable && !offNetwork
         ? tcpProbe(`${newProjectName}-${primarySvcName}-1`, probePort)
         : undefined;
 
