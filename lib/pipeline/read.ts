@@ -1,6 +1,6 @@
 // Reads what the Pipeline snapshot needs: deploy rows, the build gate in Redis, targets, jobs, loops and recent events.
 
-import { and, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, backupJobs, backups, cronJobRuns, cronJobs, deployments, organizations } from "@/lib/db/schema";
 import { failureFromLog } from "@/lib/stream/deploy-tail";
@@ -26,8 +26,8 @@ import {
   type GateState,
   type TargetConfig,
 } from "./snapshot";
-import { pipelineMedians } from "./medians";
-import type { PipelineSnapshot, PipelineTotals, ScheduledJob } from "./types";
+import { pipelineMedians, type PipelineMedians } from "./medians";
+import type { PipelineDeploy, PipelineSnapshot, PipelineTotals, ScheduledJob } from "./types";
 
 const log = logger.child("pipeline");
 
@@ -472,4 +472,52 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     medians,
     ...schedules,
   });
+}
+
+/** One deploy as the Pipeline draws it, the app's last good run before it and the app's medians. */
+export type DeployTrack = { deploy: PipelineDeploy; previous: PipelineDeploy | null; medians: PipelineMedians };
+
+/** A deploy of `appId` with its likely builder and stage times. Null when the app has no such deploy. */
+export async function readDeployTrack(appId: string, deploymentId: string): Promise<DeployTrack | null> {
+  const now = Date.now();
+  const [found] = await deployFrom()
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.appId, appId)))
+    .limit(1);
+  if (!found) return null;
+  const row = toRow(found);
+  const targets = await readTargets();
+  const [prev, instanceName, localSlots, gate, deploys, events, medians] = await Promise.all([
+    deployFrom()
+      .where(and(eq(deployments.appId, appId), eq(deployments.status, "success"), lt(deployments.startedAt, new Date(row.queuedAt))))
+      .orderBy(desc(deployments.startedAt))
+      .limit(1)
+      .then((rows) => rows.map(toRow)),
+    soft(getInstanceDisplayName(), null, "the instance name"),
+    readLocalSlots(),
+    soft(readGate(targets), { local: [], targets: {}, ready: null }, "the build gate"),
+    readDeploys(now),
+    soft(readEvents(), [], "pipeline events"),
+    soft(pipelineMedians(now), { apps: {}, builders: {} }, "stage medians"),
+  ]);
+  const snap = assembleSnapshot({
+    now,
+    instanceName: instanceName ?? "This server",
+    deploySlots: maxDeployConcurrency(),
+    localSlots,
+    gate,
+    targets,
+    deploys,
+    backups: [],
+    drills: [],
+    crons: [],
+    loops: [],
+    events,
+    totals: { live: 0, elsewhere: 0, fellBack: 0, failed: 0 },
+    recent: [row, ...prev],
+    medians,
+  });
+  const deploy = snap.deploys.find((d) => d.id === row.id) ?? snap.recent.find((d) => d.id === row.id)!;
+  const previous = prev[0] ? (snap.recent.find((d) => d.id === prev[0].id) ?? null) : null;
+  const own = medians.apps[appId];
+  return { deploy, previous, medians: { apps: own ? { [appId]: own } : {}, builders: medians.builders } };
 }
