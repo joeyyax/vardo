@@ -118,11 +118,9 @@ html {
   0%,
   35% {
     background-color: var(--brass-muted);
-    box-shadow: inset 2px 0 0 var(--brass);
   }
   100% {
     background-color: transparent;
-    box-shadow: none;
   }
 }
 @utility animate-row-flash {
@@ -156,11 +154,9 @@ html {
   0%,
   35% {
     background-color: var(--status-error-muted);
-    box-shadow: inset 2px 0 0 var(--status-error);
   }
   100% {
     background-color: transparent;
-    box-shadow: none;
   }
 }
 @utility animate-row-flash-error {
