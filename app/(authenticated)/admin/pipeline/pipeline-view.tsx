@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
+import { deploySlotLine } from "@/lib/pipeline/deploy-slot-line";
 import type { ActivityItem, PipelineDeploy, PipelineSnapshot } from "@/lib/pipeline/types";
 import { cn } from "@/lib/utils";
 import type { Lane } from "./geometry";
@@ -141,7 +142,7 @@ function InFlight({ snapshot, now, lanes }: { snapshot: PipelineSnapshot; now: n
           </span>
         ))}
         <span>
-          Deploy slots <b className="font-semibold">{snapshot.deploySlots.busy}/{snapshot.deploySlots.total}</b>
+          Deploy slots <b className="font-semibold">{deploySlotLine(snapshot)}</b>
         </span>
         <span>
           Queued <b className="font-semibold">{queued}</b>
@@ -248,7 +249,7 @@ export function PipelineView() {
         <div className="space-y-1">
           <h2 className="type-h2">Pipeline</h2>
           <p className="text-sm text-muted-foreground">
-            Deploys move from the queue to live through this server&apos;s build slots, or detour through a build target and merge back at the swap.
+            Deploys move from the queue to live through this server&apos;s builder, or build on a linked builder and rejoin at Start.
           </p>
         </div>
         <span className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">

@@ -28,12 +28,17 @@ vi.mock("@/lib/docker/build-targets", async (original) => ({
 }));
 
 const { peerSlot } = vi.hoisted(() => ({
-  peerSlot: { reply: "granted" as string, calls: [] as string[], stats: [] as ({ oomKills: number | null; limitBytes: number | null } | null)[] },
+  peerSlot: {
+    reply: "granted" as string,
+    refusal: null as Record<string, unknown> | null,
+    calls: [] as string[],
+    stats: [] as ({ oomKills: number | null; limitBytes: number | null } | null)[],
+  },
 }));
 vi.mock("@/lib/mesh/build-slot", () => ({
   claimPeerSlot: async (peer: string) => {
     peerSlot.calls.push(`claim:${peer}`);
-    return peerSlot.reply;
+    return { claim: peerSlot.reply, refusal: peerSlot.reply === "full" ? peerSlot.refusal : null };
   },
   peerBuilderStats: async (peer: string) => {
     peerSlot.calls.push(`builder:${peer}`);
@@ -65,6 +70,11 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/redis", () => ({ redis: {} }));
+const { refused } = vi.hoisted(() => ({ refused: [] as unknown[][] }));
+vi.mock("@/lib/pipeline/events", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pipeline/events")>()),
+  pipelineRefused: (...args: unknown[]) => void refused.push(args),
+}));
 vi.mock("@/lib/deploy/eta-history", () => ({
   typicalBuildMs: async (ids: string[]) => new Map(ids.map((id) => [id, state.typical[id] ?? null])),
 }));
@@ -729,6 +739,22 @@ describe("withBuildSlot on a linked instance", () => {
     expect(b.lines).toContain("[build] Building on Long House (vardo-mesh@10.99.0.2:2222)");
   });
 
+  it("records the peer's refusal with its target and reason", async () => {
+    peerSlot.reply = "full";
+    peerSlot.refusal = { reason: "memory", needBytes: 6 * GiB, freeBytes: 2 * GiB, busy: true };
+    refused.length = 0;
+    const here = await busyHere();
+    const b = gateFor("dep-b");
+    const queued = withBuildSlot({ ...b.gate, targets: [mesh("lh")] }, bounded, async () => {});
+    await new Promise((r) => setTimeout(r, 50));
+    here.resolve();
+    await Promise.all([here.running, queued]);
+    expect(refused[0]?.[1]).toMatchObject({ id: "mesh-lh", name: "Long House" });
+    expect(refused[0]?.[2]).toEqual({ reason: "memory", needBytes: 6 * GiB, freeBytes: 2 * GiB, busy: true });
+    expect(String(refused[0]?.[0])).toMatch(/^dep-b:/);
+    peerSlot.refusal = null;
+  });
+
   it("waits for this host instead of building alongside a full peer's own builds", async () => {
     peerSlot.reply = "full";
     const here = await busyHere();
@@ -845,7 +871,7 @@ describe("claimSlotForPeer", () => {
   });
 
   it("takes a free slot here without holding the builder for a sweep", async () => {
-    expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+    expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
     expect(store.running.has("build:mesh-jy0-a")).toBe(true);
     expect(store.hold()).toBeNull();
   });
@@ -855,7 +881,7 @@ describe("claimSlotForPeer", () => {
     const first = deferred();
     const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
     await new Promise((r) => setTimeout(r, 10));
-    expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(false);
+    expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(false);
     expect(store.queue).toEqual([]);
     expect(store.running.has("build:mesh-jy0-a")).toBe(false);
     first.resolve();
@@ -882,7 +908,7 @@ describe("claimSlotForPeer", () => {
       const first = deferred();
       const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
       await new Promise((r) => setTimeout(r, 10));
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
       first.resolve();
       await running;
     });
@@ -892,7 +918,10 @@ describe("claimSlotForPeer", () => {
       const first = deferred();
       const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
       await new Promise((r) => setTimeout(r, 10));
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(false);
+      const answer = await claimSlotForPeer("build:mesh-jy0-a");
+      expect(answer.held).toBe(false);
+      expect(answer.refusal).toMatchObject({ reason: "memory", busy: true });
+      expect(answer.refusal!.needBytes!).toBeGreaterThan(answer.refusal!.freeBytes!);
       expect(store.running.has("build:mesh-jy0-a")).toBe(false);
       first.resolve();
       await running;
@@ -900,7 +929,7 @@ describe("claimSlotForPeer", () => {
 
     it("takes it with the same free memory once this host's builds are done", async () => {
       state.meminfo = meminfo(20);
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
     });
 
     const ANON = 300 * MiB;
@@ -921,7 +950,7 @@ describe("claimSlotForPeer", () => {
       const first = deferred();
       const running = withBuildSlot(gateFor("dep-own").gate, bounded, () => first.promise);
       await new Promise((r) => setTimeout(r, 10));
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
       expect(meshUpdates()).toEqual([step(30 * GiB + ANON - 4.8 * GiB - (12 * GiB - ANON))]);
       first.resolve();
       await running;
@@ -930,7 +959,7 @@ describe("claimSlotForPeer", () => {
     it("grows it during a peer's build but shrinks it only once that build is done", async () => {
       state.updates = [];
       state.meminfo = meminfo(30);
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
       expect(meshUpdates()).toEqual([24 * GiB]);
       state.meminfo = meminfo(10);
       expect(await sizeMeshBuilder(() => {})).toBeNull();
@@ -941,7 +970,7 @@ describe("claimSlotForPeer", () => {
 
     it("holds this host's build while a peer's runs and both builders can't fit", async () => {
       state.meminfo = meminfo(20);
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
       const { gate, lines } = gateFor("dep-own");
       let started = false;
       const running = withBuildSlot(gate, big, async () => void (started = true));
@@ -955,7 +984,7 @@ describe("claimSlotForPeer", () => {
 
     it("lets it join a peer's build when both fit", async () => {
       state.meminfo = meminfo(44);
-      expect(await claimSlotForPeer("build:mesh-jy0-a")).toBe(true);
+      expect((await claimSlotForPeer("build:mesh-jy0-a")).held).toBe(true);
       let started = false;
       await withBuildSlot(gateFor("dep-own").gate, big, async () => void (started = true));
       expect(started).toBe(true);

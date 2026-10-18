@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { Stop } from "@/lib/pipeline/stops";
+import { STOP_NAMES, type Stop } from "@/lib/pipeline/stops";
 import type { PipelineDeploy, PipelineSnapshot } from "@/lib/pipeline/types";
 import {
   MAIN,
@@ -376,15 +376,3 @@ export function PipelineMap({ snapshot, now, layouts, lanes, last }: MapProps) {
     </svg>
   );
 }
-
-const STOP_NAMES: Record<Stop, string> = {
-  queue: "Queue",
-  gate: "Slot gate",
-  build: "Build",
-  export: "Export",
-  swap: "Swap",
-  health: "Health check",
-  routing: "Routing",
-  live: "Live",
-  rolledBack: "Rolled back",
-};

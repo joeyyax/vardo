@@ -1,12 +1,23 @@
 // The Pipeline page's snapshot, shared by the API and the client.
 
 import type { LoopGroup } from "./loops";
+import type { PipelineMedians } from "./medians";
+import type { StageSegment } from "./segments";
 import type { Stop } from "./stops";
 
 export type BuilderKind = "local" | "ssh" | "mesh";
 
-/** A build slot in use: by a deploy here, or by a linked instance's build when `deploymentId` is null. */
+/** A build slot in use: by a deploy here, or by a linked instance's build when `deploymentId` is null. `since` comes from the slot's claim event on a target. */
 export type SlotHolder = { token: string; deploymentId: string | null; since: number | null };
+
+/** A linked instance turned a deploy's build down. Bytes are null from a peer that didn't send them. */
+export type BuilderRefusal = {
+  at: number;
+  deploymentId: string | null;
+  reason: "memory" | "full" | null;
+  needBytes: number | null;
+  freeBytes: number | null;
+};
 
 export type PipelineBuilder = {
   /** "local" for this server, otherwise the build target's id. */
@@ -17,7 +28,17 @@ export type PipelineBuilder = {
   /** Null when no process has checked the target lately. */
   online: boolean | null;
   holders: SlotHolder[];
+  /** Refusals in the last five minutes, newest first. */
+  refusals: BuilderRefusal[];
+  /** The linked instance's own builds held its slots at its latest refusal; null when it didn't say or hasn't refused lately. */
+  busy: boolean | null;
 };
+
+/** Its place in the line it waits in, from the queue's own count: `position` 1 is next. */
+export type QueuePlace = { reason: string; position: number; of: number | null; eta: number | null };
+
+/** The builder a deploy waiting for one most likely gets, and when; from slot holders and build medians. */
+export type LikelyBuilder = { builder: string; name: string; at: number };
 
 export type PipelineDeploy = {
   id: string;
@@ -38,6 +59,15 @@ export type PipelineDeploy = {
   queuedAt: number;
   stageSince: number;
   finishedAt: number | null;
+  /** "target" while it runs on a build target's deploy slot. */
+  claimSlot: string | null;
+  /** Shared stages in order; the open one's `end` is null. */
+  segments: StageSegment[];
+  /** How the image came back from a target, a note on Build. */
+  transfer: { via: string; ms: number | null } | null;
+  queue: QueuePlace | null;
+  /** Null unless it waits for a builder and every slot it could take has a median. */
+  next: LikelyBuilder | null;
 };
 
 export type JobKind = "backup" | "drill" | "cron";
@@ -58,12 +88,22 @@ export type ActivityItem = { id: string; at: number; text: string; tone: Activit
 
 export type PipelineTotals = { live: number; elsewhere: number; fellBack: number; failed: number };
 
+/**
+ * The Pipeline page's state at `at`.
+ * - `deploys`: queued, running and finished in the last 30 seconds. `recent`: finished in the hour before that, newest first.
+ * - Each deploy's `segments` are its shared stages with start and end; `next` and `queue` say where a waiting one goes.
+ * - `deploySlots.busy` counts runs on this server's deploy slots; `onTargets` those on a build target's.
+ * - `medians.apps[appId]` holds that app's stage medians over 30 days and `builders[id]` its build median there;
+ *   `medians.builders[id]` is any app's build median on that builder. Builds include the image transfer.
+ */
 export type PipelineSnapshot = {
   at: number;
   instanceName: string;
-  deploySlots: { busy: number; total: number };
+  deploySlots: { busy: number; total: number; onTargets: number };
   builders: PipelineBuilder[];
   deploys: PipelineDeploy[];
+  recent: PipelineDeploy[];
+  medians: PipelineMedians;
   jobs: PipelineJob[];
   loops: LoopGroup[];
   activity: ActivityItem[];

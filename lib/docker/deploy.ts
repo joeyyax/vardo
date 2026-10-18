@@ -212,6 +212,8 @@ export async function runDeployment(
 
   function emitStage(s: DeployStage, status: StageStatus) {
     stageStatus.set(s, status);
+    if (status === "running") timer.stageBegin(s);
+    else timer.stageEnd(s);
     const phase = STAGE_PHASE[s];
     if (phase) {
       if (status === "running") timer.begin(phase);
@@ -550,7 +552,7 @@ export async function runDeployment(
 
       log,
       addSecrets: streamLogger.addSecrets,
-      wait: timedWait(timer, streamLogger.wait),
+      wait: timedWait(timer, streamLogger.wait, flushLog),
       stage,
       checkAbort,
       timer,

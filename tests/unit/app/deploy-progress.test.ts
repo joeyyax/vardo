@@ -39,7 +39,7 @@ describe("DeployProgress", () => {
   it("ticks off the queued step once a phase runs", () => {
     const html = render({ stages: { clone: "running" }, row: { status: "running" } });
     expect(html).toMatch(/Queued<\/span><span class="sr-only">, done/);
-    expect(html).toMatch(/Clone<\/span><span class="sr-only">, in progress/);
+    expect(html).toMatch(/Prepare<\/span><span class="sr-only">, in progress/);
   });
 
   it("reads a claimed deploy with no phase yet as starting", () => {
@@ -51,7 +51,7 @@ describe("DeployProgress", () => {
     const stages = { clone: "success", compose: "success", build: "running" };
     const full = named(render({ stages, row: { status: "running" } }));
     const compact = named(render({ variant: "compact", stages, row: { status: "running" }, href: "/apps/x/deployments/d" }));
-    expect(full).toEqual(["Queued", "Clone", "Compose", "Build", "Deploy", "Health", "Route"]);
+    expect(full).toEqual(["Queued", "Prepare", "Build", "Start", "Health check", "Switch traffic"]);
     expect(compact).toEqual(["Build"]);
   });
 
@@ -80,7 +80,21 @@ describe("deploySteps", () => {
   it("leaves cleanup and skipped phases out", () => {
     const view = deployView({ queued: false, wait: null, started: true });
     const keys = deploySteps(view, { clone: "success", compose: "skipped", build: "running" }).map((s) => s.key);
-    expect(keys).toEqual(["queued", "clone", "build", "deploy", "healthcheck", "routing"]);
+    expect(keys).toEqual(["queued", "prepare", "build", "deploy", "healthcheck", "routing"]);
+  });
+
+  it("reads clone and compose as one Prepare step, in flight until both are done", () => {
+    const view = deployView({ queued: false, wait: null, started: true });
+    const prep = (stages: Record<string, string>) => deploySteps(view, stages).filter((s) => s.label === "Prepare");
+    expect(prep({ clone: "success", compose: "running" })).toEqual([{ key: "prepare", label: "Prepare", state: "now" }]);
+    expect(prep({ clone: "success", compose: "success", build: "running" })[0].state).toBe("done");
+    expect(prep({ clone: "success", compose: "failed" })[0].state).toBe("failed");
+  });
+
+  it("names a build held for the builder as waiting for a builder", () => {
+    const held = deployView({ queued: false, wait: { reason: "build-slot", ahead: 1 }, started: true });
+    const build = deploySteps(held, { clone: "success", compose: "success", build: "running" }).find((s) => s.key === "build");
+    expect(build).toMatchObject({ state: "held", label: "Waiting for a builder" });
   });
 
   it("marks the phase a deploy is held on, and drops the queued step from a rollback", () => {
@@ -101,7 +115,7 @@ describe("stagesUpTo", () => {
   it("shows a running row's phase before its stream connects", () => {
     const html = render({ row: { status: "running", stage: "deploy" } });
     expect(html).toMatch(/Build<\/span><span class="sr-only">, done/);
-    expect(html).toMatch(/Deploy<\/span><span class="sr-only">, in progress/);
+    expect(html).toMatch(/Start<\/span><span class="sr-only">, in progress/);
   });
 });
 

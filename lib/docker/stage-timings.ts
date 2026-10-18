@@ -5,8 +5,17 @@ export const TIMED_PHASES = ["clone", "build", "export", "pull", "up", "healthWa
 export type TimedPhase = (typeof TIMED_PHASES)[number];
 
 export type PhaseTiming = { startedAt: string; endedAt: string; ms: number };
-/** `waitMs` is time the run spent waiting for the builder or the checkout, which no phase counts. */
-export type StageTimings = Partial<Record<TimedPhase, PhaseTiming>> & { waitMs?: number };
+/** An engine stage's or a wait's span in epoch ms; no `end` while it's open. */
+export type Span = { start: number; end?: number };
+export type WaitSpan = Span & { reason: string };
+/**
+ * `waitMs` is time the run spent waiting for the builder or the checkout, which no phase counts.
+ * `stages` and `waits` are written on every stage change, so an in-flight row carries its open stage.
+ */
+export type StageTimings = Partial<Record<TimedPhase, PhaseTiming>> & { waitMs?: number; stages?: Record<string, Span>; waits?: WaitSpan[] };
+
+/** Waits kept per deploy. */
+const MAX_WAITS = 20;
 
 /** Deploy stages whose duration is a timed phase. */
 export const STAGE_PHASE: Partial<Record<string, TimedPhase>> = {
@@ -21,6 +30,28 @@ export function createStageTimings() {
   const open = new Map<TimedPhase, number>();
   let waitedMs = 0;
   let waitOpen: number | null = null;
+  const stages: Record<string, Span> = {};
+  const waits: WaitSpan[] = [];
+
+  /** Opens an engine stage; one already started keeps its start. */
+  function stageBegin(stage: string, now = Date.now()) {
+    if (!stages[stage]) stages[stage] = { start: now };
+    else delete stages[stage].end;
+  }
+
+  function stageEnd(stage: string, now = Date.now()) {
+    const span = stages[stage];
+    if (span && span.end === undefined) span.end = Math.max(span.start, now);
+  }
+
+  /** Starts a wait span, closing one for a different reason. */
+  function waitSpan(reason: string | null, now = Date.now()) {
+    const last = waits.at(-1);
+    const openWait = last && last.end === undefined ? last : null;
+    if (openWait && openWait.reason === reason) return;
+    if (openWait) openWait.end = Math.max(openWait.start, now);
+    if (reason !== null && waits.length < MAX_WAITS) waits.push({ reason, start: now });
+  }
 
   function record(phase: TimedPhase, startMs: number, endMs: number) {
     const prev = timings[phase];
@@ -42,9 +73,12 @@ export function createStageTimings() {
     record(phase, start, now);
   }
 
-  /** Closes phases a failed deploy left open. */
+  /** Closes phases, stages and the wait a failed deploy left open. */
   function endAll(now = Date.now()) {
     for (const phase of [...open.keys()]) end(phase, now);
+    for (const stage of Object.keys(stages)) stageEnd(stage, now);
+    waitSpan(null, now);
+    waitEnd(now);
   }
 
   async function span<T>(phase: TimedPhase, fn: () => Promise<T>): Promise<T> {
@@ -79,19 +113,29 @@ export function createStageTimings() {
 
   function snapshot(): StageTimings {
     const ms = Math.round(waited());
-    return ms > 0 ? { ...timings, waitMs: ms } : { ...timings };
+    const out: StageTimings = { ...timings };
+    if (ms > 0) out.waitMs = ms;
+    if (Object.keys(stages).length > 0) out.stages = Object.fromEntries(Object.entries(stages).map(([k, v]) => [k, { ...v }]));
+    if (waits.length > 0) out.waits = waits.map((w) => ({ ...w }));
+    return out;
   }
 
-  return { begin, end, endAll, span, range, snapshot, waitBegin, waitEnd, waited };
+  return { begin, end, endAll, span, range, snapshot, waitBegin, waitEnd, waited, stageBegin, stageEnd, waitSpan };
 }
 
 export type StageTimer = ReturnType<typeof createStageTimings>;
 
-/** Wraps a wait writer to tally its waits on `timer`. */
-export function timedWait(timer: StageTimer, writer: WaitWriter): WaitWriter {
+/** Wraps a wait writer to tally its waits on `timer`. `onChange` runs when the reason changes, not on a place update. */
+export function timedWait(timer: StageTimer, writer: WaitWriter, onChange?: () => void): WaitWriter {
+  let current: string | null = null;
   return (reason, place) => {
     if (reason === null) timer.waitEnd();
     else timer.waitBegin();
+    timer.waitSpan(reason);
+    if (reason !== current) {
+      current = reason;
+      onChange?.();
+    }
     return writer(reason, place);
   };
 }

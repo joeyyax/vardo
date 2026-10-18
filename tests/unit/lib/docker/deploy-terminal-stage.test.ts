@@ -9,13 +9,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // so a process killed mid-deploy leaves something behind.
 // ---------------------------------------------------------------------------
 
-const { dbMock, events, dockerCalls, claimRow, logWrites } = vi.hoisted(() => {
+const { dbMock, events, dockerCalls, claimRow, logWrites, timingWrites } = vi.hoisted(() => {
   type Event = { kind: "stage" | "log-flush" | "row"; detail: string };
   const events: Event[] = [];
   const dockerCalls: string[] = [];
   // The row's log when the run claims it, and every log the run writes.
   const claimRow = { log: null as string | null };
   const logWrites: string[] = [];
+  const timingWrites: import("@/lib/docker/stage-timings").StageTimings[] = [];
 
   const appRow = {
     id: "app-1",
@@ -36,6 +37,7 @@ const { dbMock, events, dockerCalls, claimRow, logWrites } = vi.hoisted(() => {
     );
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       if (typeof values.log === "string") logWrites.push(values.log);
+      if (values.stageTimings) timingWrites.push(structuredClone(values.stageTimings) as (typeof timingWrites)[number]);
       const isDeploymentRow = typeof values.status === "string" && "finishedAt" in values;
       if (isDeploymentRow) events.push({ kind: "row", detail: String(values.status) });
       else if (typeof values.log === "string") {
@@ -61,7 +63,7 @@ const { dbMock, events, dockerCalls, claimRow, logWrites } = vi.hoisted(() => {
   };
 
 
-  return { dbMock, events, dockerCalls, claimRow, logWrites };
+  return { dbMock, events, dockerCalls, claimRow, logWrites, timingWrites };
 });
 
 const { assertDiskHeadroom, requeueForLocalSlot } = vi.hoisted(() => ({
@@ -84,6 +86,7 @@ vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
     redact: (text: string) => text,
     log: (line: string) => line,
     stage: vi.fn(),
+    wait: vi.fn(),
     getStage: () => "clone",
     flush: vi.fn(async () => {}),
   }),
@@ -409,6 +412,57 @@ describe("runDeployment failures after the deploy reported success", () => {
 
     expect(stageCalls()).toContainEqual(["done", "success"]);
     expect(dockerCalls.some((c) => c.includes("down"))).toBe(false);
+  });
+});
+
+describe("runDeployment in-flight stage timings", () => {
+  beforeEach(() => {
+    timingWrites.length = 0;
+    vi.mocked(prepareRepo).mockImplementation(async (ctx) => {
+      ctx.stage("clone", "success");
+      ctx.stage("compose", "running");
+      return ctx;
+    });
+  });
+
+  it("writes the open stage's start to the row at the stage change, before the deploy ends", async () => {
+    vi.mocked(build).mockImplementation(async (ctx) => {
+      ctx.stage("compose", "success");
+      ctx.stage("build", "running");
+      return new Promise(() => {});
+    });
+
+    void runDeployment("dep-1", { ...OPTS, onStage });
+    await settle();
+
+    const last = timingWrites.at(-1);
+    expect(last?.stages?.compose?.end).toBeTypeOf("number");
+    expect(last?.stages?.build?.start).toBeTypeOf("number");
+    expect(last?.stages?.build?.end).toBeUndefined();
+  });
+
+  it("writes a wait for the builder when it opens, not only when it ends", async () => {
+    vi.mocked(build).mockImplementation(async (ctx) => {
+      ctx.stage("build", "running");
+      void ctx.wait?.("build-slot", { ahead: 1 });
+      return new Promise(() => {});
+    });
+
+    void runDeployment("dep-1", { ...OPTS, onStage });
+    await settle();
+
+    expect(timingWrites.at(-1)?.waits).toEqual([{ reason: "build-slot", start: expect.any(Number) }]);
+  });
+
+  it("closes every open stage on the failed row", async () => {
+    vi.mocked(build).mockRejectedValue(new Error("boom"));
+
+    await runDeployment("dep-1", { ...OPTS, onStage });
+    await settle();
+
+    const stages = timingWrites.at(-1)?.stages ?? {};
+    expect(Object.keys(stages)).toContain("compose");
+    for (const span of Object.values(stages)) expect(span.end).toBeTypeOf("number");
   });
 });
 

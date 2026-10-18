@@ -30,10 +30,11 @@ vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/
 vi.mock("@/lib/docker/build-gate", () => ({
   peerSlotToken: (peerId: string, token: string) => `build:mesh-${peerId}-${token}`,
   claimSlotForPeer: async (token: string) => {
-    if (state.held.size >= state.limit) return false;
+    if (state.held.size >= state.limit) return { held: false, refusal: { reason: "full", needBytes: 6 * 1024 ** 3, freeBytes: 2 * 1024 ** 3, busy: true } };
     state.held.add(token);
-    return true;
+    return { held: true };
   },
+  ownBuildsBusy: async () => state.held.size > 0,
   renewSlotForPeer: async (token: string) => state.held.has(token),
   releaseSlotForPeer: async (token: string) => void state.held.delete(token),
 }));
@@ -75,13 +76,16 @@ describe("POST /api/v1/mesh/build-slot", () => {
     expect(await send({ action: "renew", token: "dep-a-x1" })).toEqual({ status: 200, body: { held: false } });
   });
 
-  it("answers held false while this host's gate is full", async () => {
+  it("answers held false while this host's gate is full, with why", async () => {
     state.held.add("dep-own:abc");
-    expect(await send({ action: "claim", token: "dep-a-x1" })).toEqual({ status: 200, body: { held: false } });
+    expect(await send({ action: "claim", token: "dep-a-x1" })).toEqual({
+      status: 200,
+      body: { held: false, refusal: { reason: "full", needBytes: 6 * 1024 ** 3, freeBytes: 2 * 1024 ** 3, busy: true } },
+    });
   });
 
-  it("reports the isolated builder's OOM kills and limit without touching the gate", async () => {
-    expect(await send({ action: "builder", token: "dep-a-x1" })).toEqual({ status: 200, body: { builder: { oomKills: 3, limitBytes: 12 * 1024 ** 3 } } });
+  it("reports the isolated builder's OOM kills and limit, and whether its own builds run, without touching the gate", async () => {
+    expect(await send({ action: "builder", token: "dep-a-x1" })).toEqual({ status: 200, body: { builder: { oomKills: 3, limitBytes: 12 * 1024 ** 3 }, busy: false } });
     expect(state.held.size).toBe(0);
   });
 

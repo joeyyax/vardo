@@ -19,15 +19,15 @@ import { waitForFifoSlot, type SlotPlace, type SlotStore } from "./fifo-slots";
 import { buildKitLimit, formatGiB, type BoundedBuild } from "./build-memory";
 import { DEFAULT_BUILDKIT_HOST } from "./buildkit";
 import type { WaitWriter } from "./deploy-logger";
-import { builderLimitBytes, buildersFit, hostMemory, pinnedMeshBuilderMem, sizeBuildKit } from "./buildkit-size";
+import { builderLimitBytes, buildersFit, buildersRoom, hostMemory, pinnedMeshBuilderMem, sizeBuildKit } from "./buildkit-size";
 import { MESH_BUILDER_CONTAINER } from "@/lib/mesh/constants";
 import { lineEtas, slotFreeAt } from "@/lib/deploy/eta";
 import { typicalBuildMs } from "@/lib/deploy/eta-history";
 import { BuilderError, configuredTargets, describeTarget, isTargetReady, markTargetDown, peerBuildOom, type BuildTarget } from "./build-targets";
 import type { TargetSlots } from "@/lib/deploy/queue";
 import type { BuildPlacementRecorder } from "./build-placement";
-import { claimPeerSlot, peerBuilderStats, releasePeerSlot, renewPeerSlot } from "@/lib/mesh/build-slot";
-import { pipelineFallback, pipelineSlot } from "@/lib/pipeline/events";
+import { claimPeerSlot, peerBuilderStats, releasePeerSlot, renewPeerSlot, type BuildSlotReply } from "@/lib/mesh/build-slot";
+import { pipelineFallback, pipelineRefused, pipelineSlot } from "@/lib/pipeline/events";
 
 const log = logger.child("build-gate");
 
@@ -483,8 +483,8 @@ async function admitLimit(bounded: BoundedBuild): Promise<Awaited<ReturnType<typ
   const running = bounded.container ? await buildsHere() : null;
   if (!running?.peer || !bounded.container) return { ...out, crowded: false };
   const limitBytes = (await builderLimitBytes(bounded.container)) ?? bounded.limitBytes;
-  const fits = await bothBuildersFit({ container: bounded.container, limitBytes });
-  return fits ? { ...out, crowded: false } : { ...out, limit: 1, crowded: true };
+  const { fits } = await bothBuildersFit({ container: bounded.container, limitBytes });
+  return fits ?{ ...out, crowded: false } : { ...out, limit: 1, crowded: true };
 }
 
 /** Anonymous memory in the container's cgroup, which leaves out the page cache a build fills. */
@@ -769,10 +769,12 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
   async function runRemote(on: BuildTarget): Promise<T> {
     const peer = on.kind === "mesh" && on.peerId ? on.peerId : null;
     const peerToken = id.replace(/[^A-Za-z0-9-]/g, "-");
-    const claim = peer ? await claimPeerSlot(peer, peerToken) : null;
+    const peerSlot = peer ? await claimPeerSlot(peer, peerToken) : null;
+    const claim = peerSlot?.claim ?? null;
     if (claim === "full") {
       await store.releaseTarget(id, on.id).catch(() => {});
       await store.markFull(on.id).catch(() => {});
+      pipelineRefused(id, on, peerSlot?.refusal ?? null);
       if (!fullNoted.has(gate)) {
         fullNoted.add(gate);
         gate.log(`[queue] ${on.name}'s builder is full; waiting for a free slot`);
@@ -836,7 +838,7 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
     };
     let slot = await remote.tryAcquire(id, 0).catch(() => none);
     if (!slot) {
-      gate.log(`[queue] Waiting for a build slot on ${targets.map((t) => t.name).join(", ")}`);
+      gate.log(`[queue] Waiting for a builder on ${targets.map((t) => t.name).join(", ")}`);
       void gate.wait?.("build-slot");
       const clock = !gate.wait && gate.deploymentId ? pauseRunningClock(gate.deploymentId) : null;
       try {
@@ -955,16 +957,17 @@ async function buildsHere(): Promise<{ peer: boolean; local: boolean } | null> {
   };
 }
 
-/** Whether the isolated builder and `buildkit`, when given, can both grow to their limits without eating the apps' reserve. True when unreadable. */
-async function bothBuildersFit(buildkit: { container?: string; limitBytes?: number | null } | null): Promise<boolean> {
+/** Whether the isolated builder and `buildkit`, when given, can both grow to their limits without eating the apps' reserve, with the numbers. Fits when unreadable. */
+async function bothBuildersFit(buildkit: { container?: string; limitBytes?: number | null } | null): Promise<{ fits: boolean; needBytes: number | null; freeBytes: number | null }> {
   const host = await hostMemory();
   const meshLimit = await builderLimitBytes(MESH_BUILDER_CONTAINER);
-  if (!host || !meshLimit) return true;
-  return buildersFit({
+  if (!host || !meshLimit) return { fits: true, needBytes: null, freeBytes: null };
+  const input = {
     ...host,
     meshHeadroomBytes: await builderHeadroom(MESH_BUILDER_CONTAINER, meshLimit),
     buildkitHeadroomBytes: buildkit?.container ? await builderHeadroom(buildkit.container, buildkit.limitBytes ?? null) : 0,
-  });
+  };
+  return { fits: buildersFit(input), ...buildersRoom(input) };
 }
 
 /**
@@ -989,21 +992,28 @@ export async function sizeMeshBuilder(logLine: (line: string) => void = (line) =
 }
 
 /** Takes a slot here for a linked instance's build, now or not at all: never past builds waiting here, nor past the memory both builders could use. */
-export async function claimSlotForPeer(token: string): Promise<boolean> {
+export async function claimSlotForPeer(token: string): Promise<BuildSlotReply> {
   const store = gateStores.redis;
   const buildkit = await buildKitLimit(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST);
   const running = await buildsHere();
+  const busy = running ? running.local : null;
   await sizeMeshBuilderBeside(buildkit, running, (line) => log.info(line)).catch((err) => log.warn("Couldn't size the isolated builder:", err));
-  if (!(await bothBuildersFit(running?.local ? buildkit : null))) return false;
+  const room = await bothBuildersFit(running?.local ? buildkit : null);
+  if (!room.fits) return { held: false, refusal: { reason: "memory", needBytes: room.needBytes, freeBytes: room.freeBytes, busy } };
   const { limit } = await currentLimit(buildkit);
   const slot = await store.tryAcquire(token, limit);
   if (!slot) {
     await store.remove(token);
-    return false;
+    return { held: false, refusal: { reason: "full", needBytes: room.needBytes, freeBytes: room.freeBytes, busy } };
   }
   if (slot.alone) await store.endSweep();
   pipelineSlot("claim", token);
-  return true;
+  return { held: true };
+}
+
+/** Whether this host's own builds hold slots here; null when Redis can't say. */
+export async function ownBuildsBusy(): Promise<boolean | null> {
+  return (await buildsHere())?.local ?? null;
 }
 
 /** Extends a linked instance's lease. False once it lapsed or was released. */

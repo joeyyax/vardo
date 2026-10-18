@@ -17,11 +17,12 @@ export function appLabel(event: { projectName?: string; appName?: string; projec
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "queue",
-  clone: "clone",
+  clone: "prepare",
+  compose: "prepare",
   build: "build",
   deploy: "start",
   healthcheck: "health check",
-  routing: "routing",
+  routing: "switch traffic",
   cleanup: "cleanup",
   done: "finish",
 };

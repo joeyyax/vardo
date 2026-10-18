@@ -5,21 +5,24 @@ import {
   DEPLOY_STAGE_KEYS,
   ROLLBACK_STAGE_KEYS,
   STAGE_LABELS,
+  SHARED_STAGE_LABELS,
+  sharedStage,
+  stageHead,
 } from "@/lib/ui/deploy-stage";
 
 describe("currentStageLabel", () => {
-  it("names the running phase", () => {
-    expect(currentStageLabel({ clone: "success", compose: "success", build: "running" })).toBe(
-      "Build",
-    );
+  it("names the running phase in present tense", () => {
+    expect(currentStageLabel({ clone: "success", compose: "success", build: "running" })).toBe("Building");
+    expect(currentStageLabel({ clone: "running" })).toBe("Preparing");
+    expect(currentStageLabel({ routing: "running" })).toBe("Switching traffic");
   });
 
   it("prefers the earliest running phase when a later one has not started", () => {
-    expect(currentStageLabel({ deploy: "running", healthcheck: "running" })).toBe("Deploy");
+    expect(currentStageLabel({ deploy: "running", healthcheck: "running" })).toBe("Starting");
   });
 
-  it("reads rollback phases when the run reports them", () => {
-    expect(currentStageLabel({ stop: "success", restore: "running" })).toBe("Restore");
+  it("reads a rollback as rolling back", () => {
+    expect(currentStageLabel({ stop: "success", restore: "running" })).toBe("Rolling back");
   });
 
   it("returns null before the first stage event and after the last", () => {
@@ -28,10 +31,20 @@ describe("currentStageLabel", () => {
     expect(currentStageLabel({ clone: "success", cleanup: "success" })).toBeNull();
   });
 
-  it("labels every deploy phase", () => {
+  it("labels every deploy phase with its shared stage", () => {
     for (const key of DEPLOY_STAGE_KEYS) {
-      expect(STAGE_LABELS[key]).toBeTruthy();
+      expect(STAGE_LABELS[key]).toBe(SHARED_STAGE_LABELS[sharedStage(key)!]);
     }
+  });
+});
+
+describe("stageHead", () => {
+  it("names the builder for a build and reads present tense otherwise", () => {
+    expect(stageHead("build", { builder: "Long House" })).toBe("Building on Long House");
+    expect(stageHead("build")).toBe("Building");
+    expect(stageHead("start")).toBe("Starting");
+    expect(stageHead("switch")).toBe("Switching traffic");
+    expect(stageHead("wait")).toBe("Waiting for a builder");
   });
 });
 

@@ -7,14 +7,24 @@ export const BUILD_SLOT_PATH = "/api/v1/mesh/build-slot";
 
 export type BuildSlotAction = "claim" | "renew" | "release" | "builder";
 
-/** The peer's answer: whether the caller holds the slot after the call. */
-export type BuildSlotReply = { held: boolean };
+/**
+ * Why a peer refused a claim: `memory` when both its builders couldn't grow to their limits, `full` when its gate had no slot.
+ * `needBytes` and `freeBytes` are what the builders could grow into and the memory free for them; `busy` is whether its own builds hold slots.
+ * Peers before this field send none; every field may be missing.
+ */
+export type PeerRefusal = { reason: "memory" | "full"; needBytes?: number | null; freeBytes?: number | null; busy?: boolean | null };
 
-/** The peer's answer to `builder`: its isolated builder's OOM kills and memory limit. */
-export type BuilderReply = { builder: MeshBuilderStats };
+/** The peer's answer: whether the caller holds the slot after the call, and why not on a refused claim. */
+export type BuildSlotReply = { held: boolean; refusal?: PeerRefusal };
+
+/** The peer's answer to `builder`: its isolated builder's OOM kills and memory limit, and whether its own builds hold slots. */
+export type BuilderReply = { builder: MeshBuilderStats; busy?: boolean };
 
 /** `unsupported` is a peer without the endpoint; `unreachable` one that didn't answer. Both build without a slot, as before. */
 export type PeerClaim = "granted" | "full" | "unsupported" | "unreachable";
+
+/** A claim's outcome; `refusal` only on `full`, and null from a peer that didn't say why. */
+export type PeerSlot = { claim: PeerClaim; refusal: PeerRefusal | null };
 
 /** How long a peer without the endpoint isn't asked again. */
 export const UNSUPPORTED_MS = 10 * 60_000;
@@ -29,22 +39,38 @@ export function resetPeerSlots(): void {
   unsupported.clear();
 }
 
-async function call(peerId: string, action: BuildSlotAction, token: string, post: Post): Promise<boolean> {
+async function reply(peerId: string, action: BuildSlotAction, token: string, post: Post): Promise<Partial<BuildSlotReply> | null> {
   const { data } = await post(peerId, BUILD_SLOT_PATH, { action, token }, { timeoutMs: CALL_TIMEOUT_MS });
-  return (data as Partial<BuildSlotReply> | null)?.held === true;
+  return data as Partial<BuildSlotReply> | null;
 }
 
-export async function claimPeerSlot(peerId: string, token: string, post: Post = meshSignedPost): Promise<PeerClaim> {
+async function call(peerId: string, action: BuildSlotAction, token: string, post: Post): Promise<boolean> {
+  return (await reply(peerId, action, token, post))?.held === true;
+}
+
+const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
+const flag = (b: unknown) => (typeof b === "boolean" ? b : null);
+
+/** The refusal's fields the caller can trust; null when the peer sent none. */
+export function parseRefusal(raw: unknown): PeerRefusal | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (r.reason !== "memory" && r.reason !== "full") return null;
+  return { reason: r.reason, needBytes: count(r.needBytes), freeBytes: count(r.freeBytes), busy: flag(r.busy) };
+}
+
+export async function claimPeerSlot(peerId: string, token: string, post: Post = meshSignedPost): Promise<PeerSlot> {
   const at = unsupported.get(peerId);
-  if (at !== undefined && Date.now() - at < UNSUPPORTED_MS) return "unsupported";
+  if (at !== undefined && Date.now() - at < UNSUPPORTED_MS) return { claim: "unsupported", refusal: null };
   try {
-    return (await call(peerId, "claim", token, post)) ? "granted" : "full";
+    const data = await reply(peerId, "claim", token, post);
+    return data?.held === true ? { claim: "granted", refusal: null } : { claim: "full", refusal: parseRefusal(data?.refusal) };
   } catch (err) {
     if (err instanceof MeshClientError && err.statusCode === 404) {
       unsupported.set(peerId, Date.now());
-      return "unsupported";
+      return { claim: "unsupported", refusal: null };
     }
-    return "unreachable";
+    return { claim: "unreachable", refusal: null };
   }
 }
 
@@ -53,14 +79,15 @@ export async function renewPeerSlot(peerId: string, token: string, post: Post = 
   return call(peerId, "renew", token, post).catch(() => null);
 }
 
-const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null);
-
-/** The peer's isolated builder's OOM kills and limit; null from a peer that didn't answer or predates the action. */
-export async function peerBuilderStats(peerId: string, token: string, post: Post = meshSignedPost): Promise<MeshBuilderStats | null> {
+/** The peer's isolated builder's OOM kills and limit, and `busy` when it sends it; null from a peer that didn't answer or predates the action. */
+export async function peerBuilderStats(peerId: string, token: string, post: Post = meshSignedPost): Promise<(MeshBuilderStats & { busy?: boolean }) | null> {
   try {
     const { data } = await post(peerId, BUILD_SLOT_PATH, { action: "builder", token }, { timeoutMs: CALL_TIMEOUT_MS });
-    const builder = (data as Partial<BuilderReply> | null)?.builder;
-    return builder ? { oomKills: count(builder.oomKills), limitBytes: count(builder.limitBytes) } : null;
+    const answer = data as Partial<BuilderReply> | null;
+    const builder = answer?.builder;
+    if (!builder) return null;
+    const stats = { oomKills: count(builder.oomKills), limitBytes: count(builder.limitBytes) };
+    return typeof answer.busy === "boolean" ? { ...stats, busy: answer.busy } : stats;
   } catch {
     return null;
   }

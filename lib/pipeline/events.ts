@@ -2,6 +2,7 @@
 
 import { redis } from "@/lib/redis";
 import type { WaitReason } from "@/lib/docker/deploy-logger";
+import type { PeerRefusal } from "@/lib/mesh/build-slot";
 
 export const PIPELINE_STREAM = "stream:pipeline";
 const MAX_LEN = 1000;
@@ -13,7 +14,19 @@ export type PipelineEvent =
   | { kind: "stage"; deploymentId: string; stage: string; status: string }
   | { kind: "wait"; deploymentId: string; reason: WaitReason | null }
   | { kind: "slot"; action: "claim" | "release"; token: string; deploymentId: string | null; builder: string }
-  | { kind: "fallback"; deploymentId: string | null; builder: string; name: string; reason: string };
+  | { kind: "fallback"; deploymentId: string | null; builder: string; name: string; reason: string }
+  | {
+      kind: "refused";
+      deploymentId: string | null;
+      builder: string;
+      name: string;
+      /** Null from a peer that didn't say why. */
+      reason: "memory" | "full" | null;
+      needBytes: number | null;
+      freeBytes: number | null;
+      /** The peer's own builds hold slots there. */
+      busy: boolean | null;
+    };
 
 export type PipelineEntry = PipelineEvent & { at: number };
 
@@ -56,6 +69,20 @@ export function pipelineSlot(action: "claim" | "release", token: string, builder
 
 export function pipelineFallback(token: string, target: { id: string; name: string }, reason: string): void {
   publishPipeline({ kind: "fallback", deploymentId: gateTokenDeployment(token), builder: target.id, name: target.name, reason });
+}
+
+/** A linked instance refused a build's claim on its builder. */
+export function pipelineRefused(token: string, target: { id: string; name: string }, refusal: PeerRefusal | null): void {
+  publishPipeline({
+    kind: "refused",
+    deploymentId: gateTokenDeployment(token),
+    builder: target.id,
+    name: target.name,
+    reason: refusal?.reason ?? null,
+    needBytes: refusal?.needBytes ?? null,
+    freeBytes: refusal?.freeBytes ?? null,
+    busy: refusal?.busy ?? null,
+  });
 }
 
 /** Parses a stream entry's fields; null for one that isn't a pipeline event. */
