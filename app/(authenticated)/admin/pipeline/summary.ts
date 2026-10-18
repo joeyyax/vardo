@@ -2,7 +2,7 @@
 
 import { SHARED_STAGE_LABELS, sharedStage } from "@/lib/ui/deploy-stage";
 import type { PipelineDeploy, PipelineSnapshot } from "@/lib/pipeline/types";
-import { clock, isLive, span, waitsForBuilder } from "./timeline";
+import { clock, isLive, soon, span, waitsForBuilder } from "./timeline";
 
 export type Tone = "issue" | "warn";
 export type AttentionRow = {
@@ -63,7 +63,8 @@ export function attentionRows(s: PipelineSnapshot): AttentionRow[] {
     const late = loops.find((l) => l.name === "backup-tick" && l.stale);
     const lead = late?.lastTickAt ? `${late.label} last ran ${span(s.at - late.lastTickAt)} ago. ` : "";
     const names = o.length === 1 ? `${o[0].name} last ran ${span(s.at - o[0].at)} ago.` : `${plural(o.length, "job is", "jobs are")} past due.`;
-    rows.push({ key: "overdue", tone: "warn", title: "Backups are behind", text: `${lead}${names}`, links: [{ label: "Backups", href: "/backups" }] });
+    const links = [...(late ? [{ label: "This instance", href: "/admin/settings/general" }] : []), { label: "Backups", href: "/backups" }];
+    rows.push({ key: "overdue", tone: "warn", title: "Backups are behind", text: `${lead}${names}`, links });
   }
   for (const l of loops.filter((x) => x.stale && !x.failed && !(x.name === "backup-tick" && (s.overdue ?? []).length > 0))) {
     rows.push({
@@ -102,7 +103,7 @@ export function summarize(s: PipelineSnapshot, attention: AttentionRow[]): Summa
     const title = `${plural(live.length, "deploy", "deploys")} in flight.${waiting.length ? ` ${waiting.length} ${waiting.length === 1 ? "is" : "are"} waiting for a builder.` : ""}`;
     const soonest = waiting.map((d) => d.next).filter((n) => n !== null).sort((a, b) => a!.at - b!.at)[0];
     const text = waiting.length
-      ? `Every builder is full${soonest ? `; one should free in about ${span(Math.max(1000, soonest.at - s.at))} on ${soonest.name}` : ""}.`
+      ? `Every builder is full${soonest ? `; one should free on ${soonest.name} ${soon(soonest.at, s.at)}` : ""}.`
       : queued.length
         ? `${queued.length} ${queued.length === 1 ? "is" : "are"} queued for a deploy slot.`
         : "Every deploy has a builder.";

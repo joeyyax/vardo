@@ -18,6 +18,7 @@ import {
   ghostPieces,
   headText,
   isLive,
+  soon,
   span,
   stageTimes,
   waitsForBuilder,
@@ -57,7 +58,7 @@ export function statusLine(d: PipelineDeploy, builders: PipelineBuilder[], now: 
   if (!isLive(d)) return { text: `Live · ${span(now - (d.finishedAt ?? now))} ago`, tone: null };
   if (waitsForBuilder(d)) {
     const place = d.queue ? `${d.queue.position}${d.queue.of ? ` of ${d.queue.of}` : ""}` : null;
-    const where = d.next ? `${d.next.name} in about ${span(Math.max(1000, d.next.at - now))}` : "waiting";
+    const where = d.next ? `${d.next.name} ${soon(d.next.at, now)}` : "waiting";
     return { text: [place, where].filter(Boolean).join(" · "), tone: "warn" };
   }
   if (d.waiting) return { text: d.queue ? `${d.label} · ${d.queue.position}${d.queue.of ? ` of ${d.queue.of}` : ""}` : d.label, tone: "warn" };
@@ -121,7 +122,7 @@ function StageCells({ d, now, medians }: { d: PipelineDeploy; now: number; media
         const host = stage === "build" && d.builderName ? `${d.builderName}${times.wait && times.wait > 10_000 ? ` · waited ${clock(times.wait)}` : ""}` : "";
         if (stage === "build" && waitsForBuilder(d)) {
           return (
-            <Cell key={stage} className="bg-status-warning-muted" mark={<StatusMark tone="warn" />} value={clock(times.wait ?? 0)} note={d.next ? `Waiting · ${d.next.name} in about ${span(Math.max(1000, d.next.at - now))}` : "Waiting"} noteClass="text-status-warning" />
+            <Cell key={stage} className="bg-status-warning-muted" mark={<StatusMark tone="warn" />} value={clock(times.wait ?? 0)} note={d.next ? `Waiting · ${d.next.name} ${soon(d.next.at, now)}` : "Waiting"} noteClass="text-status-warning" />
           );
         }
         if (stage === failedAt) return <Cell key={stage} className="bg-status-error-muted text-status-error" mark={<StatusMark tone="issue" />} value={clock(t ?? 0)} note={d.failure ?? "Failed"} noteClass="text-status-error" />;
@@ -231,7 +232,7 @@ export function railRows(d: PipelineDeploy, now: number, medians: PipelineMedian
       if (waitsForBuilder(d)) {
         row.state = "wait";
         row.time = clock(times.wait ?? 0);
-        row.note = `Waiting for a builder${d.queue ? ` · ${d.queue.position}${d.queue.of ? ` of ${d.queue.of}` : ""} in line` : ""}${d.next ? ` · ${d.next.name} in about ${span(Math.max(1000, d.next.at - now))}` : ""}`;
+        row.note = `Waiting for a builder${d.queue ? ` · ${d.queue.position}${d.queue.of ? ` of ${d.queue.of}` : ""} in line` : ""}${d.next ? ` · ${d.next.name} ${soon(d.next.at, now)}` : ""}`;
         row.noteTone = "warn";
       } else if (d.fellBack) {
         row.note = detail?.fallbackReason ? `Fell back: ${detail.fallbackReason}` : "Fell back from a build target";

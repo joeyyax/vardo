@@ -77,7 +77,12 @@ export function span(ms: number): string {
   return `${Math.round(s / 86400)}d`;
 }
 
-export const isLive = (d: PipelineDeploy) => d.finishedAt === null && (d.status === "running" || d.status === "queued");
+/** "in about 26s", or "any moment" once the estimate has run out. */
+export function soon(at: number, now: number): string {
+  return at - now < 5_000 ? "any moment" : `in about ${span(at - now)}`;
+}
+
+export const isLive =(d: PipelineDeploy) => d.finishedAt === null && (d.status === "running" || d.status === "queued");
 export const waitsForBuilder = (d: PipelineDeploy) => isLive(d) && d.waitReason === "build-slot";
 
 /** The segment open now, if any. */
@@ -261,7 +266,8 @@ export function builderLanes(
         return;
       }
       const start = h.since ?? now - windowMs * 0.1;
-      put(i, { key: `own-${h.token}`, kind: "own", deployId: null, label: "Its own build", start, end: now, open: true, title: `${b.name}'s own build` });
+      // A refusal's × sits on this bar, so the label gives way to it.
+      put(i, { key: `own-${h.token}`, kind: "own", deployId: null, label: b.refusals.length ? "" : "Its own build", start, end: now, open: true, title: `${b.name}'s own build` });
     });
 
     const others = deploys
@@ -289,7 +295,7 @@ export function builderLanes(
       const ms = buildMedian(medians, d.appId, b.id);
       if (ms === null) continue;
       const start = Math.max(d.next!.at, freeAt[lane]);
-      lanes[lane].bars.push({ key: `next-${d.id}`, kind: "next", deployId: d.id, label: d.appName, start, end: start + ms, open: false, title: `${d.appName} lands here next, in about ${span(start - now)}` });
+      lanes[lane].bars.push({ key: `next-${d.id}`, kind: "next", deployId: d.id, label: d.appName, start, end: start + ms, open: false, title: `${d.appName} lands here next, ${soon(start, now)}` });
       freeAt[lane] = start + ms;
     }
 

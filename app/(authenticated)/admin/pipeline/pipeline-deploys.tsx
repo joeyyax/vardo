@@ -46,7 +46,7 @@ function useSettled(deploys: PipelineDeploy[]): Map<string, "ok" | "error"> {
   return settled;
 }
 
-function Legend() {
+function Legend({ children }: { children?: React.ReactNode }) {
   const sw = (cls: string) => <i aria-hidden className={cn("inline-block h-2.5 w-4 shrink-0 rounded-[2px]", cls)} />;
   const arrow = <span aria-hidden className="-mx-0.5 text-muted-foreground/60">›</span>;
   return (
@@ -68,6 +68,7 @@ function Legend() {
       <span className="inline-flex items-center gap-1.5">{sw("hatch-warn")}Waiting</span>
       <span className="inline-flex items-center gap-1.5">{sw("ring-1 ring-inset ring-foreground/20")}Expected</span>
       <span className="inline-flex items-center gap-1.5">{sw("bg-status-error")}Failed</span>
+      {children ? <span className="ml-auto">{children}</span> : null}
     </div>
   );
 }
@@ -212,6 +213,18 @@ export function PipelineDeploys({
     .slice(0, Math.min(FINISHED_MAX, Math.max(live.length ? FINISHED_WITH_LIVE : FINISHED_ALONE, inWindow.length)));
   const waiting = live.filter(waitsForBuilder).length;
   const nothing = live.length === 0 && inWindow.length === 0;
+  const rowsToggle = (
+    <Tabs value={stages ? "stages" : "time"} onValueChange={(v) => onStages(v === "stages")}>
+      <TabsList aria-label="Rows" className="group-data-[orientation=horizontal]/tabs:h-7">
+        <TabsTrigger value="time" className="px-2 text-xs">
+          Time
+        </TabsTrigger>
+        <TabsTrigger value="stages" className="px-2 text-xs">
+          Stages
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
 
   return (
     <HoverContext.Provider value={{ id: hover, set: setHover }}>
@@ -230,7 +243,9 @@ export function PipelineDeploys({
             {deploySlotLine(snapshot)}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            {!stages ? (
+            {stages ? (
+              rowsToggle
+            ) : (
               <Tabs value={window} onValueChange={(v) => onWindow(v as WindowKey)}>
                 <TabsList aria-label="Window">
                   {(Object.keys(WINDOWS) as WindowKey[]).map((w) => (
@@ -240,20 +255,10 @@ export function PipelineDeploys({
                   ))}
                 </TabsList>
               </Tabs>
-            ) : null}
-            <Tabs value={stages ? "stages" : "time"} onValueChange={(v) => onStages(v === "stages")}>
-              <TabsList aria-label="Rows">
-                <TabsTrigger value="time" className="px-2.5 text-[13px]">
-                  Time
-                </TabsTrigger>
-                <TabsTrigger value="stages" className="px-2.5 text-[13px]">
-                  Stages
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            )}
           </div>
         </div>
-        {!stages ? <Legend /> : null}
+        {!stages ? <Legend>{rowsToggle}</Legend> : null}
         <div className="[--lab:248px] [--tot:56px]">
           <Axis frame={frame} stages={stages} />
           <div className="mt-1.5 border-t" />

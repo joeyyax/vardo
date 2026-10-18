@@ -133,10 +133,23 @@ const RECENT_LIMIT = 50;
 
 async function readRecent(now: number, windowMs = RECENT_MS, limit = RECENT_LIMIT): Promise<DeployRow[]> {
   const rows = await deployFrom()
-    .where(and(gt(deployments.finishedAt, new Date(now - windowMs)), lte(deployments.finishedAt, new Date(now - LINGER_MS))))
+    .where(
+      and(
+        Number.isFinite(windowMs) ? gt(deployments.finishedAt, new Date(now - windowMs)) : isNotNull(deployments.finishedAt),
+        lte(deployments.finishedAt, new Date(now - LINGER_MS)),
+      ),
+    )
     .orderBy(desc(deployments.finishedAt))
     .limit(limit);
   return rows.map(toRow);
+}
+
+/** At least this many finished deploys, however old, so a quiet page still shows the last ones. */
+const RECENT_FLOOR = 5;
+
+async function readRecentOrLast(now: number): Promise<DeployRow[]> {
+  const hour = await readRecent(now);
+  return hour.length >= RECENT_FLOOR ? hour : readRecent(now, Infinity, RECENT_FLOOR);
 }
 
 /** History windows the Pipeline page fetches on demand. */
@@ -339,7 +352,7 @@ async function readTotals(now: number): Promise<PipelineTotals> {
       .from(deployments)
       .where(and(eq(deployments.status, "success"), gt(deployments.finishedAt, since)))
       .groupBy(sql`1`),
-    db.select({ at: sql<Date | null>`max(${deployments.finishedAt})` }).from(deployments).where(eq(deployments.status, "success")),
+    db.select({ at: sql<Date | null>`max(${deployments.finishedAt})`.mapWith(deployments.finishedAt) }).from(deployments).where(eq(deployments.status, "success")),
   ]);
   const hourly = Array.from({ length: 24 }, () => 0);
   const thisHour = Math.floor(now / HOUR_MS);
@@ -434,7 +447,7 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
     soft(readCrons(now), [], "cron runs"),
     soft(readLoopStatus().then((r) => r.loops), [], "background loops"),
     soft(readTotals(now), { live: 0, elsewhere: 0, fellBack: 0, failed: 0 }, "deploy totals"),
-    soft(readRecent(now), [], "recent deploys"),
+    soft(readRecentOrLast(now), [], "recent deploys"),
     soft(pipelineMedians(now), { apps: {}, builders: {} }, "stage medians"),
     soft(readSchedules(now), { upcoming: [], overdue: [] }, "job schedules"),
   ]);
