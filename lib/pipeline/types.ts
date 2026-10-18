@@ -44,6 +44,9 @@ export type PipelineDeploy = {
   id: string;
   appId: string;
   appName: string;
+  /** The app's URL name, for links. */
+  appSlug: string | null;
+  orgName: string | null;
   status: string;
   stage: string | null;
   stop: Stop;
@@ -68,6 +71,10 @@ export type PipelineDeploy = {
   queue: QueuePlace | null;
   /** Null unless it waits for a builder and every slot it could take has a median. */
   next: LikelyBuilder | null;
+  /** An auto-rollback's own run: it restores the previous version after a crash. */
+  rollback: boolean;
+  /** The error a failed run logged last. */
+  failure: string | null;
 };
 
 export type JobKind = "backup" | "drill" | "cron";
@@ -86,7 +93,22 @@ export type PipelineJob = {
 export type ActivityTone = "default" | "success" | "warning" | "error";
 export type ActivityItem = { id: string; at: number; text: string; tone: ActivityTone };
 
-export type PipelineTotals = { live: number; elsewhere: number; fellBack: number; failed: number };
+/**
+ * Deploys finished in the last 24 hours. `hourly` counts live ones per hour, oldest first.
+ * `medianToLiveMs` is queue to live over the same window; `lastLiveAt` is the latest ever.
+ */
+export type PipelineTotals = {
+  live: number;
+  elsewhere: number;
+  fellBack: number;
+  failed: number;
+  medianToLiveMs?: number | null;
+  hourly?: number[];
+  lastLiveAt?: number | null;
+};
+
+/** A scheduled job's next run, or one past due. */
+export type ScheduledJob = { kind: JobKind; name: string; at: number };
 
 /**
  * The Pipeline page's state at `at`.
@@ -107,8 +129,11 @@ export type PipelineSnapshot = {
   jobs: PipelineJob[];
   loops: LoopGroup[];
   activity: ActivityItem[];
-  /** Deploys finished in the last 24 hours. */
   totals: PipelineTotals;
+  /** The next few scheduled runs, soonest first. */
+  upcoming?: ScheduledJob[];
+  /** Backup jobs past due, `at` their last run. */
+  overdue?: ScheduledJob[];
 };
 
 /** Each job kind's steps, in order. A step that spans two stops names both. */

@@ -34,6 +34,13 @@ describe("placeDeploy", () => {
     expect(place("success", "done").stop).toBe("live");
   });
 
+  it("reads an auto-rollback's own run as rolling back, not preparing", () => {
+    const p = placeDeploy({ status: "running", stage: null, waitReason: null, trigger: "rollback" });
+    expect(p.stop).toBe("rolledBack");
+    expect(describePlacement(p, { status: "running" })).toBe("Rolling back");
+    expect(describePlacement(p, { status: "rolled_back" })).toBe("Rolled back");
+  });
+
   it("sends a failure after the swap down the rolled-back branch", () => {
     expect(place("failed", "healthcheck")).toEqual({ stop: "rolledBack", waiting: false, failed: false, gone: false });
     expect(place("failed", "deploy").stop).toBe("rolledBack");

@@ -13,6 +13,7 @@ import type {
   PipelineJob,
   PipelineSnapshot,
   PipelineTotals,
+  ScheduledJob,
   SlotHolder,
 } from "./types";
 import { gateTokenDeployment } from "./events";
@@ -43,7 +44,58 @@ export type DeployRow = {
   waitAhead?: number | null;
   waitTotal?: number | null;
   waitEta?: number | null;
+  appSlug?: string | null;
+  orgName?: string | null;
+  trigger?: string | null;
+  /** The error a failed run logged last. */
+  failure?: string | null;
 };
+
+/** What turning a row into a deploy reads besides the row. */
+export type DeployContext = {
+  now: number;
+  builderName: Map<string, string>;
+  /** Deploy id to the builder whose slot it holds. */
+  holding: Map<string, string>;
+  /** Each deploy's latest stage event. */
+  stageAt: Map<string, number>;
+  fellBack: Set<string>;
+};
+
+export function toPipelineDeploy(row: DeployRow, ctx: DeployContext): PipelineDeploy {
+  const placement = placeDeploy(row);
+  const held = ctx.holding.get(row.id) ?? null;
+  const built =
+    row.buildOutcome === "target" ? row.buildTargetId : row.buildOutcome === "here" || row.buildOutcome === "fallback" ? "local" : null;
+  const builder = held ?? built;
+  const name = builder ? (ctx.builderName.get(builder) ?? (builder === row.buildTargetId ? row.buildTargetName : null)) : null;
+  const since = row.waitingSince ?? ctx.stageAt.get(row.id) ?? row.claimedAt ?? row.queuedAt;
+  return {
+    id: row.id,
+    appId: row.appId,
+    appName: row.appName,
+    appSlug: row.appSlug ?? null,
+    orgName: row.orgName ?? null,
+    status: row.status,
+    stage: row.stage,
+    ...placement,
+    waitReason: row.waitReason,
+    builder,
+    builderName: name,
+    fellBack: row.buildOutcome === "fallback" || ctx.fellBack.has(row.id),
+    label: describePlacement(placement, { waitReason: row.waitReason, stage: row.stage, builder: name, status: row.status }),
+    queuedAt: row.queuedAt,
+    stageSince: row.finishedAt ?? since,
+    finishedAt: row.finishedAt,
+    claimSlot: row.claimSlot ?? null,
+    segments: deploySegments({ ...row, timings: row.timings ?? null }, ctx.now),
+    transfer: row.imageTransfer ? { via: row.imageTransfer, ms: row.imageTransferMs ?? null } : null,
+    queue: queuePlace(row),
+    next: null,
+    rollback: row.trigger === "rollback",
+    failure: row.failure ?? null,
+  };
+}
 
 export type GateState = {
   /** This server's running builds and when each was admitted. */
@@ -80,6 +132,8 @@ export type SnapshotInputs = {
   /** Deploys finished before the linger, within the hour, newest first. */
   recent?: DeployRow[];
   medians?: PipelineMedians;
+  upcoming?: ScheduledJob[];
+  overdue?: ScheduledJob[];
 };
 
 const ACTIVITY_LIMIT = 8;
@@ -132,40 +186,16 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
       busy: busy.get(t.id) ?? null,
     })),
   ];
-  const builderName = new Map(builders.map((b) => [b.id, b.name]));
-  const holding = new Map<string, string>();
-  for (const b of builders) for (const h of b.holders) if (h.deploymentId) holding.set(h.deploymentId, b.id);
-
-  const toDeploy = (row: DeployRow): PipelineDeploy => {
-    const placement = placeDeploy(row);
-    const held = holding.get(row.id) ?? null;
-    const built =
-      row.buildOutcome === "target" ? row.buildTargetId : row.buildOutcome === "here" || row.buildOutcome === "fallback" ? "local" : null;
-    const builder = held ?? built;
-    const name = builder ? (builderName.get(builder) ?? (builder === row.buildTargetId ? row.buildTargetName : null)) : null;
-    const since = row.waitingSince ?? stageAt.get(row.id) ?? row.claimedAt ?? row.queuedAt;
-    return {
-      id: row.id,
-      appId: row.appId,
-      appName: row.appName,
-      status: row.status,
-      stage: row.stage,
-      ...placement,
-      waitReason: row.waitReason,
-      builder,
-      builderName: name,
-      fellBack: row.buildOutcome === "fallback" || fellBack.has(row.id),
-      label: describePlacement(placement, { waitReason: row.waitReason, stage: row.stage, builder: name }),
-      queuedAt: row.queuedAt,
-      stageSince: row.finishedAt ?? since,
-      finishedAt: row.finishedAt,
-      claimSlot: row.claimSlot ?? null,
-      segments: deploySegments({ ...row, timings: row.timings ?? null }, input.now),
-      transfer: row.imageTransfer ? { via: row.imageTransfer, ms: row.imageTransferMs ?? null } : null,
-      queue: queuePlace(row),
-      next: null,
-    };
+  const ctx: DeployContext = {
+    now: input.now,
+    builderName: new Map(builders.map((b) => [b.id, b.name])),
+    holding: new Map(),
+    stageAt,
+    fellBack,
   };
+  for (const b of builders) for (const h of b.holders) if (h.deploymentId) ctx.holding.set(h.deploymentId, b.id);
+  const builderName = ctx.builderName;
+  const toDeploy = (row: DeployRow) => toPipelineDeploy(row, ctx);
   const medians = input.medians ?? NO_MEDIANS;
   const deploys = withLikelyBuilders(input.deploys.map(toDeploy), builders, medians, input.now);
   const recent = (input.recent ?? []).map(toDeploy);
@@ -237,6 +267,8 @@ export function assembleSnapshot(input: SnapshotInputs): PipelineSnapshot {
     loops,
     activity,
     totals: input.totals,
+    upcoming: input.upcoming ?? [],
+    overdue: input.overdue ?? [],
   };
 }
 
