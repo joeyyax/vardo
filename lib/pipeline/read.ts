@@ -1,6 +1,6 @@
 // Reads what the Pipeline snapshot needs: deploy rows, the build gate in Redis, targets, jobs, loops and recent events.
 
-import { and, desc, eq, gt, inArray, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, backupJobs, backups, cronJobRuns, cronJobs, deployments, organizations } from "@/lib/db/schema";
 import { failureFromLog } from "@/lib/stream/deploy-tail";
@@ -474,8 +474,14 @@ export async function readPipelineSnapshot(): Promise<PipelineSnapshot> {
   });
 }
 
-/** One deploy as the Pipeline draws it, the app's last good run before it and the app's medians. */
-export type DeployTrack = { deploy: PipelineDeploy; previous: PipelineDeploy | null; medians: PipelineMedians };
+/**
+ * One deploy as the Pipeline draws it, the app's last good run before it and the app's medians.
+ * `failures`: its last failed runs in 30 days before this one, newest first, never an auto-rollback's own run.
+ */
+export type DeployTrack = { deploy: PipelineDeploy; previous: PipelineDeploy | null; failures: PipelineDeploy[]; medians: PipelineMedians };
+
+const TRACK_FAILURES = 2;
+const TRACK_FAILURE_DAYS = 30;
 
 /** A deploy of `appId` with its likely builder and stage times. Null when the app has no such deploy. */
 export async function readDeployTrack(appId: string, deploymentId: string): Promise<DeployTrack | null> {
@@ -486,11 +492,25 @@ export async function readDeployTrack(appId: string, deploymentId: string): Prom
   if (!found) return null;
   const row = toRow(found);
   const targets = await readTargets();
-  const [prev, instanceName, localSlots, gate, deploys, events, medians] = await Promise.all([
+  const before = new Date(row.queuedAt);
+  const [prev, failed, instanceName, localSlots, gate, deploys, events, medians] = await Promise.all([
     deployFrom()
-      .where(and(eq(deployments.appId, appId), eq(deployments.status, "success"), lt(deployments.startedAt, new Date(row.queuedAt))))
+      .where(and(eq(deployments.appId, appId), eq(deployments.status, "success"), lt(deployments.startedAt, before)))
       .orderBy(desc(deployments.startedAt))
       .limit(1)
+      .then((rows) => rows.map(toRow)),
+    deployFrom()
+      .where(
+        and(
+          eq(deployments.appId, appId),
+          inArray(deployments.status, ["failed", "rolled_back"]),
+          lt(deployments.startedAt, before),
+          gt(deployments.startedAt, new Date(now - TRACK_FAILURE_DAYS * 24 * 60 * 60_000)),
+          ne(deployments.trigger, "rollback"),
+        ),
+      )
+      .orderBy(desc(deployments.startedAt))
+      .limit(TRACK_FAILURES)
       .then((rows) => rows.map(toRow)),
     soft(getInstanceDisplayName(), null, "the instance name"),
     readLocalSlots(),
@@ -513,11 +533,12 @@ export async function readDeployTrack(appId: string, deploymentId: string): Prom
     loops: [],
     events,
     totals: { live: 0, elsewhere: 0, fellBack: 0, failed: 0 },
-    recent: [row, ...prev],
+    recent: [row, ...prev, ...failed],
     medians,
   });
   const deploy = snap.deploys.find((d) => d.id === row.id) ?? snap.recent.find((d) => d.id === row.id)!;
   const previous = prev[0] ? (snap.recent.find((d) => d.id === prev[0].id) ?? null) : null;
+  const failures = failed.flatMap((f) => snap.recent.filter((d) => d.id === f.id));
   const own = medians.apps[appId];
-  return { deploy, previous, medians: { apps: own ? { [appId]: own } : {}, builders: medians.builders } };
+  return { deploy, previous, failures, medians: { apps: own ? { [appId]: own } : {}, builders: medians.builders } };
 }

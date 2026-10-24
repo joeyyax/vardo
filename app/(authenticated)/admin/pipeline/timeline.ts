@@ -181,7 +181,7 @@ export function buildMedian(medians: PipelineMedians, appId: string, builder: st
   return app?.build ?? null;
 }
 
-function stageMedian(medians: PipelineMedians, d: PipelineDeploy, stage: BarStage, builder: string | null): number | null {
+export function stageMedian(medians: PipelineMedians, d: PipelineDeploy, stage: BarStage, builder: string | null): number | null {
   if (stage === "build") return buildMedian(medians, d.appId, builder);
   return medians.apps[d.appId]?.[stage as TimedStage] ?? null;
 }
