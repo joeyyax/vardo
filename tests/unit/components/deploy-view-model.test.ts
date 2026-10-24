@@ -2,12 +2,16 @@ import { describe, it, expect } from "vitest";
 import { expectedLive, ghostPieces, zoomFrame, zoomGrid, zoomRange, xPct } from "@/app/(authenticated)/admin/pipeline/timeline";
 import {
   builtOnFact,
+  compareLanes,
   deployHeadline,
   deploySummary,
   filterStage,
   liveAt,
   releaseFact,
+  signedClock,
   splitLogByStage,
+  stageSplits,
+  timeslip,
   viewPieces,
 } from "@/components/deploy-view-model";
 import { deployView } from "@/lib/ui/deploy-wait";
@@ -269,5 +273,62 @@ describe("an auto-rollback", () => {
     expect(pieces.at(-1)).toMatchObject({ kind: "back", stage: "rollingBack", label: "Rolling back", open: true });
     expect(liveAt(d, medians, NOW)).toBeNull();
     expect(builtOnFact(d, NOW).value).toBe("No build");
+  });
+});
+
+// A finished run: `queue` seconds in line, then each stage's seconds in loop order.
+const run = (id: string, queuedAt: number, queue: number, stages: [string, number][], over: Partial<PipelineDeploy> = {}): PipelineDeploy => {
+  let at = queuedAt + queue * S;
+  const segments = [{ stage: "queued" as const, start: queuedAt, end: at }, ...stages.map(([stage, s]) => ({ stage: stage as "build", start: at, end: (at += s * S) }))];
+  return dep({ id, status: "success", stage: "cleanup", stop: "live", queuedAt, finishedAt: at, segments, ...over });
+};
+
+describe("compareLanes", () => {
+  const previous = run("p", NOW - 86_400 * S, 40, [["prepare", 7], ["build", 101], ["start", 11], ["health", 22], ["switch", 3]]);
+  const failed = run("f", NOW - 3 * 86_400 * S, 5, [["prepare", 9], ["build", 88], ["health", 30]], { status: "rolled_back", stage: "healthcheck", stop: "rolledBack", failed: true });
+
+  it("starts every run on this deploy's start line, past its queue", () => {
+    const lanes = compareLanes(dep(), { previous, failures: [failed], medians }, NOW);
+    const line = NOW - 71 * S;
+    expect(lanes.map((l) => [l.kind, l.pieces[0].start - line])).toEqual([
+      ["median", 0],
+      ["last", 0],
+      ["failed", 0],
+    ]);
+    // The median builds at its time on Long House.
+    expect(lanes[0].end - line).toBe((6 + 125 + 9 + 21 + 2) * S);
+    expect(lanes[1].end - line).toBe(144 * S);
+  });
+
+  it("ends a failed run in the stage it died in, without the rollback", () => {
+    const [lane] = compareLanes(dep(), { previous: null, failures: [failed], medians: { apps: {}, builders: {} } }, NOW);
+    expect(lane).toMatchObject({ kind: "failed", meta: "Health check" });
+    expect(lane.pieces.map((p) => p.kind)).toEqual(["prepare", "build", "health"]);
+  });
+
+  it("has nothing to compare without history, nor for an auto-rollback", () => {
+    expect(compareLanes(dep(), { previous: null, failures: [], medians: { apps: {}, builders: {} } }, NOW)).toEqual([]);
+    expect(compareLanes(dep({ rollback: true }), { previous, failures: [failed], medians }, NOW)).toEqual([]);
+  });
+});
+
+describe("stageSplits and the timeslip", () => {
+  const done = run("d", NOW - 200 * S, 30, [["prepare", 5], ["build", 120], ["start", 9], ["health", 25], ["switch", 2]]);
+
+  it("measures each finished stage against its median and stops at the one in flight", () => {
+    expect(stageSplits(dep(), medians, NOW).map((s) => [s.stage, s.deltaMs])).toEqual([["prepare", 0]]);
+    expect(stageSplits(done, medians, NOW).map((s) => s.deltaMs / S)).toEqual([-1, -5, 0, 4, 0]);
+  });
+
+  it("gives a successful deploy its timeslip, and none while it runs or after a failure", () => {
+    expect(timeslip(done, medians, NOW)?.map((s) => s.stage)).toEqual(["prepare", "build", "start", "health", "switch"]);
+    expect(timeslip(dep(), medians, NOW)).toBeNull();
+    expect(timeslip({ ...done, status: "failed" }, medians, NOW)).toBeNull();
+  });
+
+  it("signs the difference", () => {
+    expect(signedClock(-12 * S)).toBe("−0:12");
+    expect(signedClock(3 * S)).toBe("+0:03");
+    expect(signedClock(400)).toBe("0:00");
   });
 });
