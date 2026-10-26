@@ -26,6 +26,7 @@ const { backupsFindFirst, volumesFindFirst, spawnMock, resolveDbContainerMock, r
   restorePostgresMock: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/db", () => ({
   db: { query: { backups: { findFirst: backupsFindFirst }, volumes: { findFirst: volumesFindFirst } } },
 }));

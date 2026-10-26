@@ -18,6 +18,7 @@ const { SHA, TIP, gitCalls, gitRouter } = vi.hoisted(() => {
   };
 });
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: unknown) => void) => {
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });

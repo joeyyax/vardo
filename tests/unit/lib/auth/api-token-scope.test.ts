@@ -10,6 +10,7 @@ const { tokenFindFirst, userFindFirst, headerMap, cookieSession } = vi.hoisted((
   cookieSession: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("react", async (orig) => ({
   ...(await orig<typeof import("react")>()),
   cache: <T,>(fn: T) => fn,

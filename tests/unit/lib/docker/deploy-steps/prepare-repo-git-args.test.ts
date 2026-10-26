@@ -5,6 +5,7 @@ import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
 const gitCalls = vi.hoisted(() => [] as string[][]);
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: unknown) => void) => {
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });

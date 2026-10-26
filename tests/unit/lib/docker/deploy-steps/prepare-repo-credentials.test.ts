@@ -12,6 +12,7 @@ const { calls, state } = vi.hoisted(() => ({
   state: { hasRepo: true },
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({
   execFile: (
     cmd: string,

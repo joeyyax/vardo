@@ -5,6 +5,7 @@
 // strategy, with docker/bash/storage/db mocked.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/docker/stop-holds", () => ({
   holdStopped: vi.fn(async () => {}),
   releaseStopped: vi.fn(async () => {}),

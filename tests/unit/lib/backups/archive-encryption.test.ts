@@ -2,6 +2,7 @@
 // restore, download and prune handle age-encrypted and plaintext archives.
 
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/docker/volume-owner", () => ({
   volumeOwnerProblem: vi.fn().mockResolvedValue(null),
   appFamily: vi.fn(async (id: string) => [id]),

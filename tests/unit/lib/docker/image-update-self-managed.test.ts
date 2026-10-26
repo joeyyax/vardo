@@ -14,6 +14,7 @@ const { readCachedChecks, readIgnoreRules, readMajorGateBlock } = vi.hoisted(() 
   readMajorGateBlock: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/docker/image-updates/check", () => ({
   readCachedChecks,
   CHECK_TTL_MS: 6 * 60 * 60 * 1000,

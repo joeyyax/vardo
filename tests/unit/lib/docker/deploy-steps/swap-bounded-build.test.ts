@@ -48,6 +48,7 @@ const {
   };
 });
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/docker/restart-policy", () => restartPolicyMock);

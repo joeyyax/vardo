@@ -62,6 +62,7 @@ const {
   };
 });
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));

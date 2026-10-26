@@ -5,6 +5,7 @@
 //   vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 //   vi.mock("@/lib/auth/admin", async () => (await import("@/tests/helpers/mocks")).adminModule());
 //   vi.mock("@/lib/notifications/resolved-hold", async (orig) => (await import("@/tests/helpers/mocks")).resolvedHoldModule(orig));
+//   vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 import { vi } from "vitest";
 
 export function loggerModule() {
@@ -46,5 +47,28 @@ export async function resolvedHoldModule(importOriginal: () => Promise<unknown>)
     holdResolved: vi.fn(async () => {}),
     sendHeldResolved: vi.fn(async () => false),
     flushResolved: vi.fn(async () => 0),
+  };
+}
+
+/** An ioredis that never connects: `set` succeeds, other commands resolve null, pipeline and multi resolve no results. */
+export function ioredisModule() {
+  const batch: object = new Proxy({}, {
+    get: (_, prop) => (prop === "exec" ? async () => [] : prop === "then" ? undefined : () => batch),
+  });
+  const client: object = new Proxy({}, {
+    get: (_, prop) => {
+      if (prop === "then") return undefined;
+      if (prop === "pipeline" || prop === "multi") return () => batch;
+      if (prop === "on" || prop === "once" || prop === "off") return () => client;
+      if (prop === "set") return vi.fn(async () => "OK");
+      return vi.fn(async () => null);
+    },
+  });
+  return {
+    default: class {
+      constructor() {
+        return client;
+      }
+    },
   };
 }
