@@ -5,6 +5,7 @@ import YAML from "yaml";
 import { logger } from "@/lib/logger";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
+import { redirectReplacement } from "@/lib/domains/redirect-target";
 
 const EXTERNAL_ROUTES_FILE = "external-routes.yaml";
 
@@ -46,11 +47,6 @@ type TraefikDynamicConfig = {
   };
 };
 
-/** Escape bare `$` so Traefik doesn't read it as a capture group. Leaves `${N}` and `$N`. */
-function sanitizeRedirectReplacement(url: string): string {
-  return url.replace(/\$(?!\{|\d)/g, "$$$$");
-}
-
 /** Regenerate the Traefik file-provider config for all external routes. */
 export async function regenerateExternalRoutesConfig(): Promise<void> {
   const routes = await db.query.externalRoutes.findMany();
@@ -77,7 +73,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
       middlewares[middlewareName] = {
         redirectRegex: {
           regex: "^https?://[^/]+(.*)$",
-          replacement: `${sanitizeRedirectReplacement(route.redirectUrl)}\${1}`,
+          replacement: redirectReplacement(route.redirectUrl),
           permanent: route.redirectPermanent,
         },
       };
