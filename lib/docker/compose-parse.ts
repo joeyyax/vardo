@@ -14,6 +14,11 @@ import {
 } from "./compose-validate";
 import { SHARED_MARKER } from "./slot-partition";
 
+/** A literal value as Compose reads it: `$` doubled so it isn't interpolated. */
+export function composeLiteral(value: string): string {
+  return value.replaceAll("$", "$$$$");
+}
+
 /** Serialize a ComposeFile to YAML. */
 export function composeToYaml(compose: ComposeFile): string {
   const doc: Record<string, unknown> = {};

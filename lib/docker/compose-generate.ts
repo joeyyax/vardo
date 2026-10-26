@@ -7,6 +7,7 @@ import type {
   Ulimits,
 } from "./compose-types";
 import { isAnonymousVolume } from "./compose-validate";
+import { composeLiteral } from "./compose-parse";
 
 // Only labels with these prefixes survive the import filter.
 export const TRAEFIK_LABEL_PREFIX = "traefik.";
@@ -160,10 +161,11 @@ export function generateComposeFromContainer(
     }
   }
 
+  // Docker reports values after interpolation; escape them so Compose reads them back unchanged.
   const filteredLabels = Object.fromEntries(
-    Object.entries(container.labels).filter(
-      ([k]) => ALLOWED_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
-    )
+    Object.entries(container.labels)
+      .filter(([k]) => ALLOWED_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix)))
+      .map(([k, v]) => [k, composeLiteral(v)])
   );
   if (Object.keys(filteredLabels).length > 0) service.labels = filteredLabels;
 
@@ -222,7 +224,7 @@ export function generateComposeFromContainer(
 
   if (container.healthcheck) {
     const hc = container.healthcheck;
-    const spec: HealthCheck = { test: hc.test };
+    const spec: HealthCheck = { test: hc.test.map(composeLiteral) };
     if (hc.interval > 0) spec.interval = nanosToDuration(hc.interval);
     if (hc.timeout > 0) spec.timeout = nanosToDuration(hc.timeout);
     if (hc.retries > 0) spec.retries = hc.retries;
@@ -230,9 +232,9 @@ export function generateComposeFromContainer(
     service.healthcheck = spec;
   }
 
-  if (container.entrypoint.length > 0) service.entrypoint = container.entrypoint;
+  if (container.entrypoint.length > 0) service.entrypoint = container.entrypoint.map(composeLiteral);
 
-  if (container.command.length > 0) service.command = container.command;
+  if (container.command.length > 0) service.command = container.command.map(composeLiteral);
 
   const compose: ComposeFile = {
     services: { [serviceName]: service },

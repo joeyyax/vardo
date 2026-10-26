@@ -11,7 +11,7 @@ import type {
   ServiceConfigOverride,
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
-import { parseCompose } from "./compose-parse";
+import { composeLiteral, parseCompose } from "./compose-parse";
 import { isProjectNetwork } from "./project-network";
 import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
@@ -21,6 +21,7 @@ import { isHostname } from "@/lib/security/hostname";
 import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
+import { redirectReplacement } from "@/lib/domains/redirect-target";
 import type { QosTier } from "@/lib/resources/defaults";
 import { tierCpuLimit, tierMemoryMb } from "@/lib/resources/host";
 
@@ -178,16 +179,16 @@ export function injectTraefikLabels(
       appMiddlewares.push(opts.headers.ref);
     } else {
       for (const [option, value] of Object.entries(opts.headers.options)) {
-        labels[`traefik.http.middlewares.${projectName}-headers.headers.${option}`] = value;
+        labels[`traefik.http.middlewares.${projectName}-headers.headers.${option}`] = composeLiteral(value);
       }
       appMiddlewares.push(`${projectName}-headers`);
     }
   }
   appMiddlewares.push(...(opts.middlewares ?? []));
-  if (isRedirect) {
+  if (opts.redirectTo) {
     // Redirect domain: redirectregex middleware, still TLS-terminated.
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^https?://[^/]+(.*)$";
-    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.replacement`] = `${opts.redirectTo}\${1}`;
+    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.replacement`] = composeLiteral(redirectReplacement(opts.redirectTo));
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.permanent`] = String(permanent);
     appMiddlewares.push(`${projectName}-redirect`);
     // Traefik requires a service reference even on redirect routers.
@@ -305,7 +306,7 @@ export function injectHeadersIntoOwnRouters(
     const next: Record<string, string> = { ...labels };
     if ("options" in headers) {
       for (const [option, value] of Object.entries(headers.options)) {
-        next[`traefik.http.middlewares.${middleware}.headers.${option}`] = value;
+        next[`traefik.http.middlewares.${middleware}.headers.${option}`] = composeLiteral(value);
       }
     }
     for (const r of https) {
