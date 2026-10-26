@@ -350,6 +350,27 @@ describe("injectTraefikLabels path prefix", () => {
     expect(labels["traefik.http.middlewares.docs-abc-strip.stripprefix.prefixes"]).toBeUndefined();
   });
 
+  it("escapes the redirect capture group so Compose doesn't interpolate it", () => {
+    const labels = inject({ pathPrefix: "/old", redirectTo: "https://new.test" });
+    expect(labels["traefik.http.middlewares.docs-abc-redirect.redirectregex.regex"]).toBe("^https?://[^/]+(.*)$");
+    expect(labels["traefik.http.middlewares.docs-abc-redirect.redirectregex.replacement"]).toBe("https://new.test$${1}");
+  });
+
+  it("drops a trailing slash from the target and escapes $ for Traefik, then Compose", () => {
+    const labels = inject({ redirectTo: "https://new.test/a$b/" });
+    expect(labels["traefik.http.middlewares.docs-abc-redirect.redirectregex.replacement"]).toBe("https://new.test/a$$$$b$${1}");
+  });
+
+  it("escapes $ in header values", () => {
+    const labels = injectTraefikLabels(base(), {
+      projectName: "docs-abc",
+      domain: "acme.test",
+      containerPort: 80,
+      headers: { options: { customResponseHeaders: "X-Price=$5" } },
+    }).services.web.labels!;
+    expect(labels["traefik.http.middlewares.docs-abc-headers.headers.customResponseHeaders"]).toBe("X-Price=$$5");
+  });
+
   it("writes no priority or path matcher without a prefix", () => {
     const labels = inject({ pathPrefix: null });
     expect(labels["traefik.http.routers.docs-abc.rule"]).toBe("Host(`acme.test`)");

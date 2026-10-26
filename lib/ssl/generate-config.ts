@@ -4,6 +4,7 @@ import YAML from "yaml";
 import { logger } from "@/lib/logger";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 import { isHostname } from "@/lib/security/hostname";
+import { redirectReplacement } from "@/lib/domains/redirect-target";
 
 type TraefikRouterConfig = {
   rule: string;
@@ -99,15 +100,14 @@ export function buildTraefikConfigYaml(
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";
     const ssl = domain.sslEnabled ?? true;
     const certResolver = domain.certResolver || "le-dns";
-    const isRedirect = !!domain.redirectTo;
     const permanent = (domain.redirectCode ?? 301) === 301;
 
-    if (isRedirect) {
+    if (domain.redirectTo) {
       const redirectMw = `${routerName}-redirect`;
       middlewares[redirectMw] = {
         redirectRegex: {
           regex: "^https?://[^/]+(.*)$",
-          replacement: `${domain.redirectTo}\${1}`,
+          replacement: redirectReplacement(domain.redirectTo),
           permanent,
         },
       };

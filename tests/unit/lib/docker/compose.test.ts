@@ -1521,6 +1521,20 @@ describe("generateComposeFromContainer", () => {
     expect(svc.restart).toBe("unless-stopped");
   });
 
+  it("escapes $ in values Docker reports after interpolation", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      labels: { "traefik.http.middlewares.r.redirectregex.replacement": "https://new.test${1}" },
+      command: ["sh", "-c", "echo $HOME"],
+      entrypoint: ["/bin/sh", "-c", "exec $0"],
+      healthcheck: { test: ["CMD-SHELL", "test -n \"$PORT\""], interval: 0, timeout: 0, retries: 0, startPeriod: 0 },
+    }));
+    const svc = compose.services.myapp;
+    expect(svc.labels?.["traefik.http.middlewares.r.redirectregex.replacement"]).toBe("https://new.test$${1}");
+    expect(svc.command).toEqual(["sh", "-c", "echo $$HOME"]);
+    expect(svc.entrypoint).toEqual(["/bin/sh", "-c", "exec $$0"]);
+    expect(svc.healthcheck?.test).toEqual(["CMD-SHELL", "test -n \"$$PORT\""]);
+  });
+
   it("defaults restart to unless-stopped when container had none", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({ restartPolicy: "no" }));
     expect(compose.services.myapp.restart).toBe("unless-stopped");
