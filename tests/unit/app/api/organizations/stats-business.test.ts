@@ -22,6 +22,7 @@ const {
   mockGetLatestGlobal: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/api/verify-access", () => ({
   verifyOrgAccess: mockVerifyOrgAccess,
 }));

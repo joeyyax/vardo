@@ -14,6 +14,7 @@ const { dbSets, dockerCalls, localImages, earlier, nixpacks } = vi.hoisted(() =>
   nixpacks: { generates: false, calls: [] as string[][] },
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: unknown) => void) => {
     if (cmd === "docker") {

@@ -12,6 +12,7 @@ const { mockVerifyOrgAccess, appsFindFirst, getVolumeSizesMock } = vi.hoisted(()
   getVolumeSizesMock: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/db", () => ({
   db: {

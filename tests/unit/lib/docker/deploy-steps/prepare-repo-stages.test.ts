@@ -14,6 +14,7 @@ const { dbSets, nixpacksPlan } = vi.hoisted(() => ({
   nixpacksPlan: { stdout: "" },
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: unknown) => void) => {
     if (cmd === "nixpacks" && args[0] === "plan") return cb(null, { stdout: nixpacksPlan.stdout, stderr: "" });

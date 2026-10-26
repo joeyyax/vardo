@@ -36,6 +36,7 @@ const {
   mockGetSsl: vi.fn(),
 }));
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/mesh/auth", () => ({
   requireMeshPeer: mockRequireMeshPeer,
 }));

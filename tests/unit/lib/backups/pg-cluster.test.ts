@@ -470,16 +470,18 @@ describe.skipIf(!READY)("Postgres server archives against real postgres:17", () 
       // Shrinks the lock table so a clean-and-recreate of 700 tables overflows it.
       many = startPostgres("many", IMAGE, ["-c", "max_connections=20"]);
       await waitReady(many);
-      sql(
-        many,
-        "appdb",
-        `DO $$ BEGIN FOR i IN 1..${TABLES} LOOP
-           EXECUTE format('CREATE TABLE public.t%s (id serial PRIMARY KEY, body text, created_at timestamptz DEFAULT now())', i);
-           EXECUTE format('CREATE INDEX ON public.t%s (created_at)', i);
-         END LOOP; END $$;
-         INSERT INTO public.t1 (body) VALUES ('dumped');
-         ALTER DATABASE appdb SET work_mem TO '8MB';`,
-      );
+      // Batched: one transaction for all 700 overflows the lock table this test shrank.
+      for (let from = 1; from <= TABLES; from += 100) {
+        sql(
+          many,
+          "appdb",
+          `DO $$ BEGIN FOR i IN ${from}..${Math.min(from + 99, TABLES)} LOOP
+             EXECUTE format('CREATE TABLE public.t%s (id serial PRIMARY KEY, body text, created_at timestamptz DEFAULT now())', i);
+             EXECUTE format('CREATE INDEX ON public.t%s (created_at)', i);
+           END LOOP; END $$;`,
+        );
+      }
+      sql(many, "appdb", "INSERT INTO public.t1 (body) VALUES ('dumped'); ALTER DATABASE appdb SET work_mem TO '8MB';");
       dumped = join(dir, "many.custom.gz");
       const archive = execFileSync("docker", ["exec", many, "pg_dump", "-U", "app", "-Fc", "appdb"], { maxBuffer: 64 * 1024 * 1024 });
       writeFileSync(dumped, gzipSync(archive));

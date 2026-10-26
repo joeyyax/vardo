@@ -19,6 +19,7 @@ const { execFileAsyncMock, execFileMock } = vi.hoisted(() => {
   return { execFileAsyncMock, execFileMock };
 });
 
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: { update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => {}) })) })) } }));
 vi.mock("@/lib/docker/memory-headroom", () => ({ overlapFitsNow: vi.fn(async () => true) }));

@@ -125,3 +125,21 @@ describe("regenerateExternalRoutesConfig — cert resolver", () => {
     expect(yaml).not.toMatch(/certResolver: le$/m);
   });
 });
+
+describe("regenerateExternalRoutesConfig — redirects", () => {
+  it("keeps the request path and treats $ in the target as literal", async () => {
+    vi.mocked(db.query.externalRoutes.findMany).mockResolvedValue([
+      { ...mockRoutes[0], targetUrl: null, redirectUrl: "https://new.test/?ref=$1/" },
+    ] as never);
+    vi.mocked(getSslConfig).mockResolvedValue({ activeIssuers: ["le"] } as never);
+    vi.mocked(getDefaultCertResolver).mockReturnValue("le" as never);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined as never);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined as never);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined as never);
+
+    await regenerateExternalRoutesConfig();
+
+    const yaml = String(vi.mocked(fsp.writeFile).mock.calls.at(-1)?.[1]);
+    expect(yaml).toContain("replacement: https://new.test/?ref=$$1${1}");
+  });
+});

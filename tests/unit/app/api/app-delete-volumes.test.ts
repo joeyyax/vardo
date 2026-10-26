@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { volumeOwnerProblemMock } = vi.hoisted(() => ({ volumeOwnerProblemMock: vi.fn() }));
+vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
 vi.mock("@/lib/docker/volume-owner", () => ({ volumeOwnerProblem: volumeOwnerProblemMock }));
 import { NextRequest } from "next/server";
 
