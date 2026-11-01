@@ -9,8 +9,11 @@ import {
   ghostPieces,
   isLive,
   soon,
+  stageMedian,
+  stageTimes,
   waitsForBuilder,
   type BarPiece,
+  type BarStage,
 } from "@/app/(authenticated)/admin/pipeline/timeline";
 import type { PipelineMedians } from "@/lib/pipeline/medians";
 import type { PipelineDeploy } from "@/lib/pipeline/types";
@@ -61,6 +64,105 @@ export function liveAt(d: PipelineDeploy, medians: PipelineMedians, now: number)
 /** The ghosts at medians. An auto-rollback restores an image, so it has none. */
 function expected(d: PipelineDeploy, medians: PipelineMedians, now: number) {
   return d.rollback ? [] : ghostPieces(d, medians, now);
+}
+
+/** Where a run's stages start: its first piece after the queue, or `now` while it's still in line. */
+export function startLine(pieces: Pick<BarPiece, "kind" | "start">[], now: number): number {
+  return pieces.find((p) => p.kind !== "queued")?.start ?? now;
+}
+
+/** One piece of a comparison lane, moved so the run starts on this deploy's start line. */
+export type LanePiece = { key: string; kind: BarStage | "wait"; start: number; end: number };
+
+export type CompareLane = {
+  key: string;
+  kind: "median" | "last" | "failed";
+  name: string;
+  meta: string;
+  pieces: LanePiece[];
+  /** When the run would end, on this deploy's clock. */
+  end: number;
+};
+
+function day(at: number): string {
+  return new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** A past run on this deploy's clock: its failure drawn as the stage it was in, no rollback hatch, named for the stage it died in. */
+function pastLane(run: PipelineDeploy, kind: "last" | "failed", line: number, now: number): CompareLane | null {
+  const all = barPieces(run, now).filter((p) => p.kind !== "queued" && p.kind !== "back");
+  if (!all.length) return null;
+  const offset = line - startLine(all, now);
+  const pieces = all.map((p): LanePiece => ({
+    key: p.key,
+    kind: p.kind === "fail" ? (p.stage as BarStage) : (p.kind as BarStage | "wait"),
+    start: p.start + offset,
+    end: p.end + offset,
+  }));
+  const fail = all.find((p) => p.kind === "fail");
+  const meta = kind === "last" ? day(run.queuedAt) : fail ? PIECE_TITLE[fail.stage] : "Failed";
+  return { key: run.id, kind, name: kind === "last" ? "Last deploy" : day(run.queuedAt), meta, pieces, end: pieces.at(-1)!.end };
+}
+
+/** The app's median run, stage by stage until one has no median, from the start line. */
+function medianPieces(d: PipelineDeploy, medians: PipelineMedians, line: number): LanePiece[] {
+  const out: LanePiece[] = [];
+  let at = line;
+  for (const stage of BAR_STAGES) {
+    const ms = stageMedian(medians, d, stage, d.builder);
+    if (ms === null) break;
+    out.push({ key: `m-${stage}`, kind: stage, start: at, end: at + ms });
+    at += ms;
+  }
+  return out;
+}
+
+/** The runs this deploy is measured against, all starting on its start line: the median, the last good deploy and recent failures. */
+export function compareLanes(
+  d: PipelineDeploy,
+  { previous, failures, medians }: { previous: PipelineDeploy | null; failures: PipelineDeploy[]; medians: PipelineMedians },
+  now: number,
+): CompareLane[] {
+  if (d.rollback) return [];
+  const line = startLine(barPieces(d, now), now);
+  const median = medianPieces(d, medians, line);
+  const lanes = [
+    median.length ? { key: "median", kind: "median" as const, name: "Median", meta: "Last 30 days", pieces: median, end: median.at(-1)!.end } : null,
+    previous ? pastLane(previous, "last", line, now) : null,
+    ...failures.map((f) => pastLane(f, "failed", line, now)),
+  ];
+  return lanes.filter((l): l is CompareLane => l !== null);
+}
+
+/** A finished stage against its median: `deltaMs` below zero is faster. `at` is where the stage ended. */
+export type Split = { stage: BarStage; at: number; ms: number; medianMs: number; deltaMs: number };
+
+/** Each stage this deploy finished, against the app's median for it, in loop order until one lacks a median. */
+export function stageSplits(d: PipelineDeploy, medians: PipelineMedians, now: number): Split[] {
+  const pieces = barPieces(d, now);
+  const times = stageTimes(d, now);
+  const out: Split[] = [];
+  for (const stage of BAR_STAGES) {
+    const last = pieces.findLast((p) => p.kind === stage);
+    if (!last || last.open || times[stage] === undefined) break;
+    const medianMs = stageMedian(medians, d, stage, d.builder);
+    if (medianMs === null) break;
+    out.push({ stage, at: last.end, ms: times[stage]!, medianMs, deltaMs: times[stage]! - medianMs });
+  }
+  return out;
+}
+
+/** "−0:12", "+0:03", "0:00". */
+export function signedClock(ms: number): string {
+  if (Math.abs(ms) < 1_000) return "0:00";
+  return `${ms < 0 ? "−" : "+"}${clock(Math.abs(ms))}`;
+}
+
+/** The timeslip: every stage of a successful deploy against its median. Null unless each has one. */
+export function timeslip(d: PipelineDeploy, medians: PipelineMedians, now: number): Split[] | null {
+  if (isLive(d) || d.status !== "success" || d.rollback) return null;
+  const splits = stageSplits(d, medians, now);
+  return splits.length === BAR_STAGES.length ? splits : null;
 }
 
 export type HeadlineTone = "active" | "warn" | "issue" | "good" | "neutral";
