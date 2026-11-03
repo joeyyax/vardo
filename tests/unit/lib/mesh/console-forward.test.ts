@@ -89,12 +89,16 @@ describe("planForward", () => {
 });
 
 describe("meshIpFrom", () => {
-  it("picks the address on the gateway's /24", () => {
-    expect(meshIpFrom(["172.18.0.5", "10.88.0.4", "172.19.0.2"], "10.88.0.2")).toBe("10.88.0.4");
+  it("picks the address on the mesh network's /24", () => {
+    expect(meshIpFrom(["172.18.0.5", "10.88.0.4", "172.19.0.2"])).toBe("10.88.0.4");
+  });
+
+  it("takes any address on it, the old gateway address included", () => {
+    expect(meshIpFrom(["172.18.0.5", "10.88.0.2"])).toBe("10.88.0.2");
   });
 
   it("is null off the mesh", () => {
-    expect(meshIpFrom(["172.18.0.5"], "10.88.0.2")).toBeNull();
+    expect(meshIpFrom(["172.18.0.5"])).toBeNull();
   });
 });
 
