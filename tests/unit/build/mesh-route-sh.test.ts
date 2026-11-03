@@ -31,7 +31,7 @@ const currentVia = () => readFileSync(join(dir, "route"), "utf8").match(/via (\S
 function run() {
   return spawnSync("sh", [SCRIPT], {
     encoding: "utf8",
-    env: { PATH: `${dir}:/usr/bin:/bin`, VARDO_MESH_ROUTE_ONCE: "1" },
+    env: { ...process.env, PATH: `${dir}:/usr/bin:/bin`, VARDO_MESH_ROUTE_ONCE: "1" },
   });
 }
 
