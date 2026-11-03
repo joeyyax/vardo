@@ -7,6 +7,8 @@ set -e
 if [ -n "${WIREGUARD_GATEWAY:-}" ]; then
   ip route replace 10.99.0.0/24 via "$WIREGUARD_GATEWAY"
 fi
+# Follows vardo-wireguard's mesh address as it changes. Runs as root: the app user can't change routes.
+sh ./scripts/mesh-route.sh &
 
 # Ensure nextjs user has access to the Docker socket.
 # DOCKER_GID is set in docker-compose via group_add, but we need it
