@@ -6,7 +6,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { logger } from "@/lib/logger";
 import { isRunningInContainer } from "./env";
-import { CONSOLE_PORT, CONSOLE_SERVICE, FRONTEND_MESH_IP, MESH_GATEWAY_IP, WG_CONTAINER } from "./constants";
+import { CONSOLE_PORT, CONSOLE_SERVICE, FRONTEND_MESH_IP, MESH_NETWORK_SUBNET, WG_CONTAINER } from "./constants";
 
 const log = logger.child("mesh-forward");
 
@@ -66,10 +66,10 @@ export function planForward(output: string, ip: string, port: string = CONSOLE_P
   return plan;
 }
 
-/** The address in `addresses` on the gateway's /24. */
-export function meshIpFrom(addresses: string[], gateway: string = MESH_GATEWAY_IP): string | null {
-  const prefix = gateway.split(".").slice(0, 3).join(".") + ".";
-  return addresses.find((a) => IPV4_RE.test(a) && a.startsWith(prefix) && a !== gateway) ?? null;
+/** The address in `addresses` on the mesh network's /24. */
+export function meshIpFrom(addresses: string[], subnet: string = MESH_NETWORK_SUBNET): string | null {
+  const prefix = subnet.split(".").slice(0, 3).join(".") + ".";
+  return addresses.find((a) => IPV4_RE.test(a) && a.startsWith(prefix)) ?? null;
 }
 
 /** This process's address on the mesh Docker network. */

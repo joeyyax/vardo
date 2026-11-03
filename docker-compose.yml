@@ -42,7 +42,6 @@ services:
       # The collector and Loki are on vardo-monitoring, which the console joins at startup.
       LOKI_URL: ${LOKI_URL:-http://loki:3100}
       TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
-      WIREGUARD_GATEWAY: 10.88.0.2
       DOCKER_GID: ${DOCKER_GID:-999}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
@@ -144,7 +143,6 @@ services:
       console:
       internal:
       mesh:
-        ipv4_address: 10.88.0.3
 
   # Background loops (worker/index.ts), from the frontend's image. Rotates with the console's slot.
   # Env and mounts match frontend; tests/unit/infra/worker-compose.test.ts keeps them in step.
@@ -175,7 +173,6 @@ services:
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
       LOKI_URL: ${LOKI_URL:-http://loki:3100}
       TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
-      WIREGUARD_GATEWAY: 10.88.0.2
       DOCKER_GID: ${DOCKER_GID:-999}
       VARDO_WORKER_HEALTH_PORT: 3001
     healthcheck:
@@ -416,7 +413,6 @@ services:
     networks:
       internal:
       mesh:
-        ipv4_address: 10.88.0.2
       vardo-network:
     mem_limit: 64m
 

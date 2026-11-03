@@ -1,13 +1,7 @@
 #!/bin/sh
 set -e
 
-# Set up mesh routing if WireGuard gateway is configured.
-# ip route replace is idempotent — adds or updates the route without failing
-# if it already exists (e.g. on a warm container restart).
-if [ -n "${WIREGUARD_GATEWAY:-}" ]; then
-  ip route replace 10.99.0.0/24 via "$WIREGUARD_GATEWAY"
-fi
-# Follows vardo-wireguard's mesh address as it changes. Runs as root: the app user can't change routes.
+# Routes the tunnel through vardo-wireguard as its address changes. As root: the app user can't change routes.
 sh ./scripts/mesh-route.sh &
 
 # Ensure nextjs user has access to the Docker socket.
