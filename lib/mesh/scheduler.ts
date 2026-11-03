@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
+import { ensureWireguardRunning } from "./wireguard-up";
 import { syncBuilderTls } from "./builder-tls";
 import { reconcileBuilderForward } from "./builder-forward";
 import { exchangeKeys } from "./key-exchange";
@@ -14,6 +15,11 @@ const INTERVAL_MS = 30_000;
 const FIRST_FORWARD_CHECK_MS = 5_000;
 
 async function reconcileForward(): Promise<void> {
+  try {
+    await ensureWireguardRunning();
+  } catch (err) {
+    log.error("WireGuard start check failed:", err);
+  }
   try {
     await reconcileConsoleForward();
   } catch (err) {
