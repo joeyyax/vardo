@@ -23,7 +23,7 @@ export type BoundedBuild = {
   limitBytes: number | null;
   /** The BuildKit container, when builds run in one. */
   container?: string;
-  /** Lines held back for the deploy log until the build runs on this server. */
+  /** Lines held back for the deploy log until the build runs on this server; flush them with `heldNotes`. */
   notes?: string[];
 };
 
@@ -88,11 +88,24 @@ export function formatGiB(bytes: number): string {
 export async function boundedBuild(log?: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
   if (log) return localBuilder(log, signal);
   const notes: string[] = [];
-  return { ...(await localBuilder((line) => notes.push(line), signal)), notes };
+  return { ...(await localBuilder((line) => notes.push(line), signal, false)), notes };
+}
+
+function limitLine(container: string, limitBytes: number): string {
+  return limitBytes > 0
+    ? `[build] Building in ${container} (memory limit ${formatGiB(limitBytes)})`
+    : `[build] Warning: building in ${container}, which has no memory limit — set VARDO_BUILDKIT_MEM and recreate it`;
+}
+
+/** The held lines for the deploy log, with the limit the build runs at. */
+export function heldNotes(build: BoundedBuild): string[] {
+  const notes = build.notes ?? [];
+  if (!build.container || build.limitBytes === null) return notes;
+  return [...notes, limitLine(build.container, build.limitBytes)];
 }
 
 /** Falls back to the daemon when BuildKit is down or VARDO_BUILD_BUILDER=daemon. */
-async function localBuilder(log: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
+async function localBuilder(log: (line: string) => void, signal?: AbortSignal, logLimit = true): Promise<BoundedBuild> {
   if (process.env.VARDO_BUILD_BUILDER === "daemon") {
     log("[build] Warning: VARDO_BUILD_BUILDER=daemon — this build runs on the Docker daemon with no memory limit");
     return UNBOUNDED;
@@ -118,11 +131,6 @@ async function localBuilder(log: (line: string) => void, signal?: AbortSignal): 
   const store = await exportStore(signal);
   const output = exportOutput(store);
   if (output) log(`[build] Exporting ${output.includes("zstd") ? "zstd" : "uncompressed"} layers to the ${store} image store`);
-  log(
-    limitBytes > 0
-      ? `[build] Building in ${container} (memory limit ${formatGiB(limitBytes)})`
-      : `[build] Warning: building in ${container}, which has no memory limit — set VARDO_BUILDKIT_MEM and recreate it`,
-  );
   // -1 is unlimited swap; a value above the limit is the limit plus that much swap.
   if (limitBytes > 0 && swap !== null && (swap < 0 || swap > limitBytes)) {
     log(
@@ -130,6 +138,7 @@ async function localBuilder(log: (line: string) => void, signal?: AbortSignal): 
         "Run sudo vardo update to recreate it without swap.",
     );
   }
+  if (logLimit) log(limitLine(container, limitBytes));
   return { env: { ...env, BUILDX_BUILDER: BOUNDED_BUILDER }, loadArgs: exportArgs(store), output, limitBytes, container };
 }
 
