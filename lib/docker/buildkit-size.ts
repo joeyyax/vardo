@@ -21,24 +21,41 @@ export const BUILDKIT_SIZE = {
   swapBelowBytes: 6 * GiB,
   /** Sizes round down to this step; a smaller change doesn't resize. */
   stepBytes: 64 * MiB,
+  /** Added to the app's last build peak, for a build that grew since. */
+  peakMargin: 0.1,
 } as const;
 
-export type BuildKitSize = { memoryBytes: number; memorySwapBytes: number; reserveBytes: number; floored: boolean };
+export type BuildKitSize = {
+  memoryBytes: number;
+  memorySwapBytes: number;
+  reserveBytes: number;
+  floored: boolean;
+  /** Grown past free memory to the app's last build peak. */
+  stretched: boolean;
+};
 
 /**
  * Free memory plus what BuildKit holds now, less the apps' reserve and what another busy builder can still grow into, between the floor and half of RAM.
  * The floor wins on a small host.
  */
-export function buildkitSize(input: { totalBytes: number; availableBytes: number; builderBytes: number; otherHeadroomBytes?: number }): BuildKitSize {
+export function buildkitSize(input: {
+  totalBytes: number;
+  availableBytes: number;
+  builderBytes: number;
+  otherHeadroomBytes?: number;
+  /** The most this app's builds rose in BuildKit lately; the size covers it, up to half of RAM, even into the apps' reserve. */
+  peakBytes?: number | null;
+}): BuildKitSize {
   const s = BUILDKIT_SIZE;
   const reserveBytes = Math.max(s.reserveMinBytes, input.totalBytes * s.reserveShare);
   const floor = Math.min(s.floorBytes, input.totalBytes * s.floorShare);
   const ceiling = input.totalBytes * s.ceilingShare;
   const wanted = input.availableBytes + input.builderBytes - reserveBytes - (input.otherHeadroomBytes ?? 0);
-  const sized = Math.max(floor, Math.min(ceiling, wanted));
+  const needed = input.peakBytes ? input.peakBytes * (1 + s.peakMargin) + input.builderBytes : 0;
+  const sized = Math.max(floor, Math.min(ceiling, Math.max(wanted, needed)));
   const memoryBytes = Math.floor(sized / s.stepBytes) * s.stepBytes;
   const memorySwapBytes = input.totalBytes < s.swapBelowBytes ? memoryBytes * 2 : memoryBytes;
-  return { memoryBytes, memorySwapBytes, reserveBytes, floored: wanted < floor };
+  return { memoryBytes, memorySwapBytes, reserveBytes, floored: wanted < floor && needed <= floor, stretched: needed > Math.max(wanted, floor) };
 }
 
 /** Whether VARDO_BUILDKIT_MEM pins BuildKit's size: set to something other than what install.sh writes for this host. */
@@ -124,6 +141,8 @@ export async function sizeBuildKit(
     pinned?: (env: Record<string, string | undefined>, totalBytes: number) => number | null;
     shrink?: boolean;
     otherHeadroomBytes?: () => Promise<number>;
+    /** The app's last build peak, so the builder isn't sized below it. */
+    peakBytes?: () => Promise<number | null>;
   },
 ): Promise<number | null> {
   const host = await hostMemory();
@@ -133,7 +152,8 @@ export async function sizeBuildKit(
   if (!current) return null;
 
   const otherHeadroomBytes = (await opts.otherHeadroomBytes?.()) ?? 0;
-  const size = buildkitSize({ ...host, builderBytes: (await opts.builderBytes()) ?? 0, otherHeadroomBytes });
+  const peakBytes = (await opts.peakBytes?.()) ?? null;
+  const size = buildkitSize({ ...host, builderBytes: (await opts.builderBytes()) ?? 0, otherHeadroomBytes, peakBytes });
   if (opts.shrink === false && (current.memory === 0 || size.memoryBytes < current.memory)) return null;
   const swapChanged = (current.memorySwap > current.memory) !== (size.memorySwapBytes > size.memoryBytes);
   if (current.memory > 0 && Math.abs(current.memory - size.memoryBytes) < BUILDKIT_SIZE.stepBytes && !swapChanged) return null;
@@ -151,7 +171,9 @@ export async function sizeBuildKit(
   const swap = size.memorySwapBytes > size.memoryBytes ? `, and as much again in swap on this small host` : "";
   const other = otherHeadroomBytes > 0 ? `, ${gib(otherHeadroomBytes)} for the other builder's builds` : "";
   opts.log(
-    size.floored
+    size.stretched
+      ? `[build] Sized ${container} to ${gib(size.memoryBytes)}${swap} for this app's last build peak of ${gib(peakBytes ?? 0)}: the host has ${gib(host.availableBytes)} free${other}, so apps may be squeezed during the build`
+      : size.floored
       ? `[build] Sized ${container} to ${gib(size.memoryBytes)}, its floor${swap}: the host has ${gib(host.availableBytes)} free${other}, so apps may be squeezed during the build`
       : `[build] Sized ${container} to ${gib(size.memoryBytes)}${swap}: ${gib(host.availableBytes)} free on the host, ${gib(size.reserveBytes)} kept for apps${other}`,
   );

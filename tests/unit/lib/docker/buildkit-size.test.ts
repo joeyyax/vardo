@@ -71,6 +71,23 @@ describe("buildkitSize", () => {
     expect(size.memoryBytes).toBe(Math.floor(((30 - 4.8 - 11) * GiB) / (64 * MiB)) * 64 * MiB);
   });
 
+  it("grows past free memory to cover the app's last build peak", () => {
+    // jy0 on Nov 11: 5.9 GiB free sized BuildKit to 5.3 GiB for mowp-2026, whose builds peak at 5.26 GiB.
+    const size = buildkitSize({ totalBytes: 15.6 * GiB, availableBytes: 5.9 * GiB, builderBytes: 0.6 * GiB, peakBytes: 5.26 * GiB });
+    expect(size.memoryBytes).toBeGreaterThanOrEqual(5.26 * 1.1 * GiB + 0.6 * GiB - 64 * MiB);
+    expect(size).toMatchObject({ stretched: true, floored: false });
+  });
+
+  it("still stops at half of RAM for a peak bigger than that", () => {
+    const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 4 * GiB, builderBytes: 0, peakBytes: 12 * GiB });
+    expect(size.memoryBytes).toBe(8 * GiB);
+  });
+
+  it("doesn't stretch when free memory already covers the peak", () => {
+    const size = buildkitSize({ totalBytes: 15.6 * GiB, availableBytes: 7 * GiB, builderBytes: 0.57 * GiB, peakBytes: 2 * GiB });
+    expect(size).toMatchObject({ memoryBytes: 6 * GiB, stretched: false });
+  });
+
   it("moves in 64 MiB steps", () => {
     const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 7 * GiB + 100 * MiB, builderBytes: 0 });
     expect(size.memoryBytes % (64 * MiB)).toBe(0);
