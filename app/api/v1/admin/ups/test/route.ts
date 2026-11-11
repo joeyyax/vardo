@@ -22,7 +22,10 @@ async function handlePost(request: NextRequest) {
     let password = target.password ?? null;
     if (password === null && serverId) {
       const stored = await getUpsServer(serverId);
-      if (stored) password = targetOf(stored).password ?? null;
+      // Only to the host it was saved for.
+      if (stored && stored.host === target.host && stored.port === target.port) {
+        password = targetOf(stored).password ?? null;
+      }
     }
 
     const result = await probeNutServer({ ...target, password });

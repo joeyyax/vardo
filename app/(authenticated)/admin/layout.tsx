@@ -16,7 +16,7 @@ const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     items: [
       { label: "This instance", href: "/admin/settings/general" },
       { label: "Resource limits", href: "/admin/settings/resources" },
-      { label: "Power", href: "/admin/settings/power" },
+      { label: "UPS servers", href: "/admin/settings/power" },
       { label: "Built-in services", href: "/admin/settings/core-services" },
       { label: "Features", href: "/admin/settings/feature-flags" },
       { label: "Import & export", href: "/admin/settings/config" },
