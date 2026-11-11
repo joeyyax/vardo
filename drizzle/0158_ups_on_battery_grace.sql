@@ -1,0 +1,1 @@
+ALTER TABLE "ups_servers" ADD COLUMN "on_battery_grace_sec" integer DEFAULT 30 NOT NULL;

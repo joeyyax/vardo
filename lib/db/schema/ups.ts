@@ -15,6 +15,8 @@ export const upsServers = pgTable(
     password: text("password"),
     tls: boolean("tls").notNull().default(false),
     enabled: boolean("enabled").notNull().default(true),
+    /** Seconds on battery before the on-battery alert. 0 alerts at once. */
+    onBatteryGraceSec: integer("on_battery_grace_sec").notNull().default(30),
     /** The poller's latest state for this UPS. */
     state: jsonb("state").$type<UpsState>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),

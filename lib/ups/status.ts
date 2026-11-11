@@ -35,6 +35,17 @@ export type UpsState = {
   onBatterySince: string | null;
   /** When each active condition last alerted. */
   fired: Partial<Record<UpsCondition, string>>;
+  /** The latest return to mains inside the grace period. Missing on state saved before grace periods. */
+  lastBlip?: UpsBlip | null;
+};
+
+/** A spell on battery that ended before its alert. Duration is first `OB` poll to first `OL` poll. */
+export type UpsBlip = { at: string; durationMs: number };
+
+export type AdvanceOptions = {
+  /** Seconds on battery before the on-battery alert. 0 alerts on the first `OB` poll. */
+  graceSec?: number;
+  lostAfter?: number;
 };
 
 export type PollResult = { ok: true; reading: UpsReading } | { ok: false; error: string };
@@ -47,6 +58,13 @@ export const UPS_POLL_INTERVAL_MS = 15_000;
 
 /** Failed polls in a row before contact counts as lost. */
 export const LOST_CONTACT_POLLS = 4;
+
+export const DEFAULT_ON_BATTERY_GRACE_SEC = 30;
+
+/** On battery for at least the grace period. */
+export function graceElapsed(onBatterySince: string | null, graceSec: number, now: Date): boolean {
+  return onBatterySince !== null && now.getTime() - Date.parse(onBatterySince) >= graceSec * 1000;
+}
 
 /** A condition still holding alerts again after this long, as system alerts do. */
 export const REFIRE_MS: Record<UpsCondition, number> = {
@@ -122,7 +140,8 @@ function readingHolds(condition: Exclude<UpsCondition, "contact-lost">, r: UpsRe
 const READING_CONDITIONS = ["on-battery", "low-battery", "replace-battery", "test-failed"] as const;
 
 /** The state after one poll and the alerts it fires or clears. */
-export function advance(prev: UpsState | null, poll: PollResult, now: Date, lostAfter = LOST_CONTACT_POLLS): { state: UpsState; transitions: UpsTransition[] } {
+export function advance(prev: UpsState | null, poll: PollResult, now: Date, opts: AdvanceOptions = {}): { state: UpsState; transitions: UpsTransition[] } {
+  const { graceSec = DEFAULT_ON_BATTERY_GRACE_SEC, lostAfter = LOST_CONTACT_POLLS } = opts;
   const base = prev ?? EMPTY_STATE;
   const nowIso = now.toISOString();
   const fired = { ...base.fired };
@@ -151,14 +170,21 @@ export function advance(prev: UpsState | null, poll: PollResult, now: Date, lost
   }
 
   const r = poll.reading;
-  apply("contact-lost", false);
-  for (const condition of READING_CONDITIONS) apply(condition, readingHolds(condition, r));
-
   const onBattery = readingHolds("on-battery", r);
   const onBatterySince = onBattery === true ? (base.onBatterySince ?? nowIso) : onBattery === false ? null : base.onBatterySince;
 
+  let lastBlip = base.lastBlip ?? null;
+  if (onBattery === false && base.onBatterySince && !fired["on-battery"]) {
+    lastBlip = { at: base.onBatterySince, durationMs: Math.max(0, now.getTime() - Date.parse(base.onBatterySince)) };
+  }
+
+  apply("contact-lost", false);
+  // Inside the grace period on-battery neither fires nor clears.
+  apply("on-battery", onBattery === true ? (graceElapsed(onBatterySince, graceSec, now) ? true : null) : onBattery);
+  for (const condition of READING_CONDITIONS) if (condition !== "on-battery") apply(condition, readingHolds(condition, r));
+
   return {
-    state: { failedPolls: 0, lastPolledAt: nowIso, lastOkAt: nowIso, lastError: null, reading: r, onBatterySince, fired },
+    state: { failedPolls: 0, lastPolledAt: nowIso, lastOkAt: nowIso, lastError: null, reading: r, onBatterySince, fired, lastBlip },
     transitions,
   };
 }

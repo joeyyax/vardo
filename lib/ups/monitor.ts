@@ -43,7 +43,7 @@ export async function recordPoll(row: UpsServerRow): Promise<void> {
   }
   const poll = await pollUps(target, row.upsName);
   const now = new Date();
-  const { state, transitions } = advance(row.state, poll, now);
+  const { state, transitions } = advance(row.state, poll, now, { graceSec: row.onBatteryGraceSec });
   if (!(await saveUpsState(row.id, state))) return;
   if (poll.ok) await storeUpsSample(row.id, now.getTime(), poll.reading).catch((err) => log.debug(`UPS history write failed for ${row.name}:`, err));
   if (transitions.length > 0) {

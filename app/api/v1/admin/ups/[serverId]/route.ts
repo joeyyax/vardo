@@ -6,7 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { upsServers } from "@/lib/db/schema";
-import { noBreaks, upsHostSchema, upsNameSchema, upsPortSchema } from "@/lib/ups/probe";
+import { noBreaks, upsGraceSchema, upsHostSchema, upsNameSchema, upsPortSchema } from "@/lib/ups/probe";
 import { encryptPassword, getUpsServer, toView } from "@/lib/ups/store";
 import { closeUpsIncidents, recordPoll } from "@/lib/ups/monitor";
 import { deleteUpsHistory } from "@/lib/ups/history";
@@ -23,6 +23,7 @@ const updateSchema = z.object({
   password: noBreaks("Password").nullable().optional(),
   tls: z.boolean().optional(),
   enabled: z.boolean().optional(),
+  onBatteryGraceSec: upsGraceSchema.optional(),
 });
 
 /** GET /api/v1/admin/ups/[serverId] */

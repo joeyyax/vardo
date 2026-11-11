@@ -23,6 +23,9 @@ export const upsConnectionSchema = z.object({
 
 export const upsNameSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._@-]+$/, "Use the UPS name the NUT server lists");
 
+/** Seconds on battery before the on-battery alert, up to an hour. */
+export const upsGraceSchema = z.coerce.number().int().min(0).max(3600);
+
 export type ProbeUps = {
   name: string;
   description: string;

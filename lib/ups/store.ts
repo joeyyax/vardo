@@ -18,6 +18,7 @@ export type UpsServerView = {
   hasPassword: boolean;
   tls: boolean;
   enabled: boolean;
+  onBatteryGraceSec: number;
   health: UpsHealth;
   state: UpsState | null;
   createdAt: string;
@@ -35,6 +36,7 @@ export function toView(row: UpsServerRow): UpsServerView {
     hasPassword: !!row.password,
     tls: row.tls,
     enabled: row.enabled,
+    onBatteryGraceSec: row.onBatteryGraceSec,
     health: row.enabled ? upsHealth(row.state) : "unknown",
     state: row.state,
     createdAt: row.createdAt.toISOString(),

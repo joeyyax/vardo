@@ -20,11 +20,11 @@ const ok = (status: string, extra: Record<string, string> = {}): PollResult => (
 const fail: PollResult = { ok: false, error: "ECONNREFUSED" };
 
 /** Runs polls in order, 15s apart, and returns every transition with the final state. */
-function run(polls: PollResult[], start: UpsState | null = null) {
+function run(polls: PollResult[], start: UpsState | null = null, graceSec = 0) {
   let state = start;
   const seen: string[] = [];
   polls.forEach((poll, i) => {
-    const next = advance(state, poll, at(i * 15));
+    const next = advance(state, poll, at(i * 15), { graceSec });
     state = next.state;
     for (const t of next.transitions) seen.push(`${t.kind}:${t.condition}`);
   });
@@ -100,11 +100,62 @@ describe("advance: power", () => {
   });
 
   it("fires again once the re-fire window passes while still on battery", () => {
-    const first = advance(null, ok("OB"), T0);
-    const soon = advance(first.state, ok("OB"), new Date(T0.getTime() + REFIRE_MS["on-battery"] - 1));
-    const later = advance(soon.state, ok("OB"), new Date(T0.getTime() + REFIRE_MS["on-battery"]));
+    const first = advance(null, ok("OB"), T0, { graceSec: 0 });
+    const soon = advance(first.state, ok("OB"), new Date(T0.getTime() + REFIRE_MS["on-battery"] - 1), { graceSec: 0 });
+    const later = advance(soon.state, ok("OB"), new Date(T0.getTime() + REFIRE_MS["on-battery"]), { graceSec: 0 });
     expect(soon.transitions).toEqual([]);
     expect(later.transitions).toEqual([{ kind: "fired", condition: "on-battery", repeat: true }]);
+  });
+});
+
+describe("advance: on-battery grace period", () => {
+  it("sends nothing for a blip back to mains inside the grace period, and records it", () => {
+    // OB at 15s and 30s, OL at 45s: 30s on battery against a 31s grace.
+    const { seen, state } = run([ok("OL"), ok("OB DISCHRG"), ok("OB DISCHRG"), ok("OL CHRG")], null, 31);
+    expect(seen).toEqual([]);
+    expect(state.lastBlip).toEqual({ at: at(15).toISOString(), durationMs: 30_000 });
+    expect(state.onBatterySince).toBeNull();
+  });
+
+  it("fires once when the outage outlasts the grace period, and clears on mains without a blip", () => {
+    const outage = Array.from({ length: 8 }, () => ok("OB DISCHRG"));
+    const { seen, state } = run([ok("OL"), ...outage, ok("OL")], null, 30);
+    expect(seen).toEqual(["fired:on-battery", "cleared:on-battery"]);
+    expect(state.lastBlip ?? null).toBeNull();
+  });
+
+  it("fires on the first poll at or past the grace period", () => {
+    const polls = [ok("OL"), ok("OB"), ok("OB"), ok("OB")];
+    const fireAt = (grace: number) => {
+      let state: UpsState | null = null;
+      for (const [i, poll] of polls.entries()) {
+        const next = advance(state, poll, at(i * 15), { graceSec: grace });
+        state = next.state;
+        if (next.transitions.some((t) => t.kind === "fired" && t.condition === "on-battery")) return i * 15;
+      }
+      return null;
+    };
+    expect(fireAt(30)).toBe(45);
+    expect(fireAt(31)).toBeNull();
+  });
+
+  it("fires low battery at once inside the grace period", () => {
+    const { seen } = run([ok("OL"), ok("OB LB")], null, 300);
+    expect(seen).toEqual(["fired:low-battery"]);
+  });
+
+  it("fires on the first on-battery poll with a grace of 0", () => {
+    const first = advance(null, ok("OB"), T0, { graceSec: 0 });
+    expect(first.transitions).toEqual([{ kind: "fired", condition: "on-battery", repeat: false }]);
+  });
+
+  it("defaults to a 30s grace", () => {
+    expect(advance(null, ok("OB"), T0).transitions).toEqual([]);
+  });
+
+  it("keeps the grace clock through failed polls", () => {
+    const { seen } = run([ok("OB"), fail, ok("OB")], null, 30);
+    expect(seen).toEqual(["fired:on-battery"]);
   });
 });
 

@@ -16,7 +16,7 @@ function notices(polls: PollResult[]) {
   const out = [];
   for (const [i, poll] of polls.entries()) {
     const now = new Date(T0.getTime() + i * 15_000);
-    const next = advance(state, poll, now);
+    const next = advance(state, poll, now, { graceSec: 0 });
     state = next.state;
     for (const t of next.transitions) out.push(noticeFor(ups, t, next.state, now));
   }

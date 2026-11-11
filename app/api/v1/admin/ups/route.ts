@@ -6,9 +6,10 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { upsServers } from "@/lib/db/schema";
-import { upsConnectionSchema, upsNameSchema } from "@/lib/ups/probe";
+import { upsConnectionSchema, upsGraceSchema, upsNameSchema } from "@/lib/ups/probe";
 import { encryptPassword, getUpsServer, listUpsServers, toView } from "@/lib/ups/store";
 import { recordPoll } from "@/lib/ups/monitor";
+import { DEFAULT_ON_BATTERY_GRACE_SEC } from "@/lib/ups/status";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("ups");
@@ -17,6 +18,7 @@ const createSchema = upsConnectionSchema.extend({
   name: z.string().trim().max(80).optional(),
   upsName: upsNameSchema,
   enabled: z.boolean().default(true),
+  onBatteryGraceSec: upsGraceSchema.default(DEFAULT_ON_BATTERY_GRACE_SEC),
 });
 
 /** GET /api/v1/admin/ups — UPS servers with their latest state */
@@ -52,6 +54,7 @@ async function handlePost(request: NextRequest) {
           password: encryptPassword(d.password),
           tls: d.tls,
           enabled: d.enabled,
+          onBatteryGraceSec: d.onBatteryGraceSec,
         })
         .returning();
     } catch (err) {
