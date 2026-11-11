@@ -24,6 +24,7 @@ export * from "./app-recaps";
 export * from "./templates";
 export * from "./external-routes";
 export * from "./ups";
+export * from "./power";
 export * from "./security";
 export * from "./probe-guard";
 export * from "./trust";
