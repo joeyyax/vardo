@@ -19,7 +19,20 @@ import { anomalyItem, newPortItem, newProcessItem, type AppRef, type Finding } f
 import { appPorts, probeContainer } from "./probe";
 import { activeFindings, reconcileSeen, type SeenEntry, type TopProcess } from "./security";
 import { SIGNAL_KEYS, isSensitivity, type Sensitivity, type SignalKey } from "./signals";
-import { appendSample, forgetSeen, resetPidsSamples, learningSince, readSamples, readSeen, writeSeen, type SeenKind, type Series } from "./store";
+import {
+  appendSample,
+  forgetSeen,
+  readSamples,
+  readSeen,
+  repairLostSeen,
+  resetPidsSamples,
+  touchApp,
+  writeSeen,
+  type AppMeta,
+  type LostSet,
+  type SeenKind,
+  type Series,
+} from "./store";
 import { activityWindows, markActivity, quietApps, recentWorkWindows } from "./suppress";
 import { AppRateTracker, type AppReading } from "./tracker";
 
@@ -51,6 +64,7 @@ type State = {
   coveredAt: Map<string, number>;
   lastSnapshotAt: number;
   pidsReset: boolean;
+  seenRepaired: boolean;
 };
 
 const globalForAnomaly = globalThis as unknown as { __vardo_anomaly?: State };
@@ -64,6 +78,7 @@ const state: State = (globalForAnomaly.__vardo_anomaly ??= {
   coveredAt: new Map(),
   lastSnapshotAt: 0,
   pidsReset: false,
+  seenRepaired: false,
 });
 
 /** Every pids sample before collector process counts: cAdvisor reported 0 and the collector reported threads. */
@@ -162,13 +177,26 @@ async function seenFor(appId: string): Promise<Record<SeenKind, Map<string, Seen
   return loaded;
 }
 
-async function fold(appId: string, kind: SeenKind, current: string[], now: number, learning: boolean): Promise<void> {
+const hasKnown = (entries: Map<string, SeenEntry>) => [...entries.values()].some((e) => e.state === "known");
+
+/** Every entry and current item as known, keeping when each was first seen. */
+function relearn(existing: Map<string, SeenEntry>, current: string[], now: number): Map<string, SeenEntry> {
+  const set = new Map<string, SeenEntry>();
+  for (const [item, e] of existing) set.set(item, { state: "known", first: e.first });
+  for (const item of current) if (!set.has(item)) set.set(item, { state: "known", first: now });
+  return set;
+}
+
+async function fold(appId: string, kind: SeenKind, current: string[], now: number, learning: boolean, meta: AppMeta): Promise<void> {
   const seen = await seenFor(appId);
-  const { set, remove } = reconcileSeen(seen[kind], current, now, learning);
-  if (set.size === 0 && remove.length === 0) return;
+  // A set without known entries that didn't record itself as empty was lost, so it starts over as known.
+  const lost = !learning && !hasKnown(seen[kind]) && meta.hasKnown[kind] !== false;
+  const { set, remove } = lost ? { set: relearn(seen[kind], current, now), remove: [] } : reconcileSeen(seen[kind], current, now, learning);
   for (const [item, entry] of set) seen[kind].set(item, entry);
   for (const item of remove) seen[kind].delete(item);
-  await writeSeen(appId, kind, set, remove);
+  const known = hasKnown(seen[kind]);
+  if (set.size === 0 && remove.length === 0 && meta.hasKnown[kind] === known) return;
+  await writeSeen(appId, kind, set, remove, known);
 }
 
 async function forget(appId: string, kind: SeenKind): Promise<void> {
@@ -188,11 +216,12 @@ async function probeApp(app: WatchedApp, now: number, quiet: boolean): Promise<v
 
   const processes = probes.flatMap((p) => p.processes);
   state.top.set(app.id, { at: now, processes });
-  const learning = quiet || now - (await learningSince(app.id, now)) < WARMUP_MS;
+  const meta = await touchApp(app.id, now);
+  const learning = quiet || now - meta.learningSince < WARMUP_MS;
   // A container that couldn't be probed would look like it stopped its processes.
-  if (probes.length === containers.length) await fold(app.id, "procs", [...new Set(processes.map((p) => p.name))], now, learning);
+  if (probes.length === containers.length) await fold(app.id, "procs", [...new Set(processes.map((p) => p.name))], now, learning, meta);
   const ports = appPorts(probes, containers.length);
-  if (ports.action === "fold") await fold(app.id, "ports", ports.ports, now, learning);
+  if (ports.action === "fold") await fold(app.id, "ports", ports.ports, now, learning, meta);
   else if (ports.action === "forget") await forget(app.id, "ports");
 }
 
@@ -216,6 +245,16 @@ function holdsThroughGap(appId: string, now: number, covered: boolean): boolean 
   return now - (state.coveredAt.get(appId) ?? now) < GAP_HOLD_MS;
 }
 
+const seenAlertType: Record<SeenKind, AlertType> = { procs: "app.new-process", ports: "app.new-port" };
+
+/** Silently clears the open new-process and new-port alerts of apps whose allow-set was lost. */
+async function settleLost(lost: LostSet[], open: Map<string, { organizationId: string }>, now: number): Promise<void> {
+  for (const { appId, kind } of lost) {
+    const alert = open.get(`${seenAlertType[kind]}:${appId}`);
+    if (alert) await settleAlerts(alert.organizationId, seenAlertType[kind], [appId], new Date(now));
+  }
+}
+
 /** Null when there's no fresh snapshot, so the caller neither fires nor clears anomaly alerts. */
 export async function anomalyObservations(now: number): Promise<Map<string, Observation[]> | null> {
   const snapshot = getLatestSnapshot();
@@ -237,6 +276,19 @@ export async function anomalyObservations(now: number): Promise<Map<string, Obse
   const byOrg = new Map<string, Observation[]>();
   const add = (orgId: string, o: Observation) => byOrg.set(orgId, [...(byOrg.get(orgId) ?? []), o]);
   const openByAbout = new Map(open.map((o) => [`${o.type}:${o.about}`, o]));
+
+  if (!state.seenRepaired) {
+    try {
+      const repaired = await repairLostSeen(now, (lost) => settleLost(lost, openByAbout, now));
+      for (const { appId, kind } of repaired) {
+        state.seen.delete(appId);
+        openByAbout.delete(`${seenAlertType[kind]}:${appId}`);
+      }
+      state.seenRepaired = true;
+    } catch (err) {
+      log.warn("Allow-set repair failed:", (err as Error).message);
+    }
+  }
 
   const enabled = watched.filter((a) => a.enabled);
   for (const app of watched.filter((a) => !a.enabled)) {
