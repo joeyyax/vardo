@@ -72,6 +72,7 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "system.cert-expiring":
     case "system.update-available":
     case "system.integration-permissions":
+    case "system.power":
     case "app.auto-restarted":
       return systemAlertMail(event, ctx);
     case "alert.fired":

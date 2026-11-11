@@ -137,6 +137,8 @@ export function subjectLine(event: BusEvent): string {
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
     case "system.integration-permissions":
       return `⚠ ${event.title}`;
+    case "system.power":
+      return `${event.change === "on-battery" || event.change === "low-battery" ? "✗" : "⚠"} ${event.title}`;
     case "system.update-available": {
       const detail = event.target ?? (event.commitsBehind ? plural(event.commitsBehind, "commit") : undefined);
       return `↑ Vardo update available${detail ? ` · ${detail}` : ""}`;

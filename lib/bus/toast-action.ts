@@ -45,6 +45,8 @@ export function toastActionFor(
         : undefined;
     case "system.integration-permissions":
       return { label: event.fixLabel, url: event.fixUrl };
+    case "system.power":
+      return canLinkToAdmin ? { label: "View power", url: "/admin/power" } : undefined;
     default:
       return undefined;
   }

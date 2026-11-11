@@ -43,6 +43,8 @@ export type UpsTransition =
   | { kind: "fired"; condition: UpsCondition; repeat: boolean }
   | { kind: "cleared"; condition: UpsCondition; firedAt: string };
 
+export const UPS_POLL_INTERVAL_MS = 15_000;
+
 /** Failed polls in a row before contact counts as lost. */
 export const LOST_CONTACT_POLLS = 4;
 

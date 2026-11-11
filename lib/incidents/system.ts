@@ -14,7 +14,7 @@ export type HostProblemKind =
   | "host.peer-watchdog-silent";
 
 export type SystemProblem = {
-  kind: "system.service-down" | "uptime.down" | "system.cert-expiring" | "system.loop-failing" | HostProblemKind;
+  kind: "system.service-down" | "uptime.down" | "system.cert-expiring" | "system.loop-failing" | "ups.on-battery" | "ups.contact-lost" | HostProblemKind;
   about: string;
   title: string;
   severity: IncidentSeverity;
