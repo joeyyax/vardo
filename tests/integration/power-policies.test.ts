@@ -84,8 +84,8 @@ describe.skipIf(!conn)("power policies on Postgres", { timeout: MIGRATE_TIMEOUT 
       await sql`delete from deployment`;
     });
 
-    async function seed(id: string, appId: string, trigger: "manual" | "webhook" | "rollback", request: object | null = null) {
-      await sql`insert into deployment (id, app_id, trigger, status, scope_key, request) values (${id}, ${appId}, ${trigger}, 'queued', ${appId}, ${request ? sql.json(request) : null})`;
+    async function seed(id: string, appId: string, trigger: "manual" | "webhook" | "rollback", request: Record<string, unknown> | null = null) {
+      await sql`insert into deployment (id, app_id, trigger, status, scope_key, request) values (${id}, ${appId}, ${trigger}, 'queued', ${appId}, ${request ? sql.json(request as postgres.JSONValue) : null})`;
     }
 
     it("claims only rollbacks while held, and everything once power is back", async () => {
