@@ -126,7 +126,7 @@ function UpsCard({ server, now }: { server: UpsServerView; now: number }) {
             <span className="font-mono"> · {server.host}:{server.port}</span>
           </p>
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           <StatusDot tone={HEALTH_TONE[server.health]}>{HEALTH_LABEL[server.health]}</StatusDot>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {r?.status && <span className="font-mono">{r.status}</span>}
