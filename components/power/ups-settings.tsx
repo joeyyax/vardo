@@ -27,12 +27,13 @@ type FormState = {
   password: string;
   tls: boolean;
   enabled: boolean;
+  graceSec: string;
 };
 
-const EMPTY_FORM: FormState = { name: "", host: "", port: "3493", upsName: "", username: "", password: "", tls: false, enabled: true };
+const EMPTY_FORM: FormState = { name: "", host: "", port: "3493", upsName: "", username: "", password: "", tls: false, enabled: true, graceSec: "30" };
 
 function toForm(s: UpsServerView): FormState {
-  return { name: s.name, host: s.host, port: String(s.port), upsName: s.upsName, username: s.username ?? "", password: "", tls: s.tls, enabled: s.enabled };
+  return { name: s.name, host: s.host, port: String(s.port), upsName: s.upsName, username: s.username ?? "", password: "", tls: s.tls, enabled: s.enabled, graceSec: String(s.onBatteryGraceSec) };
 }
 
 export function UpsSettings() {
@@ -252,6 +253,7 @@ function UpsDialog({ server, onClose, onSaved }: { server: UpsServerView | null;
         name: form.name.trim() || form.upsName.trim(),
         upsName: form.upsName.trim(),
         enabled: form.enabled,
+        onBatteryGraceSec: form.graceSec.trim() === "" ? 30 : Number(form.graceSec),
       };
       const res = await fetch(server ? `/api/v1/admin/ups/${server.id}` : "/api/v1/admin/ups", {
         method: server ? "PATCH" : "POST",
@@ -363,6 +365,24 @@ function UpsDialog({ server, onClose, onSaved }: { server: UpsServerView | null;
                 <Label htmlFor="ups-label">Display name</Label>
                 <Input id="ups-label" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={form.upsName || "Rack UPS"} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ups-grace">On-battery grace period</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="ups-grace"
+                  value={form.graceSec}
+                  onChange={(e) => set("graceSec", e.target.value)}
+                  inputMode="numeric"
+                  className="w-24 font-mono"
+                  aria-describedby="ups-grace-help"
+                />
+                <span className="text-sm text-muted-foreground">seconds</span>
+              </div>
+              <p id="ups-grace-help" className="text-xs text-muted-foreground">
+                How long the UPS stays on battery before Vardo alerts. Shorter blips are only logged. 0 alerts at once. Low battery always alerts at once.
+              </p>
             </div>
 
             {server && (

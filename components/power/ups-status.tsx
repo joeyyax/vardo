@@ -35,6 +35,33 @@ const SERIES = [
 const clock = (ms: number, range: Range) =>
   new Date(ms).toLocaleString([], range === "7d" ? { weekday: "short", hour: "numeric" } : { hour: "numeric", minute: "2-digit" });
 
+const MINUTE = 60_000;
+const TICK_STEPS = [MINUTE, 5 * MINUTE, 10 * MINUTE, 30 * MINUTE, 60 * MINUTE, 2 * 60 * MINUTE, 4 * 60 * MINUTE, 12 * 60 * MINUTE, 24 * 60 * MINUTE];
+
+/** At most six ticks on round times, so no two share a label. */
+function timeTicks(points: UpsHistoryPoint[]): number[] {
+  if (points.length < 2) return [];
+  const from = points[0].at;
+  const to = points[points.length - 1].at;
+  const step = TICK_STEPS.find((s) => (to - from) / s <= 6) ?? TICK_STEPS[TICK_STEPS.length - 1];
+  const ticks: number[] = [];
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t);
+  return ticks;
+}
+
+/** "4 s", "2 min". */
+function formatSeconds(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s} s` : formatRuntime(s);
+}
+
+/** "2:13 PM", with the date when it wasn't today. */
+function blipTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  const sameDay = now > 0 && new Date(now).toDateString() === d.toDateString();
+  return d.toLocaleString([], sameDay ? { hour: "numeric", minute: "2-digit" } : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 export function UpsStatus() {
   const [servers, setServers] = useState<UpsServerView[] | null>(null);
   const [error, setError] = useState(false);
@@ -143,6 +170,7 @@ function UpsCard({ server, now }: { server: UpsServerView; now: number }) {
       {onBattery && state?.onBatterySince && (
         <Callout variant="error" label="On battery">
           Since {new Date(state.onBatterySince).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
+          {!state.fired["on-battery"] && server.onBatteryGraceSec > 0 && ` Alerts after ${formatSeconds(server.onBatteryGraceSec * 1000)} on battery.`}
         </Callout>
       )}
       {flags.includes("RB") && <Callout variant="warning" label="Battery">The UPS reports its battery needs replacing.</Callout>}
@@ -157,11 +185,20 @@ function UpsCard({ server, now }: { server: UpsServerView; now: number }) {
 
       <UpsHistory serverId={server.id} />
 
-      {r?.testResult && (
-        <p className="text-xs text-muted-foreground">
-          Last self-test: {r.testResult}
-          {r.vars["ups.test.date"] ? ` (${r.vars["ups.test.date"]})` : ""}
-        </p>
+      {(r?.testResult || state?.lastBlip) && (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {state?.lastBlip && (
+            <p>
+              Last blip {blipTime(state.lastBlip.at, now)}, {formatSeconds(state.lastBlip.durationMs)} on battery
+            </p>
+          )}
+          {r?.testResult && (
+            <p>
+              Last self-test: {r.testResult}
+              {r.vars["ups.test.date"] ? ` (${r.vars["ups.test.date"]})` : ""}
+            </p>
+          )}
+        </div>
       )}
     </Card>
   );
@@ -170,6 +207,7 @@ function UpsCard({ server, now }: { server: UpsServerView; now: number }) {
 function UpsHistory({ serverId }: { serverId: string }) {
   const [range, setRange] = useState<Range>("6h");
   const [points, setPoints] = useState<UpsHistoryPoint[] | null>(null);
+  const ticks = timeTicks(points ?? []);
 
   useEffect(() => {
     let live = true;
@@ -207,7 +245,7 @@ function UpsHistory({ serverId }: { serverId: string }) {
         <ResponsiveContainer width="100%" height={160}>
           <LineChart data={points ?? []}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="at" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={(v: number) => clock(v, range)} tick={chartTickStyle} />
+            <XAxis dataKey="at" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tickFormatter={(v: number) => clock(v, range)} tick={chartTickStyle} />
             <YAxis width={40} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={chartTickStyle} />
             <Tooltip
               content={({ active, payload, label }) =>
