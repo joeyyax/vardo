@@ -101,7 +101,7 @@ export async function stopForPower(outage: string, trigger: StopTrigger, now = n
       kind: "apps-stopped",
       title: stopped.length ? `Stopped ${plural(stopped.length, "app")} ${trigger.text}` : `Nothing to stop ${trigger.text}`,
       message: stopped.length
-        ? `The host is on battery, so Vardo stopped ${stopped.join(", ")}. They restart once power has been back for 2 minutes.${failed.length ? ` Couldn't stop ${failed.join(", ")}.` : ""}${skipped}`
+        ? `The host is on battery, so Vardo stopped ${stopped.join(", ")}. ${stopped.length === 1 ? "It restarts" : "They restart"} once power has been back for 2 minutes.${failed.length ? ` Couldn't stop ${failed.join(", ")}.` : ""}${skipped}`
         : `The stop policy ran ${trigger.text}, but every running app is kept on battery or is part of Vardo.${failed.length ? ` Couldn't stop ${failed.join(", ")}.` : ""}${skipped}`,
       outage,
       count: stopped.length,
