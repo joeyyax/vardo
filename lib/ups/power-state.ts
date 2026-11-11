@@ -1,6 +1,6 @@
 // This host's power as one server-side read, for features that act on it.
 
-import { UPS_POLL_INTERVAL_MS, type UpsState } from "./status";
+import { UPS_POLL_INTERVAL_MS, testOutcome, upsHealth, type UpsHealth, type UpsState } from "./status";
 import { listUpsServers } from "./store";
 import type { UpsServerRow } from "@/lib/db/schema";
 
@@ -70,6 +70,34 @@ export function combinePower(upses: UpsPower[]): PowerState {
     fresh: upses.length > 0 && upses.every((u) => u.fresh),
     upses,
   };
+}
+
+export type UpsReport = UpsPower & {
+  health: UpsHealth;
+  status: string | null;
+  model: string | null;
+  load: number | null;
+  replaceBattery: boolean;
+  testFailed: string | null;
+  lastError: string | null;
+};
+
+/** Each enabled UPS as the doctor and instance status show it. */
+export async function readUpsReports(now = new Date()): Promise<UpsReport[]> {
+  const rows = (await listUpsServers()).filter((r) => r.enabled);
+  return rows.map((row) => {
+    const r = row.state?.reading ?? null;
+    return {
+      ...upsPower(row, row.state, now),
+      health: upsHealth(row.state),
+      status: r?.status ?? null,
+      model: [r?.mfr, r?.model].filter(Boolean).join(" ") || null,
+      load: r?.load ?? null,
+      replaceBattery: !!r?.flags.includes("RB"),
+      testFailed: testOutcome(r?.testResult ?? null) === "failed" ? r!.testResult : null,
+      lastError: row.state?.lastError ?? null,
+    };
+  });
 }
 
 /** The host's power now, from the poller's last state. */
