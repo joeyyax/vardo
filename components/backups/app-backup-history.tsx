@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Archive, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
+import { warnIfOnBattery } from "@/lib/ui/power-warning";
 import { BackupHistory } from "./backup-history";
 import { jobAnchor } from "./job-anchor";
 import { UncapturedWarning, uncapturedSources, type UncapturedSources } from "./uncaptured-warning";
@@ -63,6 +64,7 @@ export function AppBackupHistory({
   // Creates the backup job the app is missing.
   const backupNow = useCallback(async () => {
     setBackingUp(true);
+    void warnIfOnBattery();
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/backup-now`, {
         method: "POST",
