@@ -80,7 +80,29 @@ describe("buildkitSize", () => {
 
   it("still stops at half of RAM for a peak bigger than that", () => {
     const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 4 * GiB, builderBytes: 0, peakBytes: 12 * GiB });
-    expect(size.memoryBytes).toBe(8 * GiB);
+    expect(size).toMatchObject({ memoryBytes: 8 * GiB, stretched: true, capped: true });
+  });
+
+  it("isn't stretched when free memory already reaches half of RAM", () => {
+    const size = buildkitSize({ totalBytes: 32 * GiB, availableBytes: 25 * GiB, builderBytes: 0, peakBytes: 20 * GiB });
+    expect(size).toMatchObject({ memoryBytes: 16 * GiB, stretched: false, capped: true });
+  });
+
+  it("lifts a floored size to the peak", () => {
+    const size = buildkitSize({ totalBytes: 16 * GiB, availableBytes: 2 * GiB, builderBytes: 0, peakBytes: 5 * GiB });
+    expect(size).toMatchObject({ memoryBytes: 5.5 * GiB, floored: false, stretched: true, capped: false });
+  });
+
+  it("keeps the floor on a small host whatever the peak", () => {
+    const size = buildkitSize({ totalBytes: 4 * GiB, availableBytes: 1 * GiB, builderBytes: 0, peakBytes: 3 * GiB });
+    expect(size.memoryBytes).toBe(buildkitSize({ totalBytes: 4 * GiB, availableBytes: 1 * GiB, builderBytes: 0 }).memoryBytes);
+  });
+
+  it("ignores a missing peak", () => {
+    const without = buildkitSize({ totalBytes: 15.6 * GiB, availableBytes: 5.9 * GiB, builderBytes: 0.6 * GiB });
+    for (const peakBytes of [null, 0]) {
+      expect(buildkitSize({ totalBytes: 15.6 * GiB, availableBytes: 5.9 * GiB, builderBytes: 0.6 * GiB, peakBytes })).toEqual(without);
+    }
   });
 
   it("doesn't stretch when free memory already covers the peak", () => {
