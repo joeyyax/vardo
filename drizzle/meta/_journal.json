@@ -1100,6 +1100,13 @@
       "when": 1792268171563,
       "tag": "0156_metadata_endpoint",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794434404889,
+      "tag": "0157_ups_servers",
+      "breakpoints": true
     }
   ]
 }
