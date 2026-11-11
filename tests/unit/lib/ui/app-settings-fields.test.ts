@@ -149,6 +149,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
       "diskWriteAlert",
       "gpu",
       "healthCheckTimeout",
+      "keepRunningOnBattery",
       "priority",
       "resourceLimits",
       "restartPolicy",

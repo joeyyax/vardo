@@ -113,6 +113,12 @@ describe.skipIf(!conn)("power policies on Postgres", { timeout: MIGRATE_TIMEOUT 
       expect(claimed[0].request).toMatchObject({ gitSha: "abc", powerOverride: true });
     });
 
+    it("lets an import's deploy through, since its originals are already stopped", async () => {
+      const { id } = await q.enqueueDeploy({ appId: "shop", trigger: "manual" }, { hold: true });
+      expect(await q.releaseHeldDeploy(id)).toBe(true);
+      expect((await q.claimDeploys("w", { capacity: 10, powerHold: true })).map((c) => c.id)).toEqual([id]);
+    });
+
     it("won't override a deploy that already left the queue", async () => {
       await sql`insert into deployment (id, app_id, trigger, status) values ('done', 'blog', 'manual', 'success')`;
       expect(await d.allowOnBattery("done")).toBe(false);

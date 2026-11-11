@@ -226,6 +226,8 @@ export async function releaseHeldDeploy(id: string): Promise<boolean> {
     }
 
     const rest: DeployRequest = { ...row.request };
+    // An import's originals are already stopped, so its deploy runs on battery too.
+    if (rest.held) rest.powerOverride = true;
     delete rest.held;
     const released = await tx
       .update(deployments)
