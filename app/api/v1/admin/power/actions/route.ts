@@ -7,12 +7,13 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { listPowerActions } from "@/lib/power/actions";
 import { openStops } from "@/lib/power/stops";
+import { readPowerGate } from "@/lib/power/gate";
 
 /** GET /api/v1/admin/power/actions — recent policy actions and the apps still stopped for power */
 async function handleGet() {
   try {
     await requireAppAdmin();
-    const [actions, open] = await Promise.all([listPowerActions(20), openStops()]);
+    const [actions, open, gate] = await Promise.all([listPowerActions(20), openStops(), readPowerGate()]);
     const names = open.length
       ? await db.query.apps.findMany({ where: inArray(apps.id, open.map((s) => s.appId)), columns: { id: true, displayName: true } })
       : [];
@@ -26,6 +27,7 @@ async function handleGet() {
         notified: a.notifiedAt !== null,
         createdAt: a.createdAt.toISOString(),
       })),
+      onBattery: gate.onBattery,
       stopped: open.map((s) => ({ appId: s.appId, name: nameOf.get(s.appId) ?? s.appId, stoppedAt: s.stoppedAt.toISOString() })),
     });
   } catch (error) {

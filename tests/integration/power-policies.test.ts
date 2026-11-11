@@ -190,6 +190,31 @@ describe.skipIf(!conn)("power policies on Postgres", { timeout: MIGRATE_TIMEOUT 
       expect(events).toHaveLength(7);
     });
 
+    it("restarts by hand only the open records, once, with no UPS left", async () => {
+      await sql`delete from power_stopped_app`;
+      await sql`delete from power_action`;
+      await sql`update app set status = 'stopped', parked = true where id in ('blog', 'db', 'shop')`;
+      await sql`insert into power_stopped_app (id, app_id, organization_id, outage_started_at) values ('s1', 'blog', 'o1', now()), ('s2', 'db', 'o1', now())`;
+      await sql`insert into power_stopped_app (id, app_id, organization_id, outage_started_at, restored_at, outcome) values ('s3', 'shop', 'o1', now(), now(), 'failed')`;
+      events.length = 0;
+      power.value = { monitored: false, onBattery: false, graceElapsed: false, since: null, charge: null, runtimeSec: null, fresh: false, upses: [] };
+      const s = await fresh();
+
+      expect(await s.restartStoppedByHand(at(2_000), control)).toEqual(["db", "blog"]);
+      expect(events).toEqual(["start db", "start blog"]);
+      const rows = await sql`select id, outcome, restored_at is not null as restored from power_stopped_app order by id`;
+      expect(rows.map((r) => [r.id, r.outcome, r.restored])).toEqual([
+        ["s1", "restarted", true],
+        ["s2", "restarted", true],
+        ["s3", "failed", true],
+      ]);
+      expect((await sql`select title from power_action`).map((r) => r.title)).toEqual(["Restarted 2 apps by hand"]);
+
+      expect(await s.restartStoppedByHand(at(2_010), control)).toEqual([]);
+      expect(events).toHaveLength(2);
+      expect(await sql`select count(*)::int as n from power_action`).toEqual([{ n: 1 }]);
+    });
+
     it("stops at low charge before the minutes are up", async () => {
       await sql`delete from power_stopped_app`;
       await sql`delete from power_action`;

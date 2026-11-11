@@ -113,11 +113,18 @@ export async function stopForPower(outage: string, trigger: StopTrigger, now = n
   return stopped;
 }
 
-async function closeStop(id: string, outcome: PowerStopOutcome, error?: string): Promise<void> {
-  await db
+/** Takes an open record so only one caller restarts its app. False when another already did. */
+async function takeStop(id: string): Promise<boolean> {
+  const rows = await db
     .update(powerStoppedApps)
-    .set({ restoredAt: new Date(), outcome, error: error ?? null })
-    .where(and(eq(powerStoppedApps.id, id), isNull(powerStoppedApps.restoredAt)));
+    .set({ restoredAt: new Date() })
+    .where(and(eq(powerStoppedApps.id, id), isNull(powerStoppedApps.restoredAt)))
+    .returning({ id: powerStoppedApps.id });
+  return rows.length > 0;
+}
+
+async function closeStop(id: string, outcome: PowerStopOutcome, error?: string): Promise<void> {
+  await db.update(powerStoppedApps).set({ outcome, error: error ?? null }).where(eq(powerStoppedApps.id, id));
 }
 
 /** Starts the apps the policy stopped, highest priority first. An app someone started meanwhile is left as it is. */
@@ -126,15 +133,17 @@ export async function restartStopped(
   now = new Date(),
   control: AppControl = dockerControl,
   stillMains: () => Promise<boolean> = async () => powerMode(await getPowerState()) === "mains",
+  by: "settle" | "hand" = "settle",
 ): Promise<string[]> {
   const byApp = new Map(rows.map((r) => [r.appId, r]));
   const found = await loadCandidates([...byApp.keys()]);
-  for (const r of rows) if (!found.some((a) => a.id === r.appId)) await closeStop(r.id, "gone");
+  for (const r of rows) if (!found.some((a) => a.id === r.appId) && (await takeStop(r.id))) await closeStop(r.id, "gone");
   const restarted: string[] = [];
   const failed: string[] = [];
   for (const app of planRestarts(found)) {
     if (!(await stillMains())) break;
     const row = byApp.get(app.id)!;
+    if (!(await takeStop(row.id))) continue;
     if (app.status !== "stopped" || !app.parked) {
       await closeStop(row.id, "already-running");
       continue;
@@ -150,11 +159,12 @@ export async function restartStopped(
     }
   }
   if (restarted.length || failed.length) {
+    const lead = by === "hand" ? "An admin restarted the apps Vardo stopped for power." : "Power has been back for 2 minutes.";
     await recordPowerAction(
       {
         kind: "apps-restarted",
-        title: restarted.length ? `Restarted ${plural(restarted.length, "app")}` : `Couldn't restart ${plural(failed.length, "app")}`,
-        message: `Power has been back for 2 minutes.${restarted.length ? ` Vardo restarted the apps it stopped: ${restarted.join(", ")}.` : ""}${failed.length ? ` Couldn't restart ${failed.join(", ")}; start ${failed.length === 1 ? "it" : "them"} from the app page.` : ""}`,
+        title: restarted.length ? `Restarted ${plural(restarted.length, "app")}${by === "hand" ? " by hand" : ""}` : `Couldn't restart ${plural(failed.length, "app")}`,
+        message: `${lead}${restarted.length ? ` Restarted: ${restarted.join(", ")}.` : ""}${failed.length ? ` Couldn't restart ${failed.join(", ")}; start ${failed.length === 1 ? "it" : "them"} from the app page.` : ""}`,
         outage: null,
         count: restarted.length,
         detail: { names: restarted, ...(failed.length ? { failed } : {}) },
@@ -164,6 +174,13 @@ export async function restartStopped(
     );
   }
   return restarted;
+}
+
+/** Restarts every app still stopped for power, whatever the power state or UPS setup. */
+export async function restartStoppedByHand(now = new Date(), control: AppControl = dockerControl): Promise<string[]> {
+  const open = await openStops();
+  if (open.length === 0) return [];
+  return restartStopped(open, now, control, async () => true, "hand");
 }
 
 /** When mains was first seen in the current run of mains readings. In memory: a restart only lengthens the settle. */
