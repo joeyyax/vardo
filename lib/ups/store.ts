@@ -1,6 +1,6 @@
 // UPS servers in the database: the admin's view, the poller's target and its state.
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { upsServers, type UpsServerRow } from "@/lib/db/schema";
 import { decryptSystem, encryptSystem } from "@/lib/crypto/encrypt";
@@ -66,7 +66,8 @@ export async function getUpsServer(id: string): Promise<UpsServerRow | null> {
   return row ?? null;
 }
 
-/** Saves the poller's state without touching `updatedAt`, which tracks admin edits. */
-export async function saveUpsState(id: string, state: UpsState): Promise<void> {
-  await db.update(upsServers).set({ state }).where(eq(upsServers.id, id));
+/** Saves the poller's state without touching `updatedAt`, which tracks admin edits. False when the row is gone or paused. */
+export async function saveUpsState(id: string, state: UpsState): Promise<boolean> {
+  const saved = await db.update(upsServers).set({ state }).where(and(eq(upsServers.id, id), eq(upsServers.enabled, true))).returning({ id: upsServers.id });
+  return saved.length > 0;
 }
