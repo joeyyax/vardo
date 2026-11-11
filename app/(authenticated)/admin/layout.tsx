@@ -16,6 +16,7 @@ const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     items: [
       { label: "This instance", href: "/admin/settings/general" },
       { label: "Resource limits", href: "/admin/settings/resources" },
+      { label: "Power", href: "/admin/settings/power" },
       { label: "Built-in services", href: "/admin/settings/core-services" },
       { label: "Features", href: "/admin/settings/feature-flags" },
       { label: "Import & export", href: "/admin/settings/config" },
@@ -74,6 +75,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         { label: "Overview", href: "/admin", exact: true },
         { label: "Pipeline", href: "/admin/pipeline" },
         { label: "Apps", href: "/admin/apps" },
+        { label: "Power", href: "/admin/power" },
       ],
     },
 {
