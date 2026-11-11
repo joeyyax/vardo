@@ -6,6 +6,7 @@ import { getInfrastructureSnapshot } from "@/lib/attention/infrastructure";
 import { infrastructureRows } from "@/lib/attention/infrastructure-rows";
 import { listOpenHostIncidents } from "@/lib/incidents/host";
 import { getUpdateStatus } from "@/lib/self-update/status";
+import { combinePower, readUpsReports } from "@/lib/ups/power-state";
 import { readLoopStatus } from "@/lib/worker/status";
 import { workerExpected, workerMode } from "@/lib/worker/mode";
 import { isPresent, readWorkers, recentWorkers } from "@/lib/worker/presence";
@@ -104,6 +105,33 @@ async function workerSection() {
   };
 }
 
+async function powerSection() {
+  const reports = await readUpsReports();
+  if (reports.length === 0) return { monitored: false, upses: [] };
+  const power = combinePower(reports);
+  return {
+    monitored: true,
+    onBattery: power.onBattery,
+    since: iso(power.since),
+    fresh: power.fresh,
+    upses: reports.map((u) => ({
+      name: u.name,
+      model: u.model,
+      health: u.health,
+      status: u.status,
+      charge: u.charge,
+      runtimeSec: u.runtimeSec,
+      load: u.load,
+      onBatterySince: iso(u.since),
+      replaceBattery: u.replaceBattery,
+      testFailed: u.testFailed,
+      fresh: u.fresh,
+      lastReadAt: iso(u.readAt),
+      lastError: u.lastError,
+    })),
+  };
+}
+
 async function incidentsSection() {
   const open = await listOpenHostIncidents();
   return open.map((i) => ({ kind: i.kind, title: i.title, severity: i.severity, openedAt: iso(i.openedAt) }));
@@ -117,19 +145,20 @@ export function registerInstanceStatusTools(server: McpServer, context: McpAuthC
 
   server.tool(
     "vardo_instance_status",
-    "Instance health in one call: version and self-update status, service and resource health, core service problems, worker and watchdog state (live workers and those stopped in the last hour) and open host incidents. Needs a token with the admin scope.",
+    "Instance health in one call: version and self-update status, service and resource health, core service problems, worker and watchdog state (live workers and those stopped in the last hour), open host incidents and UPS power. Needs a token with the admin scope.",
     {},
     async () => {
       if (!(await canAdminInstance(context))) return failure(ADMIN_FORBIDDEN_MESSAGE);
 
-      const [update, health, coreServices, worker, hostIncidents] = await Promise.all([
+      const [update, health, coreServices, worker, hostIncidents, power] = await Promise.all([
         section(updateSection),
         section(servicesSection),
         section(coreServicesSection),
         section(workerSection),
         section(incidentsSection),
+        section(powerSection),
       ]);
-      return text({ update, health, coreServices, worker, hostIncidents });
+      return text({ update, health, coreServices, worker, hostIncidents, power });
     },
   );
 

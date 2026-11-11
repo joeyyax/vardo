@@ -45,6 +45,7 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "system.cert-expiring": "Certificate expiring",
   "system.update-available": "Update available",
   "system.integration-permissions": "Integration needs permissions",
+  "system.power": "UPS power",
   "system.shutdown": "Vardo stopping",
   "system.started": "Vardo back up",
   "system.recovered-unclean": "Vardo stopped unexpectedly",

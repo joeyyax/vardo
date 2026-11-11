@@ -18,12 +18,14 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "system.restart-loop": "error",
   "system.cert-expiring": "error",
   "system.integration-permissions": "warning",
+  "system.power": "warning",
 };
 
 /** Toast severity for an event, or undefined when it should not toast. */
 export function toastSeverityFor(event: BusEvent): ToastSeverity | undefined {
   // A self-heal that gave up needs attention.
   if (event.type === "app.auto-restarted" && event.gaveUp) return "error";
+  if (event.type === "system.power" && (event.change === "on-battery" || event.change === "low-battery")) return "error";
   if (event.type === "alert.fired") return event.alerts.some((a) => a.severity === "critical") ? "error" : "warning";
   return TOAST_EVENTS[event.type];
 }

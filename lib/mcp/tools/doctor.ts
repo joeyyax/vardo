@@ -24,6 +24,7 @@ import { listActiveBans } from "@/lib/probe-guard/bans";
 import { guardSummary } from "@/lib/probe-guard/summary";
 import { redis } from "@/lib/redis";
 import { getUpdateStatus } from "@/lib/self-update/status";
+import { readUpsReports } from "@/lib/ups/power-state";
 import { WORKER_FRESH_MS, workerExpected } from "@/lib/worker/mode";
 import { readHostHeartbeats, watchdogSilent } from "@/lib/worker/watch";
 import type { McpAuthContext } from "../auth";
@@ -38,6 +39,7 @@ import {
   drillLines,
   formatReport,
   oomLines,
+  powerLines,
   resourceLines,
   runDoctor,
   securityLines,
@@ -239,6 +241,7 @@ export function doctorChecks(context: McpAuthContext): DoctorCheck[] {
     { name: "update", title: "updates", run: updateCheck, timeoutMs: SLOW_CHECK_MS },
     { name: "attention", title: "attention items", run: () => attentionCheck(context), timeoutMs: SLOW_CHECK_MS },
     { name: "security", title: "the probe guard", run: securityCheck },
+    { name: "power", title: "UPS power", run: async () => powerLines(await readUpsReports()) },
   ];
 }
 

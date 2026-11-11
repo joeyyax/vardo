@@ -27,6 +27,7 @@ export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
 /** Whether this event sends regardless of preferences. An alert with a critical item does. */
 export function isCriticalEvent(event: BusEvent): boolean {
   if (CRITICAL_EVENT_TYPES.has(event.type)) return true;
+  if (event.type === "system.power") return event.change === "on-battery" || event.change === "low-battery";
   if (event.type === "alert.fired") return event.alerts.some((a) => a.severity === "critical");
   if (event.type === "backup.summary") return event.rows.some((r) => r.outcome === "failed");
   return false;

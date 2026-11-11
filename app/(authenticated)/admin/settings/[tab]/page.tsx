@@ -19,6 +19,7 @@ import { ExternalRoutesSettings } from "@/components/ssl/external-routes-setting
 import { MaintenanceSettings } from "../maintenance-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 import { SystemBackupSection } from "@/components/backups/system-backup-section";
+import { UpsSettings } from "@/components/power/ups-settings";
 
 // Maps URL slugs to tabs. A gated tab 404s when its feature flag is off.
 
@@ -34,6 +35,7 @@ const TABS: Record<string, TabEntry> = {
   "feature-flags":    { component: FeatureFlagsSettings },
   "core-services":    { component: CoreServicesSettings },
   resources:          { component: ResourcesSettings },
+  power:              { component: UpsSettings },
   backup:             { component: BackupSettings, gate: "backups" },
   github:             { component: GitHubSettings, gate: "git-integration" },
   domain:             { component: DomainSettings, gate: "ssl" },

@@ -44,6 +44,7 @@ export const EVENT_SCOPES: { [T in BusEventType]: ScopeOf<T> } = {
   "system.restart-loop": ORG_LEVEL,
   "system.update-available": ORG_LEVEL,
   "system.integration-permissions": ORG_LEVEL,
+  "system.power": ORG_LEVEL,
   "system.shutdown": ORG_LEVEL,
   "system.started": ORG_LEVEL,
   "system.recovered-unclean": ORG_LEVEL,

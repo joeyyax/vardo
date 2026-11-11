@@ -18,6 +18,7 @@ const SUBJECT_BY_PREFIX: [string, IncidentSubjectType][] = [
   ["system.loop", "service"],
   ["system.cert", "domain"],
   ["uptime.", "domain"],
+  ["ups.", "service"],
 ];
 
 export function incidentSubject(kind: string, about: string): { type: IncidentSubjectType; id: string } {
@@ -41,6 +42,7 @@ export function incidentUrl(
   baseUrl = consoleBaseUrl(),
 ): string {
   if (row.kind?.startsWith("uptime.") && row.subjectId) return `${baseUrl}/uptime/${encodeURIComponent(row.subjectId)}`;
+  if (row.kind?.startsWith("ups.")) return `${baseUrl}/admin/power`;
   if (row.appId) return `${baseUrl}/apps/${encodeURIComponent(row.appId)}`;
   switch (row.subjectType) {
     case "host":

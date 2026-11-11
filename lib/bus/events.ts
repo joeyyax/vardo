@@ -21,6 +21,7 @@ export const EVENT_CATEGORIES = {
     "system.cert-expiring",
     "system.update-available",
     "system.integration-permissions",
+    "system.power",
   ],
   lifecycle: [
     "system.shutdown",
@@ -384,6 +385,22 @@ export type SystemIntegrationPermissionsEvent = {
   features: string[];
   fixUrl: string;
   fixLabel: string;
+};
+
+/** A UPS this instance watches changed state. Recoveries go out as alert.resolved. */
+export type SystemPowerEvent = {
+  type: "system.power";
+  title: string;
+  message: string;
+  change: "on-battery" | "low-battery" | "replace-battery" | "contact-lost" | "test-failed";
+  ups: { id: string; name: string; model?: string };
+  /** Percent. */
+  charge?: number;
+  /** Seconds. */
+  runtimeSec?: number;
+  /** Percent. */
+  load?: number;
+  testResult?: string;
 };
 
 /** One commit in an update's changelog. */
@@ -932,6 +949,7 @@ export type BusEvent = EventEnvelope & (
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
   | SystemIntegrationPermissionsEvent
+  | SystemPowerEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent

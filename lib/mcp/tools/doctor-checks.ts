@@ -1,7 +1,7 @@
 // vardo_doctor's lines: each check's readings mapped to pass, warn and fail, and the runner that bounds them.
 
 import type { AttentionRow } from "@/lib/ui/attention";
-import { plural } from "@/lib/email/format";
+import { formatDurationRough, plural } from "@/lib/email/format";
 import { formatDuration } from "@/lib/metrics/format";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
 import { UPDATES_HREF } from "@/lib/attention/vardo-update-row";
@@ -367,4 +367,45 @@ export type SecurityReading = { summary: string; activeBans: number };
 
 export function securityLines(r: SecurityReading): DoctorLine[] {
   return [line("security", "pass", "Probe guard", { detail: `${r.summary}, ${plural(r.activeBans, "active ban")}` })];
+}
+
+export type PowerReading = {
+  name: string;
+  health: "online" | "on-battery" | "low-battery" | "lost-contact" | "unknown";
+  fresh: boolean;
+  charge: number | null;
+  runtimeSec: number | null;
+  /** When the current outage started. */
+  since: Date | null;
+  replaceBattery: boolean;
+  testFailed: string | null;
+  lastError: string | null;
+};
+
+const POWER_HREF = "/admin/power";
+
+/** One line per watched UPS, plus its battery warnings. No UPS, no lines. */
+export function powerLines(upses: PowerReading[], now = new Date()): DoctorLine[] {
+  const lines: DoctorLine[] = [];
+  for (const u of upses) {
+    const battery = [u.charge !== null ? `${u.charge}%` : null, u.runtimeSec !== null ? `${formatDurationRough(u.runtimeSec * 1000)} runtime` : null]
+      .filter(Boolean)
+      .join(", ");
+    if (u.health === "lost-contact") {
+      lines.push(line("power", "fail", `Lost contact with ${u.name}`, { detail: u.lastError, fix: POWER_HREF }));
+    } else if (!u.fresh) {
+      lines.push(line("power", "warn", `No recent reading from ${u.name}`, { detail: u.lastError, fix: POWER_HREF }));
+    } else if (u.health === "on-battery" || u.health === "low-battery") {
+      const since = u.since ? ` for ${formatDurationRough(Math.max(0, now.getTime() - u.since.getTime()))}` : "";
+      const detail = `${u.health === "low-battery" ? "Low battery. " : ""}${battery}`;
+      lines.push(line("power", "fail", `${u.name} is on battery${since}`, { detail: detail || null, fix: POWER_HREF }));
+    } else if (u.health === "unknown") {
+      lines.push(line("power", "warn", `${u.name} reports neither line nor battery power`, { fix: POWER_HREF }));
+    } else {
+      lines.push(line("power", "pass", `${u.name} on line power`, { detail: battery || null }));
+    }
+    if (u.replaceBattery) lines.push(line("power", "warn", `${u.name} needs a new battery`, { fix: POWER_HREF }));
+    if (u.testFailed) lines.push(line("power", "warn", `${u.name} failed its self-test`, { detail: u.testFailed, fix: POWER_HREF }));
+  }
+  return lines;
 }

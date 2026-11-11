@@ -39,6 +39,7 @@ const CASES: Record<BusEventType, [Record<string, unknown>, string[] | null]> = 
   "system.restart-loop": [{}, null],
   "system.update-available": [{}, null],
   "system.integration-permissions": [{}, null],
+  "system.power": [{}, null],
   "system.shutdown": [{}, null],
   "system.started": [{}, null],
   "system.recovered-unclean": [{}, null],

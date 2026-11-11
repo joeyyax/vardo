@@ -10,6 +10,7 @@ import {
   formatReport,
   names,
   oomLines,
+  powerLines,
   resourceLines,
   runCheck,
   runDoctor,
@@ -498,5 +499,41 @@ describe("securityLines", () => {
     expect(securityLines({ summary: "3 probes turned away in the last day, 1 IP banned", activeBans: 2 })).toEqual([
       { check: "security", status: "pass", label: "Probe guard", detail: "3 probes turned away in the last day, 1 IP banned, 2 active bans" },
     ]);
+  });
+});
+
+describe("powerLines", () => {
+  const ups = {
+    name: "Rack UPS",
+    health: "online" as const,
+    fresh: true,
+    charge: 90,
+    runtimeSec: 1460,
+    since: null,
+    replaceBattery: false,
+    testFailed: null,
+    lastError: null,
+  };
+
+  it("has no lines without a UPS", () => {
+    expect(powerLines([], NOW)).toEqual([]);
+  });
+
+  it("passes on line power", () => {
+    expect(powerLines([ups], NOW)).toEqual([{ check: "power", status: "pass", label: "Rack UPS on line power", detail: "90%, 24 min runtime" }]);
+  });
+
+  it("fails on battery with how long", () => {
+    const [l] = powerLines([{ ...ups, health: "on-battery", since: ago(5 * 60_000) }], NOW);
+    expect(l).toMatchObject({ status: "fail", label: "Rack UPS is on battery for 5 min", fix: "/admin/power" });
+  });
+
+  it("fails on lost contact and warns on a stale reading", () => {
+    expect(statuses(powerLines([{ ...ups, health: "lost-contact", lastError: "ETIMEDOUT" }], NOW))).toEqual(["fail"]);
+    expect(powerLines([{ ...ups, fresh: false }], NOW)[0]).toMatchObject({ status: "warn", label: "No recent reading from Rack UPS" });
+  });
+
+  it("adds warnings for a battery to replace and a failed self-test", () => {
+    expect(statuses(powerLines([{ ...ups, replaceBattery: true, testFailed: "Done and error" }], NOW))).toEqual(["pass", "warn", "warn"]);
   });
 });

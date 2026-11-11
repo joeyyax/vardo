@@ -28,9 +28,18 @@ export type SystemAlertEvent = Extract<
       | "system.cert-expiring"
       | "system.update-available"
       | "system.integration-permissions"
+      | "system.power"
       | "app.auto-restarted";
   }
 >;
+
+const POWER_STATUS: Record<Extract<SystemAlertEvent, { type: "system.power" }>["change"], string> = {
+  "on-battery": "On battery",
+  "low-battery": "Low battery",
+  "replace-battery": "Replace battery",
+  "contact-lost": "Lost contact",
+  "test-failed": "Self-test failed",
+};
 
 /** "Oct 15". */
 function dayLabel(iso: string, timeZone = "UTC"): string {
@@ -174,6 +183,31 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         action: { label: event.fixLabel, href: event.fixUrl },
         footer,
       };
+    case "system.power": {
+      const urgent = event.change === "on-battery" || event.change === "low-battery";
+      const tiles: StatTile[] = [
+        ...(event.charge !== undefined ? [{ label: "Charge", value: String(event.charge), unit: "%", hot: urgent }] : []),
+        ...(event.runtimeSec !== undefined ? [{ label: "Runtime", value: formatDuration(event.runtimeSec * 1000), hot: urgent }] : []),
+        ...(event.load !== undefined ? [{ label: "Load", value: String(event.load), unit: "%" }] : []),
+      ];
+      return {
+        tone: urgent ? "fail" : "warn",
+        status: POWER_STATUS[event.change],
+        heading: event.title,
+        preheader: event.message,
+        blocks: [
+          { kind: "text", text: [event.message] },
+          ...(tiles.length ? [{ kind: "tiles" as const, tiles }] : []),
+        ],
+        facts: [
+          { label: "UPS", value: event.ups.name },
+          ...(event.ups.model ? [{ label: "Model", value: event.ups.model }] : []),
+          ...(event.testResult ? [{ label: "Self-test", value: event.testResult }] : []),
+        ],
+        action: { label: "View power", href: consolePage(ctx, "/admin/power") },
+        footer,
+      };
+    }
     case "app.auto-restarted":
       return {
         tone: event.gaveUp || !event.success ? "fail" : "warn",
