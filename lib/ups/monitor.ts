@@ -32,7 +32,8 @@ export async function pollUps(target: NutTarget, upsName: string, timeoutMs = PO
   }
 }
 
-async function pollOne(row: UpsServerRow): Promise<void> {
+/** Polls one UPS, saves its state and history and sends its alerts. */
+export async function recordPoll(row: UpsServerRow): Promise<void> {
   let target: NutTarget;
   try {
     target = targetOf(row);
@@ -53,7 +54,7 @@ async function pollOne(row: UpsServerRow): Promise<void> {
 
 export async function tickUps(): Promise<void> {
   const rows = (await listUpsServers()).filter((r) => r.enabled);
-  const results = await Promise.allSettled(rows.map(pollOne));
+  const results = await Promise.allSettled(rows.map(recordPoll));
   for (const [i, r] of results.entries()) {
     if (r.status === "rejected") log.error(`UPS poll failed for ${rows[i].name}:`, r.reason);
   }
