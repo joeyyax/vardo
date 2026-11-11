@@ -43,8 +43,8 @@ export type StreamStage = DeployStage | RollbackStage;
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped" | "cancelled";
 
-/** What a deploy waits on: the app's running deploy, a deploy slot, the builder, the shared checkout, the worker or Vardo's own swap. */
-export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout" | "worker" | "exclusive";
+/** What a deploy waits on: the app's running deploy, a deploy slot, the builder, the shared checkout, the worker, Vardo's own swap or mains power. */
+export type WaitReason = "app" | "deploy-slot" | "build-slot" | "checkout" | "worker" | "exclusive" | "power";
 
 /** A wait's place in a line: how many are ahead and in it, and when it should start (epoch ms). */
 export type WaitPlace = { ahead?: number; total?: number; eta?: number | null };
@@ -58,6 +58,8 @@ export function waitText(reason: WaitReason, place: WaitPlace = {}): string {
       return "Waiting for the worker. Deploys start when it's back";
     case "exclusive":
       return "Waiting for Vardo's own update to finish its swap";
+    case "power":
+      return "Held while the host is on battery. Deploys start when power is back";
     case "app":
       return "Waiting for the deploy already running for this app";
     case "deploy-slot":

@@ -46,6 +46,7 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "system.update-available": "Update available",
   "system.integration-permissions": "Integration needs permissions",
   "system.power": "UPS power",
+  "system.power-action": "UPS power policy",
   "system.shutdown": "Vardo stopping",
   "system.started": "Vardo back up",
   "system.recovered-unclean": "Vardo stopped unexpectedly",

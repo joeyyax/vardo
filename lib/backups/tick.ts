@@ -12,6 +12,7 @@ import { holdRunJobLease } from "./run-lease";
 import { backupsDraining } from "./in-flight";
 import { claimJob, claimJobWhenFree, jobClaimHolder, type ReleaseClaim } from "./job-claim";
 import { NIGHTLY_REUSE_WINDOW_MS } from "./run-rules";
+import { readPowerGate } from "@/lib/power/gate";
 
 const log = logger.child("backup");
 
@@ -30,6 +31,8 @@ export async function tickBackupJobs(now = new Date(), opts: { claimPollMs?: num
   });
 
   const limit = await backupSlotLimit();
+  const power = await readPowerGate(now.getTime());
+  const skippedOnBattery: string[] = [];
   const runs: Promise<void>[] = [];
   const { adoptManualRun, markJobDone, startJobRun, startNightlyRuns } = await import("./runs");
   const nightlyRun = await startNightlyRuns(now).catch((err) => {
@@ -86,6 +89,12 @@ export async function tickBackupJobs(now = new Date(), opts: { claimPollMs?: num
       const minuteTs = Math.floor(now.getTime() / 60_000);
       const locked = await acquireLock(`lock:backup:${job.id}:${minuteTs}`, 61_000);
       if (!locked) continue;
+      if (power.skipBackups) {
+        log.info(`Job "${job.name}" skipped: on battery`);
+        skippedOnBattery.push(job.name);
+        skipInRun(job.id);
+        continue;
+      }
 
       const nightlyRunId = nightlyRun.get(job.id);
       claim = await claimJob(job.id, "scheduled", now);
@@ -148,11 +157,19 @@ export async function tickBackupJobs(now = new Date(), opts: { claimPollMs?: num
   // Jobs this tick left alone are free for a sweep to requeue.
   for (const jobId of [...leases.keys()]) if (!reporting.has(jobId)) void release(jobId);
 
-  try {
-    const { startDueInitialBackups } = await import("./initial-backup");
-    runs.push(...(await startDueInitialBackups({ now, limit, queued })));
-  } catch (err) {
-    log.error("First snapshot tick error:", err);
+  if (skippedOnBattery.length > 0) {
+    const { recordBackupsSkipped } = await import("@/lib/power/backups");
+    await recordBackupsSkipped(skippedOnBattery, power.outage, now);
+  }
+
+  // First snapshots stay armed on battery and start once power is back.
+  if (!power.skipBackups) {
+    try {
+      const { startDueInitialBackups } = await import("./initial-backup");
+      runs.push(...(await startDueInitialBackups({ now, limit, queued })));
+    } catch (err) {
+      log.error("First snapshot tick error:", err);
+    }
   }
 
   await Promise.all(runs);
@@ -224,6 +241,7 @@ const DRILLS_PER_TICK = 1;
 /** Drill whichever archive's restorability is least known. */
 export async function tickRestoreDrills(now = new Date()): Promise<void> {
   if (backupsDraining()) return;
+  if ((await readPowerGate(now.getTime())).skipBackups) return;
   const locked = await acquireLock(`lock:drill:${Math.floor(now.getTime() / 60_000)}`, 61_000);
   if (!locked) return;
 

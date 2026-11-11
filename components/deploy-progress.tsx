@@ -205,6 +205,7 @@ export function DeployProgress({
   onDismiss,
   cancelling = false,
   onStartNext,
+  onDeployAnyway,
 }: {
   variant: "full" | "compact";
   stages: Record<string, string>;
@@ -228,10 +229,14 @@ export function DeployProgress({
   cancelling?: boolean;
   /** Instance admins: moves a deploy waiting in line to the front. Resolves true once it has. */
   onStartNext?: () => Promise<boolean>;
+  /** Instance admins: starts a deploy held while the host is on battery. Resolves true once it has. */
+  onDeployAnyway?: () => Promise<boolean>;
 }) {
   const now = useNow(1000);
   const [confirm, setConfirm] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [confirmPower, setConfirmPower] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const lineRef = useRef<HTMLDivElement>(null);
   const startNextRef = useRef<HTMLButtonElement>(null);
   // The wait a successful Start next moved to the front, read as first until the stream says so.
@@ -249,6 +254,28 @@ export function DeployProgress({
     <Button ref={startNextRef} size="xs" variant="outline" className="pointer-coarse:h-11" disabled={moving} onClick={() => setConfirm(true)}>
       Start next
     </Button>
+  );
+  const deployAnyway = onDeployAnyway && view.powerHold && (
+    <Button size="xs" variant="outline" className="pointer-coarse:h-11" disabled={releasing} onClick={() => setConfirmPower(true)}>
+      Deploy anyway
+    </Button>
+  );
+  const confirmDeployAnyway = onDeployAnyway && (
+    <ConfirmDeleteDialog
+      open={confirmPower}
+      onOpenChange={setConfirmPower}
+      title="Deploy on battery"
+      description="The host is on battery. This deploy starts now and builds on UPS power, which shortens the runtime left for every app."
+      confirmLabel="Deploy anyway"
+      loadingLabel="Starting..."
+      variant="default"
+      loading={releasing}
+      onConfirm={async () => {
+        setReleasing(true);
+        const started = await onDeployAnyway().finally(() => setReleasing(false));
+        if (started) setConfirmPower(false);
+      }}
+    />
   );
   const confirmStartNext = onStartNext && (
     <ConfirmDeleteDialog
@@ -328,6 +355,7 @@ export function DeployProgress({
           <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
             <WaitLine view={view} line={text.line} className="text-[13px] tabular-nums" />
             {startNext}
+            {deployAnyway}
           </div>
         )}
         {href && (
@@ -336,6 +364,7 @@ export function DeployProgress({
           </Link>
         )}
         {confirmStartNext}
+        {confirmDeployAnyway}
       </div>
     );
   }
@@ -358,6 +387,7 @@ export function DeployProgress({
           <div ref={lineRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-3 gap-y-1 outline-none">
             <WaitLine view={view} line={text.line} className="text-sm font-medium tabular-nums" />
             {startNext}
+            {deployAnyway}
           </div>
         ) : undefined
       }
@@ -365,6 +395,7 @@ export function DeployProgress({
       onDismiss={onDismiss}
     >
       {confirmStartNext}
+      {confirmDeployAnyway}
     </DeployZoom>
   );
 }

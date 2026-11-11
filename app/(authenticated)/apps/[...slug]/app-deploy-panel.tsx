@@ -50,6 +50,7 @@ import { BuildPlanPanel } from "./build-plan-panel";
 import { BuiltOnFact, BuiltOnMark } from "./built-on";
 import type { useCancelDeploy } from "./hooks/use-app-actions";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
+import { useDeployAnyway } from "@/hooks/use-deploy-anyway";
 import {
   interleaveHistory,
   partitionLifecycle,
@@ -234,6 +235,7 @@ export function AppDeployPanel({
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const { cancelRequested, setCancelRequested, cancelDeploy } = cancel;
   const { bumpDeploy } = useBumpDeploy(orgId, appId);
+  const { deployAnyway } = useDeployAnyway(orgId, appId);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
@@ -604,6 +606,7 @@ export function AppDeployPanel({
                 commit={commitOf(watched ?? serverRunningDeploy)}
                 cancelling={cancelRequested}
                 onStartNext={instanceAdmin ? () => bumpDeploy() : undefined}
+                onDeployAnyway={instanceAdmin ? () => deployAnyway() : undefined}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (

@@ -166,6 +166,9 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
     }
 
     try {
+      // The originals are already down, so the power hold doesn't apply.
+      const { allowOnBattery } = await import("@/lib/power/deploys");
+      await allowOnBattery(deploymentId);
       // The originals are stopped: the held deploy can run now.
       if (!(await releaseHeldDeploy(deploymentId))) throw new Error("The deployment was cancelled before it started");
       if (!(await awaitClaim(deploymentId, IMPORT_CLAIM_WAIT_MS))) throw new Error("The deploy didn't start in time");

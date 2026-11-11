@@ -256,6 +256,8 @@ export type ClaimOpts = {
   /** Free slots here add capacity for deploys that build on a target. */
   targets?: TargetSlots | null;
   leaseMs?: number;
+  /** The host is on battery: only rollbacks and deploys an admin let through are claimed. */
+  powerHold?: boolean;
 };
 
 export type ClaimedDeploy = {
@@ -275,6 +277,9 @@ export type ClaimedDeploy = {
   /** The deploy log's line for a claim on a target's slot. */
   note?: string;
 };
+
+/** Deploys the power hold lets through: rollbacks and those an admin started anyway. */
+export const powerExempt = sql`(d.trigger = 'rollback' OR d.request->'rollback' IS NOT NULL OR (d.request->>'powerOverride')::boolean IS TRUE)`;
 
 /** A write that hit the one-running-row-per-scope index. */
 export function isScopeConflict(err: unknown): boolean {
@@ -332,6 +337,7 @@ export async function claimDeploys(executorId: string, opts: ClaimOpts = {}): Pr
   // Queued in a scope nothing runs in.
   const claimable = sql`
     d.status = 'queued' AND d.scope_key IS NOT NULL
+    AND (NOT ${opts.powerHold ?? false} OR ${powerExempt})
     AND NOT EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running')
     -- Delete next release: a pre-queue running row has no scope, so it holds every scope of its app.
     AND NOT EXISTS (

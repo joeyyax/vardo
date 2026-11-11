@@ -33,7 +33,7 @@ const STAGE_STOP: Record<string, Stop> = {
 /** Stages past the swap: a failure there leaves the old version serving. */
 const SWAPPED = new Set(["deploy", "healthcheck", "routing"]);
 
-const QUEUE_WAITS = new Set(["app", "deploy-slot", "worker", "exclusive"]);
+const QUEUE_WAITS = new Set(["app", "deploy-slot", "worker", "exclusive", "power"]);
 
 export function placeDeploy({ status, stage, waitReason, trigger }: StopInput): Placement {
   const at = (stop: Stop, extra: Partial<Placement> = {}): Placement => ({ stop, waiting: false, failed: false, gone: false, ...extra });
@@ -71,6 +71,7 @@ export function describePlacement(
   if (ctx.waitReason === "app") return "Waiting for this app's deploy";
   if (ctx.waitReason === "worker") return "Waiting for the worker";
   if (ctx.waitReason === "exclusive") return "Waiting for Vardo's own swap";
+  if (ctx.waitReason === "power") return "Held on battery";
   if (ctx.waitReason === "checkout") return "Waiting for the checkout";
   if (p.stop === "rolledBack") return ctx.status === "running" ? stageHead("rollingBack") : "Rolled back";
   return stageHead(STOP_STAGE[p.stop], { builder: ctx.builder });

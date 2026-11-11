@@ -139,6 +139,8 @@ export function subjectLine(event: BusEvent): string {
       return `⚠ ${event.title}`;
     case "system.power":
       return `${event.change === "on-battery" || event.change === "low-battery" ? "✗" : "⚠"} ${event.title}`;
+    case "system.power-action":
+      return `${event.action === "apps-restarted" ? "✓" : "⚠"} ${event.title}`;
     case "system.update-available": {
       const detail = event.target ?? (event.commitsBehind ? plural(event.commitsBehind, "commit") : undefined);
       return `↑ Vardo update available${detail ? ` · ${detail}` : ""}`;

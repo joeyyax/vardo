@@ -8,6 +8,7 @@ import { GROUP_JOBS_PER_EXECUTOR, claimGroupJobs, groupJobsHere, startGroupJob }
 import { claimDeploys, clearFinishedExclusive, type ClaimOpts, type TargetSlots } from "./queue";
 import { markQueuedForOldSweeper } from "./legacy-compat";
 import { clearFinishedWaits, endQueueWaits, markQueueWaits } from "./waiting";
+import { readPowerGate } from "@/lib/power/gate";
 
 const log = logger.child("deploy-claim");
 
@@ -37,16 +38,24 @@ async function targetSlots(scope: ClaimScope): Promise<TargetSlots | null> {
 export async function claimPass(scope: ClaimScope): Promise<string[]> {
   await markQueuedForOldSweeper();
   const targets = await targetSlots(scope);
+  const power = await readPowerGate();
   try {
-    return await claimAndStart(scope, targets);
+    return await claimAndStart(scope, targets, power.holdDeploys);
   } finally {
     // Runs even with nothing to claim, so a missing worker still shows.
-    await markQueueWaits({ targets }).catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
+    await markQueueWaits({ targets, powerHold: power.holdDeploys })
+      .then(async (written) => {
+        const held = written.filter((w) => w.wait_reason === "power").map((w) => w.id);
+        if (held.length === 0) return;
+        const { recordDeploysHeld } = await import("@/lib/power/deploys");
+        await recordDeploysHeld(held, power.outage);
+      })
+      .catch((err) => log.warn("Couldn't record why queued deploys wait:", err));
     await clearFinishedWaits().catch(() => {});
   }
 }
 
-async function claimAndStart(scope: ClaimScope, targets: TargetSlots | null): Promise<string[]> {
+async function claimAndStart(scope: ClaimScope, targets: TargetSlots | null, powerHold: boolean): Promise<string[]> {
   if (scope === "none" || isDraining()) return [];
   const me = executorId();
   const started: string[] = [];
@@ -54,7 +63,7 @@ async function claimAndStart(scope: ClaimScope, targets: TargetSlots | null): Pr
   const { ownSlot } = await import("@/lib/docker/own-slot");
   await clearFinishedExclusive(await ownSlot());
 
-  const claimed = await claimDeploys(me, { self: SELF_FILTER[scope], targets });
+  const claimed = await claimDeploys(me, { self: SELF_FILTER[scope], targets, powerHold });
   await endQueueWaits(claimed.filter((row) => row.waited).map((row) => row.id));
   for (const row of claimed) {
     log.info(`Claimed deployment ${row.id} (${row.trigger}, ${row.scopeKey}${row.onTarget ? ", on a build target's slot" : ""})`);

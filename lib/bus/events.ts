@@ -22,6 +22,7 @@ export const EVENT_CATEGORIES = {
     "system.update-available",
     "system.integration-permissions",
     "system.power",
+    "system.power-action",
   ],
   lifecycle: [
     "system.shutdown",
@@ -401,6 +402,16 @@ export type SystemPowerEvent = {
   /** Percent. */
   load?: number;
   testResult?: string;
+};
+
+/** A UPS power policy acted: backups skipped, deploys held, apps stopped or restarted. */
+export type SystemPowerActionEvent = {
+  type: "system.power-action";
+  title: string;
+  message: string;
+  action: "backups-skipped" | "deploys-held" | "deploy-override" | "apps-stopped" | "apps-restarted";
+  count: number;
+  names?: string[];
 };
 
 /** One commit in an update's changelog. */
@@ -950,6 +961,7 @@ export type BusEvent = EventEnvelope & (
   | SystemUpdateAvailableEvent
   | SystemIntegrationPermissionsEvent
   | SystemPowerEvent
+  | SystemPowerActionEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent
