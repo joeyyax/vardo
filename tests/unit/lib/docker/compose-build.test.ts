@@ -167,11 +167,16 @@ describe("composeBuild", () => {
     expect(calls.some((c) => c.args[0] === "push" || c.args[0] === "tag")).toBe(false);
   });
 
-  it("logs this server's builder only when it builds here", async () => {
-    const notes = ["[build] Building in vardo-buildkit (memory limit 4 GiB)"];
+  it("logs this server's builder, at the limit the gate resized it to, only when it builds here", async () => {
     const here: string[] = [];
-    await composeBuild(options({ bounded: { ...bounded(null), notes }, log: (l) => here.push(l) }));
-    expect(here).toContain(notes[0]);
+    const b = { ...bounded(null), container: "vardo-buildkit", notes: [] };
+    const gate: ComposeBuildOpts["gate"] = (run) => {
+      b.limitBytes = 5 * 1024 ** 3;
+      return run({ target: null });
+    };
+    await composeBuild(options({ bounded: b, gate, log: (l) => here.push(l) }));
+    expect(here).toContain("[build] Building in vardo-buildkit (memory limit 5 GiB)");
+    expect(here.join("\n")).not.toContain("memory limit 4 GiB");
   });
 
   describe("on a build target", () => {
@@ -201,9 +206,8 @@ describe("composeBuild", () => {
 
     it("leaves this server's builder out of the log", async () => {
       const lines: string[] = [];
-      const notes = ["[build] Building in vardo-buildkit (memory limit 4 GiB)"];
-      await composeBuild(options({ bounded: { ...bounded(null), notes }, registry, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
-      expect(lines).not.toContain(notes[0]);
+      await composeBuild(options({ bounded: { ...bounded(null), container: "vardo-buildkit", notes: [] }, registry, targets: [target], gate: (run) => run({ target }), log: (l) => lines.push(l) }));
+      expect(lines.join("\n")).not.toContain("Building in vardo-buildkit");
     });
 
     it("builds there and copies a service with no key over SSH", async () => {

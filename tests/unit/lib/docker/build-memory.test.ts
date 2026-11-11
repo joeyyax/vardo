@@ -39,7 +39,7 @@ const { execFileMock, calls, answers } = vi.hoisted(() => ({
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 
-const { boundedBuild, explainBuildOom, isBuildOom } = await import("@/lib/docker/build-memory");
+const { boundedBuild, explainBuildOom, heldNotes, isBuildOom } = await import("@/lib/docker/build-memory");
 const { resetImageStoreCache } = await import("@/lib/docker/build-export");
 
 const lines: string[] = [];
@@ -111,7 +111,16 @@ describe("boundedBuild", () => {
     const build = await boundedBuild();
 
     expect(lines).toEqual([]);
-    expect(build.notes?.join("\n")).toContain("memory limit 12 GiB");
+    expect(heldNotes(build).join("\n")).toContain("memory limit 12 GiB");
+  });
+
+  it("names the limit the gate resized BuildKit to", async () => {
+    const build = await boundedBuild();
+    build.limitBytes = 5 * 1024 ** 3;
+
+    const held = heldNotes(build).join("\n");
+    expect(held).toContain("memory limit 5 GiB");
+    expect(held).not.toContain("12 GiB");
   });
 
   it("honors an explicit opt-out", async () => {

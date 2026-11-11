@@ -8,7 +8,7 @@ import { COMPOSE_BUILD_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT, GIT_METADATA_TIMEOUT }
 import { engineVersion } from "./engine-version";
 import { composeImageName, planComposeReuse, writeBuildKeysFile } from "./compose-build-reuse";
 import { serviceRepo, type RegistryOps } from "./build-registry";
-import type { BoundedBuild } from "./build-memory";
+import { heldNotes, type BoundedBuild } from "./build-memory";
 import type { WaitWriter } from "./deploy-logger";
 import { withBuildSlot, type BuildPlacement, type DeploySlot } from "./build-gate";
 import { BuilderError, onTarget, remoteEnv, type BuildTarget } from "./build-targets";
@@ -157,7 +157,7 @@ export async function composeBuild(opts: ComposeBuildOpts): Promise<ComposeBuild
   const built = await gate(async (placement) => {
     const target = placement?.target;
     if (!target || !remote) {
-      for (const line of opts.bounded.notes ?? []) log(line);
+      for (const line of heldNotes(opts.bounded)) log(line);
       return runComposeBuild(opts, exec, services, keyFileArgs, opts.bounded, opts.env);
     }
     return onTarget(target, async (session) => {

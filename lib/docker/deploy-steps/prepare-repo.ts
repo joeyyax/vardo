@@ -60,7 +60,7 @@ import { withoutUndeclaredBuildVars } from "../compose-build-reuse";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
 import { engineVersion } from "../engine-version";
-import { boundedBuild, buildKitLimit, explainBuildOom, type BoundedBuild } from "../build-memory";
+import { boundedBuild, buildKitLimit, explainBuildOom, heldNotes, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
 import { configuredTargets, onTarget, remoteEnv, type BuildTarget } from "../build-targets";
 import { bringBack } from "../remote-build";
@@ -504,7 +504,7 @@ async function dockerBuild(
     await withBuildSlot({ ...build.gate, targets: remote?.targets }, bounded, async ({ target }) => {
       if (!target || !remote) {
         ran = bounded;
-        for (const line of bounded.notes ?? []) logs.push(line);
+        for (const line of heldNotes(bounded)) logs.push(line);
         return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
       }
       await onTarget(target, async (session) => {

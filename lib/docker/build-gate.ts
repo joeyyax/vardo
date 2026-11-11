@@ -3,9 +3,9 @@
 
 import { readFile } from "fs/promises";
 import { totalmem } from "os";
-import { gt, max, sql } from "drizzle-orm";
+import { and, eq, gt, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { buildPeaks } from "@/lib/db/schema";
+import { buildPeaks, deployments } from "@/lib/db/schema";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
@@ -583,6 +583,27 @@ export function recordablePeak(riseBytes: number | null, buildMs: number): riseB
   return riseBytes !== null && riseBytes >= MIN_PEAK_BYTES && buildMs >= MIN_PEAK_BUILD_MS;
 }
 
+/** The most this deploy's app rose in BuildKit lately, or null when it has no recorded peak. */
+async function appPeakBytes(deploymentId: string | undefined): Promise<number | null> {
+  if (!deploymentId) return null;
+  try {
+    const [row] = await db
+      .select({ peak: max(buildPeaks.peakBytes) })
+      .from(buildPeaks)
+      .innerJoin(deployments, eq(deployments.id, buildPeaks.deploymentId))
+      .where(
+        and(
+          sql`${deployments.appId} = (SELECT d.app_id FROM deployment d WHERE d.id = ${deploymentId})`,
+          gt(buildPeaks.recordedAt, new Date(Date.now() - PEAK_WINDOW_MS)),
+        ),
+      );
+    return row?.peak == null ? null : Number(row.peak);
+  } catch (err) {
+    log.warn("Couldn't read the app's build peak; sizing the builder by free memory:", err);
+    return null;
+  }
+}
+
 async function recordPeak(deploymentId: string, bytes: number): Promise<void> {
   await db
     .insert(buildPeaks)
@@ -894,7 +915,11 @@ export async function withBuildSlot<T>(gate: BuildGate, bounded: BoundedBuild, b
           // The sweep hold keeps the builder empty, so it can be resized.
           const container = bounded.container;
           if (container) {
-            const sized = await sizeBuildKit(container, { builderBytes: () => builderMemory(container), log: gate.log });
+            const sized = await sizeBuildKit(container, {
+              builderBytes: () => builderMemory(container),
+              peakBytes: () => appPeakBytes(gate.deploymentId),
+              log: gate.log,
+            });
             if (sized !== null) bounded.limitBytes = sized;
           }
         } finally {
