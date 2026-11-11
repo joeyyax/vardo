@@ -130,7 +130,7 @@ function UpsCard({ server, now }: { server: UpsServerView; now: number }) {
           <StatusDot tone={HEALTH_TONE[server.health]}>{HEALTH_LABEL[server.health]}</StatusDot>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {r?.status && <span className="font-mono">{r.status}</span>}
-            {lastOk && <span> · read {formatRelativeTime(Math.min(0, lastOk - now))}</span>}
+            {lastOk && <span> · read {formatRelativeTime(Math.min(lastOk, now), new Date(now))}</span>}
           </p>
         </div>
       </div>

@@ -233,7 +233,7 @@ function UpsDialog({ server, onClose, onSaved }: { server: UpsServerView | null;
       }
       setProbe(json as ProbeResult);
       if (json.ok && json.upses.length > 0 && !form.upsName) {
-        setForm((prev) => ({ ...prev, upsName: json.upses[0].name, name: prev.name || json.upses[0].description || json.upses[0].name }));
+        setForm((prev) => ({ ...prev, upsName: json.upses[0].name }));
       }
     } catch {
       setProbe({ ok: false, error: "Couldn't test the connection" });
@@ -335,7 +335,7 @@ function UpsDialog({ server, onClose, onSaved }: { server: UpsServerView | null;
                   <button
                     key={u.name}
                     type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, upsName: u.name, name: prev.name || u.description || u.name }))}
+                    onClick={() => setForm((prev) => ({ ...prev, upsName: u.name }))}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-muted/50"
                     aria-pressed={form.upsName === u.name}
                   >
