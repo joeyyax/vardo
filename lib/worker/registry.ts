@@ -66,6 +66,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "console-network", roles: WEB, singleton: false, perProcess: true, load: async () => (await import("@/lib/docker/console-network")).consoleNetworkLoop },
   { name: "uptime", roles: BOTH, singleton: true, load: async () => (await import("@/lib/uptime/loop")).uptimeLoop },
   { name: "ups-poll", roles: BOTH, singleton: true, load: async () => (await import("@/lib/ups/monitor")).upsPollLoop },
+  { name: "power-policy", roles: BOTH, singleton: true, load: async () => (await import("@/lib/power/stops")).powerPolicyLoop },
   { name: "cert-export", roles: BOTH, singleton: true, load: async () => (await import("@/lib/ssl/cert-export")).certExportLoop },
   { name: "image-update-sweep", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdateSweepLoop },
   { name: "image-update-prune", roles: BOTH, singleton: true, feature: "image-updates", load: async () => (await import("@/lib/docker/image-updates/scheduler")).imageUpdatePruneLoop },

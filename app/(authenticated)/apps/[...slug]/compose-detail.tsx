@@ -1253,6 +1253,7 @@ export function ComposeDetail({
             handleDeploy={handleDeployClick}
             isComposeParent
             page="resources"
+            instanceAdmin={instanceAdmin}
           />
         </TabsContent>
 

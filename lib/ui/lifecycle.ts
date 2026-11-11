@@ -12,7 +12,7 @@ export type LifecycleKind = "restarted" | "stopped" | "started";
 export type LifecycleScope = "app" | "service" | "stack";
 
 /** How the action reached Vardo. Absent means the UI. */
-export type LifecycleTrigger = "api" | "mcp";
+export type LifecycleTrigger = "api" | "mcp" | "power";
 
 /** What Docker reported once the command returned. Mirrors ObservedStatus. */
 export type LifecycleStatus = "active" | "error" | "stopped" | "missing";
@@ -54,7 +54,7 @@ const VERBS: Record<LifecycleKind, string> = {
   started: "Started",
 };
 
-const TRIGGER_LABELS: Record<string, string> = { api: "API", mcp: "MCP" };
+const TRIGGER_LABELS: Record<string, string> = { api: "API", mcp: "MCP", power: "the UPS power policy" };
 
 /** What each action leaves the app as when it worked. */
 const INTENDED: Record<LifecycleKind, LifecycleStatus> = {

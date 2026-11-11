@@ -190,6 +190,7 @@ export type App = {
   diskWriteAlertThreshold: number | null;
   anomalyAlerts?: boolean;
   metadataEndpoint?: boolean;
+  keepRunningOnBattery?: boolean;
   githubFeedback?: boolean | null;
   githubFeedbackError?: string | null;
   healthCheckTimeout: number | null;
