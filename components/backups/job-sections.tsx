@@ -17,6 +17,7 @@ import { focusRowByKey, useRowKeys } from "@/hooks/use-row-keys";
 import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
+import { warnIfOnBattery } from "@/lib/ui/power-warning";
 import { appHref } from "@/lib/ui/hrefs";
 import { cn } from "@/lib/utils";
 import { scheduleLabel } from "./constants";
@@ -409,6 +410,7 @@ function JobMeta({
 
   async function runNow() {
     setRunning(true);
+    void warnIfOnBattery();
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/backups/jobs/${job.id}/run`, { method: "POST" });
       const body = res.ok ? null : await res.json().catch(() => null);

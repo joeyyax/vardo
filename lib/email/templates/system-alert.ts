@@ -29,6 +29,7 @@ export type SystemAlertEvent = Extract<
       | "system.update-available"
       | "system.integration-permissions"
       | "system.power"
+      | "system.power-action"
       | "app.auto-restarted";
   }
 >;
@@ -39,6 +40,14 @@ const POWER_STATUS: Record<Extract<SystemAlertEvent, { type: "system.power" }>["
   "replace-battery": "Replace battery",
   "contact-lost": "Lost contact",
   "test-failed": "Self-test failed",
+};
+
+const POWER_ACTION_STATUS: Record<Extract<SystemAlertEvent, { type: "system.power-action" }>["action"], string> = {
+  "backups-skipped": "Backups skipped",
+  "deploys-held": "Deploys held",
+  "deploy-override": "Deployed on battery",
+  "apps-stopped": "Apps stopped",
+  "apps-restarted": "Apps restarted",
 };
 
 /** "Oct 15". */
@@ -208,6 +217,17 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         footer,
       };
     }
+    case "system.power-action":
+      return {
+        tone: event.action === "apps-restarted" ? "success" : "warn",
+        status: POWER_ACTION_STATUS[event.action],
+        heading: event.title,
+        preheader: event.message,
+        blocks: [{ kind: "text", text: [event.message] }],
+        facts: event.names?.length ? [{ label: event.action.startsWith("backups") ? "Jobs" : event.action.startsWith("deploy") ? "Deploys" : "Apps", value: event.names.join(", ") }] : [],
+        action: { label: "View power", href: consolePage(ctx, "/admin/power") },
+        footer,
+      };
     case "app.auto-restarted":
       return {
         tone: event.gaveUp || !event.success ? "fail" : "warn",

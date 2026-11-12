@@ -896,6 +896,7 @@ export function AppDetail({ app, orgId, userRole, instanceAdmin = false, allTags
             allParentApps={allParentApps}
             handleDeploy={handleDeploy}
             page="resources"
+            instanceAdmin={instanceAdmin}
           />
         </TabsContent>
 

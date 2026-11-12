@@ -30,6 +30,8 @@ export type DeployRequest = {
   pinIntent?: "push" | "pin";
   /** Inserted without a scope until its requester releases it, so no executor claims it first. */
   held?: boolean;
+  /** An admin let it run while the host is on battery. */
+  powerOverride?: boolean;
 };
 
 /** Whose deploy slot a claim took. */

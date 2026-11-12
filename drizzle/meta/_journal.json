@@ -1114,6 +1114,13 @@
       "when": 1794435735513,
       "tag": "0158_ups_on_battery_grace",
       "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1794436065289,
+      "tag": "0159_ups_power_policies",
+      "breakpoints": true
     }
   ]
 }

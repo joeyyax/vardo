@@ -13,7 +13,8 @@ import { waitEntry, type WaitPlace, type WaitReason } from "@/lib/docker/deploy-
 import { etaMoved, pooledLineEtas, slotFreeAt } from "./eta";
 import { typicalDeploySql } from "./eta-history";
 import { executorFor } from "./claim-scope";
-import { EXCLUSIVE_MAX_AGE_MS, freeTargetSlots, lockClaims, type TargetSlots } from "./queue";
+import { EXCLUSIVE_MAX_AGE_MS, freeTargetSlots, lockClaims, powerExempt, type TargetSlots } from "./queue";
+import { readPowerGate } from "@/lib/power/gate";
 
 const log = logger.child("deploy-waiting");
 
@@ -130,9 +131,10 @@ async function sharedTargetSlots(): Promise<TargetSlots | null> {
  * The line is served by this server's deploy slots and, for deploys that may build on one, free build target slots.
  */
 export async function markQueueWaits(
-  opts: { capacity?: number; targets?: TargetSlots | null; workerMissing?: boolean; now?: number } = {},
+  opts: { capacity?: number; targets?: TargetSlots | null; workerMissing?: boolean; powerHold?: boolean; now?: number } = {},
 ): Promise<QueueWait[]> {
   const capacity = opts.capacity ?? maxDeployConcurrency();
+  const powerHold = opts.powerHold ?? (await readPowerGate()).holdDeploys;
   const targets = opts.targets !== undefined ? opts.targets : await sharedTargetSlots();
   const noWorker = opts.workerMissing ?? (await workerMissing());
   const automatic = sql`d.trigger IN ('webhook', 'relay', 'poll')`;
@@ -146,7 +148,7 @@ export async function markQueueWaits(
           WHERE exclusive_requested_at > now() - ${EXCLUSIVE_MAX_AGE_MS}::int * interval '1 millisecond'
         ) AS exclusive
     ), queued AS (
-      SELECT d.id, d.app_id, d.started_at, d.bumped_at, NOT ${automatic} AS explicit, a.name AS app_name,
+      SELECT d.id, d.app_id, d.started_at, d.bumped_at, NOT ${automatic} AS explicit, a.name AS app_name, ${powerExempt} AS power_exempt,
         d.wait_reason, d.wait_ahead, d.wait_total, d.wait_eta, d.claim_slot,
         row_number() OVER (PARTITION BY d.scope_key ORDER BY d.bumped_at DESC NULLS LAST, ${automatic}, d.started_at, d.id) AS in_scope,
         EXISTS (SELECT 1 FROM deployment r WHERE r.scope_key = d.scope_key AND r.status = 'running') AS scope_busy
@@ -156,6 +158,7 @@ export async function markQueueWaits(
       SELECT q.*,
         CASE
           WHEN ${noWorker} AND q.app_name <> ${VARDO_SELF_APP_NAME} THEN 'worker'
+          WHEN ${powerHold} AND NOT q.power_exempt THEN 'power'
           WHEN s.exclusive THEN 'exclusive'
           WHEN q.scope_busy OR q.in_scope > 1 THEN 'app'
         END AS reason

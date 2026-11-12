@@ -9,6 +9,7 @@ import { StatusMark } from "@/components/ui/status-dot";
 import { PanelSection } from "@/components/detail-panel";
 import { DeployProgress, useDeployStream, useNow } from "@/components/deploy-progress";
 import { useBumpDeploy } from "@/hooks/use-bump-deploy";
+import { useDeployAnyway } from "@/hooks/use-deploy-anyway";
 import { useCancelDeploy } from "@/app/(authenticated)/apps/[...slug]/hooks/use-app-actions";
 import { DeployCancel } from "@/app/(authenticated)/apps/[...slug]/deploy-cancel";
 import { activeDeploy, rowHold, seedWait, streamView } from "@/lib/ui/deploy-wait";
@@ -123,6 +124,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const now = useNow(30_000);
   const view = running ? streamView(stream, running, now) : null;
   const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
+  const { deployAnyway } = useDeployAnyway(ctx.orgId, app.id);
   return (
     <div
       onClick={() => ctx.jump(app.name)}
@@ -155,6 +157,7 @@ function DeployCard({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           href={running ? deployHref(app.name, running.id) : appHref(app.name, "deployments")}
           subject={app.displayName}
           onStartNext={ctx.instanceAdmin && running ? () => bumpDeploy(running.id) : undefined}
+          onDeployAnyway={ctx.instanceAdmin && running ? () => deployAnyway(running.id) : undefined}
         />
       </div>
     </div>
@@ -341,6 +344,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
   const now = useNow(30_000);
   const view = running ? streamView(stream, running, now) : null;
   const { bumpDeploy } = useBumpDeploy(ctx.orgId, app.id);
+  const { deployAnyway } = useDeployAnyway(ctx.orgId, app.id);
   const cancel = useCancelDeploy(ctx.orgId, app.id);
   const router = useRouter();
   const primaryAction: RunAction = stopped || node.relation === "service" ? "restart" : "deploy";
@@ -420,6 +424,7 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
           href={deployHref(app.name, running.id)}
           subject={app.displayName}
           onStartNext={ctx.instanceAdmin ? () => bumpDeploy(running.id) : undefined}
+          onDeployAnyway={ctx.instanceAdmin ? () => deployAnyway(running.id) : undefined}
         />
       )}
 

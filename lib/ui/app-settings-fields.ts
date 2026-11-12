@@ -34,6 +34,8 @@ export type AppSettingsFields = {
   /** Alerts on straying from the app's own baseline. */
   anomalyAlerts: boolean;
   priority: boolean;
+  /** Left running when the UPS stop policy stops apps. A stack stops as one. */
+  keepRunningOnBattery: boolean;
   /** Offers the "inherit" tier, which only a child can resolve. */
   priorityInherit: boolean;
   /** Database, cache, worker, web or other. */
@@ -79,6 +81,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     diskWriteAlert: !isComposeParent,
     anomalyAlerts: true,
     priority: true,
+    keepRunningOnBattery: ownsBuild,
     priorityInherit: isChildService,
     kind: !isComposeParent,
     healthCheckTimeout: true,
@@ -123,6 +126,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   restartPolicy: "resources",
   resourceLimits: "resources",
   priority: "resources",
+  keepRunningOnBattery: "resources",
   healthCheckTimeout: "resources",
   diskWriteAlert: "resources",
   anomalyAlerts: "resources",

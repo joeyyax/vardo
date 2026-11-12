@@ -46,6 +46,7 @@ export function AppSettingsPanel({
   handleDeploy,
   isComposeParent = false,
   page = "settings",
+  instanceAdmin = false,
 }: {
   app: App;
   orgId: string;
@@ -56,6 +57,8 @@ export function AppSettingsPanel({
   isComposeParent?: boolean;
   /** Which section rail entry this instance is rendering. */
   page?: AppSettingsPage;
+  /** Instance admins set the UPS stop exemption. */
+  instanceAdmin?: boolean;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -111,6 +114,7 @@ export function AppSettingsPanel({
   const inferredKind = effectiveKind({ ...app, kindOverride: null });
   const [anomalyAlerts, setAnomalyAlerts] = useState(app.anomalyAlerts ?? true);
   const [metadataEndpoint, setMetadataEndpoint] = useState(app.metadataEndpoint ?? true);
+  const [keepRunningOnBattery, setKeepRunningOnBattery] = useState(app.keepRunningOnBattery ?? false);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [deployStrategy, setDeployStrategy] = useState<"blue-green" | "stop-first">(app.deployStrategy ?? "blue-green");
@@ -195,6 +199,9 @@ export function AppSettingsPanel({
       }
       if (fields.anomalyAlerts) body.anomalyAlerts = anomalyAlerts;
       if (fields.metadataEndpoint) body.metadataEndpoint = metadataEndpoint;
+      if (fields.keepRunningOnBattery && instanceAdmin && keepRunningOnBattery !== (app.keepRunningOnBattery ?? false)) {
+        body.keepRunningOnBattery = keepRunningOnBattery;
+      }
       if (fields.autoDeploy) body.autoDeploy = autoDeploy;
       if (fields.githubFeedback) {
         const next = githubFeedback === "inherit" ? null : githubFeedback === "on";
@@ -645,6 +652,26 @@ export function AppSettingsPanel({
               Every service inherits this tier, unless it sets its own in Services.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Keep running on battery */}
+      {fields.keepRunningOnBattery && (
+        <div className="flex items-start gap-3">
+          <Switch
+            id="edit-keep-running-on-battery"
+            className="mt-0.5"
+            checked={keepRunningOnBattery}
+            onCheckedChange={setKeepRunningOnBattery}
+            disabled={!instanceAdmin}
+          />
+          <div className="grid gap-0.5">
+            <Label htmlFor="edit-keep-running-on-battery">Keep running on battery</Label>
+            <p className="text-xs text-muted-foreground">
+              When the host runs on UPS power long enough to stop apps, {isComposeParent ? "this stack keeps" : "this app keeps"} running.
+              {!instanceAdmin && " Only an instance admin can change this."}
+            </p>
+          </div>
         </div>
       )}
 

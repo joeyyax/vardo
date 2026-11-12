@@ -114,8 +114,19 @@ vi.mock("@/lib/backups/run-lease", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
+const { power, skippedMock } = vi.hoisted(() => ({
+  power: { value: { monitored: false, onBattery: false, graceElapsed: false, since: null, charge: null, runtimeSec: null, fresh: false, upses: [] } as Record<string, unknown> },
+  skippedMock: vi.fn(),
+}));
+vi.mock("@/lib/ups/power-state", () => ({ getPowerState: async () => power.value }));
+vi.mock("@/lib/power/settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/power/settings")>();
+  return { ...actual, getPowerPolicies: async () => actual.DEFAULT_POWER_POLICIES };
+});
+vi.mock("@/lib/power/backups", () => ({ recordBackupsSkipped: skippedMock }));
 
 import { tickBackupJobs } from "@/lib/backups/tick";
+import { resetPowerGate } from "@/lib/power/gate";
 import { STALE_RUN_MS } from "@/lib/backups/engine";
 
 /** Would the built predicate select this row? */
@@ -147,6 +158,9 @@ function withExistingBackup(row: Record<string, unknown> | null) {
 }
 
 beforeEach(() => {
+  resetPowerGate();
+  power.value = { monitored: false, onBattery: false, graceElapsed: false, since: null, charge: null, runtimeSec: null, fresh: false, upses: [] };
+  skippedMock.mockReset();
   updates.length = 0;
   backupJobsFindMany.mockReset().mockResolvedValue([
     { id: "job-1", name: "Nightly", schedule: "0 3 * * *", enabled: true },
@@ -176,6 +190,52 @@ describe("tickBackupJobs — before first-run setup", () => {
     withExistingBackup(null);
     await tickBackupJobs();
     expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
+  });
+});
+
+describe("tickBackupJobs — on battery", () => {
+  const outage = new Date(Date.now() - 5 * 60_000);
+  const onBattery = { monitored: true, onBattery: true, graceElapsed: true, since: outage, charge: 70, runtimeSec: 900, fresh: true, upses: [] };
+
+  it("skips a due job and records it instead of running it", async () => {
+    power.value = onBattery;
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).not.toHaveBeenCalled();
+    expect(skippedMock).toHaveBeenCalledWith(["Nightly"], outage.toISOString(), expect.any(Date));
+  });
+
+  it("reports a skipped nightly job done, so its run doesn't wait for it", async () => {
+    power.value = onBattery;
+    nightly.value = new Map([["job-1", "run-1"]]);
+    withExistingBackup(null);
+    await tickBackupJobs();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(runBackupMock).not.toHaveBeenCalled();
+    expect(leases.events).toContain("done run-1:job-1");
+  });
+
+  it("runs on battery inside the grace period", async () => {
+    power.value = { ...onBattery, graceElapsed: false };
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
+    expect(skippedMock).not.toHaveBeenCalled();
+  });
+
+  it("runs on mains", async () => {
+    power.value = { ...onBattery, onBattery: false, graceElapsed: false, since: null };
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
+  });
+
+  it("runs when the UPS readings are stale", async () => {
+    power.value = { ...onBattery, fresh: false };
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
+    expect(skippedMock).not.toHaveBeenCalled();
   });
 });
 

@@ -500,7 +500,7 @@ describe.skipIf(!conn)("deploy executor on Postgres", { timeout: MIGRATE_TIMEOUT
       expect((await row(id)).status).toBe("queued");
 
       expect(await q.releaseHeldDeploy(id)).toBe(true);
-      expect(await row(id)).toMatchObject({ scope_key: "a1", request: null });
+      expect(await row(id)).toMatchObject({ scope_key: "a1", request: { powerOverride: true } });
       expect(await claimAll()).toEqual([id]);
 
       const { id: abandoned } = await q.enqueueDeploy({ appId: "a2", trigger: "api" }, { hold: true });

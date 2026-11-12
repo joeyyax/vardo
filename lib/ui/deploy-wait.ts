@@ -36,7 +36,7 @@ function streamIdAfter(a: string, b: string): boolean {
   return am !== bm ? am > bm : as > bs;
 }
 
-const REASONS = new Set<string>(["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive"]);
+const REASONS = new Set<string>(["app", "deploy-slot", "build-slot", "checkout", "worker", "exclusive", "power"]);
 
 /** Whether a value is a wait reason the UI knows. */
 function isWaitReason(value: unknown): value is WaitReason {
@@ -184,7 +184,7 @@ export type DeployView = {
   line?: string;
   /** The row label on a phone: the place in line without the estimate. */
   short: string;
-  /** Mark color: amber only when no worker is running. */
+  /** Mark color: amber when no worker is running or the host is on battery. */
   tone: "neutral" | "warn" | "info";
   /** Why a plain Queued is queued. */
   why?: string;
@@ -192,6 +192,8 @@ export type DeployView = {
   held?: "queued" | "clone" | "build";
   /** Waiting behind others in the deploy or build line, so an admin can start it next. */
   startNext?: boolean;
+  /** Held while the host is on battery, so an admin can deploy it anyway. */
+  powerHold?: boolean;
 };
 
 const WHY: Partial<Record<WaitReason, string>> = {
@@ -199,6 +201,7 @@ const WHY: Partial<Record<WaitReason, string>> = {
   exclusive: "Vardo is updating",
   app: "This app is already deploying",
   checkout: "Another deploy of this app is using its checkout",
+  power: "The host is on battery. Deploys start when power is back",
 };
 
 /** A queued row in an app's deploy list: its slot line when it has one, else its place among the app's queued deploys. */
@@ -231,6 +234,7 @@ export function deployView({
     if (reason === "deploy-slot") {
       return { word: "Queued", label: lineLabel("deploy", wait!, now), short: lineLabel("deploy", { ahead: wait!.ahead }, null), tone: "neutral", held: "queued", startNext: behind };
     }
+    if (reason === "power") return { word: "Queued", label: "Held on battery", short: "Held on battery", tone: "warn", why: WHY.power, held: "queued", powerHold: true };
     return { word: "Queued", label: "Queued", short: "Queued", tone: reason === "worker" ? "warn" : "neutral", why: reason ? WHY[reason] : undefined, held: "queued" };
   }
   if (!started) return { word: "Starting", label: "Starting", short: "Starting", tone: "info" };

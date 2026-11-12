@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { apps, projects, RESOURCE_PROFILES, SERVICE_KINDS } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -85,6 +86,8 @@ const updateAppSchema = z.object({
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   anomalyAlerts: z.boolean().optional(),
   metadataEndpoint: z.boolean().optional(),
+  // Instance admins only.
+  keepRunningOnBattery: z.boolean().optional(),
   // Null follows the org default.
   githubFeedback: z.boolean().nullable().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
@@ -142,6 +145,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         { error: "Only owners and admins can enable GPU passthrough" },
         { status: 403 }
       );
+    }
+
+    if (parsed.data.keepRunningOnBattery !== undefined && !(await isAppAdmin())) {
+      return NextResponse.json({ error: "Only instance admins can exempt an app from the UPS stop policy" }, { status: 403 });
     }
 
     if (parsed.data.certServices !== undefined && !can(org.membership, "app.certs")) {
