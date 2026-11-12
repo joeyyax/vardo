@@ -1,0 +1,1 @@
+ALTER TABLE "ups_servers" ALTER COLUMN "on_battery_grace_sec" SET DEFAULT 60;

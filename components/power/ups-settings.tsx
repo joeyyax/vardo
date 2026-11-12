@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/lib/messenger";
 import type { ProbeResult } from "@/lib/ups/probe";
+import { DEFAULT_ON_BATTERY_GRACE_SEC } from "@/lib/ups/status";
 import { HEALTH_LABEL, HEALTH_TONE, fetchUpsServers, formatRuntime, type UpsServerView } from "./ups-format";
 
 type FormState = {
@@ -30,7 +31,7 @@ type FormState = {
   graceSec: string;
 };
 
-const EMPTY_FORM: FormState = { name: "", host: "", port: "3493", upsName: "", username: "", password: "", tls: false, enabled: true, graceSec: "30" };
+const EMPTY_FORM: FormState = { name: "", host: "", port: "3493", upsName: "", username: "", password: "", tls: false, enabled: true, graceSec: String(DEFAULT_ON_BATTERY_GRACE_SEC) };
 
 function toForm(s: UpsServerView): FormState {
   return { name: s.name, host: s.host, port: String(s.port), upsName: s.upsName, username: s.username ?? "", password: "", tls: s.tls, enabled: s.enabled, graceSec: String(s.onBatteryGraceSec) };
@@ -253,7 +254,7 @@ function UpsDialog({ server, onClose, onSaved }: { server: UpsServerView | null;
         name: form.name.trim() || form.upsName.trim(),
         upsName: form.upsName.trim(),
         enabled: form.enabled,
-        onBatteryGraceSec: form.graceSec.trim() === "" ? 30 : Number(form.graceSec),
+        onBatteryGraceSec: form.graceSec.trim() === "" ? DEFAULT_ON_BATTERY_GRACE_SEC : Number(form.graceSec),
       };
       const res = await fetch(server ? `/api/v1/admin/ups/${server.id}` : "/api/v1/admin/ups", {
         method: server ? "PATCH" : "POST",

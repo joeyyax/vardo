@@ -59,7 +59,7 @@ export const UPS_POLL_INTERVAL_MS = 15_000;
 /** Failed polls in a row before contact counts as lost. */
 export const LOST_CONTACT_POLLS = 4;
 
-export const DEFAULT_ON_BATTERY_GRACE_SEC = 30;
+export const DEFAULT_ON_BATTERY_GRACE_SEC = 60;
 
 /** On battery for at least the grace period. */
 export function graceElapsed(onBatterySince: string | null, graceSec: number, now: Date): boolean {
