@@ -5,6 +5,9 @@ Vardo hands builds a BuildKit secret that a Dockerfile can mount. It never becom
 | Secret id | Value | When |
 | --- | --- | --- |
 | `npm_token` | The GitHub App token that cloned the repo | The repo is on github.com and cloned through a linked GitHub App installation |
+| Any org secret | What an org admin set | Always |
+
+An org secret beats the GitHub App token of the same id. An org `npm_token` holding a classic token with `read:packages` replaces the App token on every build in the org. Delete it and builds fall back to the App token.
 
 Dockerfile apps and git-sourced compose apps get it on every service they build. Railpack and Nixpacks builds don't.
 
@@ -31,7 +34,17 @@ RUN --mount=type=secret,id=npm_token \
     NODE_AUTH_TOKEN="$(cat /run/secrets/npm_token)" pnpm install --frozen-lockfile
 ```
 
-The token must be able to read the packages. GitHub Packages accepts only a personal access token (classic) with `read:packages` or Actions' `GITHUB_TOKEN`, so check that the App's token is accepted before relying on it.
+The token must be able to read the packages. GitHub Packages accepts only a personal access token (classic) with `read:packages` or Actions' `GITHUB_TOKEN`, so set an org `npm_token` unless the App's token is accepted.
+
+## Org build secrets
+
+Owners and admins set them. Values are encrypted at rest and write-only: nothing returns them, and the activity log records only "set build secret npm_token". They apply from the next deploy.
+
+- **Console:** **Organization settings → Variables → Build secrets**.
+- **API:** `PUT /api/v1/organizations/{orgId}/build-secrets/{name}` with `{"value": "..."}`, `DELETE` on the same path and `GET /api/v1/organizations/{orgId}/build-secrets` for names.
+- **MCP:** `vardo_set_build_secret` (omit `value` to delete) and `vardo_list_build_secrets`.
+
+A name is lowercase letters, digits and underscores, starting with a letter. The deploy log names each secret and its source, such as `npm_token (org secret)`.
 
 ## Behavior
 
