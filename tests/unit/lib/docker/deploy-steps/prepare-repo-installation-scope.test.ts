@@ -3,10 +3,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
-const { cloneEnvs, linked, getInstallationToken } = vi.hoisted(() => ({
+const { cloneEnvs, linked, getInstallationToken, getBuildToken } = vi.hoisted(() => ({
   cloneEnvs: [] as Record<string, string | undefined>[],
   linked: new Map<string, { installationId: number; accountLogin: string }[]>(),
   getInstallationToken: vi.fn(async (id: number) => `tok-${id}`),
+  getBuildToken: vi.fn(async (id: number) => `build-${id}`),
 }));
 
 vi.mock("ioredis", async () => (await import("@/tests/helpers/mocks")).ioredisModule());
@@ -51,6 +52,7 @@ vi.mock("@/lib/config/host-config", () => ({
 }));
 vi.mock("@/lib/git-integration/app", () => ({
   getInstallationToken,
+  getBuildToken,
   // The vardo-gh installation covers acme/private-site.
   getRepoInstallationId: vi.fn(async () => 2),
 }));
@@ -209,6 +211,23 @@ describe("prepareRepo clone installation scope", () => {
 
     expect(getInstallationToken).toHaveBeenCalledWith(2);
     expect(cloneEnvs[0].GIT_CONFIG_VALUE_0).toBeDefined();
+  });
+
+  it("hands the build a read-only token from the installation that cloned", async () => {
+    const ctx = ctxFor("org-vardo");
+    await prepareRepo(ctx).catch(() => {});
+
+    expect(getBuildToken).toHaveBeenCalledWith(2);
+    expect(ctx.buildSecrets).toEqual({ npm_token: "build-2" });
+  });
+
+  it("deploys without npm_token when the build token can't be minted", async () => {
+    getBuildToken.mockRejectedValueOnce(new Error("422"));
+    const ctx = ctxFor("org-vardo");
+    await prepareRepo(ctx).catch(() => {});
+
+    expect(cloneEnvs[0].GIT_CONFIG_VALUE_0).toBeDefined();
+    expect(ctx.buildSecrets).toEqual({});
   });
 
   it("refuses another org's installation and says how to link one", async () => {

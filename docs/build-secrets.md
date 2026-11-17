@@ -4,7 +4,7 @@ Vardo hands builds a BuildKit secret that a Dockerfile can mount. It never becom
 
 | Secret id | Value | When |
 | --- | --- | --- |
-| `npm_token` | The GitHub App token that cloned the repo | The repo is on github.com and cloned through a linked GitHub App installation |
+| `npm_token` | A `contents: read` token from the GitHub App installation that cloned the repo, valid for at least 40 minutes | The repo is on github.com and cloned through a linked GitHub App installation |
 | Any org secret | What an org admin set | Always |
 
 An org secret beats the GitHub App token of the same id. An org `npm_token` holding a classic token with `read:packages` replaces the App token on every build in the org. Delete it and builds fall back to the App token.

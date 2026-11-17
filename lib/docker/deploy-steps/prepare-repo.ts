@@ -29,7 +29,7 @@ import { appRootDir, repoFilePath } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
-import { getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
+import { getBuildToken, getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
 import { credentialGitEnv, githubTokenGitEnv, parseGithubRepo, resolveCloneToken } from "@/lib/git-integration/clone-auth";
 import { splitGitUrl } from "@/lib/api/git-fields";
 import { openGitCredentials } from "@/lib/api/git-credentials";
@@ -633,14 +633,18 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
     let tokenAuth = false;
-    let appToken: string | null = null;
+    let appInstallationId: number | null = null;
 
     // GitHub App token for github.com URLs without their own credentials.
     if (!credentials && cloneUrl.startsWith("https://github.com/")) {
       try {
         const installations = await orgInstallations(ctx.organizationId);
         const installToken = await resolveCloneToken(cloneUrl, installations, {
-          getToken: getInstallationToken,
+          getToken: async (id) => {
+            const token = await getInstallationToken(id);
+            appInstallationId = id;
+            return token;
+          },
           getRepoInstallationId,
           log,
         });
@@ -649,7 +653,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           // An env header, so the token never lands in .git/config inside the build context.
           Object.assign(gitEnv, githubTokenGitEnv(installToken));
           tokenAuth = true;
-          appToken = installToken;
         }
       } catch (err) {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
@@ -686,6 +689,14 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       tokenAuth = true;
     }
 
+    let appToken: string | null = null;
+    if (appInstallationId !== null) {
+      try {
+        appToken = await getBuildToken(appInstallationId);
+      } catch (err) {
+        log(`[deploy] Warning: no GitHub App token for build secrets: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     await loadBuildSecrets(ctx, appToken);
 
     const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
