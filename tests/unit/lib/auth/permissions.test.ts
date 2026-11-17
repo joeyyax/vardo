@@ -16,6 +16,7 @@ const ADMIN_ONLY: Capability[] = [
   "app.delete",
   "app.volumes.sync",
   "env.reveal",
+  "org.buildSecrets.manage",
   "backup.restore",
   "backup.download",
   "backup.delete",

@@ -47,6 +47,7 @@ import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
 import { composeBuild } from "../compose-build";
+import { undeclaredSecrets } from "../build-secrets";
 import { buildKitContainerName, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { runningExcept } from "@/lib/deploy/queue";
 import { beforeSwap } from "@/lib/deploy/swap-gate";
@@ -530,6 +531,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           targets: await configuredTargets(),
           deploySlot: ctx.deploySlot,
           placement: ctx.placement,
+          secrets: undeclaredSecrets(ctx.buildSecrets, compose.secrets),
         }).catch((err: unknown) => {
           ctx.timer.range("build", admitted(), Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);

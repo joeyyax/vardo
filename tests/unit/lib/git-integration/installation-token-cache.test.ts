@@ -8,7 +8,7 @@ vi.mock("@octokit/rest", () => ({
   },
 }));
 
-const { getInstallationToken } = await import("@/lib/git-integration/app");
+const { getBuildToken, getInstallationToken } = await import("@/lib/git-integration/app");
 
 describe("getInstallationToken", () => {
   afterEach(() => vi.useRealTimers());
@@ -29,5 +29,23 @@ describe("getInstallationToken", () => {
   it("keeps installations apart", async () => {
     create.mockResolvedValueOnce({ data: { token: "x", expires_at: new Date(Date.now() + 3600_000).toISOString() } });
     expect(await getInstallationToken(8)).toBe("x");
+  });
+});
+
+describe("getBuildToken", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("asks for contents:read only and keeps 40 minutes in hand", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-01-01T00:00:00Z"), toFake: ["Date"] });
+    create.mockReset();
+    create.mockResolvedValueOnce({ data: { token: "r1", expires_at: "2026-01-01T01:00:00Z" } });
+    create.mockResolvedValueOnce({ data: { token: "r2", expires_at: "2026-01-01T01:30:00Z" } });
+
+    expect(await getBuildToken(9)).toBe("r1");
+    expect(create).toHaveBeenCalledWith({ installation_id: 9, permissions: { contents: "read" } });
+    vi.setSystemTime(Date.parse("2026-01-01T00:19:00Z"));
+    expect(await getBuildToken(9)).toBe("r1");
+    vi.setSystemTime(Date.parse("2026-01-01T00:21:00Z"));
+    expect(await getBuildToken(9)).toBe("r2");
   });
 });

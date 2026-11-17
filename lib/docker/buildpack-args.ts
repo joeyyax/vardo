@@ -1,6 +1,7 @@
 // Railpack 0.35 and Nixpacks 1.41 CLI arguments. Both take --build-cmd and --start-cmd on build and plan.
 
 import { BUILD_KEY_LABEL, GIT_SHA_ARG } from "./build-key";
+import { buildSecretArgs, type BuildSecrets } from "./build-secrets";
 
 export type BuildpackEngine = "railpack" | "nixpacks";
 
@@ -88,6 +89,8 @@ export function dockerfileBuildArgs(opts: {
   buildKey?: string;
   gitSha?: string;
   labels?: Record<string, string>;
+  /** Passed as `--secret` specs naming env vars; the values stay out of argv. */
+  secrets?: BuildSecrets;
 }): string[] {
   const args = ["build", ...opts.loadArgs, "--progress=plain", "-t", opts.imageName, "-f", opts.dockerfile];
   if (opts.noCache) args.push("--no-cache");
@@ -95,6 +98,7 @@ export function dockerfileBuildArgs(opts: {
   for (const [k, v] of Object.entries(opts.labels ?? {})) args.push("--label", `${k}=${v}`);
   for (const [k, v] of Object.entries(opts.envVars)) args.push("--build-arg", `${k}=${v}`);
   if (opts.gitSha && !(GIT_SHA_ARG in opts.envVars)) args.push("--build-arg", `${GIT_SHA_ARG}=${opts.gitSha}`);
+  args.push(...buildSecretArgs(opts.secrets));
   args.push(opts.context);
   return args;
 }

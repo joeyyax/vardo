@@ -10,6 +10,7 @@ import type { RollbackTarget } from "./rollback-target";
 import type { StageTimer } from "./stage-timings";
 import type { BuildPlacementRecorder } from "./build-placement";
 import type { BuildCacheMode, RebuildMode } from "./build-key";
+import type { BuildSecrets } from "./build-secrets";
 import type { DeployStrategy } from "./deploy-strategy";
 import type { DeploySlot } from "./build-gate";
 
@@ -186,6 +187,8 @@ export type DeployContext = {
   buildSourceDir?: string;
   /** The build tree carries .git because a Dockerfile reads it. */
   buildSourceHasGit?: boolean;
+  /** BuildKit secrets for this deploy's builds, by id. Never persisted or logged. */
+  buildSecrets?: BuildSecrets;
 
   /** Rebuild even when an image with this build key exists; "no-cache" also skips the layer cache. */
   rebuild?: RebuildMode;

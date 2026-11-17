@@ -95,4 +95,16 @@ describe("dockerfileBuildArgs", () => {
     expect(args).toContain("--no-cache");
     expect(args.filter((a) => a.startsWith("VARDO_GIT_SHA="))).toEqual(["VARDO_GIT_SHA=mine"]);
   });
+
+  it("passes build secrets as --secret specs that name an env var, never the value", () => {
+    const args = dockerfileBuildArgs({ ...opts, secrets: { npm_token: "ghs_s3cret" } });
+    expect(args.slice(-3)).toEqual(["--secret", "id=npm_token,env=VARDO_BUILD_SECRET_NPM_TOKEN", "/src"]);
+    expect(args.join(" ")).not.toContain("ghs_s3cret");
+    expect(args.filter((a, i) => args[i - 1] === "--build-arg")).toEqual(["A=1"]);
+  });
+
+  it("adds no --secret without a secret", () => {
+    expect(dockerfileBuildArgs({ ...opts, secrets: {} })).toEqual(dockerfileBuildArgs(opts));
+    expect(dockerfileBuildArgs(opts)).not.toContain("--secret");
+  });
 });

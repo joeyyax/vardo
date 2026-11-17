@@ -66,6 +66,8 @@ export const CAPABILITIES = {
   // Plaintext secrets.
   "env.reveal": ADMINS,
   "env.write": MEMBERS,
+  // Write-only org build secrets.
+  "org.buildSecrets.manage": ADMINS,
 
   // Backups
   "backup.view": MEMBERS,

@@ -104,6 +104,8 @@ const PHRASES: Record<string, Phrase> = {
   "github_installation.permissions_approved": { text: "confirmed GitHub permissions approved", standalone: true },
 
   "org.env_revealed": { text: "revealed organization env vars", standalone: true },
+  "build_secret.set": { text: "set build secret" },
+  "build_secret.deleted": { text: "removed build secret" },
   "org.trusted_changed": {
     text: "changed organization trust settings",
     standalone: true,

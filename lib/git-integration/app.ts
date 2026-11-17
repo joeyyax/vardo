@@ -49,6 +49,23 @@ export async function getInstallationToken(installationId: number): Promise<stri
   return data.token;
 }
 
+// A build may queue for the builder after the token is minted.
+const BUILD_TOKEN_MIN_LEFT_MS = 40 * 60_000;
+const buildTokenCache = new Map<number, { token: string; expiresAt: number }>();
+
+/** A contents:read token for a build's npm_token secret, valid for at least 40 more minutes. */
+export async function getBuildToken(installationId: number): Promise<string> {
+  const cached = buildTokenCache.get(installationId);
+  if (cached && cached.expiresAt - BUILD_TOKEN_MIN_LEFT_MS > Date.now()) return cached.token;
+  const octokit = await getAppOctokit();
+  const { data } = await octokit.rest.apps.createInstallationAccessToken({
+    installation_id: installationId,
+    permissions: { contents: "read" },
+  });
+  buildTokenCache.set(installationId, { token: data.token, expiresAt: Date.parse(data.expires_at) });
+  return data.token;
+}
+
 export async function listInstallationRepos(installationId: number) {
   const octokit = await getInstallationOctokit(installationId);
   const repos: Array<{

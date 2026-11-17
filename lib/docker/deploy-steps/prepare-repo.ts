@@ -29,7 +29,7 @@ import { appRootDir, repoFilePath } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
-import { getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
+import { getBuildToken, getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
 import { credentialGitEnv, githubTokenGitEnv, parseGithubRepo, resolveCloneToken } from "@/lib/git-integration/clone-auth";
 import { splitGitUrl } from "@/lib/api/git-fields";
 import { openGitCredentials } from "@/lib/api/git-credentials";
@@ -59,6 +59,8 @@ import { buildVars } from "../deploy-vars";
 import { withoutUndeclaredBuildVars } from "../compose-build-reuse";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
+import { buildSecretEnv, type BuildSecrets } from "../build-secrets";
+import { loadBuildSecrets } from "@/lib/build-secrets/deploy";
 import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom, heldNotes, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
@@ -417,6 +419,8 @@ type RepoBuild = {
   /** The app's name, and the commit when gitSha isn't passed as a build arg, for the provenance a build on a target records. */
   appName?: string;
   revision?: string;
+  /** BuildKit secrets for Dockerfile builds. */
+  secrets?: BuildSecrets;
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -496,8 +500,10 @@ async function dockerBuild(
     noCache: build.noCache,
     buildKey: build.buildKey,
     gitSha: build.gitSha,
+    secrets: build.secrets,
   };
   const args = dockerfileBuildArgs(argsInput);
+  const secretEnv = buildSecretEnv(build.secrets);
   const remote = build.remote;
   let ran: BoundedBuild = bounded;
   try {
@@ -505,7 +511,7 @@ async function dockerBuild(
       if (!target || !remote) {
         ran = bounded;
         for (const line of heldNotes(bounded)) logs.push(line);
-        return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
+        return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env, ...secretEnv }, signal }, logs, "[build][docker]", build.capture);
       }
       await onTarget(target, async (session) => {
         const there = remoteEnv(authEnv, session);
@@ -514,7 +520,7 @@ async function dockerBuild(
           ran = targetBuild;
           const labels = await buildProvenance(build.appName, build.revision ?? build.gitSha);
           const run = (loadArgs: string[], tag = argsInput.imageName) =>
-            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs, labels }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs, labels }), { cwd: repoPath, env: { ...there, ...targetBuild.env, ...secretEnv }, signal }, logs, "[build][docker]", build.capture);
           const image = { image: build.imageName, ref: remote.ref };
           if (!compression) {
             await run(targetBuild.loadArgs);
@@ -627,13 +633,18 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
     let tokenAuth = false;
+    let appInstallationId: number | null = null;
 
     // GitHub App token for github.com URLs without their own credentials.
     if (!credentials && cloneUrl.startsWith("https://github.com/")) {
       try {
         const installations = await orgInstallations(ctx.organizationId);
         const installToken = await resolveCloneToken(cloneUrl, installations, {
-          getToken: getInstallationToken,
+          getToken: async (id) => {
+            const token = await getInstallationToken(id);
+            appInstallationId = id;
+            return token;
+          },
           getRepoInstallationId,
           log,
         });
@@ -677,6 +688,16 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       Object.assign(gitEnv, credentialGitEnv(cloneUrl, credentials));
       tokenAuth = true;
     }
+
+    let appToken: string | null = null;
+    if (appInstallationId !== null) {
+      try {
+        appToken = await getBuildToken(appInstallationId);
+      } catch (err) {
+        log(`[deploy] Warning: no GitHub App token for build secrets: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    await loadBuildSecrets(ctx, appToken);
 
     const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
 
@@ -951,6 +972,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           capture,
           remote: targets.length > 0 ? { targets, ref: registry && key ? registry.ref(app.name, key) : null } : null,
           appName: app.name,
+          secrets: ctx.buildSecrets,
         }));
         try {
           await run();

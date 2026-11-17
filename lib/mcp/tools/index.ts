@@ -19,6 +19,7 @@ import { registerGetAppConfig } from "./get-app-config";
 import { registerUpdateApp } from "./update-app";
 import { registerGetEnvVars } from "./get-env-vars";
 import { registerSetEnvVars } from "./set-env-vars";
+import { registerBuildSecretTools } from "./build-secrets";
 import { registerRestartApp } from "./restart-app";
 import { registerStopApp } from "./stop-app";
 import { registerRollbackApp } from "./rollback-app";
@@ -66,6 +67,7 @@ export function registerAllTools(
   registerUpdateApp(server, context);
   registerGetEnvVars(server, context);
   registerSetEnvVars(server, context);
+  registerBuildSecretTools(server, context);
   registerRestartApp(server, context);
   registerStopApp(server, context);
   registerRollbackApp(server, context);

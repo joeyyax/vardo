@@ -49,3 +49,5 @@ Builds get only `VARDO_GIT_SHA` and `VARDO_GIT_BRANCH`, unless the app's variabl
 - **Railpack** and **Nixpacks**: as build env, like the app's variables. Both are in the build key.
 
 The other variables change every deploy, so they never reach a build and never bust the cache or image reuse. See [Build cache](build-cache.md).
+
+Credentials such as the GitHub token reach builds as BuildKit secrets, not variables. See [Build secrets](build-secrets.md).

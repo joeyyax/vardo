@@ -8,6 +8,7 @@ import { listBackupAppOptions } from "@/lib/app-services/backups";
 import { listProjectOptions } from "@/lib/app-services/projects";
 import { loadInvitationsTab, loadTeamTab } from "@/lib/app-services/team";
 import { OrgEnvVarsEditor } from "../org-env-vars";
+import { OrgBuildSecrets } from "../org-build-secrets";
 import { OrgDomainEditor } from "../org-domain-editor";
 import { NotificationChannelsEditor } from "../notification-channels";
 import { DigestSettingsEditor } from "../digest-settings";
@@ -73,7 +74,12 @@ export default async function OrgSettingsTabPage({
     }
 
     case "variables":
-      return <OrgEnvVarsEditor orgId={orgId} />;
+      return (
+        <div className="space-y-4">
+          <OrgEnvVarsEditor orgId={orgId} />
+          <OrgBuildSecrets orgId={orgId} />
+        </div>
+      );
 
     case "domains": {
       const settings = await pageData(loadOrgDomainSettings(actor));

@@ -263,6 +263,64 @@ describe("composeBuild", () => {
   });
 });
 
+describe("composeBuild with build secrets", () => {
+  const TOKEN = "ghs_s3cret";
+  const secrets = { npm_token: TOKEN };
+  const leaks = (c: (typeof calls)[number]) => c.args.join(" ").includes(TOKEN);
+
+  it("adds the secret to every bake target and hands its value to bake through env", async () => {
+    await composeBuild(options({ secrets }));
+    const bake = bakeCall()!;
+    expect(bake.env?.VARDO_BUILD_SECRET_NPM_TOKEN).toBe(TOKEN);
+    const file = JSON.parse(await readFile(join(root, "slot", "vardo-bake.json"), "utf-8"));
+    expect(file.target.web.secret).toEqual(["id=npm_token,env=VARDO_BUILD_SECRET_NPM_TOKEN"]);
+    expect(file.target.api.secret).toEqual(["id=npm_token,env=VARDO_BUILD_SECRET_NPM_TOKEN"]);
+  });
+
+  it("keeps the value out of argv, files on disk and the build keys", async () => {
+    await composeBuild(options({ secrets }));
+    expect(calls.some(leaks)).toBe(false);
+    for (const name of ["vardo-bake.json", "vardo-build-keys.yml"]) {
+      expect(await readFile(join(root, "slot", name), "utf-8")).not.toContain(TOKEN);
+    }
+    // Only the build itself gets the value, so the reuse lookup and print can't vary with it.
+    expect(calls.filter((c) => c.env?.VARDO_BUILD_SECRET_NPM_TOKEN).map((c) => c.args[1])).toEqual(["bake"]);
+  });
+
+  it("keys the build the same with or without the secret", async () => {
+    await composeBuild(options());
+    const without = await readFile(join(root, "slot", "vardo-build-keys.yml"), "utf-8");
+    calls = [];
+    await composeBuild(options({ secrets }));
+    expect(await readFile(join(root, "slot", "vardo-build-keys.yml"), "utf-8")).toBe(without);
+  });
+
+  it("grants the secret through a compose file when compose builds without bake", async () => {
+    answers.print = null;
+    await composeBuild(options({ secrets }));
+    const build = composeBuildCall()!;
+    const file = join(root, "slot", "vardo-build-secrets.yml");
+    expect(build.args).toEqual(expect.arrayContaining(["-f", file]));
+    expect(build.env?.VARDO_BUILD_SECRET_NPM_TOKEN).toBe(TOKEN);
+    const yaml = await readFile(file, "utf-8");
+    expect(yaml).toMatch(/web:\n\s+build:\n\s+secrets:\n\s+- npm_token/);
+    expect(yaml).toContain("environment: VARDO_BUILD_SECRET_NPM_TOKEN");
+    expect(yaml).not.toContain(TOKEN);
+    expect(calls.some(leaks)).toBe(false);
+  });
+
+  it("builds exactly as before without a secret", async () => {
+    await composeBuild(options());
+    const before = calls.map((c) => c.args);
+    const bakeFile = await readFile(join(root, "slot", "vardo-bake.json"), "utf-8");
+    calls = [];
+    await composeBuild(options({ secrets: {} }));
+    expect(calls.map((c) => c.args)).toEqual(before);
+    expect(await readFile(join(root, "slot", "vardo-bake.json"), "utf-8")).toBe(bakeFile);
+    expect(bakeCall()!.env?.VARDO_BUILD_SECRET_NPM_TOKEN).toBeUndefined();
+  });
+});
+
 describe("bakeUsesSecrets", () => {
   it("spots a target with secrets", () => {
     expect(bakeUsesSecrets({ target: { a: {}, b: { secret: ["id=x"] } } })).toBe(true);

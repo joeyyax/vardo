@@ -81,6 +81,23 @@ export const orgEnvVars = pgTable(
   (t) => [unique("org_env_var_org_key_uniq").on(t.organizationId, t.key)]
 );
 
+// BuildKit secrets for an org's builds, by secret id. Values are write-only.
+
+export const orgBuildSecrets = pgTable(
+  "org_build_secret",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    value: text("value").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [unique("org_build_secret_org_name_uniq").on(t.organizationId, t.name)]
+);
+
 export const orgDomains = pgTable(
   "org_domain",
   {
