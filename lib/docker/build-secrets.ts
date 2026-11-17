@@ -8,7 +8,28 @@ export const NPM_TOKEN_SECRET = "npm_token";
 /** Secret id to value. */
 export type BuildSecrets = Record<string, string>;
 
-const SECRET_ID = /^[a-z][a-z0-9_]*$/;
+/** Safe in a `--secret` spec, a compose key and an env var name. */
+export const BUILD_SECRET_ID = /^[a-z][a-z0-9_]*$/;
+
+export type BuildSecretSource = "organization" | "github-app";
+
+/** The deploy's secrets and where each came from. An org secret beats the GitHub App token of the same id. */
+export function resolveBuildSecrets(
+  githubToken: string | null | undefined,
+  org: BuildSecrets,
+): { secrets: BuildSecrets; sources: Record<string, BuildSecretSource> } {
+  const secrets: BuildSecrets = {};
+  const sources: Record<string, BuildSecretSource> = {};
+  if (githubToken) {
+    secrets[NPM_TOKEN_SECRET] = githubToken;
+    sources[NPM_TOKEN_SECRET] = "github-app";
+  }
+  for (const [id, value] of usable(org)) {
+    secrets[id] = value;
+    sources[id] = "organization";
+  }
+  return { secrets, sources };
+}
 
 /** Env var the docker CLI reads a secret from. */
 export function secretEnvName(id: string): string {
@@ -17,7 +38,7 @@ export function secretEnvName(id: string): string {
 
 function usable(secrets?: BuildSecrets | null): [string, string][] {
   return Object.entries(secrets ?? {})
-    .filter(([id, value]) => SECRET_ID.test(id) && Boolean(value))
+    .filter(([id, value]) => BUILD_SECRET_ID.test(id) && Boolean(value))
     .sort(([a], [b]) => a.localeCompare(b));
 }
 

@@ -59,7 +59,8 @@ import { buildVars } from "../deploy-vars";
 import { withoutUndeclaredBuildVars } from "../compose-build-reuse";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
-import { NPM_TOKEN_SECRET, buildSecretEnv, type BuildSecrets } from "../build-secrets";
+import { buildSecretEnv, type BuildSecrets } from "../build-secrets";
+import { loadBuildSecrets } from "@/lib/build-secrets/deploy";
 import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom, heldNotes, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
@@ -632,6 +633,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
     let tokenAuth = false;
+    let appToken: string | null = null;
 
     // GitHub App token for github.com URLs without their own credentials.
     if (!credentials && cloneUrl.startsWith("https://github.com/")) {
@@ -647,9 +649,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           // An env header, so the token never lands in .git/config inside the build context.
           Object.assign(gitEnv, githubTokenGitEnv(installToken));
           tokenAuth = true;
-          ctx.addSecrets?.({ GITHUB_TOKEN: installToken });
-          ctx.buildSecrets = { ...ctx.buildSecrets, [NPM_TOKEN_SECRET]: installToken };
-          log(`[deploy] Builds can mount the GitHub token as secret ${NPM_TOKEN_SECRET}`);
+          appToken = installToken;
         }
       } catch (err) {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
@@ -685,6 +685,8 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       Object.assign(gitEnv, credentialGitEnv(cloneUrl, credentials));
       tokenAuth = true;
     }
+
+    await loadBuildSecrets(ctx, appToken);
 
     const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
 

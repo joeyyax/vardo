@@ -5,6 +5,7 @@ import {
   buildSecretArgs,
   buildSecretEnv,
   composeSecretsYaml,
+  resolveBuildSecrets,
   undeclaredSecrets,
   withBakeSecrets,
 } from "@/lib/docker/build-secrets";
@@ -52,5 +53,14 @@ describe("build secrets", () => {
     expect(undeclaredSecrets(secrets, { npm_token: { file: "./t" } })).toEqual({ other: "x" });
     expect(undeclaredSecrets(secrets, undefined)).toEqual(secrets);
     expect(undeclaredSecrets(undefined, {})).toEqual({});
+  });
+
+  it("lets an org secret beat the GitHub App token of the same id", () => {
+    expect(resolveBuildSecrets("ghs_app", { npm_token: "ghp_pat" })).toEqual({
+      secrets: { npm_token: "ghp_pat" },
+      sources: { npm_token: "organization" },
+    });
+    expect(resolveBuildSecrets("ghs_app", {})).toEqual({ secrets: { npm_token: "ghs_app" }, sources: { npm_token: "github-app" } });
+    expect(resolveBuildSecrets(null, {})).toEqual({ secrets: {}, sources: {} });
   });
 });
