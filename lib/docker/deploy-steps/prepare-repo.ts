@@ -59,6 +59,7 @@ import { buildVars } from "../deploy-vars";
 import { withoutUndeclaredBuildVars } from "../compose-build-reuse";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type BuildPlanRecord, type ProviderMarker } from "../build-plan";
 import { buildKey, findReusableImage } from "../build-key";
+import { NPM_TOKEN_SECRET, buildSecretEnv, type BuildSecrets } from "../build-secrets";
 import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom, heldNotes, type BoundedBuild } from "../build-memory";
 import { withBuildSlot, type BuildGate } from "../build-gate";
@@ -417,6 +418,8 @@ type RepoBuild = {
   /** The app's name, and the commit when gitSha isn't passed as a build arg, for the provenance a build on a target records. */
   appName?: string;
   revision?: string;
+  /** BuildKit secrets for Dockerfile builds. */
+  secrets?: BuildSecrets;
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -496,8 +499,10 @@ async function dockerBuild(
     noCache: build.noCache,
     buildKey: build.buildKey,
     gitSha: build.gitSha,
+    secrets: build.secrets,
   };
   const args = dockerfileBuildArgs(argsInput);
+  const secretEnv = buildSecretEnv(build.secrets);
   const remote = build.remote;
   let ran: BoundedBuild = bounded;
   try {
@@ -505,7 +510,7 @@ async function dockerBuild(
       if (!target || !remote) {
         ran = bounded;
         for (const line of heldNotes(bounded)) logs.push(line);
-        return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
+        return spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env, ...secretEnv }, signal }, logs, "[build][docker]", build.capture);
       }
       await onTarget(target, async (session) => {
         const there = remoteEnv(authEnv, session);
@@ -514,7 +519,7 @@ async function dockerBuild(
           ran = targetBuild;
           const labels = await buildProvenance(build.appName, build.revision ?? build.gitSha);
           const run = (loadArgs: string[], tag = argsInput.imageName) =>
-            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs, labels }), { cwd: repoPath, env: { ...there, ...targetBuild.env }, signal }, logs, "[build][docker]", build.capture);
+            spawnStream("docker", dockerfileBuildArgs({ ...argsInput, imageName: tag, loadArgs, labels }), { cwd: repoPath, env: { ...there, ...targetBuild.env, ...secretEnv }, signal }, logs, "[build][docker]", build.capture);
           const image = { image: build.imageName, ref: remote.ref };
           if (!compression) {
             await run(targetBuild.loadArgs);
@@ -642,6 +647,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           // An env header, so the token never lands in .git/config inside the build context.
           Object.assign(gitEnv, githubTokenGitEnv(installToken));
           tokenAuth = true;
+          ctx.addSecrets?.({ GITHUB_TOKEN: installToken });
+          ctx.buildSecrets = { ...ctx.buildSecrets, [NPM_TOKEN_SECRET]: installToken };
+          log(`[deploy] Builds can mount the GitHub token as secret ${NPM_TOKEN_SECRET}`);
         }
       } catch (err) {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
@@ -951,6 +959,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           capture,
           remote: targets.length > 0 ? { targets, ref: registry && key ? registry.ref(app.name, key) : null } : null,
           appName: app.name,
+          secrets: ctx.buildSecrets,
         }));
         try {
           await run();

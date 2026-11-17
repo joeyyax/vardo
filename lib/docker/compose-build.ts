@@ -17,9 +17,13 @@ import { bringBack } from "./remote-build";
 import type { BuildPlacementRecorder } from "./build-placement";
 import { withTargetBuilder } from "./target-builder";
 import { bringDirect, pushedName } from "./direct-export";
+import { buildSecretEnv, composeSecretsYaml, withBakeSecrets, type BuildSecrets } from "./build-secrets";
 
 /** Bake file compose's own build would run, written into the slot. */
 export const BAKE_FILE = "vardo-bake.json";
+
+/** Compose file granting Vardo's build secrets when compose builds without bake. */
+export const BUILD_SECRETS_FILE = "vardo-build-secrets.yml";
 
 const MAX_BUFFER = 10 * 1024 * 1024;
 
@@ -64,6 +68,8 @@ export type ComposeBuildOpts = {
   registry?: { ops: RegistryOps; appName: string } | null;
   /** The app's name, for the provenance a build on a target records. */
   appName?: string;
+  /** BuildKit secrets every built service may mount. */
+  secrets?: BuildSecrets;
 };
 
 /** Bake targets that use build secrets, which compose resolves itself. */
@@ -199,22 +205,32 @@ async function runComposeBuild(
   const { slotDir, project } = opts;
   const { files, noCache, named } = composeArgs(opts, services, keyFileArgs);
   const env = { ...baseEnv, ...bounded.env };
+  const secretEnv = buildSecretEnv(opts.secrets);
   const run = { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: MAX_BUFFER, signal: opts.signal };
 
   if (bounded.output || outputs) {
     const bake = await printBake(exec, files, project, noCache, named, { ...run, env });
     if (bake) {
       const file = join(slotDir, BAKE_FILE);
-      await writeFile(file, bake);
+      await writeFile(file, withBakeSecrets(bake, opts.secrets));
       const args = outputs ? serviceBakeArgs(file, outputs, named, labels) : bakeArgs(file, bounded.output!, named);
       // Compose grants read access to every build context; bake would ask for each.
-      return asOutput(await exec("docker", args, { ...run, env: { ...env, BUILDX_BAKE_ENTITLEMENTS_FS: "0" } }));
+      return asOutput(await exec("docker", args, { ...run, env: { ...env, ...secretEnv, BUILDX_BAKE_ENTITLEMENTS_FS: "0" } }));
     }
     if (outputs) throw new Error("This compose file can't be built with bake");
   }
+  const secretFiles = await writeSecretsFile(slotDir, services, opts.secrets);
   return asOutput(
-    await exec("docker", ["compose", "--progress=plain", ...files, "-p", project, "build", ...noCache, ...named], { ...run, env }),
+    await exec("docker", ["compose", "--progress=plain", ...files, ...secretFiles, "-p", project, "build", ...noCache, ...named], { ...run, env: { ...env, ...secretEnv } }),
   );
+}
+
+async function writeSecretsFile(slotDir: string, services: string[], secrets?: BuildSecrets): Promise<string[]> {
+  const yaml = composeSecretsYaml(services, secrets);
+  if (!yaml) return [];
+  const path = join(slotDir, BUILD_SECRETS_FILE);
+  await writeFile(path, yaml);
+  return ["-f", path];
 }
 
 function composeArgs(opts: ComposeBuildOpts, services: string[], keyFileArgs: string[]) {
