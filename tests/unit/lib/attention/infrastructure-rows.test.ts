@@ -25,11 +25,11 @@ function app(overrides: Partial<InfraApp> & { name: string }): InfraApp {
 }
 
 const vardo = app({ name: "vardo", displayName: "Vardo" });
-const loki = app({ name: "loki", displayName: "Loki" });
+const loki = app({ name: "victorialogs", displayName: "VictoriaLogs" });
 const postgres = app({ name: "vardo-postgres", displayName: "Postgres" });
 
 const lokiCache = app({
-  name: "loki-memcached",
+  name: "victorialogs-memcached",
   displayName: "Memcached",
   parentAppId: loki.id,
 });
@@ -98,7 +98,7 @@ describe("infrastructureRows", () => {
       snapshot({
         deployments: [
           { id: "d-vardo", appId: vardo.id, gitSha: null, startedAt: new Date() },
-          { id: "d-loki", appId: loki.id, gitSha: null, startedAt: new Date() },
+          { id: "d-vlogs", appId: loki.id, gitSha: null, startedAt: new Date() },
         ],
       }),
       ADMIN,
@@ -125,21 +125,21 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [vardo, loki, { ...postgres, conditions: [crashLoop] }],
-        servicesDown: [{ id: "service-degraded:Loki", name: "Loki", lastFired: "2026-08-01T10:00:00.000Z" }],
+        servicesDown: [{ id: "service-degraded:VictoriaLogs", name: "VictoriaLogs", lastFired: "2026-08-01T10:00:00.000Z" }],
       }),
       ADMIN,
     );
 
     expect(rows.map((r) => r.key)).toEqual(["vardo-stack-degraded", "core-service-down"]);
     expect(rows[0].items[0]).toMatchObject({ name: "Postgres", detail: "7 restarts in 10 minutes" });
-    expect(rows[1].items[0]).toMatchObject({ name: "Loki", detail: "Not responding" });
+    expect(rows[1].items[0]).toMatchObject({ name: "VictoriaLogs", detail: "Not responding" });
   });
 
   it("reports a probe failure and the app's own condition as one subject", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [vardo, { ...loki, status: "error", conditions: [crashLoop] }, postgres],
-        servicesDown: [{ id: "service-degraded:Loki", name: "Loki", lastFired: "2026-08-01T10:00:00.000Z" }],
+        servicesDown: [{ id: "service-degraded:VictoriaLogs", name: "VictoriaLogs", lastFired: "2026-08-01T10:00:00.000Z" }],
       }),
       ADMIN,
     );
@@ -153,8 +153,8 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [vardo, { ...loki, status: "error" }, postgres],
-        deployments: [{ id: "d-loki", appId: loki.id, gitSha: null, startedAt: new Date() }],
-        servicesDown: [{ id: "service-degraded:Loki", name: "Loki", lastFired: "2026-08-01T10:00:00.000Z" }],
+        deployments: [{ id: "d-vlogs", appId: loki.id, gitSha: null, startedAt: new Date() }],
+        servicesDown: [{ id: "service-degraded:VictoriaLogs", name: "VictoriaLogs", lastFired: "2026-08-01T10:00:00.000Z" }],
       }),
       ADMIN,
     );
@@ -211,7 +211,7 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(snapshot({ apps: [{ ...loki, status: "stopped" }] }), ADMIN);
 
     expect(rows[0]).toMatchObject({ key: "core-service-down", tone: "error" });
-    expect(rows[0].items[0]).toMatchObject({ name: "Loki", detail: "Container stopped" });
+    expect(rows[0].items[0]).toMatchObject({ name: "VictoriaLogs", detail: "Container stopped" });
   });
 
   it("says how long a service has been down", () => {
@@ -258,7 +258,7 @@ describe("infrastructureRows", () => {
 
   it("stays quiet about a stopped core service whose feature is off", () => {
     const rows = infrastructureRows(
-      snapshot({ apps: [{ ...loki, status: "stopped" }], disabledCoreServices: ["loki"] }),
+      snapshot({ apps: [{ ...loki, status: "stopped" }], disabledCoreServices: ["victorialogs"] }),
       ADMIN,
     );
 
@@ -281,7 +281,7 @@ describe("infrastructureRows", () => {
     expect(rows[0].items).toHaveLength(1);
     expect(rows[0].items[0]).toMatchObject({
       id: lokiCache.id,
-      name: "Loki · Memcached",
+      name: "VictoriaLogs · Memcached",
       detail: "Container stopped",
     });
   });
@@ -290,7 +290,7 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [loki, { ...lokiCache, status: "stopped" }],
-        disabledCoreServices: ["loki"],
+        disabledCoreServices: ["victorialogs"],
       }),
       ADMIN,
     );
@@ -310,7 +310,7 @@ describe("infrastructureRows", () => {
     );
 
     expect(rows[0].items).toHaveLength(1);
-    expect(rows[0].items[0]).toMatchObject({ id: loki.id, name: "Loki" });
+    expect(rows[0].items[0]).toMatchObject({ id: loki.id, name: "VictoriaLogs" });
   });
 
   it("quiets a compose child while its parent deploys", () => {
@@ -329,8 +329,8 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [{ ...loki, status: "stopped" }],
-        servicesDown: [{ id: "service-degraded:Loki", name: "Loki", lastFired: "2026-08-01T10:00:00.000Z" }],
-        disabledCoreServices: ["loki"],
+        servicesDown: [{ id: "service-degraded:VictoriaLogs", name: "VictoriaLogs", lastFired: "2026-08-01T10:00:00.000Z" }],
+        disabledCoreServices: ["victorialogs"],
       }),
       ADMIN,
     );

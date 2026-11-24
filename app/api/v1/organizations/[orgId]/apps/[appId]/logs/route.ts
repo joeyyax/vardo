@@ -42,6 +42,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const scope = await resolveLogScope(app, { allServices });
     const history = await readLogHistory({
       project: scope.project,
+      projectId: scope.projectId,
       organizationId: orgId,
       environment,
       service: scope.service,

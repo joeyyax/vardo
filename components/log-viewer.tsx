@@ -503,7 +503,7 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
   );
 }
 
-type LogSource = "loki" | "docker" | null;
+type LogSource = "victorialogs" | "docker" | null;
 
 type StreamLine = { text: string; service?: string };
 
@@ -643,8 +643,8 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLev
           </span>
           {logSource && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground border rounded px-1.5 py-0.5">
-              {logSource === "loki" ? (
-                <><Database className="size-3" />Loki</>
+              {logSource === "victorialogs" ? (
+                <><Database className="size-3" />VictoriaLogs</>
               ) : (
                 <><HardDrive className="size-3" />Container logs</>
               )}

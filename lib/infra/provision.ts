@@ -1,4 +1,4 @@
-// Core service provisioning: the collector, Loki and Promtail, adopted by name across the instance.
+// Core service provisioning: the collector, VictoriaLogs and the log shipper, adopted by name across the instance.
 // Called at startup and on feature flag toggle.
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -353,9 +353,14 @@ async function ensureAppDeployed(
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
-/** Compose content for a template, with the collector's GPU access applied. */
+/** Compose content for a template, with the collector's GPU access and the logging settings applied. */
 async function resolveComposeContent(template: Template, hasGpu: boolean): Promise<string | null> {
-  if (template.name !== "collector" || !template.composeContent) return template.composeContent;
+  if (!template.composeContent) return template.composeContent;
+  if (template.name === "victorialogs" || template.name === "log-shipper") {
+    const { applyLoggingSettings } = await import("@/lib/infra/logging-compose");
+    return applyLoggingSettings(template.name, template.composeContent);
+  }
+  if (template.name !== "collector") return template.composeContent;
   const { applyCollectorGpu } = await import("@/lib/infra/collector-compose");
   return applyCollectorGpu(template.composeContent, hasGpu);
 }

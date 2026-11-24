@@ -3,11 +3,9 @@ import { describe, it, expect } from "vitest";
 import {
   ERROR_SHAPE,
   attributeCounts,
-  errorCountQuery,
-  lineCountQuery,
 } from "@/lib/logging/error-shape";
 
-/** Loki runs RE2; JS is close enough for what the shape actually uses. */
+/** VictoriaLogs runs RE2; JS is close enough for what the shape actually uses. */
 const shape = new RegExp(ERROR_SHAPE.replace("(?i)", ""), "i");
 
 describe("error shape", () => {
@@ -42,25 +40,12 @@ describe("error shape", () => {
   });
 });
 
-describe("queries", () => {
-  it("counts by app and service over the sample window", () => {
-    expect(errorCountQuery(300)).toBe(
-      `sum by (project_id, service) (count_over_time({project_id=~".+"} |~ \`${ERROR_SHAPE}\` [300s]))`,
-    );
-  });
-
+describe("exception names", () => {
   it("counts a runtime's exception class names, which carry no leading boundary", () => {
     expect(shape.test("java.lang.IllegalStateException: closed")).toBe(true);
     expect(shape.test("ValueError: invalid literal for int()")).toBe(true);
     expect(shape.test("[ioredis] Unhandled error event: Error: connect ETIMEDOUT")).toBe(true);
   });
-
-  it("counts total lines over the same window and grouping", () => {
-    expect(lineCountQuery(300)).toBe(
-      'sum by (project_id, service) (count_over_time({project_id=~".+"} [300s]))',
-    );
-  });
-
 });
 
 describe("attributeCounts", () => {
@@ -71,8 +56,8 @@ describe("attributeCounts", () => {
   ];
 
   const SERIES = [
-    { labels: { project_id: "stack", service: "web" }, value: 4 },
-    { labels: { project_id: "stack", service: "worker" }, value: 6 },
+    { labels: { "vardo.project.id": "stack", compose_service: "web" }, value: 4 },
+    { labels: { "vardo.project.id": "stack", compose_service: "worker" }, value: 6 },
   ];
 
   it("gives a stack child its own service and the parent the whole stack", () => {
@@ -83,12 +68,12 @@ describe("attributeCounts", () => {
   });
 
   it("skips a series carrying no app id", () => {
-    const counts = attributeCounts([{ labels: { service: "web" }, value: 9 }], APPS);
+    const counts = attributeCounts([{ labels: { compose_service: "web" }, value: 9 }], APPS);
     expect(counts.size).toBe(0);
   });
 
-  it("skips a value Loki could not produce", () => {
-    const counts = attributeCounts([{ labels: { project_id: "stack" }, value: NaN }], APPS);
+  it("skips a value that is not a number", () => {
+    const counts = attributeCounts([{ labels: { "vardo.project.id": "stack" }, value: NaN }], APPS);
     expect(counts.size).toBe(0);
   });
 });

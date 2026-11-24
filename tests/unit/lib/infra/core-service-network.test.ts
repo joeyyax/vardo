@@ -34,8 +34,8 @@ function deployedFiles(name: string) {
 
 /** Service each client resolves on the monitoring network. */
 const ATTACHED: Record<string, string> = {
-  loki: "loki",
-  promtail: "promtail",
+  victorialogs: "victorialogs",
+  "log-shipper": "log-shipper",
   collector: "collector",
 };
 
@@ -73,10 +73,10 @@ describe("core service templates — monitoring network", () => {
     expect(usesMonitoringNetwork({ networks: { mon: { external: true, name: MONITORING_NETWORK } } })).toBe(true);
   });
 
-  it("points Promtail at Loki's compose service name", () => {
+  it("points the log shipper at VictoriaLogs' compose service name", () => {
     // container_name is stripped for blue/green, so only the service name resolves.
-    const configs = (rawTemplate("promtail").composeContent as string).includes(
-      "http://loki:3100/loki/api/v1/push",
+    const configs = (rawTemplate("log-shipper").composeContent as string).includes(
+      "COLLECTOR_LOGS__URL: http://victorialogs:9428",
     );
     expect(configs).toBe(true);
   });

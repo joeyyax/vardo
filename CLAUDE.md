@@ -66,7 +66,7 @@ docker compose down                   # Stop all services
 
 Dev needs `.env` with `ENCRYPTION_MASTER_KEY` set (`openssl rand -hex 32`) and `DB_PASSWORD` matching `DATABASE_URL` (`.env.example` has both).
 
-Compose stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), Wireguard. The collector, Loki and Promtail are deployed as managed apps by Vardo. Production Dockerfile installs Docker CLI, Nixpacks and Railpack for build support.
+Compose stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), Wireguard. The collector, VictoriaLogs and the log shipper are deployed as managed apps by Vardo. Production Dockerfile installs Docker CLI, Nixpacks and Railpack for build support.
 
 ## UI components
 

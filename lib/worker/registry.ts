@@ -101,6 +101,8 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "metrics-orphan-sweep", roles: BOTH, singleton: true, feature: "metrics", load: async () => (await import("@/lib/metrics/series-cleanup")).orphanSeriesLoop },
   // Not gated on metrics: domain checks roll up without it.
   { name: "metrics-rollup", roles: BOTH, singleton: true, load: async () => (await import("@/lib/metrics/rollup")).metricsRollupLoop },
+  // Not gated on logging: with it off, Loki and Promtail go without the guard.
+  { name: "loki-retire", roles: BOTH, singleton: true, load: async () => (await import("@/lib/infra/retire-loki")).retireLokiLoop },
   { name: "error-rate", roles: BOTH, singleton: true, feature: "logging", load: async () => (await import("@/lib/logging/register")).errorRateLoop },
   { name: "domain-verification", roles: BOTH, singleton: true, load: async () => (await import("@/lib/domains/scheduler")).domainVerificationLoop },
   // Repairs the tunnel forward to this console and reports this console's version.

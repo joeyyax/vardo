@@ -50,7 +50,7 @@ const {
     dbMock,
     deployAndWaitMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
-    loadTemplatesMock: vi.fn(async () => [template("loki"), template("promtail")]),
+    loadTemplatesMock: vi.fn(async () => [template("victorialogs"), template("log-shipper")]),
     ensureVardoOrgMock: vi.fn(async () => ({ id: "org-1" })),
   };
 });
@@ -101,13 +101,13 @@ describe("provisionForFlag — install rollback (#741)", () => {
   });
 
   it("rolls back already-installed siblings when a later template fails (all-or-nothing)", async () => {
-    // logging → [loki, promtail]: loki deploys, promtail fails.
+    // logging → [victorialogs, log-shipper]: victorialogs deploys, log-shipper fails.
     deployAndWaitMock
       .mockResolvedValueOnce({ deploymentId: "d1", status: "success", success: true, log: "", durationMs: 1 })
       .mockResolvedValueOnce({ deploymentId: "d2", status: "failed", success: false, log: "boom", durationMs: 1 });
 
     await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
-    // promtail rolls itself back + loki sibling rolled back = 2.
+    // log-shipper rolls itself back + victorialogs sibling rolled back = 2.
     expect(deleteAppMock).toHaveBeenCalledTimes(2);
   });
 

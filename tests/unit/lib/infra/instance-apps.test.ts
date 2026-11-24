@@ -22,8 +22,8 @@ describe("isInstanceInfraApp", () => {
   });
 });
 
-// The value stamped as vardo.scope. Promtail routes anything "instance" to the
-// tenant no organization can read, so a service missing from here leaks its
+// The value stamped as vardo.scope. Deploy gives anything "instance" no log account, leaving it in the
+// tenant no organization can read. A service missing from here leaks its
 // logs — and its error output quotes other organizations — into an org tenant.
 describe("appScope", () => {
   it("marks every core service and every part of Vardo's own stack", () => {
@@ -33,7 +33,7 @@ describe("appScope", () => {
   });
 
   it("covers every service a health probe watches", () => {
-    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "Loki", "Promtail"]) {
+    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "VictoriaLogs", "Log shipper"]) {
       expect(appScope(probeAppName(service))).toBe("instance");
     }
   });
@@ -51,7 +51,7 @@ describe("appScope", () => {
 
 describe("probeAppName", () => {
   it("maps every probe it knows onto an infrastructure app", () => {
-    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "Loki", "Promtail"]) {
+    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "Collector", "VictoriaLogs", "Log shipper"]) {
       const name = probeAppName(service);
       expect(name).not.toBeNull();
       expect(isInstanceInfraApp(name)).toBe(true);

@@ -6,7 +6,8 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { spawn } from "child_process";
 import { createSSEResponse } from "@/lib/api/sse";
-import { isLokiAvailable, tailLogs, buildLogQLQuery } from "@/lib/logging/client";
+import { FIELD, tailLogs, buildLogsQLQuery } from "@/lib/logging/victorialogs";
+import { appLogSource, type LogSource } from "@/lib/logging/source";
 import { readLogHistory, resolveComposeTarget } from "@/lib/logging/history";
 import { resolveLogEnvironment, resolveLogScope, type LogScope } from "@/lib/logging/scope";
 import { parseComposeLine, type ServiceLine } from "@/lib/logging/compose-lines";
@@ -47,8 +48,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const scope = await resolveLogScope(app, { allServices });
 
-    if (await isLokiAvailable()) {
-      const query = buildLogQLQuery({
+    if ((await appLogSource({ id: scope.projectId, name: scope.project }, environmentName)) === "victorialogs") {
+      const query = buildLogsQLQuery({
         project: scope.project,
         environment: environmentName,
         service: scope.service ?? undefined,
@@ -56,13 +57,14 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       });
 
       return createSSEResponse(request, async (sendEvent) => {
-        await sendInit(sendEvent, "loki", orgId, scope, environmentName, search, tail);
+        const after = `${Date.now()}000000`;
+        await sendInit(sendEvent, "victorialogs", orgId, scope, environmentName, search, tail);
 
         await tailLogs(
-          { query, organizationId: orgId, start: String(Date.now() * 1_000_000), delayFor: 2 },
+          { query, organizationId: orgId, after },
           (entry) => sendEvent("logs", [{
             text: entry.line,
-            service: scope.prefixed ? entry.labels.service : undefined,
+            service: scope.prefixed ? entry.labels[FIELD.service] : undefined,
           }]),
           request.signal,
         );
@@ -131,7 +133,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
  */
 async function sendInit(
   sendEvent: SendEvent,
-  source: "loki" | "docker",
+  source: LogSource,
   organizationId: string,
   scope: LogScope,
   environment: string,
@@ -142,6 +144,8 @@ async function sendInit(
   try {
     const history = await readLogHistory({
       project: scope.project,
+      projectId: scope.projectId,
+      source,
       organizationId,
       environment,
       service: scope.service,

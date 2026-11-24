@@ -8,7 +8,7 @@ Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with D
 - Automatic TLS via Let's Encrypt (Traefik)
 - Blue-green deployments with zero-downtime rollback
 - Preview environments from pull requests
-- Built-in container and GPU metrics (the collector) and log aggregation (Loki, one tenant per org)
+- Built-in container and GPU metrics (the collector) and log storage and search (VictoriaLogs, one tenant per org)
 - Multi-tenant with org-scoped access control
 - Scheduled backups to S3, R2, B2, SSH and local storage
 - Cron job management per app
@@ -76,7 +76,7 @@ Existing networks keep their subnets; new ones come from the pools.
 | Traefik | Reverse proxy, automatic TLS |
 | PostgreSQL | Application database |
 | Redis | Caching, pub/sub, rate limiting |
-| Loki | Log aggregation (optional) |
+| VictoriaLogs | Log storage and search (optional) |
 | Collector | Container and GPU metrics (optional) |
 
 ## Tech stack

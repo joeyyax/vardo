@@ -10,7 +10,7 @@ export const NETWORK_NAME = "vardo-network";
 /** Docker network only Traefik and the console share, so apps can't reach the console past Traefik (#1136). */
 export const CONSOLE_NETWORK = "vardo_console";
 
-/** Internal network for the collector, Loki and Promtail. Only the console and those services join it. */
+/** Internal network for the collector, VictoriaLogs and the log shipper. Only the console and those services join it. */
 export const MONITORING_NETWORK = "vardo-monitoring";
 
 /** Ceiling the build cache is pruned to after every deploy. Too low and locally built apps evict each other. */

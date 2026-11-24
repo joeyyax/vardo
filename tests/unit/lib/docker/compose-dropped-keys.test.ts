@@ -422,15 +422,15 @@ describe("buildVardoOverlay — memory precedence", () => {
   });
 });
 
-describe("the promtail template's stated limit", () => {
+describe("the log shipper template's stated limit", () => {
   it("is the limit the deployed container gets", () => {
-    const path = resolve(process.cwd(), "templates/promtail.yaml");
+    const path = resolve(process.cwd(), "templates/log-shipper.yaml");
     const template = YAML.parse(readFileSync(path, "utf-8")) as { composeContent: string };
     const compose = parseCompose(template.composeContent);
-    const declared = compose.services.promtail.deploy?.resources?.limits?.memory;
-    expect(declared).toBe("256m");
+    const declared = compose.services["log-shipper"].deploy?.resources?.limits?.memory;
+    expect(declared).toBe("64m");
 
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName: NETWORK });
-    expect(overlay.services.promtail.deploy?.resources?.limits?.memory).toBe(declared);
+    expect(overlay.services["log-shipper"].deploy?.resources?.limits?.memory).toBe(declared);
   });
 });

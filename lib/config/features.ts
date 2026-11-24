@@ -159,7 +159,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   logging: {
     label: "Logging",
     description:
-      "Centralized log aggregation via Loki. One Loki and one Promtail ship every container's logs, each organization into its own tenant.",
+      "Centralized logs in VictoriaLogs. One log shipper sends every container's logs, each organization into its own tenant.",
     group: "observability",
     sharedService: true,
   },

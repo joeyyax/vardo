@@ -40,8 +40,8 @@ export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
   {
     flag: "logging",
     services: [
-      { name: "loki", displayName: "Loki", kind: "app" },
-      { name: "promtail", displayName: "Promtail", kind: "host-agent" },
+      { name: "victorialogs", displayName: "VictoriaLogs", kind: "app" },
+      { name: "log-shipper", displayName: "Log shipper", kind: "host-agent" },
     ],
     project: { name: "logs", displayName: "Logs" },
   },
@@ -53,7 +53,7 @@ export const CORE_SERVICE_NAMES: string[] = CORE_SERVICE_FEATURES.flatMap((f) =>
 );
 
 /** Core services Vardo no longer runs. A leftover row stays instance infrastructure until it's removed. */
-export const RETIRED_CORE_SERVICE_NAMES: string[] = ["cadvisor"];
+export const RETIRED_CORE_SERVICE_NAMES: string[] = ["cadvisor", "loki", "promtail"];
 
 /** True when this app name belongs to an instance-level core service, retired ones included. */
 export function isCoreServiceApp(name: string): boolean {
