@@ -3,6 +3,7 @@ import {
   index,
   integer,
   pgTable,
+  serial,
   text,
   timestamp,
   unique,
@@ -19,6 +20,8 @@ export const organizations = pgTable("organization", {
   sslEnabled: boolean("ssl_enabled").default(true),
   trusted: boolean("trusted").default(false).notNull(),
   isSystemManaged: boolean("is_system_managed").default(false).notNull(),
+  // VictoriaLogs AccountID for this org's logs. Never reused; 0 is the unassigned tenant.
+  logAccountId: serial("log_account_id").notNull().unique(),
   // Backups for apps that inherit. Null uses the system default.
   backupsEnabled: boolean("backups_enabled"),
   // HH:MM in the org's time zone the nightly backup run starts.
