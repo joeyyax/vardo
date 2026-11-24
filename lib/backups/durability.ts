@@ -71,7 +71,7 @@ const REBUILDABLE_SIGNATURES: { pattern: RegExp; reason: string }[] = [
   { pattern: /(^|[-_/])cache([-_/]|$)/i, reason: "Cache — repopulates on use" },
   { pattern: /(^|[-_/])(letsencrypt|acme)([-_/]|$)/i, reason: "ACME certificates are re-issued on demand" },
   { pattern: /(^|[-_/])buildkit([-_/]|$)/i, reason: "Build cache — rebuilt by the next build" },
-  { pattern: /(^|[-_/])(promtail|positions)([-_/]|$)/i, reason: "Log shipper positions — re-derived on start" },
+  { pattern: /(^|[-_/])(promtail|positions|log-shipper-state)([-_/]|$)/i, reason: "Log shipper positions — re-derived on start" },
   { pattern: /(^|[-_/])(tmp|temp)([-_/]|$)/i, reason: "Temporary working files" },
 ];
 

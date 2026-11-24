@@ -1,0 +1,57 @@
+version: "1"
+name: log-shipper
+displayName: Log shipper
+description: Ships every container's logs to VictoriaLogs, each organization into its own tenant.
+icon: https://cdn.simpleicons.org/victoriametrics
+category: monitoring
+source: direct
+deployType: compose
+
+composeContent: |
+  services:
+    log-shipper:
+      # The collector in logs-only mode. Vardo sets the image from VARDO_COLLECTOR_IMAGE.
+      image: ${VARDO_LOG_SHIPPER_IMAGE:?set VARDO_LOG_SHIPPER_IMAGE}
+      restart: unless-stopped
+      read_only: true
+      cap_drop: [ALL]
+      security_opt: [no-new-privileges:true]
+      # Longer than the collector's 10s shutdown_timeout, so the last batch and cursors are saved.
+      stop_grace_period: 20s
+      environment:
+        COLLECTOR_API__AUTH: "off"
+        COLLECTOR_HOST_METRICS__ENABLED: "false"
+        COLLECTOR_CONTAINERS__ENABLED: "false"
+        COLLECTOR_GPU__ENABLED: "off"
+        COLLECTOR_LOGS__ENABLED: "true"
+        COLLECTOR_LOGS__URL: http://victorialogs:9428
+        # Each container's tenant. Unlabeled containers, Vardo's own included, go to tenant 0, which no organization reads.
+        COLLECTOR_LOGS__TENANT_LABEL: vardo.log.account
+        # Values parse as TOML, so lists are TOML arrays.
+        COLLECTOR_CONTAINERS__API_LABELS: '["vardo.project","vardo.project.id","vardo.environment","vardo.organization"]'
+        COLLECTOR_LOGS__STREAM_FIELDS: '["host","container","compose_project","compose_service","vardo.project","vardo.environment"]'
+        COLLECTOR_LOGS__EXCLUDE_NAMES: '["^vardo-backup-"]'
+        COLLECTOR_LOGS__EXCLUDE_LABEL: vardo.logs=false
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - /var/lib/docker/containers:/var/lib/docker/containers:ro
+        # The host's name for the host field.
+        - /etc/hostname:/rootfs/etc/hostname:ro
+        # How far each container was read. Without it every redeploy re-ships or skips history.
+        - log-shipper-state:/var/lib/collector
+      mem_limit: ${VARDO_LOG_SHIPPER_MEM:-64m}
+      # No published port: Vardo reads http://log-shipper:9273/health on the console-only monitoring network.
+      networks:
+        - vardo-monitoring
+
+  volumes:
+    log-shipper-state: {}
+
+  networks:
+    vardo-monitoring:
+      external: true
+
+volumes:
+  - name: log-shipper-state
+    mountPath: /var/lib/collector
+    description: Log shipper cursors

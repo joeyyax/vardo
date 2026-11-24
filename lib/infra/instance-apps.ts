@@ -10,7 +10,7 @@ export function isInstanceInfraApp(name: string | null | undefined): boolean {
   return isVardoStack(name) || isCoreServiceApp(name);
 }
 
-/** Scope stamped as `vardo.scope` at deploy time. Promtail uses it to keep platform logs out of org tenants. */
+/** Scope stamped as `vardo.scope` at deploy time. Deploy stamps no log account on instance scope, so platform logs stay out of org tenants. */
 export type AppScope = "instance" | "app";
 
 export function appScope(name: string | null | undefined): AppScope {
@@ -32,8 +32,8 @@ const PROBE_APP_NAMES: Record<string, string> = {
   Traefik: "vardo-traefik",
   WireGuard: "vardo-wireguard",
   Collector: "collector",
-  Loki: "loki",
-  Promtail: "promtail",
+  VictoriaLogs: "victorialogs",
+  "Log shipper": "log-shipper",
 };
 
 /** App backing a health probe, or null for probes with no app row (Docker). */

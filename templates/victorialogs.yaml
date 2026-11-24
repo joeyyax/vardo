@@ -1,0 +1,39 @@
+version: "1"
+name: victorialogs
+displayName: VictoriaLogs
+description: Log storage and search. One tenant per organization.
+icon: https://cdn.simpleicons.org/victoriametrics
+category: monitoring
+source: direct
+deployType: compose
+defaultPort: 9428
+
+composeContent: |
+  services:
+    victorialogs:
+      image: victoriametrics/victoria-logs:v1.52.0
+      restart: unless-stopped
+      command:
+        - -storageDataPath=/vlogs
+        # 31 days, covering the log viewer's widest lookback of 30 days.
+        - -retentionPeriod=${VARDO_VICTORIALOGS_RETENTION:-31d}
+        # Drops the oldest days first once the volume holds this much.
+        - -retention.maxDiskSpaceUsageBytes=${VARDO_VICTORIALOGS_MAX_DISK:-20GiB}
+      volumes:
+        - victorialogs-data:/vlogs
+      mem_limit: ${VARDO_VICTORIALOGS_MEM:-512m}
+      # No healthcheck: the image has no shell or HTTP client. Vardo reads http://victorialogs:9428 on the console-only monitoring network.
+      networks:
+        - vardo-monitoring
+
+  volumes:
+    victorialogs-data: {}
+
+  networks:
+    vardo-monitoring:
+      external: true
+
+volumes:
+  - name: victorialogs-data
+    mountPath: /vlogs
+    description: VictoriaLogs data

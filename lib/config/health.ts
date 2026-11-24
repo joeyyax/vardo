@@ -200,22 +200,22 @@ export const SERVICE_PROBES: Probe[] = [
       if (mode.kind !== "off") await httpProbe(`${mode.url}/health`, timeoutMs);
     },
   },
-  coreServiceProbe("loki", {
-    name: "Loki",
-    description: "Log aggregation",
+  coreServiceProbe("victorialogs", {
+    name: "VictoriaLogs",
+    description: "Log storage and search",
     timeoutMs: 2000,
-    run: (timeoutMs) =>
-      httpProbe(`${process.env.LOKI_URL || "http://localhost:7400"}/ready`, timeoutMs),
+    run: async (timeoutMs) => {
+      const { victoriaLogsUrl } = await import("@/lib/logging/victorialogs");
+      await httpProbe(`${victoriaLogsUrl()}/health`, timeoutMs);
+    },
   }),
-  coreServiceProbe("promtail", {
-    name: "Promtail",
-    description: "Log shipper",
-    timeoutMs: 5000,
-    // Promtail serves nothing the console reads; a running container is the only signal.
-    run: async () => {
-      const { listContainers } = await import("@/lib/docker/client");
-      const running = await listContainers("promtail");
-      if (running.length === 0) throw new Error("not running");
+  coreServiceProbe("log-shipper", {
+    name: "Log shipper",
+    description: "Ships container logs to VictoriaLogs",
+    timeoutMs: 2000,
+    run: async (timeoutMs) => {
+      const { logShipperUrl } = await import("@/lib/logging/shipper");
+      await httpProbe(`${logShipperUrl()}/health`, timeoutMs);
     },
   }),
   {
