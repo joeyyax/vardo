@@ -161,14 +161,14 @@ describe("SERVICE_PROBES", () => {
   });
 
   it("keeps the HTTP probes on their 2s budget", () => {
-    for (const name of ["Collector", "Loki", "Traefik"]) {
+    for (const name of ["Collector", "VictoriaLogs", "Traefik"]) {
       expect(SERVICE_PROBES.find((p) => p.name === name)?.timeoutMs).toBe(2000);
     }
   });
 
-  it("points the collector and Loki at their own app logs", () => {
+  it("points the collector and VictoriaLogs at their own app logs", () => {
     expect(SERVICE_PROBES.find((p) => p.name === "Collector")?.logsApp).toBe("collector");
-    expect(SERVICE_PROBES.find((p) => p.name === "Loki")?.logsApp).toBe("loki");
+    expect(SERVICE_PROBES.find((p) => p.name === "VictoriaLogs")?.logsApp).toBe("victorialogs");
   });
 
   it("covers every core service, so none can die unwatched", () => {
@@ -219,7 +219,7 @@ describe("probes for disabled features", () => {
 
   it("reports nothing for the log shipper when logging is off", async () => {
     process.env.VARDO_FEATURE_LOGGING = "false";
-    await expect(checkServiceByName("Promtail")).resolves.toBeNull();
+    await expect(checkServiceByName("Log shipper")).resolves.toBeNull();
   });
 
 });
@@ -228,7 +228,7 @@ describe("probes for disabled features", () => {
 // checkServiceByName — the re-probe behind "check again"
 // ---------------------------------------------------------------------------
 
-/** A stand-in Loki, so a probe can be broken and mended inside one test run. */
+/** A stand-in VictoriaLogs, so a probe can be broken and mended inside one test run. */
 async function listen(handler: (res: ServerResponse) => void): Promise<Server> {
   const server = createServer((_req, res) => handler(res));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -245,11 +245,11 @@ async function close(server: Server): Promise<void> {
 }
 
 describe("checkServiceByName", () => {
-  const original = process.env.LOKI_URL;
+  const original = process.env.VICTORIALOGS_URL;
 
   afterEach(() => {
-    if (original === undefined) delete process.env.LOKI_URL;
-    else process.env.LOKI_URL = original;
+    if (original === undefined) delete process.env.VICTORIALOGS_URL;
+    else process.env.VICTORIALOGS_URL = original;
   });
 
   it("returns null for a name no probe answers to", async () => {
@@ -258,16 +258,16 @@ describe("checkServiceByName", () => {
 
   it("matches a probe regardless of how the caller cased it", async () => {
     const server = await listen((res) => res.end("ready"));
-    process.env.LOKI_URL = urlOf(server);
-    await expect(checkServiceByName("loki")).resolves.toMatchObject({ name: "Loki" });
+    process.env.VICTORIALOGS_URL = urlOf(server);
+    await expect(checkServiceByName("victorialogs")).resolves.toMatchObject({ name: "VictoriaLogs" });
     await close(server);
   });
 
   it("reports healthy with a latency and a check time", async () => {
     const server = await listen((res) => res.end("ready"));
-    process.env.LOKI_URL = urlOf(server);
+    process.env.VICTORIALOGS_URL = urlOf(server);
 
-    const status = await checkServiceByName("Loki");
+    const status = await checkServiceByName("VictoriaLogs");
     expect(status?.status).toBe("healthy");
     expect(status?.error).toBeUndefined();
     expect(status?.latencyMs).toBeGreaterThanOrEqual(0);
@@ -282,9 +282,9 @@ describe("checkServiceByName", () => {
       res.statusCode = 503;
       res.end();
     });
-    process.env.LOKI_URL = urlOf(server);
+    process.env.VICTORIALOGS_URL = urlOf(server);
 
-    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
+    await expect(checkServiceByName("VictoriaLogs")).resolves.toMatchObject({
       status: "unhealthy",
       error: "HTTP 503",
     });
@@ -297,13 +297,13 @@ describe("checkServiceByName", () => {
       res.statusCode = 503;
       res.end();
     });
-    process.env.LOKI_URL = urlOf(down);
-    expect((await checkServiceByName("Loki"))?.status).toBe("unhealthy");
+    process.env.VICTORIALOGS_URL = urlOf(down);
+    expect((await checkServiceByName("VictoriaLogs"))?.status).toBe("unhealthy");
     await close(down);
 
     const up = await listen((res) => res.end("ready"));
-    process.env.LOKI_URL = urlOf(up);
-    expect((await checkServiceByName("Loki"))?.status).toBe("healthy");
+    process.env.VICTORIALOGS_URL = urlOf(up);
+    expect((await checkServiceByName("VictoriaLogs"))?.status).toBe("healthy");
     await close(up);
   });
 });

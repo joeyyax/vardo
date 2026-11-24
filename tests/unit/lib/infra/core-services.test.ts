@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
-// The collector, Loki and Promtail are instance-level singletons. The lookup is by
+// The collector, VictoriaLogs and the log shipper are instance-level singletons. The lookup is by
 // app name across the whole instance, so an existing row is adopted wherever it
 // lives — never duplicated, never silently skipped.
 
@@ -60,8 +60,8 @@ const {
     enqueueDeployMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
     loadTemplatesMock: vi.fn(async () => [
-      template("loki", "Loki"),
-      template("promtail", "Promtail"),
+      template("victorialogs", "VictoriaLogs"),
+      template("log-shipper", "Log shipper"),
     ]),
     ensureVardoOrgMock: vi.fn(async () => ({ id: "vardo-org" })),
     setSystemSettingMock: vi.fn().mockResolvedValue(undefined),
@@ -123,7 +123,7 @@ describe("core service provisioning", () => {
   it("creates the rows in the Vardo system org on a clean instance", async () => {
     await provisionForFlag("logging", true);
 
-    expect(appsInserted.map((row) => row.name)).toEqual(["loki", "promtail"]);
+    expect(appsInserted.map((row) => row.name)).toEqual(["victorialogs", "log-shipper"]);
     for (const row of appsInserted) {
       expect(row).toMatchObject({ organizationId: "vardo-org", isSystemManaged: true });
     }
@@ -142,7 +142,7 @@ describe("core service provisioning", () => {
 
     expect(appsInserted).toHaveLength(0);
     expect(deployAndWaitMock).not.toHaveBeenCalled();
-    expect(lastRecordedStatus().loki).toMatchObject({ state: "provisioned", appId: "app-1" });
+    expect(lastRecordedStatus().victorialogs).toMatchObject({ state: "provisioned", appId: "app-1" });
   });
 
   it("does not duplicate or move a row that landed in another organization", async () => {
@@ -158,7 +158,7 @@ describe("core service provisioning", () => {
 
     expect(appsInserted).toHaveLength(0);
     expect(dbMock.update).not.toHaveBeenCalled();
-    expect(lastRecordedStatus().loki).toMatchObject({
+    expect(lastRecordedStatus().victorialogs).toMatchObject({
       state: "provisioned",
       organizationId: "some-other-org",
     });
@@ -176,7 +176,7 @@ describe("core service provisioning", () => {
       /already exists on this instance/i,
     );
     expect(appsInserted).toHaveLength(0);
-    expect(lastRecordedStatus().loki).toMatchObject({ state: "conflict" });
+    expect(lastRecordedStatus().victorialogs).toMatchObject({ state: "conflict" });
   });
 
   it("redeploys an adopted row whose container went missing and keeps it in its own org", async () => {
@@ -191,7 +191,7 @@ describe("core service provisioning", () => {
     await provisionForFlag("logging", true);
 
     expect(deployAndWaitMock).toHaveBeenCalledWith({ appId: "app-1", trigger: "api" });
-    expect(lastRecordedStatus().loki).toMatchObject({ state: "provisioned", organizationId: "some-other-org" });
+    expect(lastRecordedStatus().victorialogs).toMatchObject({ state: "provisioned", organizationId: "some-other-org" });
   });
 
   it("startup queues a missing service's redeploy without waiting on it", async () => {
@@ -232,13 +232,13 @@ describe("core service provisioning", () => {
     loadTemplatesMock.mockResolvedValueOnce([]);
 
     await expect(provisionForFlag("logging", true)).rejects.toThrow(/template/i);
-    expect(lastRecordedStatus().loki).toMatchObject({ state: "missing-template" });
+    expect(lastRecordedStatus().victorialogs).toMatchObject({ state: "missing-template" });
   });
 });
 
 describe("core service metadata", () => {
   it("names every instance-level service", () => {
-    expect(CORE_SERVICE_NAMES).toEqual(["collector", "loki", "promtail"]);
+    expect(CORE_SERVICE_NAMES).toEqual(["collector", "victorialogs", "log-shipper"]);
     expect(isCoreServiceApp("wordpress")).toBe(false);
   });
 
@@ -270,7 +270,7 @@ describe("core service metadata", () => {
     expect(byName.collector.state).toBe("off");
     expect(byName.collector.detail).toBeNull();
     expect(byName.cadvisor).toBeUndefined();
-    expect(byName.loki.state).toBe("failed");
-    expect(byName.loki.detail).toMatch(/never provisioned/i);
+    expect(byName.victorialogs.state).toBe("failed");
+    expect(byName.victorialogs.detail).toMatch(/never provisioned/i);
   });
 });

@@ -28,8 +28,8 @@ describe("coreServiceKey", () => {
     ["vardo-watchdog", null, "watchdog"],
     ["vardo-mesh-builder", "mesh-builder", "mesh"],
     ["collector", null, "metrics"],
-    ["loki", null, "logs"],
-    ["promtail", null, "logs"],
+    ["victorialogs", null, "logs"],
+    ["log-shipper", null, "logs"],
     ["vardo-wireguard", null, "mesh"],
     ["something-else", null, "other"],
     ["random-name-1", "postgres", "database"],
@@ -39,14 +39,14 @@ describe("coreServiceKey", () => {
 });
 
 describe("shapeCoreServices", () => {
-  it("merges Loki and Promtail into one row and keeps display order", () => {
+  it("merges VictoriaLogs and the log shipper into one row and keeps display order", () => {
     const { rows } = shapeCoreServices([
-      c("1", "promtail", { cpuPercent: 10, memoryUsage: GB }),
+      c("1", "log-shipper", { cpuPercent: 10, memoryUsage: GB }),
       c("2", "vardo-frontend", { cpuPercent: 20, memoryUsage: 2 * GB, memoryLimit: 4 * GB }),
-      c("3", "loki", { cpuPercent: 5, memoryUsage: GB }),
+      c("3", "victorialogs", { cpuPercent: 5, memoryUsage: GB }),
     ]);
     expect(rows.map((r) => r.key)).toEqual(["console", "logs"]);
-    expect(rows[1]).toMatchObject({ cpu: 15, memory: 2 * GB, containers: 2, label: "Logs (Loki/Promtail)" });
+    expect(rows[1]).toMatchObject({ cpu: 15, memory: 2 * GB, containers: 2, label: "Logs (VictoriaLogs)" });
     expect(rows[0].limit).toBe(4 * GB);
   });
 

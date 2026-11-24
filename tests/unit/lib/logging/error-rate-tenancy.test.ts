@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Loki is tenanted by organization, so the fleet-wide sweep is one pair of
+// VictoriaLogs is tenanted by organization, so the fleet-wide sweep is one pair of
 // queries per organization. What matters here is that no query crosses an
 // organization and that a failed one leaves its apps unsampled rather than
 // recording the zeros a quiet app would produce.
@@ -23,14 +23,15 @@ const state = vi.hoisted(() => ({
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/logging/client", () => ({
-  isLokiAvailable: async () => true,
-  queryInstant: async (query: string, organizationId: string) => {
+vi.mock("@/lib/logging/victorialogs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/logging/victorialogs")>()),
+  isVictoriaLogsAvailable: async () => true,
+  queryStats: async (query: string, organizationId: string) => {
     state.queried.push({ query, organizationId });
     if (state.failing.has(organizationId)) throw new Error("tenant unreachable");
     return state.running
       .filter((a) => a.organizationId === organizationId)
-      .map((a) => ({ labels: { project_id: a.id }, value: 1 }));
+      .map((a) => ({ labels: { "vardo.project.id": a.id }, value: 1 }));
   },
 }));
 

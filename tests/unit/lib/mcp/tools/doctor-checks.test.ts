@@ -139,14 +139,14 @@ describe("serviceLines", () => {
       [
         { name: "PostgreSQL", status: "healthy" },
         { name: "Redis", status: "healthy" },
-        { name: "Loki", status: "unhealthy", error: "HTTP 503", logsHref: "/apps/loki/logs" },
+        { name: "VictoriaLogs", status: "unhealthy", error: "HTTP 503", logsHref: "/apps/victorialogs/logs" },
         { name: "WireGuard", status: "unconfigured" },
       ],
       [],
     );
     expect(lines).toEqual([
       { check: "services", status: "pass", label: "2 services healthy", detail: "PostgreSQL, Redis" },
-      { check: "services", status: "fail", label: "Loki down", detail: "HTTP 503", fix: "/apps/loki/logs" },
+      { check: "services", status: "fail", label: "VictoriaLogs down", detail: "HTTP 503", fix: "/apps/victorialogs/logs" },
     ]);
   });
 
@@ -158,7 +158,7 @@ describe("serviceLines", () => {
         tone: "error",
         items: [
           { id: "app-collector", name: "Collector" },
-          { id: "app-loki-child", name: "Loki · loki" },
+          { id: "app-loki-child", name: "VictoriaLogs · victorialogs" },
         ],
         action: { label: "Open", href: "/admin/settings/core-services" },
       },
@@ -166,18 +166,18 @@ describe("serviceLines", () => {
     ];
     const apps = [
       { id: "app-collector", name: "collector", parentAppId: null },
-      { id: "app-loki", name: "loki", parentAppId: null },
-      { id: "app-loki-child", name: "loki-loki", parentAppId: "app-loki" },
+      { id: "app-loki", name: "victorialogs", parentAppId: null },
+      { id: "app-loki-child", name: "victorialogs-victorialogs", parentAppId: "app-loki" },
     ];
     const down = (name: string) => ({ name, status: "unhealthy" as const, error: "fetch failed" });
 
-    expect(serviceLines([down("Collector"), down("Loki"), down("Traefik")], rows, apps).map((l) => l.label)).toEqual([
+    expect(serviceLines([down("Collector"), down("VictoriaLogs"), down("Traefik")], rows, apps).map((l) => l.label)).toEqual([
       "Collector down",
-      "Loki down",
+      "VictoriaLogs down",
       "Traefik down",
     ]);
-    expect(serviceLines([down("Loki")], rows, apps)).toEqual([
-      { check: "services", status: "fail", label: "Loki down", detail: "fetch failed" },
+    expect(serviceLines([down("VictoriaLogs")], rows, apps)).toEqual([
+      { check: "services", status: "fail", label: "VictoriaLogs down", detail: "fetch failed" },
       { check: "services", status: "fail", label: "Core service down", detail: "Collector", fix: "/admin/settings/core-services" },
       { check: "services", status: "fail", label: "Vardo degraded", detail: "Traefik" },
     ]);

@@ -25,9 +25,9 @@ const { dbMock, enqueueDeployMock, loadTemplatesMock, ensureVardoOrgMock, setSys
       enqueueDeployMock: vi.fn(),
       loadTemplatesMock: vi.fn(async () => [
         {
-          name: "loki",
-          displayName: "Loki",
-          description: "Loki",
+          name: "victorialogs",
+          displayName: "VictoriaLogs",
+          description: "VictoriaLogs",
           source: "direct",
           deployType: "compose",
           composeContent: "services:\n  loki:\n    image: grafana/loki:3.4\n",
