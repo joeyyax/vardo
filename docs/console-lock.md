@@ -30,7 +30,7 @@ The lock runs in Traefik, so it holds only if nothing reaches the console's port
 | `vardo_console` | Traefik, the other console slot | Routing |
 | `vardo_internal` | Postgres, Redis, WireGuard, the worker | Database and Redis |
 | `vardo_mesh` | WireGuard, `vardo-mesh-builder`, the worker | Linked instances, through WireGuard's DNAT |
-| `vardo-monitoring` | The collector, Loki, Promtail | Metrics and logs |
+| `vardo-monitoring` | The collector, VictoriaLogs, the log shipper | Metrics and logs |
 | `vardo-metadata` | The metadata proxy | [Metadata endpoint](metadata-endpoint.md) |
 
 Never `vardo-network` or a project's `vardo-p-*` network. The worker stays on `vardo-network` for deploy probes and serves only `/healthz` on loopback.

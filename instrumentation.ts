@@ -209,7 +209,7 @@ export async function register() {
       .then(({ recordBackupBootInBackground }) => recordBackupBootInBackground(credentialStep))
       .catch((err) => log.error("Failed to record backup boot steps:", err));
 
-    // Provisions the collector, Loki and Promtail before feature registration so their readers find them.
+    // Provisions the collector, VictoriaLogs and the log shipper before feature registration so their readers find them.
     try {
       const { ensureInfraServices } = await import("./lib/infra/provision");
       await ensureInfraServices();

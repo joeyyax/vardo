@@ -509,9 +509,9 @@ const entries = {
     what: "Reads CPU, memory, network and GPU use for every container on the server. These pages are built from it.",
   },
   "core-logs": {
-    term: "Loki/Promtail",
+    term: "VictoriaLogs",
     label: "Logs",
-    what: "Promtail collects container logs and Loki stores them so you can search them later.",
+    what: "The log shipper collects container logs and VictoriaLogs stores them so you can search them later.",
   },
 } satisfies Record<string, GlossaryEntry>;
 

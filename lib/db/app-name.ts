@@ -1,4 +1,4 @@
-// Top-level app names are unique instance-wide: they're the directory, compose project, metrics key and Loki selector.
+// Top-level app names are unique instance-wide: they're the directory, compose project, metrics key and log project field.
 
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
