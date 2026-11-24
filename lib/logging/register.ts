@@ -5,7 +5,7 @@ import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("logging");
 
-/** Checks Loki is reachable. Error rate sampling runs from the loop registry. */
+/** Checks VictoriaLogs is reachable. Error rate sampling runs from the loop registry. */
 export async function registerLoggingFeature(): Promise<void> {
   if (!isFeatureEnabled("logging")) {
     log.info("Logging disabled, skipping registration");
@@ -13,15 +13,15 @@ export async function registerLoggingFeature(): Promise<void> {
   }
 
   try {
-    const { isLokiAvailable } = await import("@/lib/logging/client");
-    const ready = await isLokiAvailable();
+    const { isVictoriaLogsAvailable } = await import("@/lib/logging/victorialogs");
+    const ready = await isVictoriaLogsAvailable();
     if (ready) {
-      log.info("Loki connected");
+      log.info("VictoriaLogs connected");
     } else {
-      log.warn("Loki not reachable — log queries will be unavailable until it starts");
+      log.warn("VictoriaLogs not reachable — log queries will be unavailable until it starts");
     }
   } catch (err) {
-    log.warn("Failed to check Loki availability:", err);
+    log.warn("Failed to check VictoriaLogs availability:", err);
   }
 }
 

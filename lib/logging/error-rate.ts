@@ -16,7 +16,7 @@ import {
   type ErrorRateReading,
   type QuietWindow,
 } from "@/lib/ui/error-rate";
-import { isLokiAvailable, queryInstant } from "./client";
+import { isVictoriaLogsAvailable, queryStats } from "./victorialogs";
 import { attributeCounts, errorCountQuery, lineCountQuery } from "./error-shape";
 
 const log = logger.child("error-rate");
@@ -39,7 +39,7 @@ type SampledApp = {
  * An organization whose queries fail is skipped, never sampled at zero.
  */
 export async function collectErrorRates(): Promise<number> {
-  if (!(await isLokiAvailable())) return 0;
+  if (!(await isVictoriaLogsAvailable())) return 0;
 
   const running = await db
     .select({
@@ -62,8 +62,8 @@ export async function collectErrorRates(): Promise<number> {
   for (const [organizationId, orgApps] of groupByOrganization(running)) {
     try {
       const [errors, lines] = await Promise.all([
-        queryInstant(errorCountQuery(seconds), organizationId),
-        queryInstant(lineCountQuery(seconds), organizationId),
+        queryStats(errorCountQuery(seconds), organizationId),
+        queryStats(lineCountQuery(seconds), organizationId),
       ]);
       for (const [id, count] of attributeCounts(errors, orgApps)) errorCounts.set(id, count);
       for (const [id, count] of attributeCounts(lines, orgApps)) lineCounts.set(id, count);

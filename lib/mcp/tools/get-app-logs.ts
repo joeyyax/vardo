@@ -3,11 +3,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import {
-  isLokiAvailable,
-  queryRange,
-  buildLogQLQuery,
-} from "@/lib/logging/client";
+import { buildLogsQLQuery, queryLogs } from "@/lib/logging/victorialogs";
+import { appLogSource } from "@/lib/logging/source";
+import { resolveLogScope } from "@/lib/logging/scope";
 import { LOOKBACK_MS } from "@/lib/logging/history";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
 import type { McpAuthContext } from "../auth";
@@ -19,7 +17,7 @@ export function registerGetAppLogs(
 ) {
   server.tool(
     "vardo_get_app_logs",
-    "Get recent logs for an app. Uses Loki if available, falls back to Docker logs. Returns log lines with optional filtering by service, environment, or search term.",
+    "Get recent logs for an app. Uses VictoriaLogs if available, falls back to Docker logs. Returns log lines with optional filtering by service, environment, or search term.",
     {
       appId: z.string().describe("The app ID to get logs for"),
       lines: z
@@ -47,31 +45,30 @@ export function registerGetAppLogs(
     async ({ appId, lines, since, search, service }) => {
       const app = await db.query.apps.findFirst({
         where: eq(apps.id, appId),
-        columns: { id: true, name: true, organizationId: true },
+        columns: { id: true, name: true, organizationId: true, parentAppId: true, composeService: true },
       });
 
       if (!app || !(await canAccessOrg(context, app.organizationId, "app.view"))) {
         return accessDenied("App");
       }
 
-      if (await isLokiAvailable()) {
-        const query = buildLogQLQuery({
-          project: app.name,
-          service,
+      // A decomposed service's containers carry its parent's project.
+      const scope = await resolveLogScope(app);
+      if ((await appLogSource({ id: scope.projectId, name: scope.project })) === "victorialogs") {
+        const query = buildLogsQLQuery({
+          project: scope.project,
+          service: service ?? scope.service ?? undefined,
           search,
         });
 
         const window = resolveSince(since);
 
-        const entries = await queryRange({
+        const entries = await queryLogs({
           query,
           organizationId: app.organizationId,
           start: window.start,
           limit: lines,
-          direction: "backward",
         });
-
-        entries.reverse();
 
         return {
           content: [
@@ -79,12 +76,12 @@ export function registerGetAppLogs(
               type: "text" as const,
               text: JSON.stringify(
                 {
-                  source: "loki",
+                  source: "victorialogs",
                   app: app.name,
                   since: window.since,
                   ...(window.clamped && {
                     requestedSince: since,
-                    truncated: `Loki keeps ${window.since} of logs, so this covers ${window.since} rather than the ${since} requested.`,
+                    truncated: `VictoriaLogs keeps ${window.since} of logs, so this covers ${window.since} rather than the ${since} requested.`,
                   }),
                   lineCount: entries.length,
                   logs: entries.map((e) => e.line).join("\n"),
@@ -167,7 +164,7 @@ const UNIT_MS: Record<string, number> = {
 
 const DEFAULT_SINCE_MS = UNIT_MS.h;
 
-/** Deepest window Loki holds; matches the log viewer's widest lookback. */
+/** Deepest window VictoriaLogs holds; matches the log viewer's widest lookback. */
 export const MAX_SINCE_MS = Math.max(...LOOKBACK_MS);
 
 /** The window a request covers and whether it's shorter than requested. */

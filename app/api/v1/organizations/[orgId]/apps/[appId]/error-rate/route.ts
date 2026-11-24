@@ -6,7 +6,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { isLokiAvailable } from "@/lib/logging/client";
+import { isVictoriaLogsAvailable } from "@/lib/logging/victorialogs";
 import { readErrorRate } from "@/lib/logging/error-rate";
 
 /** How this app's error rate compares to its own past. */
@@ -25,7 +25,7 @@ async function handler(
     });
     if (!app) return apiError.notFound("app");
 
-    if (!(await isLokiAvailable())) {
+    if (!(await isVictoriaLogsAvailable())) {
       return NextResponse.json({ available: false });
     }
 
