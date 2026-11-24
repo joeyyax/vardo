@@ -10,7 +10,7 @@ deployType: compose
 composeContent: |
   services:
     log-shipper:
-      # The collector in logs-only mode. Vardo sets the image from VARDO_COLLECTOR_IMAGE.
+      # The collector in logs-only mode. Vardo fills in its collector image at provisioning.
       image: ${VARDO_LOG_SHIPPER_IMAGE:?set VARDO_LOG_SHIPPER_IMAGE}
       restart: unless-stopped
       read_only: true
@@ -39,7 +39,7 @@ composeContent: |
         - /etc/hostname:/rootfs/etc/hostname:ro
         # How far each container was read. Without it every redeploy re-ships or skips history.
         - log-shipper-state:/var/lib/collector
-      mem_limit: ${VARDO_LOG_SHIPPER_MEM:-64m}
+      mem_limit: 64m
       # No published port: Vardo reads http://log-shipper:9273/health on the console-only monitoring network.
       networks:
         - vardo-monitoring

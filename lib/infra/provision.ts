@@ -21,7 +21,7 @@ import {
   type CoreServiceFeature,
   type CoreServiceState,
 } from "@/lib/infra/core-services";
-import { collectorMode, COLLECTOR_TOKEN_KEY, DEFAULT_COLLECTOR_IMAGE } from "@/lib/collector/config";
+import { collectorMode, COLLECTOR_TOKEN_KEY } from "@/lib/collector/config";
 import { decryptOrFallback, encrypt } from "@/lib/crypto/encrypt";
 import { logger } from "@/lib/logger";
 import { dockerEnv } from "@/lib/docker/docker-env";
@@ -353,9 +353,14 @@ async function ensureAppDeployed(
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
-/** Compose content for a template, with the collector's GPU access applied. */
+/** Compose content for a template, with the collector's GPU access and the logging settings applied. */
 async function resolveComposeContent(template: Template, hasGpu: boolean): Promise<string | null> {
-  if (template.name !== "collector" || !template.composeContent) return template.composeContent;
+  if (!template.composeContent) return template.composeContent;
+  if (template.name === "victorialogs" || template.name === "log-shipper") {
+    const { applyLoggingSettings } = await import("@/lib/infra/logging-compose");
+    return applyLoggingSettings(template.name, template.composeContent);
+  }
+  if (template.name !== "collector") return template.composeContent;
   const { applyCollectorGpu } = await import("@/lib/infra/collector-compose");
   return applyCollectorGpu(template.composeContent, hasGpu);
 }
@@ -365,26 +370,11 @@ const READS_GPU = new Set(["collector"]);
 
 /** Env a core service's compose interpolates, owned by Vardo. Null for services without one. */
 async function resolveManagedEnv(template: Template): Promise<string | null> {
-  if (template.name === "victorialogs") return victoriaLogsEnv();
-  if (template.name === "log-shipper") return `VARDO_LOG_SHIPPER_IMAGE=${logShipperImage()}\n`;
   if (template.name !== "collector") return null;
   const mode = collectorMode();
   if (mode.kind !== "provisioned") return null;
   const token = await ensureCollectorToken();
   return `VARDO_COLLECTOR_IMAGE=${mode.image}\nVARDO_COLLECTOR_TOKEN=${token}\n`;
-}
-
-/** VictoriaLogs retention, from the console's env. 31 days covers the viewer's widest lookback of 30. */
-export function victoriaLogsEnv(env: Record<string, string | undefined> = process.env): string {
-  const retention = env.VARDO_VICTORIALOGS_RETENTION?.trim() || "31d";
-  const maxDisk = env.VARDO_VICTORIALOGS_MAX_DISK?.trim() || "20GiB";
-  return `VARDO_VICTORIALOGS_RETENTION=${retention}\nVARDO_VICTORIALOGS_MAX_DISK=${maxDisk}\n`;
-}
-
-/** The collector image, which ships logs in logs-only mode. Also used when Vardo reads an operator's collector. */
-export function logShipperImage(env: Record<string, string | undefined> = process.env): string {
-  const mode = collectorMode(env);
-  return mode.kind === "provisioned" ? mode.image : DEFAULT_COLLECTOR_IMAGE;
 }
 
 /** The provisioned collector's bearer token, generated once and kept in system settings. */
