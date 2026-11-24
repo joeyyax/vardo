@@ -38,6 +38,7 @@ import { learnedDefaults } from "@/lib/resources/learned-store";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
+import { LOG_ACCOUNT_LABEL, logAccountId } from "@/lib/logging/account";
 import { handWrittenRoute, isolateCompose } from "../environment-isolation";
 import { nonRotatingServices } from "../slot-partition";
 import { assertLabelHostsOwned } from "../label-hosts";
@@ -331,6 +332,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   const scope = appScope(app.name);
   // No deployment-id label on shared services; it would change their config hash every deploy.
   const shared = nonRotatingServices(compose);
+  const logAccount = scope === "app" ? await deployLogAccount(ctx.organizationId, log) : null;
 
   for (const [svcName, svc] of Object.entries(compose.services)) {
     compose.services[svcName] = {
@@ -344,10 +346,21 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         "vardo.environment": ctx.envName,
         "vardo.managed": "true",
         "vardo.scope": scope,
+        ...(logAccount ? { [LOG_ACCOUNT_LABEL]: String(logAccount) } : {}),
       },
     };
   }
 
   ctx.compose = compose;
   return ctx;
+}
+
+/** The org's log account for the shipper. Without one the logs go to the unassigned tenant, which no org reads. */
+async function deployLogAccount(organizationId: string, log: DeployContext["log"]): Promise<number | null> {
+  try {
+    return await logAccountId(organizationId);
+  } catch (err) {
+    log(`[deploy] WARNING: no log account (${err instanceof Error ? err.message : String(err)}); this deploy's logs won't be searchable`);
+    return null;
+  }
 }
