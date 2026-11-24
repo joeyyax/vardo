@@ -9,5 +9,5 @@ export async function shipperLastDelivery(timeoutMs = 2000): Promise<number | nu
   const res = await fetch(`${logShipperUrl()}/health`, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body = (await res.json()) as { logs_last_success?: number | null };
-  return body.logs_last_success ? body.logs_last_success : null;
+  return body.logs_last_success || null;
 }
